@@ -100,16 +100,8 @@ how well your build environment is set up.
 Using
 =====
 
-The command line options for Orbuculum are;
-
-   b: <basedir> for channels
-   c: <Number>,<Name>,<Format> of channel to populate (repeat per channel)
-   h: This help
-   f: <filename> Take input from specified file
-   p: <serialPort> to use
-   s: <serialSpeed> to use
-   t: Use TPIU decoder
-   v: Verbose mode
+The command line options for Orbuculum are available by running
+orbuculum with the -h option.
 
 So a typical command line would be;
 
