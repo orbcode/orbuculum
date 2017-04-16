@@ -52,25 +52,22 @@ other M3, but the dividers will be different);
     DBGMCU->CR |= DBGMCU_CR_TRACE_IOEN; // Enable IO trace pins for Async trace
     /* End of STM32 Specific instructions */
 
-
     *((volatile unsigned *)(0xE0040010)) =31;  // Output bits at 72000000/(31+1)=2.250MHz.
     *((volatile unsigned *)(0xE00400F0)) = 2;  // Use Async mode pin protocol
     *((volatile unsigned *)(0xE0040304)) = 0x102; // Use TPIU formatter and flush
-
-
     /* Configure Trace Port Interface Unit */
     CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk; // Enable access to registers
 
-  /* Configure PC sampling and exception trace  */
-  DWT->CTRL = (1 << DWT_CTRL_CYCTAP_Pos) // Prescaler for PC sampling
-                                         // 0 = x32, 1 = x512
-            | (0 << DWT_CTRL_POSTPRESET_Pos) // Postscaler for PC sampling
-                                              // Divider = value + 1
-            | (1 << DWT_CTRL_PCSAMPLENA_Pos) // Enable PC sampling
-             | (2 << DWT_CTRL_SYNCTAP_Pos)    // Sync packet interval
-                                            // 0 = Off, 1 = Every 2^23 cycles,
-                                            // 2 = Every 2^25, 3 = Every 2^27
-             | (1 << DWT_CTRL_EXCTRCENA_Pos)  // Enable exception trace
+    /* Configure PC sampling and exception trace  */
+    DWT->CTRL = (1 << DWT_CTRL_CYCTAP_Pos)     // Prescaler for PC sampling
+                                               // 0 = x32, 1 = x512
+              | (0 << DWT_CTRL_POSTPRESET_Pos) // Postscaler for PC sampling
+                                               // Divider = value + 1
+              | (1 << DWT_CTRL_PCSAMPLENA_Pos) // Enable PC sampling
+              | (2 << DWT_CTRL_SYNCTAP_Pos)    // Sync packet interval
+                                               // 0 = Off, 1 = Every 2^23 cycles,
+                                               // 2 = Every 2^25, 3 = Every 2^27
+              | (1 << DWT_CTRL_EXCTRCENA_Pos)  // Enable exception trace
               | (1 << DWT_CTRL_CYCCNTENA_Pos); // Enable cycle counter
 
     /* Configure instrumentation trace macroblock */
