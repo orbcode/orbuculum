@@ -2,7 +2,7 @@ Orbuculum - ARM Cortex SWO Output Processing Tools
 ==================================================
 
 (An Orbuculum is a Crystal Ball, used for seeing things that would 
- be otherwise invisible, with a light connection to BlackMagic...)
+ be otherwise invisible, with a nodding reference to BlackMagic...)
 
 On a CORTEX M Series device SWO is a datastream that comes out of a
 single pin when the debug interface is in SWD mode. It can be encoded
