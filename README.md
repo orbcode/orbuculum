@@ -16,7 +16,7 @@ it to a set of unix fifos which can then be used as the input to other
 programs (e.g. cat, or something more sophisticated like gnuplot,
 octave or whatever). Orbuculum itself doesn't care if the data
 originates from a RZ or NRZ port, or at what speed....that's the job
-of it interface.
+of the interface.
 
 At the present time Orbuculum supports two devices for collecting SWO
 from the target;
@@ -26,6 +26,11 @@ from the target;
 
 Information about using each individual interface can be found in the
 docs directory.
+
+It can use, or bypass, the TPIU. The TPIU adds (a small amount of) overhead
+to the datastream, but provides better syncronisation if there is corruption
+on the link. To include the TPIU in decode stack, provide the -t 
+option on the command line.
 
 When in NRZ mode the SWO data rate that comes out of the chip _must_
 match the rate that the debugger expects. On the BMP speeds of
@@ -44,16 +49,46 @@ other M3, but the dividers will be different);
     /* STM32 specific configuration to enable the TRACESWO IO pin */
     RCC->APB2ENR |= RCC_APB2ENR_AFIOEN;
     AFIO->MAPR |= (2 << 24); // Disable JTAG to release TRACESWO
-    DBGMCU->CR |= DBGMCU_CR_TRACE_IOEN; // Enable IO trace pins
+    DBGMCU->CR |= DBGMCU_CR_TRACE_IOEN; // Enable IO trace pins for Async trace
+    /* End of STM32 Specific instructions */
 
-    *((volatile unsigned *)(0xE0040010)) = 31;  // Output bits at 72000000/(31+1)=2.25MHz.
-    *((volatile unsigned *)(0xE00400F0)) = 2;   // Use Async mode (1 for RZ/Manchester)
-    *((volatile unsigned *)(0xE0040304)) = 0;   // Disable formatter
+
+    *((volatile unsigned *)(0xE0040010)) =31;  // Output bits at 72000000/(31+1)=2.250MHz.
+    *((volatile unsigned *)(0xE00400F0)) = 2;  // Use Async mode pin protocol
+    *((volatile unsigned *)(0xE0040304)) = 0x102; // Use TPIU formatter and flush
+
+
+    /* Configure Trace Port Interface Unit */
+    CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk; // Enable access to registers
+
+  /* Configure PC sampling and exception trace  */
+  DWT->CTRL = (1 << DWT_CTRL_CYCTAP_Pos) // Prescaler for PC sampling
+                                         // 0 = x32, 1 = x512
+            | (0 << DWT_CTRL_POSTPRESET_Pos) // Postscaler for PC sampling
+                                              // Divider = value + 1
+            | (1 << DWT_CTRL_PCSAMPLENA_Pos) // Enable PC sampling
+             | (2 << DWT_CTRL_SYNCTAP_Pos)    // Sync packet interval
+                                            // 0 = Off, 1 = Every 2^23 cycles,
+                                            // 2 = Every 2^25, 3 = Every 2^27
+             | (1 << DWT_CTRL_EXCTRCENA_Pos)  // Enable exception trace
+              | (1 << DWT_CTRL_CYCCNTENA_Pos); // Enable cycle counter
 
     /* Configure instrumentation trace macroblock */
-    ITM->LAR = 0xC5ACCE55;
+    ITM->LAR = ETM_LAR_KEY;
     ITM->TCR = 0x00010005;
     ITM->TER = 0xFFFFFFFF; // Enable all stimulus ports
+
+    /* Configure embedded trace macroblock */
+    ETM->LAR = ETM_LAR_KEY;
+    ETM_SetupMode();
+    ETM->CR = ETM_CR_ETMEN // Enable ETM output port
+            | ETM_CR_STALL_PROCESSOR // Stall processor when fifo is full
+            | ETM_CR_BRANCH_OUTPUT; // Report all branches
+    ETM->TRACEIDR = 2; // Trace bus ID for TPIU
+    ETM->TECR1 = ETM_TECR1_EXCLUDE; // Trace always enabled
+    ETM->FFRR = ETM_FFRR_EXCLUDE; // Stalling always enabled
+    ETM->FFLR = 24; // Stall when less than N bytes free in FIFO (range 1..24)
+                    // Larger values mean less latency in trace, but more stalls.
 
 Building
 ========
