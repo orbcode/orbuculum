@@ -2,12 +2,12 @@ Using the Black Magic Debug Probe
 =================================
 
 When connecting to a Black Magic Debug probe the command line for
-ACSOPT will be something like;
+Orbuculum will be something like;
 
->./acsopt -b swo/
+>./orbuculum -b swo/ -c 0,text,c
 
-...which will create the fifos in a subdirectory swo of the current
-directory. The directory must exist already.
+...which will create the fifo 'text' in a subdirectory swo of the current
+directory, delivering SWO channel 0. The directory must exist already.
 
 By default on BMP the SWO baudrate is 2.25MBps but that can be changed
 as an optional parameter to the monitor traceswo command at the gdb
@@ -18,7 +18,7 @@ monitor traceswo 115200
 ....would set the swo output at the low speed of 115kbps. 
 
 Until a monitor traceswo command has been issued the BMP will not send
-any data to ACSOPT. Once it's been issued then ACSOPT will
+any data to Orbuculum. Once it's been issued then the tool will
 automatically grab packets and publish them to its fifos.
 
 BMP SWO capture speed is constrained by both the capabilities of the
@@ -50,7 +50,7 @@ spread between each valid value so mis-timing is less of an issue. The
 divisor to the value you set for the speed, so be aware the error
 could be significant. 
 
-You can also use ACSOPT with a RZ mode SWO port (e.g. on a genuine
+You can also use Orbuculum with a RZ mode SWO port (e.g. on a genuine
 BMP). In that case then you will need the trace output speed to be
 quite a lot lower...in the order of 200kHz or so, by means of changing
 the divisor to something like 359.  That's because the STM32F103

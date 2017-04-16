@@ -2,7 +2,7 @@ Using a TTL Serial Interface
 ============================
 
 The NRZ data that comes out of the SWO is just UART formatted, but in
-a frame.  ACSOPT has been extended to accomodate TTL Serial Dongles
+a frame.  Orbuculum has been extended to accomodate TTL Serial Dongles
 that can pick this up.  Success has been had with CP2102 dongles at up
 to 921600 baud.
 
@@ -10,7 +10,7 @@ To use this mode just connect SWO to the RX pin of your dongle, and
 start swolisten with parmeters representing the speed and port. An
 example; 
 
->./acsopt -p /dev/cu.SLAB_USBtoUART -b swo/ -s 921600
+>./orbuculum -p /dev/cu.SLAB_USBtoUART -b swo/ -s 921600 -c 0,text,c
 
 Any individual dongle will only support certain baudrates (Generally
 multiples of 115200) so you may have to experiment to find the best

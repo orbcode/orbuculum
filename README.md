@@ -1,5 +1,8 @@
-ACSOPT - ARM Cortex SWO Output Processing Tools
-===============================================
+Orbuculum - ARM Cortex SWO Output Processing Tools
+==================================================
+
+(An Orbuculum is a Crystal Ball, used for seeing things that would 
+ be otherwise invisible, with a light connection to BlackMagic...)
 
 On a CORTEX M Series device SWO is a datastream that comes out of a
 single pin when the debug interface is in SWD mode. It can be encoded
@@ -7,15 +10,15 @@ either using NRZ (UART) or RZ (Manchester) formats.  The pin is a
 dedicated one that would be used for TDO when the debug interface is
 in JTAG mode. 
 
-ACSOPT takes this output and makes it accessible to tools on the host
-PC. At its core ACSOPT takes the data from the SWO, decodes it and presents
+Orbuculum takes this output and makes it accessible to tools on the host
+PC. At its core it takes the data from the SWO, decodes it and presents
 it to a set of unix fifos which can then be used as the input to other
 programs (e.g. cat, or something more sophisticated like gnuplot,
-octave or whatever). ACSOPT itself doesn't care if the data
+octave or whatever). Orbuculum itself doesn't care if the data
 originates from a RZ or NRZ port, or at what speed....that's the job
 of it interface.
 
-At the present time ACSOPT supports two devices for collecting SWO
+At the present time Orbuculum supports two devices for collecting SWO
 from the target;
  
 * the Black Magic Debug Probe (BMP) and 
@@ -29,7 +32,7 @@ match the rate that the debugger expects. On the BMP speeds of
 2.25Mbps are normal, TTL Serial devices tend to run a little slower
 but 921600 baud is normally acheivable. On BMP the baudrate is set via
 the gdb session with the 'monitor traceswo xxxx' command. For a TTL
-Serial device its set by the ACSOPT command line.
+Serial device its set by the Orbuculum command line.
 
 Depending on what you're using to wake up SWO on the target, you
 may need code to get it into the correct mode and emitting data. You
@@ -55,27 +58,41 @@ other M3, but the dividers will be different);
 Building
 ========
 
-The command line to build the ACSOPT tool is;
+The command line to build the Orbuculum tool is;
 
-gcc -I /usr/local/include/libusb-1.0 -L /usr/local/lib  -lusb-1.0 swolisten.c -o swolisten
+make
 
-...you will obviously need to change the paths to your libusb files.
+...you may need to change the paths to your libusb files, depending on
+how well your build environment is set up.
 
 Using
 =====
 
-By default the tool will create fifos for the first 32 channels in a
-directory swo (which you will need to create) as follows; 
+The command line options for Orbuculum are;
 
->ls swo/
-chan00	chan02	chan04	chan06	chan08	chan0A	chan0C	chan0E	chan10	chan12	chan14	chan16	chan18	chan1A	chan1C	chan1E
-chan01	chan03	chan05	chan07	chan09	chan0B	chan0D	chan0F	chan11	chan13	chan15	chan17	chan19	chan1B	chan1D	chan1F
+   b: <basedir> for channels
+   c: <Number>,<Name>,<Format> of channel to populate (repeat per channel)
+   h: This help
+   f: <filename> Take input from specified file
+   p: <serialPort> to use
+   s: <serialSpeed> to use
+   t: Use TPIU decoder
+   v: Verbose mode
 
->cat swo/channel0
-<<OUTPUT FROM ITM Channel 0>>
+So a typical command line would be;
+
+>orbuculum -b swo/ -c 0,text,"c" -vt
+
+The directory 'swo/' is expected to already exist, into which will be placed
+a file 'text' which delivers the output from swo channel 0 in character
+format.  Because no source options were provided on the command line, input
+will be taken from a Blackmagic probe USB SWO feed.
+
+Multiple -c options can be provided to set up fifos for individual channels
+from the debug device.
 
 Information about command line options can be found with the -h
-option.  ACSOPT is specifically designed to be 'hardy' to probe and
+option.  Orbuculum is specifically designed to be 'hardy' to probe and
 target disconnects and restarts (y'know, like you get in the real
 world). The intention being to give you streams whenever it can get
 them.  It does _not_ require gdb to be running, but you may need a 
@@ -88,8 +105,8 @@ Reliability
 A whole chunk of work has gone into making sure the dataflow over the
 SWO link is reliable....but it's pretty dependent on the debug
 interface itself.  The TL;DR is that if the interface _is_ reliable
-then ACSOPT will be. There are factors outside of our control
-(i.e. the USB bus you connect to) that could potentially break the
+then Orbuculum will be. There are factors outside of our control
+(i.e. the USB bus you are connected to) that could potentially break the
 reliabilty but there's not too much we can do about that since the SWO
 link is unidirectional (no opportunity for re-transmits). The
 following section provides evidence for the claim that the link is good; 
