@@ -1,0 +1,62 @@
+Using the Black Magic Debug Probe
+=================================
+
+When connecting to a Black Magic Debug probe the command line for
+ACSOPT will be something like;
+
+>./acsopt -b swo/
+
+...which will create the fifos in a subdirectory swo of the current
+directory. The directory must exist already.
+
+By default on BMP the SWO baudrate is 2.25MBps but that can be changed
+as an optional parameter to the monitor traceswo command at the gdb
+console, like this;
+
+monitor traceswo 115200
+
+....would set the swo output at the low speed of 115kbps. 
+
+Until a monitor traceswo command has been issued the BMP will not send
+any data to ACSOPT. Once it's been issued then ACSOPT will
+automatically grab packets and publish them to its fifos.
+
+BMP SWO capture speed is constrained by both the capabilities of the
+STM32F103 USART and the ability to get the packets back out over the
+USB link.  The UART baudrate is set by b=(72x10^6)/(16*d)...so for d=1
+that means a maximum speed of 4.5Mbps. For continious streaming that
+turns out to be _too_ fast for the USB link, so the next available
+option is the 2.25Mbps that we use. ....you can safely use the 4.5Mbps
+setting if your debug data  is bursty, or if you're using a different
+CPU to the STM32F103 as your BMP host, but you potentially run the
+risk of losing packets if you have long runs of sending which the usb
+cannot flush in time (there's a 12K buffer, so the it is a pretty long
+run before it becomes a problem).
+
+Note that the baudrate equation means there are only certain speeds
+available. The highest half dozen are;
+
+1    	   4.50  Mbps
+2	   2.25  Mbps
+3	   1.50  Mbps
+4	   1.125 Mbps
+5	   0.900 Mbps
+6          0.750 Mbps
+
+...the USART will cope with some timing slip, but it's advisible to
+stay as close to these values as you can. As the speed comes down the
+spread between each valid value so mis-timing is less of an issue. The
+'monitor traceswo <x>' command will automatically find the closest
+divisor to the value you set for the speed, so be aware the error
+could be significant. 
+
+You can also use ACSOPT with a RZ mode SWO port (e.g. on a genuine
+BMP). In that case then you will need the trace output speed to be
+quite a lot lower...in the order of 200kHz or so, by means of changing
+the divisor to something like 359.  That's because the STM32F103
+doesn't have a dedicated RZ decoder so it all has to be done in
+software. The advantage of RZ is that the probe can adapt to the speed
+of the target, so you don't have to set the speed on the probe in the
+monitor traceswo command, and it will be tolerant of different speeds.
+
+Using BMP the SWO data appears on USB Interface 5, Endpoint 5.

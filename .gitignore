@@ -1,0 +1,14 @@
+ofiles
+.DS_Store
+*.bin
+*.hex
+*.o
+*.d
+.*.swp
+*~
+*.pyc
+tags
+.gdbinit
+*.s#*
+*.b#*
+
