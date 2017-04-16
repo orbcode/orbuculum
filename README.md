@@ -103,7 +103,7 @@ Using
 The command line options for Orbuculum are available by running
 orbuculum with the -h option.
 
-So a typical command line would be;
+A typical command line would be;
 
 >orbuculum -b swo/ -c 0,text,"c" -vt
 
@@ -138,17 +138,17 @@ following section provides evidence for the claim that the link is good;
 A test 'mule' sends data flat out to the link at the maximum data rate
 of 2.25Mbps using a loop like the one below; 
 
-while (1)
-{
-    for (uint32_t r=0; r<26; r++)
+    while (1)
     {
-        for (uint32_t g=0; g<31; g++)
+        for (uint32_t r=0; r<26; r++)
         {
-            ITM_SendChar('A'+r);
+            for (uint32_t g=0; g<31; g++)
+            {
+                ITM_SendChar('A'+r);
+            }
+            ITM_SendChar('\n');
         }
-        ITM_SendChar('\n');
     }
-}
 
 100MB of data (more than 200MB of actual SWO packets, due to the
 encoding) was sent from the mule via a BMP where the output from
@@ -165,6 +165,7 @@ was interrupted)  and the resulting file analysed for consistency;
 
 The output was;
 
+`
 126462 AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 126462 BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
 126462 CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC
@@ -191,6 +192,7 @@ The output was;
 126461 XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 126461 YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY
 126461 ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ
+`
 
 (On inspection, the last line of recorded data was indeed a 'D' line).
 
