@@ -105,7 +105,7 @@ orbuculum with the -h option.
 
 A typical command line would be;
 
->orbuculum -b swo/ -c 0,text,"c" -vt
+>orbuculum -b swo/ -c 0,text,"%c" -vt
 
 The directory 'swo/' is expected to already exist, into which will be placed
 a file 'text' which delivers the output from swo channel 0 in character
@@ -113,7 +113,21 @@ format.  Because no source options were provided on the command line, input
 will be taken from a Blackmagic probe USB SWO feed.
 
 Multiple -c options can be provided to set up fifos for individual channels
-from the debug device.
+from the debug device. The format of the -c option is;
+
+ ChannelNum,ChannelName,FormatString
+
+ChannelNum is 0..31 and corresponds to the ITM channel. The name is the one
+that will appear in the directory and the FormatString can present the data
+using any printf-compatable formatting you prefer, so, the following are all 
+legal channel specifiers;
+
+    -c 7,temperature,"%d \260C\n"
+    -c 2,hexAddress,"%08x,"
+    -c 0,volume,"\l%d\b\n"
+
+Be aware that if you start making the formatting or screen handling too complex
+its quite possible your machine might not keep up...and then you will loose data!
 
 Information about command line options can be found with the -h
 option.  Orbuculum is specifically designed to be 'hardy' to probe and

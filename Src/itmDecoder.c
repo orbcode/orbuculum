@@ -62,8 +62,8 @@ BOOL ITMGetPacket(struct ITMDecoder *i, struct ITMPacket *p)
 
   p->srcAddr=i->srcAddr;
   p->len=i->targetCount;
-  p->u32=i->u32;
-
+  memcpy(p->d,i->rxPacket,p->len);
+  memset(&p->d[p->len],0,ITM_MAX_PACKET-p->len);
   return TRUE;
 }
 // ====================================================================================================
@@ -102,7 +102,7 @@ enum ITMPumpEvent ITMPump(struct ITMDecoder *i, uint8_t c)
       // **********
       if (!(c&0x0F))
 	{
-	  i->currentCount=1;
+	  i->currentCount=1; /* The '1' is deliberate. */
 	  /* This is a timestamp packet */
 	  i->rxPacket[0]=c;
 

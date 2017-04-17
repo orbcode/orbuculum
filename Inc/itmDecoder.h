@@ -29,8 +29,7 @@
 #define TRUE  (!FALSE)
 #endif
 
-#define ITM_MAX_PACKET_DATA (4)
-#define ITM_MAX_PACKET      (ITM_MAX_PACKET_DATA+1)
+#define ITM_MAX_PACKET (5)
 
 enum ITMPumpEvent {ITM_EV_NONE, 
 		   ITM_EV_UNSYNCED, 
@@ -51,16 +50,7 @@ struct ITMPacket
 {
   uint8_t srcAddr;
   int len;
-  union
-  {
-    uint8_t d[ITM_MAX_PACKET_DATA];
-    uint8_t u8;
-    uint16_t u16;
-    uint32_t u32;
-    int8_t s8;
-    int16_t s16;
-    int32_t s32;    
-  };
+  uint8_t d[ITM_MAX_PACKET];
 };
 
 struct ITMDecoder
@@ -68,18 +58,7 @@ struct ITMDecoder
 {
   int targetCount;   /* Number of bytes to be collected */
   int currentCount;  /* Number of bytes that have been collected */
-  union
-  {
-    uint8_t rxPacket[ITM_MAX_PACKET_DATA]; /* Packet in reception */
-    uint8_t d[ITM_MAX_PACKET_DATA];
-    uint8_t u8;
-    uint16_t u16;
-    uint32_t u32;
-    int8_t s8;
-    int16_t s16;
-    int32_t s32;    
-  };
-    
+  uint8_t rxPacket[ITM_MAX_PACKET]; /* Packet in reception */
   uint32_t syncStat; /* Sync monitor status */
   int srcAddr;       /* Source address for this packet */
 

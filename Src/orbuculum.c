@@ -18,6 +18,8 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#define VERSION "0.10"
+
 #include <stdlib.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -34,6 +36,9 @@
 #include <termios.h>
 #include <pthread.h>
 
+
+#include "git_version_info.h"
+#include "generics.h"
 #include "tpiuDecoder.h"
 #include "itmDecoder.h"
 
@@ -205,11 +210,16 @@ void _handleSW(void)
 
 {
   struct ITMPacket p;
+  int len;
+  char constructString[100];
 
   if (ITMGetPacket(&_r.i, &p))
     {
       if ((p.srcAddr<NUM_CHANNELS) && (_r.c[p.srcAddr].handle))
-	write(_r.c[p.srcAddr].handle,p.d,p.len);
+	{
+	  len=snprintf(constructString,100,options.channel[p.srcAddr].presFormat,(*(uint32_t *)p.d));
+	  write(_r.c[p.srcAddr].handle,constructString,len);
+	}
     }
 }
 // ====================================================================================================
@@ -418,13 +428,12 @@ int _processOptions(int argc, char *argv[])
 	    return FALSE;
 	  }
 	*chanIndex++=0;
-	options.channel[chan].presFormat=chanIndex;
+	options.channel[chan].presFormat=strdup(GenericsUnescape(chanIndex));
 	break;
 
       case 'b':
         options.chanPath = optarg;
         break;
-
 
       case '?':
         if (optopt == 'b')
@@ -438,10 +447,14 @@ int _processOptions(int argc, char *argv[])
 
   if (options.verbose)
     {
-      fprintf(stdout,"Verbose: TRUE\nBasePath: %s\n",options.chanPath);
+      fprintf(stdout,"Orbuculum V" VERSION " (Git %08X %s, Built " BUILD_DATE ")\n", GIT_HASH,(GIT_DIRTY?"Dirty":"Clean"));
+
+      fprintf(stdout,"Verbose   : TRUE\n");
+      fprintf(stdout,"BasePath  : %s\n",options.chanPath);
+
       if (options.port)
 	{
-	  fprintf(stdout,"Serial Port: %s\nSerial Speed: %d\n",options.port,options.speed);
+	  fprintf(stdout,"Serial Port: %s\nSerial Speed: %d\n",options.port,options.speed);    
 	}
 
       if (options.file)
@@ -450,12 +463,12 @@ int _processOptions(int argc, char *argv[])
 	}
     }
 
-  fprintf(stdout,"Channels:\n");
+  fprintf(stdout,"Channels  :\n");
   for (int g=0; g<NUM_CHANNELS; g++)
     {
       if (options.channel[g].chanName)
 	{
-	  fprintf(stdout,"        %02d [%s] [%s]\n",g,options.channel[g].presFormat,options.channel[g].chanName);
+	  fprintf(stdout,"        %02d [%s] [%s]\n",g,GenericsEscape(options.channel[g].presFormat),options.channel[g].chanName);
 	}
     }
   if ((options.file) && (options.port))

@@ -34,10 +34,9 @@ DEBUG_OPTS = -g3 -gdwarf-2 -ggdb
 # Main Files
 # ==========
 App_DIR=Src
-App_Inc_DIR=Inc
 INCLUDE_PATHS += -IInc -I$(OLOC)
-INCLUDE_PATHS += $(patsubst %,-I%,$(shell find $(App_Inc_DIR) -name "*.h" -exec dirname {} \; | uniq ))
-CFILES += $(shell find $(App_DIR) -name "*.c" -print)
+CFILES += $(App_DIR)/itmDecoder.c $(App_DIR)/orbuculum.c $(App_DIR)/tpiuDecoder.c
+CFILES += $(App_DIR)/generics.c
 
 ##########################################################################
 # GNU GCC compiler prefix and location
