@@ -29,7 +29,8 @@
 #define TRUE  (!FALSE)
 #endif
 
-#define ITM_MAX_PACKET (5)
+#define ITM_MAX_PACKET  (5)  // This length can only happen for a timestamp
+#define ITM_DATA_PACKET (4)  // This is the maximum length of everything else
 
 enum ITMPumpEvent {ITM_EV_NONE, 
 		   ITM_EV_UNSYNCED, 
@@ -45,11 +46,21 @@ enum _protoState {ITM_UNSYNCED, ITM_IDLE, ITM_TS, ITM_SW, ITM_HW};
 #define PROTO_NAME_LIST "UNSYNCED", "IDLE", "TS", "SW", "HW"
 
 /* Type of the packet received over the link */
-struct ITMPacket
+struct ITMSWPacket
 
 {
   uint8_t srcAddr;
-  int len;
+  
+  uint8_t len;
+  uint8_t d[ITM_MAX_PACKET];
+};
+
+struct ITMHWPacket
+
+{
+  uint8_t srcAddr;
+  
+  uint8_t len;
   uint8_t d[ITM_MAX_PACKET];
 };
 
@@ -68,7 +79,8 @@ struct ITMDecoder
 // ====================================================================================================
 void ITMDecoderInit(struct ITMDecoder *i, BOOL isLiveSet);
 void ITMDecoderForceSync(struct ITMDecoder *i, BOOL isSynced);
-BOOL ITMGetPacket(struct ITMDecoder *i, struct ITMPacket *p);
+BOOL ITMGetSWPacket(struct ITMDecoder *i, struct ITMSWPacket *p);
+BOOL ITMGetHWPacket(struct ITMDecoder *i, struct ITMHWPacket *p);
 enum ITMPumpEvent ITMPump(struct ITMDecoder *i, uint8_t c);
 // ====================================================================================================
 #endif

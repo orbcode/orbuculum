@@ -18,7 +18,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#define VERSION "0.10"
+#define VERSION "0.11"
 
 #include <stdlib.h>
 #include <unistd.h>
@@ -50,6 +50,8 @@
 
 #define TRANSFER_SIZE (64)
 #define NUM_CHANNELS  32
+
+#define MAX_STRING_LENGTH (100)   // Maximum length that will be output from a fifo for a single event
 
 // Information for an individual channel
 struct SWchannel
@@ -88,7 +90,7 @@ struct
 {
   struct channelRuntime c[NUM_CHANNELS];
   struct ITMDecoder i;
-  struct ITMPacket h;
+  struct ITMSWPacket h;
   struct TPIUDecoder t;
   struct TPIUPacket p;
 } _r;
@@ -114,7 +116,9 @@ static void *_runFifo(void *arg)
 
 {
   struct _runFifoParams *params=(struct _runFifoParams *)arg;
-  char rxdata[TRANSFER_SIZE];
+  struct ITMSWPacket p;
+
+  char constructString[MAX_STRING_LENGTH];
   int fifo;
   int readDataLen, writeDataLen;
 
@@ -133,14 +137,16 @@ static void *_runFifo(void *arg)
 
       while (1)
 	{
-	  readDataLen=read(params->listenHandle,rxdata,TRANSFER_SIZE);
-	  if (readDataLen<=0)
+	  /* ....get the packet */
+	  readDataLen=read(params->listenHandle, &p, sizeof(struct ITMSWPacket));
+
+	  if (readDataLen!=sizeof(struct ITMSWPacket))
 	    {
 	      return NULL;
 	    }
 
-	  writeDataLen=write(fifo,rxdata,readDataLen);
-	  if (writeDataLen<=0)
+	  writeDataLen=snprintf(constructString,MAX_STRING_LENGTH,options.channel[params->portNo].presFormat,(*(uint32_t *)p.d));
+	  if (write(fifo,constructString,(writeDataLen<MAX_STRING_LENGTH)?writeDataLen:MAX_STRING_LENGTH)<=0)
 	    {
 	      break;
 	    }
@@ -209,16 +215,13 @@ static void _removeFifoTasks(void)
 void _handleSW(void)
 
 {
-  struct ITMPacket p;
-  int len;
-  char constructString[100];
+  struct ITMSWPacket p;
 
-  if (ITMGetPacket(&_r.i, &p))
+  if (ITMGetSWPacket(&_r.i, &p))
     {
       if ((p.srcAddr<NUM_CHANNELS) && (_r.c[p.srcAddr].handle))
 	{
-	  len=snprintf(constructString,100,options.channel[p.srcAddr].presFormat,(*(uint32_t *)p.d));
-	  write(_r.c[p.srcAddr].handle,constructString,len);
+	  write(_r.c[p.srcAddr].handle,&p,sizeof(struct ITMSWPacket));
 	}
     }
 }
@@ -226,9 +229,9 @@ void _handleSW(void)
 void _handleHW(void)
 
 {
-  struct ITMPacket p;
+  struct ITMSWPacket p;
 
-  if (ITMGetPacket(&_r.i, &p))
+  if (ITMGetSWPacket(&_r.i, &p))
     {
       printf("HW %02x\n",p.srcAddr);
     }

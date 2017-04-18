@@ -1,5 +1,5 @@
 #VERBOSE=1
-DEBUG=1
+#DEBUG=1
 
 ##########################################################################
 # User configuration and firmware specific object files	
