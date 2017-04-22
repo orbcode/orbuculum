@@ -506,14 +506,13 @@ int _processOptions(int argc, char *argv[])
 	{
 	  fprintf(stdout,"Input File: %s\n",options.file);
 	}
-    }
-
-  fprintf(stdout,"Channels  :\n");
-  for (int g=0; g<NUM_CHANNELS; g++)
-    {
-      if (options.channel[g].chanName)
+      fprintf(stdout,"Channels  :\n");
+      for (int g=0; g<NUM_CHANNELS; g++)
 	{
-	  fprintf(stdout,"        %02d [%s] [%s]\n",g,GenericsEscape(options.channel[g].presFormat),options.channel[g].chanName);
+	  if (options.channel[g].chanName)
+	    {
+	      fprintf(stdout,"        %02d [%s] [%s]\n",g,GenericsEscape(options.channel[g].presFormat),options.channel[g].chanName);
+	    }
 	}
     }
   if ((options.file) && (options.port))
