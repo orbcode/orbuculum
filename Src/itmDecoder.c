@@ -18,11 +18,18 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+/*
+ * Implementation of ITM/DWT decode according to the specification in Appendix E
+ * of the ARMv7-M Architecture Refrence Manual document available 
+ * from https://web.eecs.umich.edu/~prabal/teaching/eecs373-f10/readings/ARMv7-M_ARM.pdf
+ */
 #include <stdio.h>
 #include <sys/time.h>
 #include <string.h>
 #include "itmDecoder.h"
-#define SYNCPATTERN 0x00000080
+#define SYNCMASK    0xFFFFFFFFFFFF
+#define SYNCPATTERN 0x000000000080
+#define MAX_PACKET  (5)
 
 // Define this to get transitions printed out
 // #define PRINT_TRANSITIONS
@@ -32,8 +39,9 @@ void ITMDecoderInit(struct ITMDecoder *i, BOOL isLiveSet)
 /* Reset a ITMDecoder instance */
 
 {
-  i->syncStat=0xFFFFFFFF;
+  i->syncStat=SYNCMASK;
   i->p=ITM_UNSYNCED;
+  i->currentCount=0;
 }
 // ====================================================================================================
 void ITMDecoderForceSync(struct ITMDecoder *i, BOOL isSynced)
@@ -44,6 +52,7 @@ void ITMDecoderForceSync(struct ITMDecoder *i, BOOL isSynced)
   if (isSynced)
     {
       i->p=ITM_IDLE;
+      i->currentCount=0;
     }
   else
     {
@@ -61,7 +70,8 @@ BOOL ITMGetSWPacket(struct ITMDecoder *i, struct ITMSWPacket *p)
     return FALSE;
 
   p->srcAddr=i->srcAddr;
-  p->len=i->targetCount;
+  p->len=i->currentCount;
+  i->currentCount=0;
   memcpy(p->d,i->rxPacket,p->len);
   memset(&p->d[p->len],0,ITM_MAX_PACKET-p->len);
   return TRUE;
@@ -80,11 +90,13 @@ enum ITMPumpEvent ITMPump(struct ITMDecoder *i, uint8_t c)
   enum ITMPumpEvent retVal = ITM_EV_NONE;
 
   i->syncStat=(i->syncStat<<8)|c;
-  if (i->syncStat==SYNCPATTERN)
+  if (((i->syncStat)&SYNCMASK)==SYNCPATTERN)
     {
-      i->p=ITM_IDLE;
-      return ITM_EV_SYNCED;
+      retVal=ITM_EV_SYNCED;
+      newState=ITM_IDLE;
     }
+  else
+    {
 
   switch (i->p)
     {
@@ -93,6 +105,12 @@ enum ITMPumpEvent ITMPump(struct ITMDecoder *i, uint8_t c)
       break;
       // -----------------------------------------------------
     case ITM_IDLE:
+      // **********
+      if (!c)
+	{
+	  break;
+	}
+      // **********
       if (c==0b01110000)
 	{
 	  /* This is an overflow packet */
@@ -106,14 +124,24 @@ enum ITMPumpEvent ITMPump(struct ITMDecoder *i, uint8_t c)
 	  /* This is a timestamp packet */
 	  i->rxPacket[0]=c;
 
+	  newState=ITM_TS;
+	  retVal=ITM_EV_NONE;
+	  break;
+	}
+      // **********
+      if (c&0x08)
+	{
+	  /* Extension Packet */
+	  i->currentCount=1; /* The '1' is deliberate. */
+	  i->rxPacket[0]=c;
+
 	  if (!(c&0x80))
 	    {
 	      /* A one byte output */
-	      return ITM_EV_TS_PACKET_RXED;
+	      retVal=ITM_EV_XTN_PACKET_RXED;
+	      break;
 	    }
-
-	  newState=ITM_TS;
-	  retVal=ITM_EV_NONE;
+	  newState=ITM_EXTENSION;
 	  break;
 	}
       // **********
@@ -128,11 +156,12 @@ enum ITMPumpEvent ITMPump(struct ITMDecoder *i, uint8_t c)
 	{
 	  /* This is a SW packet */
 	  if ((i->targetCount=c&0x03)==3)
-	    i->targetCount=4;
+	    {
+	      i->targetCount=4;
+	    }
 	  i->srcAddr=(c&0xF8)>>3;
 	  i->currentCount=0;
 	  newState=ITM_SW;
-	  retVal=ITM_EV_NONE;
 	  break;
 	}
       // **********
@@ -140,20 +169,21 @@ enum ITMPumpEvent ITMPump(struct ITMDecoder *i, uint8_t c)
 	{
 	  /* This is a HW packet */
 	  if ((i->targetCount=c&0x03)==3)
-	    i->targetCount=4;
+	    {
+	      i->targetCount=4;
+	    }
 	  i->srcAddr=(c&0xF8)>>3;
 	  i->currentCount=0;
 	  newState=ITM_HW;
-	  retVal=ITM_EV_NONE;
 	  break;
 	}
       // **********
+      fprintf(stderr,"General error for packet type %02x\n",c);
       retVal=ITM_EV_ERROR;
       break;
       // -----------------------------------------------------
     case ITM_SW:
-	  i->rxPacket[i->currentCount]=c;
-	  i->currentCount++;
+	  i->rxPacket[i->currentCount++]=c;
 
 	  if (i->currentCount>=i->targetCount)
 	    {
@@ -180,26 +210,31 @@ enum ITMPumpEvent ITMPump(struct ITMDecoder *i, uint8_t c)
       // -----------------------------------------------------
     case ITM_TS:
       i->rxPacket[i->currentCount++]=c;
-      if (!(c&0x80))
+      if ((!(c&0x80)) || (i->currentCount>=MAX_PACKET))
 	{
 	  /* We are done */
+	  newState=ITM_IDLE;
 	  retVal=ITM_EV_TS_PACKET_RXED;
 	  break;
 	}
-
-      if (i->currentCount>4)
+      break;
+      // -----------------------------------------------------
+    case ITM_EXTENSION:
+      i->rxPacket[i->currentCount++]=c;
+      if ((!(c&0x80)) || (i->currentCount>=MAX_PACKET))
 	{
-	  /* Something went badly wrong */
-	  newState=ITM_UNSYNCED;
-	  retVal=ITM_EV_UNSYNCED;
+	  /* We are done */
+	  newState=ITM_IDLE;
+	  retVal=ITM_EV_XTN_PACKET_RXED;
 	  break;
 	}
-      retVal=ITM_EV_NONE;	  
       break;
       // -----------------------------------------------------
     }
+    }
 #ifdef PRINT_TRANSITIONS
-  printf("%02x %s --> %s\n",c,_protoNames[i->p],_protoNames[newState]);
+  if ((i->p!=ITM_UNSYNCED) || (newState!=ITM_UNSYNCED))
+    printf("%02x %s --> %s(%d)\n",c,_protoNames[i->p],_protoNames[newState],i->targetCount);
 #endif
   i->p=newState;
   return retVal;

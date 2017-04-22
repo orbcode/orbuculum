@@ -1,8 +1,11 @@
 Orbuculum - ARM Cortex SWO Output Processing Tools
 ==================================================
 
-(An Orbuculum is a Crystal Ball, used for seeing things that would 
- be otherwise invisible, with a nodding reference to BlackMagic...)
+An Orbuculum is a Crystal Ball, used for seeing things that would 
+ be otherwise invisible. A  nodding reference to (the) BlackMagic (debug probe).
+
+This program is in heavy development. Check back frequently for new versions 
+with additional functionality.
 
 On a CORTEX M Series device SWO is a datastream that comes out of a
 single pin when the debug interface is in SWD mode. It can be encoded
@@ -46,15 +49,29 @@ can do that via gdb direct memory accesses, or from program code.
 An example for a STM32F103 (it'll be pretty much the same for any
 other M3, but the dividers will be different);
 
+    void GenericsConfigureTracing(uint32_t itmChannel)
+
+    /* Setup tracing....this will be extended and made more configurable shortly */
+
+    {
     /* STM32 specific configuration to enable the TRACESWO IO pin */
     RCC->APB2ENR |= RCC_APB2ENR_AFIOEN;
     AFIO->MAPR |= (2 << 24); // Disable JTAG to release TRACESWO
     DBGMCU->CR |= DBGMCU_CR_TRACE_IOEN; // Enable IO trace pins for Async trace
     /* End of STM32 Specific instructions */
 
-    *((volatile unsigned *)(0xE0040010)) =31;  // Output bits at 72000000/(31+1)=2.250MHz.
+    *((volatile unsigned *)(0xE0040010)) = 31;  // Output bits at 72000000/(31+1)=2.250MHz.
     *((volatile unsigned *)(0xE00400F0)) = 2;  // Use Async mode pin protocol
-    *((volatile unsigned *)(0xE0040304)) = 0x102; // Use TPIU formatter and flush
+
+    if (!itmChannel)
+        {
+            *((volatile unsigned *)(0xE0040304)) = 0;  // Bypass the TPIU and send output directly
+        }
+    else
+        {
+            *((volatile unsigned *)(0xE0040304)) = 0x102; // Use TPIU formatter and flush
+        }
+
     /* Configure Trace Port Interface Unit */
     CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk; // Enable access to registers
 
@@ -64,7 +81,7 @@ other M3, but the dividers will be different);
               | (0 << DWT_CTRL_POSTPRESET_Pos) // Postscaler for PC sampling
                                                // Divider = value + 1
               | (1 << DWT_CTRL_PCSAMPLENA_Pos) // Enable PC sampling
-              | (2 << DWT_CTRL_SYNCTAP_Pos)    // Sync packet interval
+              | (3 << DWT_CTRL_SYNCTAP_Pos)    // Sync packet interval
                                                // 0 = Off, 1 = Every 2^23 cycles,
                                                // 2 = Every 2^25, 3 = Every 2^27
               | (1 << DWT_CTRL_EXCTRCENA_Pos)  // Enable exception trace
@@ -72,7 +89,7 @@ other M3, but the dividers will be different);
 
     /* Configure instrumentation trace macroblock */
     ITM->LAR = ETM_LAR_KEY;
-    ITM->TCR = 0x00010005;
+    ITM->TCR = 0x00000005|((itmChannel&0x7f)<<16);  /* Set trace bus ID and enable ITM */
     ITM->TER = 0xFFFFFFFF; // Enable all stimulus ports
 
     /* Configure embedded trace macroblock */
@@ -86,6 +103,7 @@ other M3, but the dividers will be different);
     ETM->FFRR = ETM_FFRR_EXCLUDE; // Stalling always enabled
     ETM->FFLR = 24; // Stall when less than N bytes free in FIFO (range 1..24)
                     // Larger values mean less latency in trace, but more stalls.
+    }
 
 Building
 ========
@@ -136,6 +154,37 @@ world). The intention being to give you streams whenever it can get
 them.  It does _not_ require gdb to be running, but you may need a 
 gdb session to start the output.  BMP needs traceswo to be turned on
 at the command line before it capture data from the port, for example.
+
+Command Line Options
+====================
+
+Specific command line options of note are;
+
+ -b: <basedir> for channels. Note that this is actually just leading text on the channel
+     name, so if you put xyz/chan then all ITM software channels will end up in a directory
+     xyz, prepended with chan.  If xyz doesn't exist, then the channel creation will 
+     fail silently.
+
+ -c: <Number>,<Name>,<Format> of channel to populate (repeat per channel) using printf
+     formatting.
+
+ -h: Brief help.
+
+ -f: <filename> Take input from specified file.
+
+ -i: <channel> Set Channel for ITM in TPIU decode (defaults to 1). Note that the TPIU must
+     be in use for this to make sense.  If you call the GenericsConfigureTracing
+     routine above with the ITM Channel set to 0 then the TPIU will be bypassed.
+
+ -p: <serialPort> to use. If not specified then the program defaults to Blackmagic probe.
+
+ -s: <serialSpeed> to use. Only relevant when using the serial interface.
+
+ -t: Use TPIU decoder.  This will not sync if TPIU is not configured, so you won't see
+     packets in that case.
+
+ -v: Verbose mode.
+
 
 Reliability
 ===========

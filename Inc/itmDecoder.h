@@ -38,12 +38,13 @@ enum ITMPumpEvent {ITM_EV_NONE,
 		   ITM_EV_TS_PACKET_RXED,
 		   ITM_EV_SW_PACKET_RXED,
 		   ITM_EV_HW_PACKET_RXED, 
+		   ITM_EV_XTN_PACKET_RXED,
 		   ITM_EV_OVERFLOW, 
 		   ITM_EV_ERROR
 		   };
 
-enum _protoState {ITM_UNSYNCED, ITM_IDLE, ITM_TS, ITM_SW, ITM_HW};
-#define PROTO_NAME_LIST "UNSYNCED", "IDLE", "TS", "SW", "HW"
+enum _protoState {ITM_UNSYNCED, ITM_IDLE, ITM_TS, ITM_SW, ITM_HW, ITM_EXTENSION};
+#define PROTO_NAME_LIST "UNSYNCED", "IDLE", "TS", "SW", "HW", "EXTENSION"
 
 /* Type of the packet received over the link */
 struct ITMSWPacket
@@ -70,7 +71,7 @@ struct ITMDecoder
   int targetCount;   /* Number of bytes to be collected */
   int currentCount;  /* Number of bytes that have been collected */
   uint8_t rxPacket[ITM_MAX_PACKET]; /* Packet in reception */
-  uint32_t syncStat; /* Sync monitor status */
+  uint64_t syncStat; /* Sync monitor status */
   int srcAddr;       /* Source address for this packet */
 
   enum _protoState p; /* Current state of the receiver */

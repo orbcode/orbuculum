@@ -39,7 +39,6 @@ struct TPIUDecoder {
   uint8_t byteCount;
   uint8_t currentStream;
   uint32_t syncMonitor;
-  int32_t delayedStreamChange;
   struct timeval lastPacket;
   BOOL isLive;
   uint8_t rxedPacket[TPIU_PACKET_LEN];

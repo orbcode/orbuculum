@@ -66,6 +66,7 @@ struct
   /* Config information */
   BOOL verbose;
   BOOL useTPIU;
+  uint32_t tpiuITMChannel;
 
   /* Sink information */
   struct SWchannel channel[NUM_CHANNELS];
@@ -75,7 +76,7 @@ struct
   char *port;
   char *file;
   int speed;
-} options = {.chanPath="", .speed=115200};
+} options = {.chanPath="", .speed=115200, .tpiuITMChannel=1};
 
 
 // Runtime state
@@ -212,12 +213,12 @@ static void _removeFifoTasks(void)
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
-void _handleSW(void)
+void _handleSW(struct ITMDecoder *i)
 
 {
   struct ITMSWPacket p;
 
-  if (ITMGetSWPacket(&_r.i, &p))
+  if (ITMGetSWPacket(i, &p))
     {
       if ((p.srcAddr<NUM_CHANNELS) && (_r.c[p.srcAddr].handle))
 	{
@@ -226,21 +227,41 @@ void _handleSW(void)
     }
 }
 // ====================================================================================================
-void _handleHW(void)
+void _handleHW(struct ITMDecoder *i)
 
 {
   struct ITMSWPacket p;
 
-  if (ITMGetSWPacket(&_r.i, &p))
+  if (ITMGetSWPacket(i, &p))
     {
       printf("HW %02x\n",p.srcAddr);
     }
 }
 // ====================================================================================================
-void _handleTS(void)
+void _handleXTN(struct ITMDecoder *i)
 
 {
-  printf("Timestamp\n");
+  struct ITMSWPacket p;
+
+  if (ITMGetSWPacket(i, &p))
+    {
+      printf("XTN len=%d (%02x)\n",p.len,p.d[0]);
+    }
+  else
+    {
+      printf("GET FAILED\n");
+    }
+}
+// ====================================================================================================
+void _handleTS(struct ITMDecoder *i)
+
+{
+  struct ITMSWPacket p;
+
+  if (ITMGetSWPacket(i, &p))
+    {
+      printf("Timestamp (len=%d)\n",p.len);
+    }
 }
 // ====================================================================================================
 void _itmPumpProcess(char c)
@@ -280,16 +301,21 @@ void _itmPumpProcess(char c)
       break;
 
     case ITM_EV_TS_PACKET_RXED:
-      _handleTS();
+      _handleTS(&_r.i);
       break;
 
     case ITM_EV_SW_PACKET_RXED:
-      _handleSW();
+      _handleSW(&_r.i);
       break;
 
     case ITM_EV_HW_PACKET_RXED:
-      _handleHW();
+      _handleHW(&_r.i);
       break;
+
+    case ITM_EV_XTN_PACKET_RXED:
+      _handleXTN(&_r.i);
+      break;
+
     }
 }
 // ====================================================================================================
@@ -307,6 +333,9 @@ void _protocolPump(uint8_t c)
       switch (TPIUPump(&_r.t,c))
 	{
 	case TPIU_EV_SYNCED:
+	  ITMDecoderForceSync(&_r.i, TRUE);
+	  break;
+
 	case TPIU_EV_RXING:
 	case TPIU_EV_NONE: 
 	  break;
@@ -316,24 +345,24 @@ void _protocolPump(uint8_t c)
 	  break;
 
 	case TPIU_EV_RXEDPACKET:
-	  TPIUGetPacket(&_r.t, &_r.p);
+	  if (!TPIUGetPacket(&_r.t, &_r.p))
+	    {
+	      fprintf(stderr,"TPIUGetPacket fell over\n");
+	    }
 	  for (uint32_t g=0; g<_r.p.len; g++)
 	    {
-	      switch (_r.p.packet[g].s)
+	      if (_r.p.packet[g].s == options.tpiuITMChannel)
 		{
-		case 0: /* Channel 0 - to be ignored */
-		  break;
-
-		case 1: /* SWI Channel */
 		  _itmPumpProcess(_r.p.packet[g].d);
-		  break;
+		  continue;
+		}
 
-		default: /* No idea what this was */
+	      if ((_r.p.packet[g].s != 0) && (options.verbose))
+		{
 		  if (options.verbose)
 		    {
-		      printf("Unknown channel %02x\n",_r.p.packet[g].s);
+		      printf("Unknown TPIU channel %02x\n",_r.p.packet[g].s);
 		    }
-		  break;
 		}
 	    }
 	  break;
@@ -363,6 +392,7 @@ void _printHelp(char *progName)
   printf("        c: <Number>,<Name>,<Format> of channel to populate (repeat per channel)\n");
   printf("        h: This help\n");
   printf("        f: <filename> Take input from specified file\n");
+  printf("        i: <channel> Set ITM Channel in TPIU decode (defaults to 1)\n");
   printf("        p: <serialPort> to use\n");
   printf("        s: <serialSpeed> to use\n");
   printf("        t: Use TPIU decoder\n");
@@ -378,7 +408,7 @@ int _processOptions(int argc, char *argv[])
   char *chanIndex;
 #define DELIMITER ','
 
-  while ((c = getopt (argc, argv, "vts:p:f:hc:b:")) != -1)
+  while ((c = getopt (argc, argv, "vts:i:p:f:hc:b:")) != -1)
     switch (c)
       {
 	/* Config Information */
@@ -387,6 +417,9 @@ int _processOptions(int argc, char *argv[])
         break;
       case 't':
 	options.useTPIU=TRUE;
+	break;
+      case 'i':
+	options.tpiuITMChannel=atoi(optarg);
 	break;
 
 	/* Source information */
@@ -399,7 +432,6 @@ int _processOptions(int argc, char *argv[])
       case 's':
 	options.speed=atoi(optarg);
 	break;
-
       case 'h':
 	_printHelp(argv[0]);
 	return FALSE;
@@ -448,6 +480,12 @@ int _processOptions(int argc, char *argv[])
         return FALSE;
       }
 
+  if ((options.useTPIU) && (!options.tpiuITMChannel))
+    {
+      fprintf(stderr,"TPIU set for use but no channel set for ITM output\n");
+      return FALSE;
+    }
+
   if (options.verbose)
     {
       fprintf(stdout,"Orbuculum V" VERSION " (Git %08X %s, Built " BUILD_DATE ")\n", GIT_HASH,(GIT_DIRTY?"Dirty":"Clean"));
@@ -460,6 +498,10 @@ int _processOptions(int argc, char *argv[])
 	  fprintf(stdout,"Serial Port: %s\nSerial Speed: %d\n",options.port,options.speed);    
 	}
 
+      if (options.useTPIU)
+	{
+	  fprintf(stdout,"Using TPIU: TRUE (ITM on channel %d)\n",options.tpiuITMChannel);
+	}
       if (options.file)
 	{
 	  fprintf(stdout,"Input File: %s\n",options.file);
@@ -524,7 +566,6 @@ int usbFeeder(void)
 	      _protocolPump(*c++);
 	    }
 	}
-
       libusb_close(handle);
     }
 }
@@ -611,7 +652,7 @@ int fileFeeder(void)
 
   if (options.verbose)
     {
-      fprintf(stderr,"Reading from file\n");
+      fprintf(stdout,"Reading from file\n");
     }
 
   while ((t=read(f,cbw,TRANSFER_SIZE))>0)
@@ -622,7 +663,10 @@ int fileFeeder(void)
 	  _protocolPump(*c++);
 	}
     }
-  printf("File read\b");
+  if (options.verbose)
+    {
+      fprintf(stdout,"File read\b");
+    }
   close(f);
   return TRUE;
 }
