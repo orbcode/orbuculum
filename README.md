@@ -4,12 +4,12 @@ Orbuculum - ARM Cortex SWO Output Processing Tools
 An Orbuculum is a Crystal Ball, used for seeing things that would 
  be otherwise invisible. A  nodding reference to (the) BlackMagic (debug probe).
 
-[[[This program is in heavy development. Check back frequently for new versions 
+*This program is in heavy development. Check back frequently for new versions 
 with additional functionality. The current status (30th April) is that ITM
 SW logging is working, and HW tracing (Watchpoints, Timestamps, PC Sampling
 etc.) is implemented but untested. You will need to enable PRINT_EXPERIMENTAL
 in `orbuculum.c` to see them...but they're not ready for prime time yet, mostly
-because I haven't figured out how to present them.]]]
+because I haven't figured out how to present them.*
 
 On a CORTEX M Series device SWO is a datastream that comes out of a
 single pin when the debug interface is in SWD mode. It can be encoded
