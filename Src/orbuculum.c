@@ -18,7 +18,8 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#define VERSION "0.11"
+#define VERSION "0.12"
+//#define PRINT_EXPERIMENTAL
 
 #include <stdlib.h>
 #include <unistd.h>
@@ -91,7 +92,7 @@ struct
 {
   struct channelRuntime c[NUM_CHANNELS];
   struct ITMDecoder i;
-  struct ITMSWPacket h;
+  struct ITMPacket h;
   struct TPIUDecoder t;
   struct TPIUPacket p;
 } _r;
@@ -117,7 +118,7 @@ static void *_runFifo(void *arg)
 
 {
   struct _runFifoParams *params=(struct _runFifoParams *)arg;
-  struct ITMSWPacket p;
+  struct ITMPacket p;
 
   char constructString[MAX_STRING_LENGTH];
   int fifo;
@@ -139,9 +140,9 @@ static void *_runFifo(void *arg)
       while (1)
 	{
 	  /* ....get the packet */
-	  readDataLen=read(params->listenHandle, &p, sizeof(struct ITMSWPacket));
+	  readDataLen=read(params->listenHandle, &p, sizeof(struct ITMPacket));
 
-	  if (readDataLen!=sizeof(struct ITMSWPacket))
+	  if (readDataLen!=sizeof(struct ITMPacket))
 	    {
 	      return NULL;
 	    }
@@ -207,6 +208,92 @@ static void _removeFifoTasks(void)
     }
 }
 // ====================================================================================================
+void _handleException(struct ITMDecoder *i, struct ITMPacket *p)
+
+{
+  uint32_t exceptionNumber=((p->d[1]&0x01)<<8)|p->d[0];
+  uint32_t eventType=p->d[1]>>4;
+
+  const char *exNames[]={"Thread","Reset","NMI","HardFault","MemManage","BusFault","UsageFault","UNKNOWN_7",
+      "UNKNOWN_8", "UNKNOWN_9", "UNKNOWN_10", "SVCall", "Debug Monitor", "UNKNOWN_13", "PendSV", "SysTick"};
+  const char *exEvent[]={"Enter","Exit","Resume"};
+#ifdef PRINT_EXPERIMENTAL
+  printf("%lld,%s,%s\n",i->timeStamp,exEvent[eventType],exNames[exceptionNumber]);
+#endif
+}
+// ====================================================================================================
+void _handleDWTEvent(struct ITMDecoder *i, struct ITMPacket *p)
+
+{
+  uint32_t event=p->d[1]&0x2F;
+  const char *evName[]={"CPI","Exc","Sleep","LSU","Fold","Cyc"};
+
+#ifdef PRINT_EXPERIMENTAL
+  printf("%lld,",i->timeStamp);
+  for (uint32_t i=0; i<6; i++)
+    {
+      if (event&(1<<i))
+	{
+	  printf("%s ",evName[event]);
+	}
+    }
+  printf("\n");
+#endif
+}
+// ====================================================================================================
+void _handlePCSample(struct ITMDecoder *i, struct ITMPacket *p)
+
+{
+  uint32_t pc=(p->d[3]<<24)|(p->d[2]<<16)|(p->d[1]<<8)|(p->d[0]);
+#ifdef PRINT_EXPERIMENTAL
+  printf("%lld,0x%08x\n",i->timeStamp,pc);
+#endif
+}
+// ====================================================================================================
+void _handleDataRWWP(struct ITMDecoder *i, struct ITMPacket *p)
+
+{
+  uint32_t comp=(p->d[0]&0x30)>>4; 
+  BOOL isWrite = ((p->d[0]&0x08)!=0);
+  uint32_t data;
+  
+  switch(p->len)
+    {
+    case 1:
+      data=p->d[1];
+      break;
+    case 2:
+      data=(p->d[1])|((p->d[2])<<8);
+      break;
+  default:
+    data=(p->d[1])|((p->d[2])<<8)|((p->d[3])<<16)|((p->d[4])<<24);
+    break;
+    }
+#ifdef PRINT_EXPERIMENTAL
+  printf("Watchpoint %d %s 0x%x\n",comp,isWrite?"Write":"Read",data);
+#endif
+}
+// ====================================================================================================
+void _handleDataAccessWP(struct ITMDecoder *i, struct ITMPacket *p)
+
+{
+  uint32_t comp=(p->d[0]&0x30)>>4; 
+  uint32_t data=(p->d[1])|((p->d[2])<<8)|((p->d[3])<<16)|((p->d[4])<<24);
+#ifdef PRINT_EXPERIMENTAL
+  printf("Access Watchpoint %d 0x%08x\n",comp,data);
+#endif
+}
+// ====================================================================================================
+void _handleDataOffsetWP(struct ITMDecoder *i, struct ITMPacket *p)
+
+{
+  uint32_t comp=(p->d[0]&0x30)>>4; 
+  uint32_t offset=(p->d[1])|((p->d[2])<<8);
+#ifdef PRINT_EXPERIMENTAL
+  printf("Offset Watchpoint %d 0x????%04x\n",comp,offset);
+#endif
+}
+// ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
 // Handlers for each message type
@@ -216,13 +303,13 @@ static void _removeFifoTasks(void)
 void _handleSW(struct ITMDecoder *i)
 
 {
-  struct ITMSWPacket p;
+  struct ITMPacket p;
 
-  if (ITMGetSWPacket(i, &p))
+  if (ITMGetPacket(i, &p))
     {
       if ((p.srcAddr<NUM_CHANNELS) && (_r.c[p.srcAddr].handle))
 	{
-	  write(_r.c[p.srcAddr].handle,&p,sizeof(struct ITMSWPacket));
+	  write(_r.c[p.srcAddr].handle,&p,sizeof(struct ITMPacket));
 	}
     }
 }
@@ -230,20 +317,49 @@ void _handleSW(struct ITMDecoder *i)
 void _handleHW(struct ITMDecoder *i)
 
 {
-  struct ITMSWPacket p;
+  struct ITMPacket p;
+  ITMGetPacket(i, &p);
 
-  if (ITMGetSWPacket(i, &p))
+  switch (p.srcAddr)
     {
-      printf("HW %02x\n",p.srcAddr);
+      // --------------
+    case 0: /* DWT Event */
+      break;
+      // --------------
+    case 1: /* Exception */
+      _handleException(i, &p);
+      break;
+      // --------------
+    case 2: /* PC Counter Sample */
+      _handlePCSample(i,&p);
+      break;
+      // --------------
+    default:
+      if ((p.d[0]&0xC4) == 0x84)
+	{
+	  _handleDataRWWP(i, &p);
+	}
+      else
+	if ((p.d[0]&0xCF) == 0x47)
+	  {
+	    _handleDataAccessWP(i, &p);
+	  }
+	else
+	  if ((p.d[0]&0xCF) == 0x4E)	  
+	    {
+	      _handleDataOffsetWP(i, &p);
+	    }
+      break;
+      // --------------
     }
 }
 // ====================================================================================================
 void _handleXTN(struct ITMDecoder *i)
 
 {
-  struct ITMSWPacket p;
+  struct ITMPacket p;
 
-  if (ITMGetSWPacket(i, &p))
+  if (ITMGetPacket(i, &p))
     {
       printf("XTN len=%d (%02x)\n",p.len,p.d[0]);
     }
@@ -256,11 +372,34 @@ void _handleXTN(struct ITMDecoder *i)
 void _handleTS(struct ITMDecoder *i)
 
 {
-  struct ITMSWPacket p;
+  struct ITMPacket p;
+  uint32_t stamp=0;
 
-  if (ITMGetSWPacket(i, &p))
+  if (ITMGetPacket(i, &p))
     {
-      printf("Timestamp (len=%d)\n",p.len);
+      if (!(p.d[0]&0x80))
+	{
+	  stamp=p.d[0]>>4;
+	}
+      else
+	{
+	  i->timeStatus=(p.d[0]&0x30) >> 4;
+	  stamp=(p.d[1])&0x7f;
+	  if (p.len>2)
+	    {
+	      stamp|=(p.d[2])<<7;
+	      if (p.len>3)
+		{
+		  stamp|=(p.d[3]&0x7F)<<14;
+		  if (p.len>4)
+		    {
+		      stamp|=(p.d[4]&0x7f)<<21;
+		    }
+		}
+	    }
+	}
+
+      i->timeStamp+=stamp;
     }
 }
 // ====================================================================================================
@@ -485,6 +624,10 @@ int _processOptions(int argc, char *argv[])
       fprintf(stderr,"TPIU set for use but no channel set for ITM output\n");
       return FALSE;
     }
+
+#ifdef PRINT_EXPERIMENTAL
+  printf("*****Experimental and part developed features enabled\n");
+#endif
 
   if (options.verbose)
     {

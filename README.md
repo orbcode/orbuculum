@@ -4,8 +4,12 @@ Orbuculum - ARM Cortex SWO Output Processing Tools
 An Orbuculum is a Crystal Ball, used for seeing things that would 
  be otherwise invisible. A  nodding reference to (the) BlackMagic (debug probe).
 
-This program is in heavy development. Check back frequently for new versions 
-with additional functionality.
+[[[This program is in heavy development. Check back frequently for new versions 
+with additional functionality. The current status (30th April) is that ITM
+SW logging is working, and HW tracing (Watchpoints, Timestamps, PC Sampling
+etc.) is implemented but untested. You will need to enable PRINT_EXPERIMENTAL
+in `orbuculum.c` to see them...but they're not ready for prime time yet, mostly
+because I haven't figured out how to present them.]]]
 
 On a CORTEX M Series device SWO is a datastream that comes out of a
 single pin when the debug interface is in SWD mode. It can be encoded
@@ -49,10 +53,7 @@ can do that via gdb direct memory accesses, or from program code.
 An example for a STM32F103 (it'll be pretty much the same for any
 other M3, but the dividers will be different);
 
-    void GenericsConfigureTracing(uint32_t itmChannel)
-
-    /* Setup tracing....this will be extended and made more configurable shortly */
-
+    void GenericsConfigureTracing(uint32_t itmChannel, uint32_t sampleInterval, uint32_t tsPrescale)
     {
     /* STM32 specific configuration to enable the TRACESWO IO pin */
     RCC->APB2ENR |= RCC_APB2ENR_AFIOEN;
@@ -76,20 +77,23 @@ other M3, but the dividers will be different);
     CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk; // Enable access to registers
 
     /* Configure PC sampling and exception trace  */
-    DWT->CTRL = (1 << DWT_CTRL_CYCTAP_Pos)     // Prescaler for PC sampling
-                                               // 0 = x32, 1 = x512
-              | (0 << DWT_CTRL_POSTPRESET_Pos) // Postscaler for PC sampling
-                                               // Divider = value + 1
-              | (1 << DWT_CTRL_PCSAMPLENA_Pos) // Enable PC sampling
-              | (3 << DWT_CTRL_SYNCTAP_Pos)    // Sync packet interval
-                                               // 0 = Off, 1 = Every 2^23 cycles,
-                                               // 2 = Every 2^25, 3 = Every 2^27
-              | (1 << DWT_CTRL_EXCTRCENA_Pos)  // Enable exception trace
-              | (1 << DWT_CTRL_CYCCNTENA_Pos); // Enable cycle counter
+    DWT->CTRL = /* CYCEVTEN */ (1<<22) |
+                /* Sleep event overflow */ (1<<19)  |
+                /* Enable Exception Trace */ (1 << 16) |
+                /* PC Sample event */  (1<<12) |
+                /* Sync Packet Interval */ ((3&0x03) << 10) | /* 0 = Off, 1 = 2^23, 2 = Every 2^25, 3 = 2^27 */
+                /* CYCTap position */ (1 << 9) |  /* 0 = x32, 1=x512 */
+                /* Postscaler for PC sampling */ ((sampleInterval&0x0f) << 1) | /* Divider = value + 1 */
+                /* CYCCnt Enable */ (1 << 0);
 
     /* Configure instrumentation trace macroblock */
     ITM->LAR = ETM_LAR_KEY;
-    ITM->TCR = 0x00000005|((itmChannel&0x7f)<<16);  /* Set trace bus ID and enable ITM */
+    ITM->TCR = /* DWT Stimulus */ (1<<3)|
+               /* ITM Enable */   (1<<0)|
+               /* SYNC Enable */  (1<<2)|
+               /* TS Enable */    (1<<1)|
+               /* TC Prescale */  ((tsPrescale&0x03)<<8) |
+                ((itmChannel&0x7f)<<16);  /* Set trace bus ID and enable ITM */
     ITM->TER = 0xFFFFFFFF; // Enable all stimulus ports
 
     /* Configure embedded trace macroblock */

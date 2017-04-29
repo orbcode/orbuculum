@@ -60,7 +60,7 @@ void ITMDecoderForceSync(struct ITMDecoder *i, BOOL isSynced)
     }
 }
 // ====================================================================================================
-BOOL ITMGetSWPacket(struct ITMDecoder *i, struct ITMSWPacket *p)
+BOOL ITMGetPacket(struct ITMDecoder *i, struct ITMPacket *p)
 
 /* Copy received packet into transfer buffer, and reset receiver */
 

@@ -47,7 +47,7 @@ enum _protoState {ITM_UNSYNCED, ITM_IDLE, ITM_TS, ITM_SW, ITM_HW, ITM_EXTENSION}
 #define PROTO_NAME_LIST "UNSYNCED", "IDLE", "TS", "SW", "HW", "EXTENSION"
 
 /* Type of the packet received over the link */
-struct ITMSWPacket
+struct ITMPacket
 
 {
   uint8_t srcAddr;
@@ -56,18 +56,14 @@ struct ITMSWPacket
   uint8_t d[ITM_MAX_PACKET];
 };
 
-struct ITMHWPacket
-
-{
-  uint8_t srcAddr;
-  
-  uint8_t len;
-  uint8_t d[ITM_MAX_PACKET];
-};
+enum timeDelay {TIME_CURRENT, TIME_DELAYED, EVENT_DELAYED, EVENT_AND_TIME_DELAYED};
 
 struct ITMDecoder
 
 {
+  enum timeDelay timeStatus;  /* Indicator of if this time is exact */
+  uint64_t timeStamp; /* Latest received time */
+
   int targetCount;   /* Number of bytes to be collected */
   int currentCount;  /* Number of bytes that have been collected */
   uint8_t rxPacket[ITM_MAX_PACKET]; /* Packet in reception */
@@ -80,8 +76,7 @@ struct ITMDecoder
 // ====================================================================================================
 void ITMDecoderInit(struct ITMDecoder *i, BOOL isLiveSet);
 void ITMDecoderForceSync(struct ITMDecoder *i, BOOL isSynced);
-BOOL ITMGetSWPacket(struct ITMDecoder *i, struct ITMSWPacket *p);
-BOOL ITMGetHWPacket(struct ITMDecoder *i, struct ITMHWPacket *p);
+BOOL ITMGetPacket(struct ITMDecoder *i, struct ITMPacket *p);
 enum ITMPumpEvent ITMPump(struct ITMDecoder *i, uint8_t c);
 // ====================================================================================================
 #endif
