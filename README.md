@@ -159,30 +159,36 @@ them.  It does _not_ require gdb to be running, but you may need a
 gdb session to start the output.  BMP needs traceswo to be turned on
 at the command line before it capture data from the port, for example.
 
+In addition to the direct fifos, Orbuculum exposes TCP port 3443 to which 
+network clients can connect. This port delivers raw TPIU frames to any
+client that is connected (and will shortly be used for other utilities in the
+suite like OrbCat and OrbTop). The practical limit to the number of clients that
+can connect is set by the speed of the host machine.
+
 Command Line Options
 ====================
 
 Specific command line options of note are;
 
- -b: <basedir> for channels. Note that this is actually just leading text on the channel
+ -b: [basedir] for channels. Note that this is actually just leading text on the channel
      name, so if you put xyz/chan then all ITM software channels will end up in a directory
      xyz, prepended with chan.  If xyz doesn't exist, then the channel creation will 
      fail silently.
 
- -c: <Number>,<Name>,<Format> of channel to populate (repeat per channel) using printf
+ -c: [Number],[Name],[Format] of channel to populate (repeat per channel) using printf
      formatting.
 
  -h: Brief help.
 
- -f: <filename> Take input from specified file.
+ -f: [filename] Take input from specified file.
 
- -i: <channel> Set Channel for ITM in TPIU decode (defaults to 1). Note that the TPIU must
+ -i: [channel] Set Channel for ITM in TPIU decode (defaults to 1). Note that the TPIU must
      be in use for this to make sense.  If you call the GenericsConfigureTracing
      routine above with the ITM Channel set to 0 then the TPIU will be bypassed.
 
- -p: <serialPort> to use. If not specified then the program defaults to Blackmagic probe.
+ -p: [serialPort] to use. If not specified then the program defaults to Blackmagic probe.
 
- -s: <serialSpeed> to use. Only relevant when using the serial interface.
+ -s: [serialSpeed] to use. Only relevant when using the serial interface.
 
  -t: Use TPIU decoder.  This will not sync if TPIU is not configured, so you won't see
      packets in that case.

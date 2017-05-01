@@ -19,7 +19,7 @@
  */
 
 #define VERSION "0.12"
-//#define PRINT_EXPERIMENTAL
+#define PRINT_EXPERIMENTAL
 
 #include <stdlib.h>
 #include <unistd.h>
@@ -36,12 +36,17 @@
 #include <limits.h>
 #include <termios.h>
 #include <pthread.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
 
 
 #include "git_version_info.h"
 #include "generics.h"
 #include "tpiuDecoder.h"
 #include "itmDecoder.h"
+
+/* Server port definition */
+#define SERVER_PORT 3443
 
 /* Descriptor information for BMP */
 #define VID       (0x1d50)
@@ -88,17 +93,38 @@ struct channelRuntime
   char *fifoName;
 };
 
+struct nwClient
+
+{
+  int handle;
+  pthread_t thread;
+  struct nwClient *nextClient;
+  struct nwClient *prevClient;
+};
+
+struct nwClientParams
+
+{
+  struct nwClient *client;
+  int portNo;
+  int listenHandle;
+};
+
+#define MAX_IP_PACKET_LEN (1500)
+
 struct
 {
   struct channelRuntime c[NUM_CHANNELS];
+  struct nwClient *firstClient;
+  pthread_t ipThread;
   struct ITMDecoder i;
   struct ITMPacket h;
   struct TPIUDecoder t;
   struct TPIUPacket p;
 } _r;
 
-/* Structure for parameters passed to a fifo thread */
-struct _runFifoParams 
+/* Structure for parameters passed to a task thread */
+struct _runThreadParams 
 
 {
   int portNo;
@@ -108,16 +134,18 @@ struct _runFifoParams
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
-// Internals
+// Mechanism for handling the set of Fifos
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
+
+
 static void *_runFifo(void *arg)
 
 /* This is the control loop for the channel fifos */
 
 {
-  struct _runFifoParams *params=(struct _runFifoParams *)arg;
+  struct _runThreadParams *params=(struct _runThreadParams *)arg;
   struct ITMPacket p;
 
   char constructString[MAX_STRING_LENGTH];
@@ -163,7 +191,7 @@ static BOOL _makeFifoTasks(void)
 /* Create each sub-process that will handle a port */
 
 {
-  struct _runFifoParams *params;
+  struct _runThreadParams *params;
   int f[2];
 
   /* Cycle through channels and create a fifo for each one that is enabled */
@@ -176,7 +204,7 @@ static BOOL _makeFifoTasks(void)
 	  fcntl(f[1],F_SETFL,O_NONBLOCK);
 	  _r.c[t].handle=f[1];
 
-	  params=(struct _runFifoParams *)malloc(sizeof(struct _runFifoParams));
+	  params=(struct _runThreadParams *)malloc(sizeof(struct _runThreadParams));
 	  params->listenHandle=f[0];
 	  params->portNo=t;
 
@@ -205,6 +233,139 @@ static void _removeFifoTasks(void)
 	  close(_r.c[t].handle);
 	  unlink(_r.c[t].fifoName);
 	}
+    }
+}
+// ====================================================================================================
+// ====================================================================================================
+// ====================================================================================================
+// Network server implementation for raw SWO feed
+// ====================================================================================================
+// ====================================================================================================
+// ====================================================================================================
+static void *_client(void *args)
+
+/* Handle an individual network client account */
+
+{
+  struct nwClientParams *params=(struct nwClientParams *)args;
+  int readDataLen;
+  uint8_t maxTransitPacket[MAX_IP_PACKET_LEN];
+
+  while (1)
+    {
+      readDataLen=read(params->listenHandle, &maxTransitPacket, MAX_IP_PACKET_LEN);
+      if (write(params->portNo,&maxTransitPacket,readDataLen)<0)
+	{
+	  /* This port went away, so remove it */
+	  close(params->portNo);
+	  close(params->listenHandle);
+	  if (params->client->prevClient)
+	    {
+	      params->client->prevClient->nextClient=params->client->nextClient;
+	    }
+	  else
+	    {
+	      _r.firstClient=params->client->nextClient;
+	    }
+
+	  if (params->client->nextClient)
+	    {
+	      params->client->nextClient->prevClient=params->client->prevClient;
+	    }
+	  return NULL;
+	}
+    }
+}
+// ====================================================================================================
+static void *_listenTask(void *arg)
+
+{
+  uint32_t *sockfd=(uint32_t *)arg;
+  uint32_t newsockfd;
+  socklen_t clilen;
+  struct sockaddr_in cli_addr;
+  int f[2];                               /* File descriptor set for pipe */
+  struct nwClientParams *params;
+
+  while (1)
+    {
+      listen(*sockfd,5);
+      clilen = sizeof(cli_addr);
+      newsockfd = accept(*sockfd,(struct sockaddr *) &cli_addr, &clilen);
+
+      /* We got a new connection - spawn a thread to handle it */
+      if (!pipe(f))
+	{
+	  params=(struct nwClientParams *)malloc(sizeof(struct nwClientParams));
+
+	  params->client = (struct nwClient *)malloc(sizeof(struct nwClient));
+	  params->client->handle=f[1];
+	  params->listenHandle=f[0];
+	  params->portNo=newsockfd;
+
+	  if (!pthread_create(&(params->client->thread),NULL,&_client,params))
+	    {
+	      /* Auto-cleanup for this thread */
+	      pthread_detach(params->client->thread);
+
+	      /* Hook into linked list */
+	      params->client->nextClient=_r.firstClient;
+	      params->client->prevClient=NULL;
+	      if (params->client->nextClient)
+		{
+		  params->client->nextClient->prevClient=params->client;
+		}
+	      _r.firstClient=params->client;
+	    }
+	}
+    }
+}
+// ====================================================================================================
+static BOOL _makeServerTask(void)
+
+/* Creating the listening server thread */
+
+{
+  int sockfd;
+  struct sockaddr_in serv_addr;
+  int flag=1;
+
+  sockfd = socket(AF_INET, SOCK_STREAM, 0);
+  setsockopt(sockfd, SOL_SOCKET, SO_REUSEPORT, &flag, sizeof(flag));
+  if (sockfd < 0) 
+    {
+      fprintf(stderr,"Error opening socket\n");
+      return FALSE;
+    }
+
+  bzero((char *) &serv_addr, sizeof(serv_addr));
+  serv_addr.sin_family = AF_INET;
+  serv_addr.sin_addr.s_addr = INADDR_ANY;
+  serv_addr.sin_port = htons(SERVER_PORT);
+  if (bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) 
+    {
+      fprintf(stderr,"Error on binding\n");
+      return FALSE;
+    }
+
+  /* We have the listening socket - spawn a thread to handle it */
+  if (pthread_create(&(_r.ipThread),NULL,&_listenTask,&sockfd))
+    {
+      fprintf(stderr,"Failed to create listening thread\n");
+      return FALSE;
+    }
+  return TRUE;
+}
+// ====================================================================================================
+static void _sendToClients(uint32_t len, uint8_t *buffer)
+
+{
+  struct nwClient *n=_r.firstClient;
+
+  while (n)
+    {
+      write(n->handle,buffer,len);
+      n=n->nextClient;
     }
 }
 // ====================================================================================================
@@ -245,9 +406,6 @@ void _handlePCSample(struct ITMDecoder *i, struct ITMPacket *p)
 
 {
   uint32_t pc=(p->d[3]<<24)|(p->d[2]<<16)|(p->d[1]<<8)|(p->d[0]);
-#ifdef PRINT_EXPERIMENTAL
-  printf("%lld,0x%08x\n",i->timeStamp,pc);
-#endif
 }
 // ====================================================================================================
 void _handleDataRWWP(struct ITMDecoder *i, struct ITMPacket *p)
@@ -488,6 +646,9 @@ void _protocolPump(uint8_t c)
 	    {
 	      fprintf(stderr,"TPIUGetPacket fell over\n");
 	    }
+
+	  _sendToClients(_r.p.len, (uint8_t *)_r.p.packet);
+
 	  for (uint32_t g=0; g<_r.p.len; g++)
 	    {
 	      if (_r.p.packet[g].s == options.tpiuITMChannel)
@@ -832,6 +993,12 @@ int main(int argc, char *argv[])
   if (!_makeFifoTasks())
     {
       fprintf(stderr,"Failed to make channel devices\n");
+      exit(-1);
+    }
+
+  if (!_makeServerTask())
+    {
+      fprintf(stderr,"Failed to make network server\n");
       exit(-1);
     }
 
