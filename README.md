@@ -5,11 +5,9 @@ An Orbuculum is a Crystal Ball, used for seeing things that would
  be otherwise invisible. A  nodding reference to (the) BlackMagic (debug probe).
 
 *This program is in heavy development. Check back frequently for new versions 
-with additional functionality. The current status (30th April) is that ITM
+with additional functionality. The current status (2nd May) is that ITM
 SW logging is working, and HW tracing (Watchpoints, Timestamps, PC Sampling
-etc.) is implemented but untested. You will need to enable PRINT_EXPERIMENTAL
-in `orbuculum.c` to see them...but they're not ready for prime time yet, mostly
-because I haven't figured out how to present them.*
+etc.) is implemented and reported, but largely untested.
 
 On a CORTEX M Series device SWO is a datastream that comes out of a
 single pin when the debug interface is in SWD mode. It can be encoded
@@ -158,6 +156,17 @@ world). The intention being to give you streams whenever it can get
 them.  It does _not_ require gdb to be running, but you may need a 
 gdb session to start the output.  BMP needs traceswo to be turned on
 at the command line before it capture data from the port, for example.
+
+A further fifo will be found in the output directory, which reports on 
+events from the hardware, one event per line as follows;
+
+* 0,[Status],[TS] : Time status and timestamp.
+* 1,[PCAddr] : Report Program Counter Sample.
+* 2,[DWTEvent] : Report on DWT event from the set [CPI,Exc,Sleep,LSU,Fold and Cyc].
+* 3,[EventType],[ExceptionNumber] : Hardware exception. Event type is one of [Enter, Exit, Resume].
+* 4,[Comp],[RW],[Data] : Report Read/Write event.
+* 5,[Comp],[Addr] : Report data access watchpoint event.
+* 6,[Comp],[Ofs] : Report data offset event.
 
 In addition to the direct fifos, Orbuculum exposes TCP port 3443 to which 
 network clients can connect. This port delivers raw TPIU frames to any

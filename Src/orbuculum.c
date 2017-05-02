@@ -18,8 +18,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#define VERSION "0.12"
-#define PRINT_EXPERIMENTAL
+#define VERSION "0.13"
 
 #include <stdlib.h>
 #include <unistd.h>
@@ -56,15 +55,20 @@
 
 #define TRANSFER_SIZE (64)
 #define NUM_CHANNELS  32
+#define HW_CHANNEL    (NUM_CHANNELS) /* Make the hardware fifo on the end of the software ones */
 
 #define MAX_STRING_LENGTH (100)   // Maximum length that will be output from a fifo for a single event
 
 // Information for an individual channel
-struct SWchannel
+struct Channel
 {
   char *chanName;   /* Filename to be used for the fifo */
   char *presFormat; /* Format of data presentation to be used */
 };
+
+#define HWFIFO_NAME "hwevent"
+
+enum hwEvents { HWEVENT_TS, HWEVENT_PCSample, HWEVENT_DWT, HWEVENT_EXCEPTION, HWEVENT_RWWT,HWEVENT_AWP,HWEVENT_OFS};
 
 // Record for options, either defaults or from command line
 struct
@@ -75,7 +79,7 @@ struct
   uint32_t tpiuITMChannel;
 
   /* Sink information */
-  struct SWchannel channel[NUM_CHANNELS];
+  struct Channel channel[NUM_CHANNELS+1];
   char *chanPath;
 
   /* Source information */
@@ -114,16 +118,18 @@ struct nwClientParams
 
 struct
 {
-  struct channelRuntime c[NUM_CHANNELS];
-  struct nwClient *firstClient;
-  pthread_t ipThread;
+  struct channelRuntime c[NUM_CHANNELS+1];/* Output for each channel */
+  struct nwClient *firstClient;           /* Head of linked list of network clients */
+  pthread_t ipThread;                     /* The listening thread for n/w clients */
+
+  /* The decoders and the packets from them */
   struct ITMDecoder i;
   struct ITMPacket h;
   struct TPIUDecoder t;
   struct TPIUPacket p;
 } _r;
 
-/* Structure for parameters passed to a task thread */
+/* Structure for parameters passed to a software task thread */
 struct _runThreadParams 
 
 {
@@ -138,11 +144,9 @@ struct _runThreadParams
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
-
-
 static void *_runFifo(void *arg)
 
-/* This is the control loop for the channel fifos */
+/* This is the control loop for the channel fifos (for each software port) */
 
 {
   struct _runThreadParams *params=(struct _runThreadParams *)arg;
@@ -186,6 +190,43 @@ static void *_runFifo(void *arg)
   return NULL;
 }
 // ====================================================================================================
+static void *_runHWFifo(void *arg)
+
+/* This is the control loop for the hardware fifo */
+
+{
+  struct _runThreadParams *params=(struct _runThreadParams *)arg;
+  int fifo;
+  int readDataLen;
+  uint8_t p[MAX_STRING_LENGTH];
+
+  if (mkfifo(_r.c[params->portNo].fifoName,0666)<0)
+    {
+      return NULL;
+    }
+
+  /* Don't kill this sub-process when any reader or writer evaporates */
+  signal(SIGPIPE, SIG_IGN);
+
+  while (1)
+    {
+      /* This is the child */
+      fifo=open(_r.c[params->portNo].fifoName,O_WRONLY);
+
+      while (1)
+	{
+	  /* ....get the packet */
+	  readDataLen=read(params->listenHandle, p, MAX_STRING_LENGTH);
+	  if (write(fifo,p,readDataLen)<=0)
+	    {
+	      break;
+	    }
+	}
+      close(fifo);
+    }
+  return NULL;
+}
+// ====================================================================================================
 static BOOL _makeFifoTasks(void)
 
 /* Create each sub-process that will handle a port */
@@ -195,10 +236,35 @@ static BOOL _makeFifoTasks(void)
   int f[2];
 
   /* Cycle through channels and create a fifo for each one that is enabled */
-  for (int t=0; t<NUM_CHANNELS; t++)
+  for (int t=0; t<(NUM_CHANNELS+1); t++)
     {
-      if (options.channel[t].chanName)
+      if (t<NUM_CHANNELS)
 	{
+	  if (options.channel[t].chanName)
+	    {
+	      /* This is a live software channel fifo */
+	      if (pipe(f)<0)
+		return FALSE;
+	      fcntl(f[1],F_SETFL,O_NONBLOCK);
+	      _r.c[t].handle=f[1];
+	      
+	      params=(struct _runThreadParams *)malloc(sizeof(struct _runThreadParams));
+	      params->listenHandle=f[0];
+	      params->portNo=t;
+
+	      _r.c[t].fifoName=(char *)malloc(strlen(options.channel[t].chanName)+strlen(options.chanPath)+2);
+	      strcpy(_r.c[t].fifoName,options.chanPath);
+	      strcat(_r.c[t].fifoName,options.channel[t].chanName);
+
+	      if (pthread_create(&(_r.c[t].thread),NULL,&_runFifo,params))
+		{
+		  return FALSE;
+		}
+	    }
+	}
+      else
+	{
+	  /* This is the hardware fifo channel */
 	  if (pipe(f)<0)
 	    return FALSE;
 	  fcntl(f[1],F_SETFL,O_NONBLOCK);
@@ -208,11 +274,11 @@ static BOOL _makeFifoTasks(void)
 	  params->listenHandle=f[0];
 	  params->portNo=t;
 
-	  _r.c[params->portNo].fifoName=(char *)malloc(strlen(options.channel[t].chanName)+strlen(options.chanPath)+2);
-	  strcpy(_r.c[params->portNo].fifoName,options.chanPath);
-	  strcat(_r.c[params->portNo].fifoName,options.channel[t].chanName);
-
-	  if (pthread_create(&(_r.c[t].thread),NULL,&_runFifo,params))
+	  _r.c[t].fifoName=(char *)malloc(strlen(HWFIFO_NAME)+strlen(options.chanPath)+2);
+	  strcpy(_r.c[t].fifoName,options.chanPath);
+	  strcat(_r.c[t].fifoName,HWFIFO_NAME);
+	  
+	  if (pthread_create(&(_r.c[t].thread),NULL,&_runHWFifo,params))
 	    {
 	      return FALSE;
 	    }
@@ -226,7 +292,7 @@ static void _removeFifoTasks(void)
 /* Destroy the per-port sub-processes */
 
 {
-  for (int t=0; t<NUM_CHANNELS; t++)
+  for (int t=0; t<NUM_CHANNELS+1; t++)
     {
       if (_r.c[t].handle>0)
 	{
@@ -372,40 +438,45 @@ static void _sendToClients(uint32_t len, uint8_t *buffer)
 void _handleException(struct ITMDecoder *i, struct ITMPacket *p)
 
 {
+  char outputString[MAX_STRING_LENGTH];
+  int opLen;
   uint32_t exceptionNumber=((p->d[1]&0x01)<<8)|p->d[0];
   uint32_t eventType=p->d[1]>>4;
 
   const char *exNames[]={"Thread","Reset","NMI","HardFault","MemManage","BusFault","UsageFault","UNKNOWN_7",
       "UNKNOWN_8", "UNKNOWN_9", "UNKNOWN_10", "SVCall", "Debug Monitor", "UNKNOWN_13", "PendSV", "SysTick"};
   const char *exEvent[]={"Enter","Exit","Resume"};
-#ifdef PRINT_EXPERIMENTAL
-  printf("%lld,%s,%s\n",i->timeStamp,exEvent[eventType],exNames[exceptionNumber]);
-#endif
+ opLen=snprintf(outputString,MAX_STRING_LENGTH,"%d,%s,%s\n",HWEVENT_EXCEPTION,exEvent[eventType],exNames[exceptionNumber]);
+  write(_r.c[HW_CHANNEL].handle,outputString,opLen);
 }
 // ====================================================================================================
 void _handleDWTEvent(struct ITMDecoder *i, struct ITMPacket *p)
 
 {
+  char outputString[MAX_STRING_LENGTH];
+  int opLen;
   uint32_t event=p->d[1]&0x2F;
   const char *evName[]={"CPI","Exc","Sleep","LSU","Fold","Cyc"};
 
-#ifdef PRINT_EXPERIMENTAL
-  printf("%lld,",i->timeStamp);
   for (uint32_t i=0; i<6; i++)
     {
       if (event&(1<<i))
 	{
-	  printf("%s ",evName[event]);
+	  opLen=snprintf(outputString,MAX_STRING_LENGTH,"%d,%s\n",HWEVENT_DWT,evName[event]);
+	  write(_r.c[HW_CHANNEL].handle,outputString,opLen);
 	}
     }
-  printf("\n");
-#endif
 }
 // ====================================================================================================
 void _handlePCSample(struct ITMDecoder *i, struct ITMPacket *p)
 
 {
+  char outputString[MAX_STRING_LENGTH];
+  int opLen;
+
   uint32_t pc=(p->d[3]<<24)|(p->d[2]<<16)|(p->d[1]<<8)|(p->d[0]);
+  opLen=snprintf(outputString,(MAX_STRING_LENGTH-1),"%d,0x%08x\n",HWEVENT_PCSample,pc);
+  write(_r.c[HW_CHANNEL].handle,outputString,opLen);
 }
 // ====================================================================================================
 void _handleDataRWWP(struct ITMDecoder *i, struct ITMPacket *p)
@@ -414,6 +485,8 @@ void _handleDataRWWP(struct ITMDecoder *i, struct ITMPacket *p)
   uint32_t comp=(p->d[0]&0x30)>>4; 
   BOOL isWrite = ((p->d[0]&0x08)!=0);
   uint32_t data;
+  char outputString[MAX_STRING_LENGTH];
+  int opLen;
   
   switch(p->len)
     {
@@ -427,9 +500,9 @@ void _handleDataRWWP(struct ITMDecoder *i, struct ITMPacket *p)
     data=(p->d[1])|((p->d[2])<<8)|((p->d[3])<<16)|((p->d[4])<<24);
     break;
     }
-#ifdef PRINT_EXPERIMENTAL
-  printf("Watchpoint %d %s 0x%x\n",comp,isWrite?"Write":"Read",data);
-#endif
+
+  opLen=snprintf(outputString,MAX_STRING_LENGTH,"%d,%d,%s,0x%x\n",HWEVENT_RWWT,comp,isWrite?"Write":"Read",data);
+  write(_r.c[HW_CHANNEL].handle,outputString,opLen);
 }
 // ====================================================================================================
 void _handleDataAccessWP(struct ITMDecoder *i, struct ITMPacket *p)
@@ -437,9 +510,11 @@ void _handleDataAccessWP(struct ITMDecoder *i, struct ITMPacket *p)
 {
   uint32_t comp=(p->d[0]&0x30)>>4; 
   uint32_t data=(p->d[1])|((p->d[2])<<8)|((p->d[3])<<16)|((p->d[4])<<24);
-#ifdef PRINT_EXPERIMENTAL
-  printf("Access Watchpoint %d 0x%08x\n",comp,data);
-#endif
+  char outputString[MAX_STRING_LENGTH];
+  int opLen;
+
+  opLen=snprintf(outputString,MAX_STRING_LENGTH,"%d,%d,0x%08x\n",HWEVENT_AWP,comp,data);
+  write(_r.c[HW_CHANNEL].handle,outputString,opLen);
 }
 // ====================================================================================================
 void _handleDataOffsetWP(struct ITMDecoder *i, struct ITMPacket *p)
@@ -447,9 +522,10 @@ void _handleDataOffsetWP(struct ITMDecoder *i, struct ITMPacket *p)
 {
   uint32_t comp=(p->d[0]&0x30)>>4; 
   uint32_t offset=(p->d[1])|((p->d[2])<<8);
-#ifdef PRINT_EXPERIMENTAL
-  printf("Offset Watchpoint %d 0x????%04x\n",comp,offset);
-#endif
+  char outputString[MAX_STRING_LENGTH];
+  int opLen;
+  opLen=snprintf(outputString,MAX_STRING_LENGTH,"%d,%d,0x%04x\n",HWEVENT_OFS,comp,offset);
+  write(_r.c[HW_CHANNEL].handle,outputString,opLen);
 }
 // ====================================================================================================
 // ====================================================================================================
@@ -530,6 +606,8 @@ void _handleXTN(struct ITMDecoder *i)
 void _handleTS(struct ITMDecoder *i)
 
 {
+  char outputString[MAX_STRING_LENGTH];
+  int opLen;
   struct ITMPacket p;
   uint32_t stamp=0;
 
@@ -559,6 +637,8 @@ void _handleTS(struct ITMDecoder *i)
 
       i->timeStamp+=stamp;
     }
+  opLen=snprintf(outputString,MAX_STRING_LENGTH,"%d,%d,%lld\n",HWEVENT_TS,i->timeStatus,i->timeStamp);
+  write(_r.c[HW_CHANNEL].handle,outputString,opLen);
 }
 // ====================================================================================================
 void _itmPumpProcess(char c)
@@ -786,10 +866,6 @@ int _processOptions(int argc, char *argv[])
       return FALSE;
     }
 
-#ifdef PRINT_EXPERIMENTAL
-  printf("*****Experimental and part developed features enabled\n");
-#endif
-
   if (options.verbose)
     {
       fprintf(stdout,"Orbuculum V" VERSION " (Git %08X %s, Built " BUILD_DATE ")\n", GIT_HASH,(GIT_DIRTY?"Dirty":"Clean"));
@@ -818,6 +894,7 @@ int _processOptions(int argc, char *argv[])
 	      fprintf(stdout,"        %02d [%s] [%s]\n",g,GenericsEscape(options.channel[g].presFormat),options.channel[g].chanName);
 	    }
 	}
+      fprintf(stdout,"        HW [Predefined] [" HWFIFO_NAME "]\n");
     }
   if ((options.file) && (options.port))
     {
