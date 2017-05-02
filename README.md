@@ -7,7 +7,7 @@ An Orbuculum is a Crystal Ball, used for seeing things that would
 *This program is in heavy development. Check back frequently for new versions 
 with additional functionality. The current status (2nd May) is that ITM
 SW logging is working, and HW tracing (Watchpoints, Timestamps, PC Sampling
-etc.) is implemented and reported, but largely untested.
+etc.) is implemented and reported, but largely untested.*
 
 On a CORTEX M Series device SWO is a datastream that comes out of a
 single pin when the debug interface is in SWD mode. It can be encoded
@@ -157,52 +157,51 @@ them.  It does _not_ require gdb to be running, but you may need a
 gdb session to start the output.  BMP needs traceswo to be turned on
 at the command line before it capture data from the port, for example.
 
-A further fifo will be found in the output directory, which reports on 
+A further fifo `hwevent` will be found in the output directory, which reports on 
 events from the hardware, one event per line as follows;
 
-* 0,[Status],[TS] : Time status and timestamp.
-* 1,[PCAddr] : Report Program Counter Sample.
-* 2,[DWTEvent] : Report on DWT event from the set [CPI,Exc,Sleep,LSU,Fold and Cyc].
-* 3,[EventType],[ExceptionNumber] : Hardware exception. Event type is one of [Enter, Exit, Resume].
-* 4,[Comp],[RW],[Data] : Report Read/Write event.
-* 5,[Comp],[Addr] : Report data access watchpoint event.
-* 6,[Comp],[Ofs] : Report data offset event.
+* `0,[Status],[TS]` : Time status and timestamp.
+* `1,[PCAddr]` : Report Program Counter Sample.
+* `2,[DWTEvent]` : Report on DWT event from the set [CPI,Exc,Sleep,LSU,Fold and Cyc].
+* `3,[EventType],[ExceptionNumber]` : Hardware exception. Event type is one of [Enter, Exit, Resume].
+* `4,[Comp],[RW],[Data]` : Report Read/Write event.
+* `5,[Comp],[Addr]` : Report data access watchpoint event.
+* `6,[Comp],[Ofs]` : Report data offset event.
 
 In addition to the direct fifos, Orbuculum exposes TCP port 3443 to which 
 network clients can connect. This port delivers raw TPIU frames to any
 client that is connected (and will shortly be used for other utilities in the
-suite like OrbCat and OrbTop). The practical limit to the number of clients that
-can connect is set by the speed of the host machine.
+suite like OrbCat and OrbTop). The practical limit to the number of clients that can connect is set by the speed of the host machine.
 
 Command Line Options
 ====================
 
 Specific command line options of note are;
 
- -b: [basedir] for channels. Note that this is actually just leading text on the channel
+ `-b [basedir]`: for channels. Note that this is actually just leading text on the channel
      name, so if you put xyz/chan then all ITM software channels will end up in a directory
      xyz, prepended with chan.  If xyz doesn't exist, then the channel creation will 
      fail silently.
 
- -c: [Number],[Name],[Format] of channel to populate (repeat per channel) using printf
+ `-c [Number],[Name],[Format]`: of channel to populate (repeat per channel) using printf
      formatting.
 
- -h: Brief help.
+ `-h`: Brief help.
 
- -f: [filename] Take input from specified file.
+ `-f [filename]`: Take input from specified file.
 
- -i: [channel] Set Channel for ITM in TPIU decode (defaults to 1). Note that the TPIU must
+ `-i [channel]`: Set Channel for ITM in TPIU decode (defaults to 1). Note that the TPIU must
      be in use for this to make sense.  If you call the GenericsConfigureTracing
      routine above with the ITM Channel set to 0 then the TPIU will be bypassed.
 
- -p: [serialPort] to use. If not specified then the program defaults to Blackmagic probe.
+ `-p [serialPort]`: to use. If not specified then the program defaults to Blackmagic probe.
 
- -s: [serialSpeed] to use. Only relevant when using the serial interface.
+ `-s [serialSpeed]`: to use. Only relevant when using the serial interface.
 
- -t: Use TPIU decoder.  This will not sync if TPIU is not configured, so you won't see
+ `-t`: Use TPIU decoder.  This will not sync if TPIU is not configured, so you won't see
      packets in that case.
 
- -v: Verbose mode.
+ `-v`: Verbose mode.
 
 
 Reliability
