@@ -8,7 +8,9 @@ An Orbuculum is a Crystal Ball, used for seeing things that would
 with additional functionality. The current status (6th May) is that ITM
 SW logging is working, and HW tracing (Watchpoints, Timestamps, PC Sampling
 etc.) is implemented and reported, but largely untested. Orbcat (to cat
-and mix multiple ITM channels simulteneously has just been added.*
+and mix multiple ITM channels simulteneously) has just been added. I would
+not say the whole suite is throughly tested yet...that will come when full
+functionality has been completed. For now the 'happy flows' are working OK.* 
 
 On a CORTEX M Series device SWO is a datastream that comes out of a
 single pin when the debug interface is in SWD mode. It can be encoded
