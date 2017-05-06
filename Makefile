@@ -1,6 +1,10 @@
 #VERBOSE=1
 #DEBUG=1
 
+# Output Files
+ORBUCULUM = orbuculum
+ORBCAT = orbcat
+
 ##########################################################################
 # User configuration and firmware specific object files	
 ##########################################################################
@@ -35,8 +39,11 @@ DEBUG_OPTS = -g3 -gdwarf-2 -ggdb
 # ==========
 App_DIR=Src
 INCLUDE_PATHS += -IInc -I$(OLOC)
-CFILES += $(App_DIR)/itmDecoder.c $(App_DIR)/orbuculum.c $(App_DIR)/tpiuDecoder.c
-CFILES += $(App_DIR)/generics.c
+
+ORBUCULUM_CFILES = $(App_DIR)/$(ORBUCULUM).c 
+ORBCAT_CFILES = $(App_DIR)/$(ORBCAT).c 
+
+CFILES += $(App_DIR)/itmDecoder.c $(App_DIR)/tpiuDecoder.c $(App_DIR)/generics.c
 
 ##########################################################################
 # GNU GCC compiler prefix and location
@@ -52,7 +59,6 @@ OBJCOPY = $(CROSS_COMPILE)objcopy
 OBJDUMP = $(CROSS_COMPILE)objdump
 GET_GIT_HASH = Tools/git_hash_to_c/git_hash_to_c.sh
 MAKE = make
-OUTFILE = orbuculum
 
 ##########################################################################
 # Quietening
@@ -67,7 +73,6 @@ Q := @
 endif
 
 HOST=-lc -lusb
-
 
 ##########################################################################
 # Compiler settings, parameters and flags
@@ -85,7 +90,15 @@ OCFLAGS = --strip-unneeded
 
 OBJS =  $(patsubst %.c,%.o,$(CFILES)) $(patsubst %.s,%.o,$(SFILES))
 POBJS = $(patsubst %,$(OLOC)/%,$(OBJS))
-PDEPS =$(POBJS:.o=.d)
+PDEPS = $(POBJS:.o=.d)
+
+ORBUCULUM_OBJS =  $(OBJS) $(patsubst %.c,%.o,$(ORBUCULUM_CFILES))
+ORBUCULUM_POBJS = $(POJBS) $(patsubst %,$(OLOC)/%,$(ORBUCULUM_OBJS))
+ORBUCULUM_PDEPS = $(PDEPS) $(ORBUCULUM_POBJS:.o=.d)
+
+ORBCAT_OBJS =  $(OBJS) $(patsubst %.c,%.o,$(ORBCAT_CFILES))
+ORBCAT_POBJS = $(POJBS) $(patsubst %,$(OLOC)/%,$(ORBCAT_OBJS))
+ORBCAT_PDEPS = $(PDEPS) $(ORBCAT_POBJS:.o=.d)
 
 all : build 
 
@@ -97,14 +110,19 @@ $(OLOC)/%.o : %.c
 	$(call cmd, \$(CC) -c $(CFLAGS) -MMD -o $@ $< ,\
 	Compiling $<)
 
-build: get_version $(POBJS) $(SYS_OBJS)
-	$(Q)$(LD) $(LDFLAGS) -o $(OLOC)/$(OUTFILE) $(MAP) $(POBJS) $(LDLIBS)
+build: $(ORBUCULUM) $(ORBCAT)
+
+$(ORBUCULUM) : get_version $(ORBUCULUM_POBJS) $(SYS_OBJS)
+	$(Q)$(LD) $(LDFLAGS) -o $(OLOC)/$(ORBUCULUM) $(MAP) $(ORBUCULUM_POBJS) $(LDLIBS)
+
+$(ORBCAT) : get_version $(ORBCAT_POBJS) $(SYS_OBJS)
+	$(Q)$(LD) $(LDFLAGS) -o $(OLOC)/$(ORBCAT) $(MAP) $(ORBCAT_POBJS) $(LDLIBS)
 
 tags:
 	-@etags $(CFILES) 2> /dev/null
 
 clean:
-	-$(call cmd, \rm -f $(POBJS) $(LD_TEMP) $(OUTFILE) $(OUTFILE).map $(EXPORT) ,\
+	-$(call cmd, \rm -f $(POBJS) $(LD_TEMP) $(ORBUCULUM) $(ORBCAT) $(OUTFILE).map $(EXPORT) ,\
 	Cleaning )
 	$(Q)-rm -rf SourceDoc/*
 	$(Q)-rm -rf *~ core

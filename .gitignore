@@ -1,4 +1,7 @@
 ofiles
+.cproject
+.project
+.settings/*
 .DS_Store
 *.bin
 *.hex

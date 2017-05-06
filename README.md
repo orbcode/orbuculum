@@ -5,9 +5,10 @@ An Orbuculum is a Crystal Ball, used for seeing things that would
  be otherwise invisible. A  nodding reference to (the) BlackMagic (debug probe).
 
 *This program is in heavy development. Check back frequently for new versions 
-with additional functionality. The current status (2nd May) is that ITM
+with additional functionality. The current status (6th May) is that ITM
 SW logging is working, and HW tracing (Watchpoints, Timestamps, PC Sampling
-etc.) is implemented and reported, but largely untested.*
+etc.) is implemented and reported, but largely untested. Orbcat (to cat
+and mix multiple ITM channels simulteneously has just been added.*
 
 On a CORTEX M Series device SWO is a datastream that comes out of a
 single pin when the debug interface is in SWD mode. It can be encoded
@@ -170,8 +171,8 @@ events from the hardware, one event per line as follows;
 
 In addition to the direct fifos, Orbuculum exposes TCP port 3443 to which 
 network clients can connect. This port delivers raw TPIU frames to any
-client that is connected (and will shortly be used for other utilities in the
-suite like OrbCat and OrbTop). The practical limit to the number of clients that can connect is set by the speed of the host machine.
+client that is connected (such as orbcat, and shortly by orbtop). 
+The practical limit to the number of clients that can connect is set by the speed of the host machine.
 
 Command Line Options
 ====================
@@ -203,6 +204,42 @@ Specific command line options of note are;
 
  `-v`: Verbose mode.
 
+Orbcat
+======
+
+orbcat is a simple utility that connects to orbuculum over the network and 
+outputs data from various ITM HW and SW channels that it finds.  This 
+output is sent to stdout so the program is very useful for providing direct
+input for other utilities.  There can be any number of instances of orbcat
+running at the same time, and they will all decode data independently. They all get
+a seperate networked data feed.  A
+typical use case for orbcat would be to act as a stdin for another program...an example
+of doing this to just replicate the data delivered over ITM Channel 0 would be
+
+`orbcat -c 0,"%c"`
+
+...note that any number of `-c` options can be entered on the command line, which 
+will combine data from those individual channels into one stream. Command line
+options for orbcat are;
+
+ `-c [Number],[Format]`: of channel to populate (repeat per channel) using printf
+     formatting. Note that the `Name` component is missing in this format because 
+     orbcat does not create fifos.
+
+ `-h`: Brief help.
+
+ `-i [channel]`: Set Channel for ITM in TPIU decode (defaults to 1). Note that the TPIU must
+     be in use for this to make sense.  If you call the GenericsConfigureTracing
+     routine above with the ITM Channel set to 0 then the TPIU will be bypassed.
+
+ `-p [port]`: to use. Defaults to 3443, the standard orbuculum port.
+
+ `-s [server]`: to connect to. Defaults to localhost.
+
+ `-t`: Use TPIU decoder.  This will not sync if TPIU is not configured, so you won't see
+     packets in that case.
+
+ `-v`: Verbose mode.
 
 Reliability
 ===========

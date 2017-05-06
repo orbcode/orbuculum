@@ -37,7 +37,7 @@
 #include <pthread.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
-
+#include <arpa/inet.h>
 
 #include "git_version_info.h"
 #include "generics.h"
@@ -67,8 +67,6 @@ struct Channel
 };
 
 #define HWFIFO_NAME "hwevent"
-
-enum hwEvents { HWEVENT_TS, HWEVENT_PCSample, HWEVENT_DWT, HWEVENT_EXCEPTION, HWEVENT_RWWT,HWEVENT_AWP,HWEVENT_OFS};
 
 // Record for options, either defaults or from command line
 struct
@@ -319,10 +317,14 @@ static void *_client(void *args)
 
   while (1)
     {
-      readDataLen=read(params->listenHandle, &maxTransitPacket, MAX_IP_PACKET_LEN);
-      if (write(params->portNo,&maxTransitPacket,readDataLen)<0)
+      readDataLen=read(params->listenHandle, maxTransitPacket, MAX_IP_PACKET_LEN);
+      if (write(params->portNo,maxTransitPacket,readDataLen)<0)
 	{
 	  /* This port went away, so remove it */
+	  if (options.verbose)
+	    {
+	      fprintf(stdout,"Connection dropped\n");
+	    }
 	  close(params->portNo);
 	  close(params->listenHandle);
 	  if (params->client->prevClient)
@@ -352,6 +354,7 @@ static void *_listenTask(void *arg)
   struct sockaddr_in cli_addr;
   int f[2];                               /* File descriptor set for pipe */
   struct nwClientParams *params;
+  char s[100];
 
   while (1)
     {
@@ -359,6 +362,11 @@ static void *_listenTask(void *arg)
       clilen = sizeof(cli_addr);
       newsockfd = accept(*sockfd,(struct sockaddr *) &cli_addr, &clilen);
 
+      if (options.verbose)
+	{
+	  inet_ntop(AF_INET,&cli_addr.sin_addr,s,99);
+	  fprintf(stdout,"New connection from %s\n",s);
+	}
       /* We got a new connection - spawn a thread to handle it */
       if (!pipe(f))
 	{
@@ -727,8 +735,6 @@ void _protocolPump(uint8_t c)
 	      fprintf(stderr,"TPIUGetPacket fell over\n");
 	    }
 
-	  _sendToClients(_r.p.len, (uint8_t *)_r.p.packet);
-
 	  for (uint32_t g=0; g<_r.p.len; g++)
 	    {
 	      if (_r.p.packet[g].s == options.tpiuITMChannel)
@@ -940,6 +946,7 @@ int usbFeeder(void)
 
       while (0==libusb_bulk_transfer(handle, ENDPOINT, cbw, TRANSFER_SIZE, &size, 10))
 	{
+	  _sendToClients(size, cbw);
 	  unsigned char *c=cbw;
 	  while (size--)
 	    {
