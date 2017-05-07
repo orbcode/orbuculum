@@ -5,12 +5,14 @@ An Orbuculum is a Crystal Ball, used for seeing things that would
  be otherwise invisible. A  nodding reference to (the) BlackMagic (debug probe).
 
 *This program is in heavy development. Check back frequently for new versions 
-with additional functionality. The current status (6th May) is that ITM
+with additional functionality. The current status (7th May) is that ITM
 SW logging is working, and HW tracing (Watchpoints, Timestamps, PC Sampling
 etc.) is implemented and reported, but largely untested. Orbcat (to cat
-and mix multiple ITM channels simulteneously) has just been added. I would
+and mix multiple ITM channels simulteneously) has just been added, as has
+Orbtop to provide a 'top' utility.  I would
 not say the whole suite is throughly tested yet...that will come when full
-functionality has been completed. For now the 'happy flows' are working OK.* 
+functionality has been completed. For now the 'happy flows' are working OK but
+the stuff might not look too pretty.* 
 
 On a CORTEX M Series device SWO is a datastream that comes out of a
 single pin when the debug interface is in SWD mode. It can be encoded
@@ -227,6 +229,48 @@ options for orbcat are;
  `-c [Number],[Format]`: of channel to populate (repeat per channel) using printf
      formatting. Note that the `Name` component is missing in this format because 
      orbcat does not create fifos.
+
+ `-h`: Brief help.
+
+ `-i [channel]`: Set Channel for ITM in TPIU decode (defaults to 1). Note that the TPIU must
+     be in use for this to make sense.  If you call the GenericsConfigureTracing
+     routine above with the ITM Channel set to 0 then the TPIU will be bypassed.
+
+ `-p [port]`: to use. Defaults to 3443, the standard orbuculum port.
+
+ `-s [server]`: to connect to. Defaults to localhost.
+
+ `-t`: Use TPIU decoder.  This will not sync if TPIU is not configured, so you won't see
+     packets in that case.
+
+ `-v`: Verbose mode.
+
+
+Orbtop
+======
+
+orbtop is a simple utility that connects to orbuculum over the network and 
+samples the Program Counter to identify where the program is spending its time. By default
+it will update its statistical output once per second. For code that matches to a function
+the the source file it will totalise all of the samples to tell you how much time is being
+spent in that function.  Any samples that do not match to an identifiable function are
+reported as 'Unknown'.
+
+As with Orbcat there can be any number of instances of orbtop running at the same time, 
+which might be useful to perform sampling over different time horizons.  Orbtop needs the 
+`addr2line` utility which will look for on the current path. A location for it can also be specified
+explicitly. A typical invocation line for orbtop would be;
+
+`orbtop -a ~/bin/armgcc/bin/arm-none-eabi-addr2line -e ~/Develop/STM32F103-skel/ofiles/firmware.elf`
+
+...the pointer to the elf file is always needed for orbtop to be able to recover symbols from.
+
+Command line options for orbtop are;
+
+ `-a`: Set location for addr2line for occasions where it cannot be found on the command line (defaults to
+       looking for a program called addr2line).
+
+ `-e`: Set elf file for recovery of program symbols.
 
  `-h`: Brief help.
 

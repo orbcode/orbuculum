@@ -1,9 +1,11 @@
 #VERBOSE=1
 #DEBUG=1
 
+CROSS_COMPILE=
 # Output Files
 ORBUCULUM = orbuculum
 ORBCAT = orbcat
+ORBTOP = orbtop
 
 ##########################################################################
 # User configuration and firmware specific object files	
@@ -42,14 +44,12 @@ INCLUDE_PATHS += -IInc -I$(OLOC)
 
 ORBUCULUM_CFILES = $(App_DIR)/$(ORBUCULUM).c 
 ORBCAT_CFILES = $(App_DIR)/$(ORBCAT).c 
-
-CFILES += $(App_DIR)/itmDecoder.c $(App_DIR)/tpiuDecoder.c $(App_DIR)/generics.c
+ORBTOP_CFILES = $(App_DIR)/$(ORBTOP).c 
 
 ##########################################################################
 # GNU GCC compiler prefix and location
 ##########################################################################
 
-CROSS_COMPILE =
 ASTYLE = astyle
 AS = $(CROSS_COMPILE)gcc
 CC = $(CROSS_COMPILE)gcc
@@ -88,10 +88,12 @@ LDFLAGS = $(CFLAGS)
 
 OCFLAGS = --strip-unneeded
 
+# Generic Stuff
 OBJS =  $(patsubst %.c,%.o,$(CFILES)) $(patsubst %.s,%.o,$(SFILES))
 POBJS = $(patsubst %,$(OLOC)/%,$(OBJS))
 PDEPS = $(POBJS:.o=.d)
 
+# Per Target Stuff
 ORBUCULUM_OBJS =  $(OBJS) $(patsubst %.c,%.o,$(ORBUCULUM_CFILES))
 ORBUCULUM_POBJS = $(POJBS) $(patsubst %,$(OLOC)/%,$(ORBUCULUM_OBJS))
 ORBUCULUM_PDEPS = $(PDEPS) $(ORBUCULUM_POBJS:.o=.d)
@@ -99,6 +101,16 @@ ORBUCULUM_PDEPS = $(PDEPS) $(ORBUCULUM_POBJS:.o=.d)
 ORBCAT_OBJS =  $(OBJS) $(patsubst %.c,%.o,$(ORBCAT_CFILES))
 ORBCAT_POBJS = $(POJBS) $(patsubst %,$(OLOC)/%,$(ORBCAT_OBJS))
 ORBCAT_PDEPS = $(PDEPS) $(ORBCAT_POBJS:.o=.d)
+
+ORBTOP_OBJS =  $(OBJS) $(patsubst %.c,%.o,$(ORBTOP_CFILES))
+ORBTOP_POBJS = $(POJBS) $(patsubst %,$(OLOC)/%,$(ORBTOP_OBJS))
+ORBTOP_PDEPS = $(PDEPS) $(ORBTOP_POBJS:.o=.d)
+
+CFILES += $(App_DIR)/itmDecoder.c $(App_DIR)/tpiuDecoder.c $(App_DIR)/generics.c
+
+##########################################################################
+##########################################################################
+##########################################################################
 
 all : build 
 
@@ -110,13 +122,19 @@ $(OLOC)/%.o : %.c
 	$(call cmd, \$(CC) -c $(CFLAGS) -MMD -o $@ $< ,\
 	Compiling $<)
 
-build: $(ORBUCULUM) $(ORBCAT)
+build: $(ORBUCULUM) $(ORBCAT) $(ORBTOP)
 
 $(ORBUCULUM) : get_version $(ORBUCULUM_POBJS) $(SYS_OBJS)
 	$(Q)$(LD) $(LDFLAGS) -o $(OLOC)/$(ORBUCULUM) $(MAP) $(ORBUCULUM_POBJS) $(LDLIBS)
+	-@echo "Completed build of" $(ORBUCULUM)
 
 $(ORBCAT) : get_version $(ORBCAT_POBJS) $(SYS_OBJS)
 	$(Q)$(LD) $(LDFLAGS) -o $(OLOC)/$(ORBCAT) $(MAP) $(ORBCAT_POBJS) $(LDLIBS)
+	-@echo "Completed build of" $(ORBCAT)
+
+$(ORBTOP) : get_version $(ORBTOP_POBJS) $(SYS_OBJS)
+	$(Q)$(LD) $(LDFLAGS) -o $(OLOC)/$(ORBTOP) $(MAP) $(ORBTOP_POBJS) $(LDLIBS)
+	-@echo "Completed build of" $(ORBTOP)
 
 tags:
 	-@etags $(CFILES) 2> /dev/null
