@@ -18,8 +18,6 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#define VERSION "0.13"
-
 #include <stdlib.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -30,7 +28,15 @@
 #include <sys/stat.h>
 #include <stdio.h>
 #include <string.h>
+#if defined OSX
 #include <libusb.h>
+#else
+#if defined LINUX
+#include <libusb-1.0/libusb.h>
+#else
+#error "Unknown OS"
+#endif
+#endif
 #include <stdint.h>
 #include <limits.h>
 #include <termios.h>

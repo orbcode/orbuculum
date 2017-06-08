@@ -32,7 +32,7 @@
 #define MAX_PACKET  (5)
 
 // Define this to get transitions printed out
-// #define PRINT_TRANSITIONS
+//#define PRINT_TRANSITIONS
 // ====================================================================================================
 void ITMDecoderInit(struct ITMDecoder *i, BOOL isLiveSet)
 

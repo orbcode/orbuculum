@@ -18,8 +18,6 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#define VERSION "0.13"
-
 #include <stdlib.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -30,8 +28,17 @@
 #include <sys/stat.h>
 #include <stdio.h>
 #include <string.h>
+#if defined OSX
 #include <libusb.h>
+#else
+#if defined LINUX
+#include <libusb-1.0/libusb.h>
+#else
+#error "Unknown OS"
+#endif
+#endif
 #include <stdint.h>
+#include <inttypes.h>
 #include <limits.h>
 #include <termios.h>
 #include <pthread.h>
@@ -199,12 +206,15 @@ void _handleSW(struct ITMDecoder *i)
 
 {
   struct ITMPacket p;
-
+  uint32_t w;
+  
   if (ITMGetPacket(i, &p))
     {
       if ((p.srcAddr<NUM_CHANNELS) && (options.presFormat[p.srcAddr]))
 	{
-	  fprintf(stdout,options.presFormat[p.srcAddr],*(uint32_t *)p.d);
+	  /* Build 32 value the long way around to avoid type-punning issues */
+	  w=(p.d[3]<<24)|(p.d[2]<<16)|(p.d[1]<<8)|(p.d[0]);
+	  fprintf(stdout,options.presFormat[p.srcAddr],w);
 	}
     }
 }
@@ -301,7 +311,7 @@ void _handleTS(struct ITMDecoder *i)
 
       i->timeStamp+=stamp;
     }
-  fprintf(stdout,"%d,%d,%lld\n",HWEVENT_TS,i->timeStatus,i->timeStamp);
+  fprintf(stdout,"%d,%d,%" PRIu64 "\n",HWEVENT_TS,i->timeStatus,i->timeStamp);
 }
 // ====================================================================================================
 void _itmPumpProcess(char c)

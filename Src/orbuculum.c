@@ -18,8 +18,6 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#define VERSION "0.13"
-
 #include <stdlib.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -30,14 +28,24 @@
 #include <sys/stat.h>
 #include <stdio.h>
 #include <string.h>
+#if defined OSX
 #include <libusb.h>
+#else
+#if defined LINUX
+#include <libusb-1.0/libusb.h>
+#else
+#error "Unknown OS"
+#endif
+#endif
 #include <stdint.h>
+#include <inttypes.h>
 #include <limits.h>
 #include <termios.h>
 #include <pthread.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <signal.h>
 
 #include "git_version_info.h"
 #include "generics.h"
@@ -149,7 +157,8 @@ static void *_runFifo(void *arg)
 {
   struct _runThreadParams *params=(struct _runThreadParams *)arg;
   struct ITMPacket p;
-
+  uint32_t w;
+  
   char constructString[MAX_STRING_LENGTH];
   int fifo;
   int readDataLen, writeDataLen;
@@ -177,7 +186,9 @@ static void *_runFifo(void *arg)
 	      return NULL;
 	    }
 
-	  writeDataLen=snprintf(constructString,MAX_STRING_LENGTH,options.channel[params->portNo].presFormat,(*(uint32_t *)p.d));
+	  /* Build 32 value the long way around to avoid type-punning issues */
+	  w=(p.d[3]<<24)|(p.d[2]<<16)|(p.d[1]<<8)|(p.d[0]);
+	  writeDataLen=snprintf(constructString,MAX_STRING_LENGTH,options.channel[params->portNo].presFormat,w);
 	  if (write(fifo,constructString,(writeDataLen<MAX_STRING_LENGTH)?writeDataLen:MAX_STRING_LENGTH)<=0)
 	    {
 	      break;
@@ -393,6 +404,8 @@ static void *_listenTask(void *arg)
 	    }
 	}
     }
+
+  return NULL;
 }
 // ====================================================================================================
 static BOOL _makeServerTask(void)
@@ -645,7 +658,7 @@ void _handleTS(struct ITMDecoder *i)
 
       i->timeStamp+=stamp;
     }
-  opLen=snprintf(outputString,MAX_STRING_LENGTH,"%d,%d,%lld\n",HWEVENT_TS,i->timeStatus,i->timeStamp);
+  opLen=snprintf(outputString,MAX_STRING_LENGTH,"%d,%d,%" PRIu64 "\n",HWEVENT_TS,i->timeStatus,i->timeStamp);
   write(_r.c[HW_CHANNEL].handle,outputString,opLen);
 }
 // ====================================================================================================
@@ -936,13 +949,11 @@ int usbFeeder(void)
       if (!(dev = libusb_get_device(handle)))
 	continue;
 
-      if (libusb_kernel_driver_active(handle, 0))
-	{
-	  libusb_detach_kernel_driver(handle, 0);
-	}
-      
       if (libusb_claim_interface (handle, INTERFACE)<0)
-	continue;
+	{
+	  fprintf(stderr,"Failed to claim interface\n");
+	  return 0;
+	}
 
       while (0==libusb_bulk_transfer(handle, ENDPOINT, cbw, TRANSFER_SIZE, &size, 10))
 	{
@@ -955,6 +966,8 @@ int usbFeeder(void)
 	}
       libusb_close(handle);
     }
+
+  return 0;
 }
 // ====================================================================================================
 int serialFeeder(void)

@@ -26,7 +26,7 @@
 char *GenericsEscape(char *str)
 
 {
-  static char workingBuffer[ARG_MAX];
+  static char workingBuffer[_POSIX_ARG_MAX];
   char *d=workingBuffer;
   char *s=str;
 
@@ -60,7 +60,7 @@ char *GenericsEscape(char *str)
 	default:
 	  *d++=*s;
 	}
-    } while ((*s++) && (d-workingBuffer<(ARG_MAX-1)));
+    } while ((*s++) && (d-workingBuffer<(_POSIX_ARG_MAX-1)));
   *d=0;
   return workingBuffer;
 }
@@ -68,7 +68,7 @@ char *GenericsEscape(char *str)
 char *GenericsUnescape(char *str)
 
 {
-  static char workingBuffer[ARG_MAX];
+  static char workingBuffer[_POSIX_ARG_MAX];
   char *d=workingBuffer;
   char *s=str;
 
@@ -119,7 +119,7 @@ char *GenericsUnescape(char *str)
 	{
 	  *d++=*s;
 	}
-    } while ((*s++) && (d-workingBuffer<(ARG_MAX-1)));
+    } while ((*s++) && (d-workingBuffer<(_POSIX_ARG_MAX-1)));
 
   *d=0;
   return workingBuffer;

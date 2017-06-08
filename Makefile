@@ -1,11 +1,27 @@
 #VERBOSE=1
 #DEBUG=1
 
+CFLAGS=-DVERSION="\"0.14\""
+
 CROSS_COMPILE=
 # Output Files
 ORBUCULUM = orbuculum
 ORBCAT = orbcat
 ORBTOP = orbtop
+
+##########################################################################
+# Check Host OS
+##########################################################################
+
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Linux)
+  CFLAGS += -DLINUX
+  LINUX=1
+endif
+ifeq ($(UNAME_S),Darwin)
+  CFLAGS += -DOSX
+  OSX=1
+endif
 
 ##########################################################################
 # User configuration and firmware specific object files	
@@ -27,6 +43,11 @@ SFILES =
 OLOC = ofiles
 INCLUDE_PATHS = -I/usr/local/include/libusb-1.0 
 LDLIBS = -L/usr/local/lib -lusb-1.0
+
+#ifdef LINUX
+LDLIBS += -lpthread
+#endif
+
 DEBUG_OPTS = -g3 -gdwarf-2 -ggdb
 
 ##########################################################################
@@ -80,13 +101,13 @@ HOST=-lc -lusb
 # filename for embedded git revision 
 GIT_HASH_FILENAME=git_version_info.h
 
-CFLAGS =  $(ARCH_FLAGS) $(STARTUP_DEFS) $(OPT_LEVEL) $(DEBUG_OPTS) \
-		-ffunction-sections -fdata-sections -Wall $(INCLUDE_PATHS)  $(GCC_DEFINE)
-ASFLAGS = -c $(DEBUG_OPTS) $(INCLUDE_PATHS) $(ARCH_FLAGS) $(GCC_DEFINE) \
+CFLAGS +=  $(ARCH_FLAGS) $(STARTUP_DEFS) $(OPT_LEVEL) $(DEBUG_OPTS) \
+		-ffunction-sections -fdata-sections -Wall -Wno-unused-result $(INCLUDE_PATHS)  $(GCC_DEFINE)
+ASFLAGS += -c $(DEBUG_OPTS) $(INCLUDE_PATHS) $(ARCH_FLAGS) $(GCC_DEFINE) \
           -x assembler-with-cpp
-LDFLAGS = $(CFLAGS)
+LDFLAGS += $(CFLAGS)
 
-OCFLAGS = --strip-unneeded
+OCFLAGS += --strip-unneeded
 
 # Generic Stuff
 OBJS =  $(patsubst %.c,%.o,$(CFILES)) $(patsubst %.s,%.o,$(SFILES))
@@ -159,7 +180,6 @@ print-%:
 	@echo $* is $($*)
 
 pretty:
-#The exclude is needed to prevent prettifying the cyclic link..no detrimental impact
-	$(Q)-$(ASTYLE) --options=config/astyle.conf "*.h" "*.c"
+	$(Q)-$(ASTYLE) --options=config/astyle.conf "Inc/*.h" "Src/*.c"
 
 -include $(PDEPS)
