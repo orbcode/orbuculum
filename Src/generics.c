@@ -23,105 +23,135 @@
 #include "generics.h"
 
 // ====================================================================================================
-char *GenericsEscape(char *str)
+char *GenericsEscape( char *str )
 
 {
-  static char workingBuffer[_POSIX_ARG_MAX];
-  char *d=workingBuffer;
-  char *s=str;
+    static char workingBuffer[_POSIX_ARG_MAX];
+    char *d = workingBuffer;
+    char *s = str;
 
-  do
+    do
     {
-      switch (*s)
-	{
-	case 0: 
-	  break;
-	case '\a': /* BEL */
-	  *d++='\\'; *d++='a';
-	  break;
-	case '\b': /* BACKSPACE */
-	  *d++='\\'; *d++='b';
-	  break;
-	case '\f': /* FORMFEED */
-	  *d++='\\'; *d++='f';
-	  break;
-	case '\n': /* NL */
-	  *d++='\\'; *d++='n';
-	  break;
-	case '\r': /* CR */
-	  *d++='\\'; *d++='r';
-	  break;
-	case '\t': /* TAB */
-	  *d++='\\'; *d++='t';
-	  break;
-	case '\v': /* VTAB */
-	  *d++='\\'; *d++='v';
-	  break;
-	default:
-	  *d++=*s;
-	}
-    } while ((*s++) && (d-workingBuffer<(_POSIX_ARG_MAX-1)));
-  *d=0;
-  return workingBuffer;
+        switch ( *s )
+        {
+            case 0:
+                break;
+
+            case '\a': /* BEL */
+                *d++ = '\\';
+                *d++ = 'a';
+                break;
+
+            case '\b': /* BACKSPACE */
+                *d++ = '\\';
+                *d++ = 'b';
+                break;
+
+            case '\f': /* FORMFEED */
+                *d++ = '\\';
+                *d++ = 'f';
+                break;
+
+            case '\n': /* NL */
+                *d++ = '\\';
+                *d++ = 'n';
+                break;
+
+            case '\r': /* CR */
+                *d++ = '\\';
+                *d++ = 'r';
+                break;
+
+            case '\t': /* TAB */
+                *d++ = '\\';
+                *d++ = 't';
+                break;
+
+            case '\v': /* VTAB */
+                *d++ = '\\';
+                *d++ = 'v';
+                break;
+
+            default:
+                *d++ = *s;
+        }
+    }
+    while ( ( *s++ ) && ( d - workingBuffer < ( _POSIX_ARG_MAX - 1 ) ) );
+
+    *d = 0;
+    return workingBuffer;
 }
 // ====================================================================================================
-char *GenericsUnescape(char *str)
+char *GenericsUnescape( char *str )
 
 {
-  static char workingBuffer[_POSIX_ARG_MAX];
-  char *d=workingBuffer;
-  char *s=str;
+    static char workingBuffer[_POSIX_ARG_MAX];
+    char *d = workingBuffer;
+    char *s = str;
 
-  do
+    do
     {
-      if (*s=='\\')
-	{
-	  /* This is an escape....put the correct code in its place */
-	  s++;
-	  switch (*s)
-	    {
-	    case 0: 
-	      break;
-	    case 'a': /* BEL */
-	      *d++='\a';
-	      break;
-	    case 'b': /* BACKSPACE */
-	      *d++='\b';
-	      break;
-	    case 'f': /* FORMFEED */
-	      *d++='\f';
-	      break;
-	    case 'n': /* NL */
-	      *d++='\n';
-	      break;
-	    case 'r': /* CR */
-	      *d++='\r';
-	      break;
-	    case 't': /* TAB */
-	      *d++='\t';
-	      break;
-	    case 'v': /* VTAB */
-	      *d++='\v';
-	      break;
-	    case '0'...'7': /* Direct octal number for ASCII Code */
-	      *d=0;
-	      while ((*s>='0') && (*s<='7'))
-		{
-		  *d=((*d)*8)+((*s++)-'0');
-		}
-	      d++;
-	      break;
-	    default:
-	      *d++=*s;
-	    }
-	}
-      else
-	{
-	  *d++=*s;
-	}
-    } while ((*s++) && (d-workingBuffer<(_POSIX_ARG_MAX-1)));
+        if ( *s == '\\' )
+        {
+            /* This is an escape....put the correct code in its place */
+            s++;
 
-  *d=0;
-  return workingBuffer;
+            switch ( *s )
+            {
+                case 0:
+                    break;
+
+                case 'a': /* BEL */
+                    *d++ = '\a';
+                    break;
+
+                case 'b': /* BACKSPACE */
+                    *d++ = '\b';
+                    break;
+
+                case 'f': /* FORMFEED */
+                    *d++ = '\f';
+                    break;
+
+                case 'n': /* NL */
+                    *d++ = '\n';
+                    break;
+
+                case 'r': /* CR */
+                    *d++ = '\r';
+                    break;
+
+                case 't': /* TAB */
+                    *d++ = '\t';
+                    break;
+
+                case 'v': /* VTAB */
+                    *d++ = '\v';
+                    break;
+
+                case '0'...'7': /* Direct octal number for ASCII Code */
+                    *d = 0;
+
+                    while ( ( *s >= '0' ) && ( *s <= '7' ) )
+                    {
+                        *d = ( ( *d ) * 8 ) + ( ( *s++ ) - '0' );
+                    }
+
+                    d++;
+                    break;
+
+                default:
+                    *d++ = *s;
+            }
+        }
+        else
+        {
+            *d++ = *s;
+        }
+    }
+    while ( ( *s++ ) && ( d - workingBuffer < ( _POSIX_ARG_MAX - 1 ) ) );
+
+    *d = 0;
+    return workingBuffer;
 }
 // ====================================================================================================
