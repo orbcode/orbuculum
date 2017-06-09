@@ -27,14 +27,15 @@
 #include <sys/time.h>
 #include <string.h>
 #include "itmDecoder.h"
-#define SYNCMASK    0xFFFFFFFFFFFF
-#define SYNCPATTERN 0x000000000080
-#define MAX_PACKET  (5)
+#define SYNCMASK              0xFFFFFFFFFFFF
+#define SYNCPATTERN           0x000000000080
+#define MAX_PACKET            (5)
+#define DEFAULT_PAGE_REGISTER (0x07)
 
 // Define this to get transitions printed out
 //#define PRINT_TRANSITIONS
 // ====================================================================================================
-void ITMDecoderInit(struct ITMDecoder *i, BOOL isLiveSet)
+void ITMDecoderInit(struct ITMDecoder *i)
 
 /* Reset a ITMDecoder instance */
 
@@ -42,6 +43,14 @@ void ITMDecoderInit(struct ITMDecoder *i, BOOL isLiveSet)
   i->syncStat=SYNCMASK;
   i->p=ITM_UNSYNCED;
   i->currentCount=0;
+  i->pageRegister=DEFAULT_PAGE_REGISTER;
+  ITMDecoderZeroStats(i);
+}
+// ====================================================================================================
+void ITMDecoderZeroStats(struct ITMDecoder *i)
+
+{
+  memset(&i->stats,0,sizeof(struct ITMDecoderStats));
 }
 // ====================================================================================================
 void ITMDecoderForceSync(struct ITMDecoder *i, BOOL isSynced)
@@ -49,13 +58,18 @@ void ITMDecoderForceSync(struct ITMDecoder *i, BOOL isSynced)
 /* Force the decoder into a specific sync state */
 
 {
-  if (isSynced)
+  if ((i->p==ITM_UNSYNCED) && (isSynced))
     {
       i->p=ITM_IDLE;
+      i->stats.syncCount++;
       i->currentCount=0;
     }
   else
     {
+      if (i->p!=ITM_UNSYNCED)
+	{
+	  i->stats.lostSyncCount++;
+	}
       i->p=ITM_UNSYNCED;
     }
 }
@@ -67,13 +81,17 @@ BOOL ITMGetPacket(struct ITMDecoder *i, struct ITMPacket *p)
 {
   /* This should have been reset in the call */
   if (i->p!=ITM_IDLE)
-    return FALSE;
+    {
+      return FALSE;
+    }
 
   p->srcAddr=i->srcAddr;
   p->len=i->currentCount;
-  i->currentCount=0;
+  p->pageRegister=i->pageRegister;
+
   memcpy(p->d,i->rxPacket,p->len);
   memset(&p->d[p->len],0,ITM_MAX_PACKET-p->len);
+  i->currentCount=0;
   return TRUE;
 }
 // ====================================================================================================
@@ -92,6 +110,7 @@ enum ITMPumpEvent ITMPump(struct ITMDecoder *i, uint8_t c)
   i->syncStat=(i->syncStat<<8)|c;
   if (((i->syncStat)&SYNCMASK)==SYNCPATTERN)
     {
+      i->stats.syncCount++;
       retVal=ITM_EV_SYNCED;
       newState=ITM_IDLE;
     }
@@ -114,6 +133,7 @@ enum ITMPumpEvent ITMPump(struct ITMDecoder *i, uint8_t c)
       if (c==0b01110000)
 	{
 	  /* This is an overflow packet */
+	  i->stats.overflow++;
 	  retVal= ITM_EV_OVERFLOW;
 	  break;
 	}
@@ -123,18 +143,29 @@ enum ITMPumpEvent ITMPump(struct ITMDecoder *i, uint8_t c)
 	  i->currentCount=1; /* The '1' is deliberate. */
 	  /* This is a timestamp packet */
 	  i->rxPacket[0]=c;
-
-	  newState=ITM_TS;
-	  retVal=ITM_EV_NONE;
+	  i->stats.TSPkt++;
+	  
+	  if (c&0x80)
+	    {
+	      /* This is TS packet format 1, so there's more to follow */
+	      newState=ITM_TS;
+	      retVal=ITM_EV_NONE;
+	    }
+	  else
+	    {
+	      /* This is TS packet format 2, no more to come, and no change of state */
+	      retVal=ITM_EV_TS_PACKET_RXED;	      
+	    }
 	  break;
 	}
       // **********
-      if (c&0x08)
+      if ((c&0x0B) == 0x08)
 	{
 	  /* Extension Packet */
 	  i->currentCount=1; /* The '1' is deliberate. */
+	  i->stats.XTNPkt++;
+	  
 	  i->rxPacket[0]=c;
-
 	  if (!(c&0x80))
 	    {
 	      /* A one byte output */
@@ -148,13 +179,26 @@ enum ITMPumpEvent ITMPump(struct ITMDecoder *i, uint8_t c)
       if ((c&0x0F) == 0x04)
 	{
 	  /* This is a reserved packet */
-	  retVal=ITM_EV_ERROR;
+	  if (c&0x80)
+	    {
+	      /* This is a reserved encoding we don't know how to handle */
+	      /* ...assume it's line noise and wait for sync again */
+	      i->stats.ErrorPkt++;
+	      retVal=ITM_EV_ERROR;
+	    }
+	  else
+	    {
+	      /* This is the Stimulus Port Page Register setting */
+	      i->stats.PagePkt++;
+	      i->pageRegister=(c>>4)&0x07;
+	    }
 	  break;
 	}
       // **********
       if (!(c&0x04))
 	{
 	  /* This is a SW packet */
+	  i->stats.SWPkt++;
 	  if ((i->targetCount=c&0x03)==3)
 	    {
 	      i->targetCount=4;
@@ -168,6 +212,7 @@ enum ITMPumpEvent ITMPump(struct ITMDecoder *i, uint8_t c)
       if (c&0x04)
 	{
 	  /* This is a HW packet */
+	  i->stats.HWPkt++;
 	  if ((i->targetCount=c&0x03)==3)
 	    {
 	      i->targetCount=4;
@@ -178,12 +223,14 @@ enum ITMPumpEvent ITMPump(struct ITMDecoder *i, uint8_t c)
 	  break;
 	}
       // **********
+#ifdef PRINT_TRANSITIONS
       fprintf(stderr,"General error for packet type %02x\n",c);
+#endif
       retVal=ITM_EV_ERROR;
       break;
       // -----------------------------------------------------
     case ITM_SW:
-	  i->rxPacket[i->currentCount++]=c;
+      i->rxPacket[i->currentCount++]=c;
 
 	  if (i->currentCount>=i->targetCount)
 	    {

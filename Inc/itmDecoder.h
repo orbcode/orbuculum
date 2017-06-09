@@ -55,11 +55,26 @@ struct ITMPacket
   uint8_t srcAddr;
   
   uint8_t len;
+  uint8_t pageRegister; /* The current stimulus page register value */
   uint8_t d[ITM_MAX_PACKET];
 };
 
 enum timeDelay {TIME_CURRENT, TIME_DELAYED, EVENT_DELAYED, EVENT_AND_TIME_DELAYED};
 
+struct ITMDecoderStats
+
+{
+  uint32_t lostSyncCount;              /* Number of times sync has been lost */
+  uint32_t syncCount;                  /* Number of times a sync event has been received */
+  uint32_t overflow;                   /* Number of times an overflow occured */
+  uint32_t SWPkt;                      /* Number of SW Packets received */
+  uint32_t TSPkt;                      /* Number of TS Packets received */
+  uint32_t HWPkt;                      /* Number of HW Packets received */
+  uint32_t XTNPkt;                     /* Number of XTN Packets received */
+  uint32_t ErrorPkt;                   /* Number of Packets received we don't know how to handle */
+  uint32_t PagePkt;                    /* Number of Packets received containing page sets */
+};
+  
 struct ITMDecoder
 
 {
@@ -72,12 +87,16 @@ struct ITMDecoder
   uint64_t syncStat; /* Sync monitor status */
   int srcAddr;       /* Source address for this packet */
 
+  struct ITMDecoderStats stats;  /* Record of the statistics */
+  uint8_t pageRegister; /* The current stimulus page register value */
   enum _protoState p; /* Current state of the receiver */
 };
 
 // ====================================================================================================
-void ITMDecoderInit(struct ITMDecoder *i, BOOL isLiveSet);
+void ITMDecoderInit(struct ITMDecoder *i);
 void ITMDecoderForceSync(struct ITMDecoder *i, BOOL isSynced);
+void ITMDecoderZeroStats(struct ITMDecoder *i);
+inline struct ITMDecoderStats *ITMDecoderGetStats(struct ITMDecoder *i) { return &i->stats; }
 BOOL ITMGetPacket(struct ITMDecoder *i, struct ITMPacket *p);
 enum ITMPumpEvent ITMPump(struct ITMDecoder *i, uint8_t c);
 // ====================================================================================================

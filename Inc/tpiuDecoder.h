@@ -34,14 +34,23 @@ enum TPIUPumpState {TPIU_UNSYNCED, TPIU_SYNCED, TPIU_RXING, TPIU_ERROR };
 
 #define TPIU_PACKET_LEN (16)
 
+struct TPIUDecoderStats
+{
+  uint32_t lostSync;           /* Number of times sync has been lost */
+  uint32_t syncCount;          /* Number of times a sync event has been received */
+  uint32_t packets;            /* Number of packets received */
+  uint32_t error;              /* Number of times an error has been received */
+};
+
 struct TPIUDecoder {
   enum TPIUPumpState state;
   uint8_t byteCount;
   uint8_t currentStream;
   uint32_t syncMonitor;
   struct timeval lastPacket;
-  BOOL isLive;
   uint8_t rxedPacket[TPIU_PACKET_LEN];
+
+  struct TPIUDecoderStats stats;
 };
 
 struct TPIUPacket {
@@ -54,9 +63,12 @@ struct TPIUPacket {
 };
 
 // ====================================================================================================
-void TPIUDecoderInit(struct TPIUDecoder *t, BOOL isLiveSet);
 void TPIUDecoderForceSync(struct TPIUDecoder *t, uint8_t offset);
 BOOL TPIUGetPacket(struct TPIUDecoder *t, struct TPIUPacket *p);
+void TPIUDecoderZeroStats(struct TPIUDecoder *t);
+inline struct TPIUDecoderStats *TPIUDecoderGetStats(struct TPIUDecoder *t) { return &t->stats; }
 enum TPIUPumpEvent TPIUPump(struct TPIUDecoder *t, uint8_t d);
+
+void TPIUDecoderInit(struct TPIUDecoder *t);
 // ====================================================================================================
 #endif

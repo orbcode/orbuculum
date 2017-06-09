@@ -289,10 +289,12 @@ void _handleTS(struct ITMDecoder *i)
     {
       if (!(p.d[0]&0x80))
 	{
+	  /* This is packet format 2 ... just a simple increment */
 	  stamp=p.d[0]>>4;
 	}
       else
 	{
+	  /* This is packet format 1 ... full decode needed */
 	  i->timeStatus=(p.d[0]&0x30) >> 4;
 	  stamp=(p.d[1])&0x7f;
 	  if (p.len>2)
@@ -551,8 +553,8 @@ int main(int argc, char *argv[])
     }
 
   /* Reset the TPIU handler before we start */
-  TPIUDecoderInit(&_r.t,TRUE);
-  ITMDecoderInit(&_r.i,TRUE);
+  TPIUDecoderInit(&_r.t);
+  ITMDecoderInit(&_r.i);
 
   sockfd = socket(AF_INET, SOCK_STREAM, 0);
   setsockopt(sockfd, SOL_SOCKET, SO_REUSEPORT, &flag, sizeof(flag));

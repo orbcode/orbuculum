@@ -26,14 +26,20 @@
 #define NO_CHANNEL_CHANGE (0xFF)
 
 // ====================================================================================================
-void TPIUDecoderInit(struct TPIUDecoder *t, BOOL isLiveSet)
+void TPIUDecoderInit(struct TPIUDecoder *t)
 
 /* Reset a TPIUDecoder instance */
 
 {
   t->state=TPIU_UNSYNCED;
   t->syncMonitor=0;
-  t->isLive=isLiveSet;
+  TPIUDecoderZeroStats(t);
+}
+// ====================================================================================================
+void TPIUDecoderZeroStats(struct TPIUDecoder *t)
+
+{
+  memset(&t->stats,0,sizeof(struct TPIUDecoderStats));
 }
 // ====================================================================================================
 void TPIUDecoderForceSync(struct TPIUDecoder *t, uint8_t offset)
@@ -41,6 +47,10 @@ void TPIUDecoderForceSync(struct TPIUDecoder *t, uint8_t offset)
 /* Force the decoder into a specific sync state */
 
 {
+  if (t->state==TPIU_UNSYNCED)
+    {
+      t->stats.syncCount++;
+    }
   t->state=TPIU_RXING;
   t->byteCount=offset;
 }
@@ -110,6 +120,7 @@ enum TPIUPumpEvent TPIUPump(struct TPIUDecoder *t, uint8_t d)
   if (t->syncMonitor==SYNCPATTERN)
     {
       t->state=TPIU_RXING;
+      t->stats.syncCount++;
       t->byteCount=0;
       
       /* Consider this a valid timestamp */
@@ -129,30 +140,29 @@ enum TPIUPumpEvent TPIUPump(struct TPIUDecoder *t, uint8_t d)
 	  return TPIU_EV_RXING;
 	}
 
-      if (t->isLive)
-	{
-	  /* Check if this packet arrived a sensible time since the last one */
-	  gettimeofday(&nowTime,NULL);
-	  timersub(&nowTime,&t->lastPacket,&diffTime);
-	  memcpy(&t->lastPacket,&nowTime,sizeof(struct timeval));
-	}
-
+      /* Check if this packet arrived a sensible time since the last one */
+      gettimeofday(&nowTime,NULL);
+      timersub(&nowTime,&t->lastPacket,&diffTime);
+      memcpy(&t->lastPacket,&nowTime,sizeof(struct timeval));
       t->byteCount=0;
 
       /* If it was less than a second since the last packet then it's valid */ 
-      if ((!t->isLive) || (!diffTime.tv_sec))
+      if (!diffTime.tv_sec)
 	{
+	  t->stats.packets++;
 	  return TPIU_EV_RXEDPACKET;
 	}
       else
 	{
 	  fprintf(stderr,">>>>>>>>> PACKET INTERVAL TOO LONG <<<<<<<<<<<<<<\n");
 	  t->state=TPIU_UNSYNCED;
+	  t->stats.lostSync++;
 	  return TPIU_EV_UNSYNCED;
 	}
 
     default:
       fprintf(stderr,"In illegal state %d\n",t->state);
+      t->stats.error++;
       return TPIU_EV_ERROR;
     }
 }

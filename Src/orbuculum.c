@@ -180,7 +180,6 @@ static void *_runFifo(void *arg)
 	{
 	  /* ....get the packet */
 	  readDataLen=read(params->listenHandle, &p, sizeof(struct ITMPacket));
-
 	  if (readDataLen!=sizeof(struct ITMPacket))
 	    {
 	      return NULL;
@@ -636,10 +635,12 @@ void _handleTS(struct ITMDecoder *i)
     {
       if (!(p.d[0]&0x80))
 	{
+	  /* This is packet format 2 ... just a simple increment */
 	  stamp=p.d[0]>>4;
 	}
       else
 	{
+	  /* This is packet format 1 ... full decode needed */
 	  i->timeStatus=(p.d[0]&0x30) >> 4;
 	  stamp=(p.d[1])&0x7f;
 	  if (p.len>2)
@@ -673,21 +674,21 @@ void _itmPumpProcess(char c)
     case ITM_EV_UNSYNCED:
       if (options.verbose)
 	{
-	  fprintf(stdout,"ITM Unsynced\n");
+	  fprintf(stdout,"ITM Lost Sync (%d)\n",ITMDecoderGetStats(&_r.i)->lostSyncCount);
 	}
       break;
 
     case ITM_EV_SYNCED:
       if (options.verbose)
 	{
-	  fprintf(stdout,"ITM Synced\n");
+	  fprintf(stdout,"ITM In Sync (%d)\n",ITMDecoderGetStats(&_r.i)->syncCount);
 	}
       break;
 
     case ITM_EV_OVERFLOW:
       if (options.verbose)
 	{
-	  fprintf(stdout,"ITM Overflow\n");
+	  fprintf(stdout,"ITM Overflow (%d)\n",ITMDecoderGetStats(&_r.i)->overflow);
 	}
       break;
 
@@ -731,6 +732,10 @@ void _protocolPump(uint8_t c)
       switch (TPIUPump(&_r.t,c))
 	{
 	case TPIU_EV_SYNCED:
+	  if (options.verbose)
+	    {
+	      printf("TPIU In Sync (%d)\n",TPIUDecoderGetStats(&_r.t)->syncCount);
+	    }
 	  ITMDecoderForceSync(&_r.i, TRUE);
 	  break;
 
@@ -739,6 +744,7 @@ void _protocolPump(uint8_t c)
 	  break;
 
 	case TPIU_EV_UNSYNCED:
+	  printf("TPIU Lost Sync (%d)\n",TPIUDecoderGetStats(&_r.t)->lostSync);
 	  ITMDecoderForceSync(&_r.i, FALSE);
 	  break;
 
@@ -1082,8 +1088,8 @@ int main(int argc, char *argv[])
   atexit(_removeFifoTasks);
 
   /* Reset the TPIU handler before we start */
-  TPIUDecoderInit(&_r.t,!(options.file==NULL));
-  ITMDecoderInit(&_r.i,!(options.file==NULL));
+  TPIUDecoderInit(&_r.t);
+  ITMDecoderInit(&_r.i);
 
   /* This ensures the atexit gets called */
   signal(SIGINT, intHandler);

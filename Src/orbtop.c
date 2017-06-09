@@ -555,8 +555,8 @@ int main(int argc, char *argv[])
     }
 
   /* Reset the TPIU handler before we start */
-  TPIUDecoderInit(&_r.t,TRUE);
-  ITMDecoderInit(&_r.i,TRUE);
+  TPIUDecoderInit(&_r.t);
+  ITMDecoderInit(&_r.i);
 
   /* Now create a connection to addr2line...we can use cbw as a temporary buffer */
   snprintf(constructString,MAX_STRING_LENGTH,"%s -fse %s",options.addr2line,options.elffile);
