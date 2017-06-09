@@ -23,20 +23,22 @@
 
 #include "generics.h"
 
-enum TPIUPumpEvent {
-  TPIU_EV_NONE,
-  TPIU_EV_UNSYNCED,
-  TPIU_EV_SYNCED,
-  TPIU_EV_RXING,
-  TPIU_EV_RXEDPACKET,
-  TPIU_EV_ERROR
+enum TPIUPumpEvent
+{
+    TPIU_EV_NONE,
+    TPIU_EV_UNSYNCED,
+    TPIU_EV_SYNCED,
+    TPIU_EV_RXING,
+    TPIU_EV_RXEDPACKET,
+    TPIU_EV_ERROR
 };
 
-enum TPIUPumpState {
-  TPIU_UNSYNCED,
-  TPIU_SYNCED,
-  TPIU_RXING,
-  TPIU_ERROR
+enum TPIUPumpState
+{
+    TPIU_UNSYNCED,
+    TPIU_SYNCED,
+    TPIU_RXING,
+    TPIU_ERROR
 };
 
 #define TPIU_PACKET_LEN (16)

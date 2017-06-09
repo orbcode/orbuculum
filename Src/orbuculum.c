@@ -424,6 +424,7 @@ static void *_listenTask( void *arg )
             }
         }
     }
+
     return NULL;
 }
 // ====================================================================================================
@@ -490,7 +491,7 @@ void _handleException( struct ITMDecoder *i, struct ITMPacket *p )
                              "UNKNOWN_8", "UNKNOWN_9", "UNKNOWN_10", "SVCall", "Debug Monitor", "UNKNOWN_13", "PendSV", "SysTick"
                             };
     const char *exEvent[] = {"Enter", "Exit", "Resume", "Unknown"};
-    opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%s,%s\n", HWEVENT_EXCEPTION, exEvent[eventType&0x03], exNames[exceptionNumber&0x0F] );
+    opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%s,%s\n", HWEVENT_EXCEPTION, exEvent[eventType & 0x03], exNames[exceptionNumber & 0x0F] );
     write( _r.c[HW_CHANNEL].handle, outputString, opLen );
 }
 // ====================================================================================================
@@ -515,7 +516,7 @@ void _handleDWTEvent( struct ITMDecoder *i, struct ITMPacket *p )
 void _handlePCSample( struct ITMDecoder *i, struct ITMPacket *p )
 
 /* We got a sample of the PC */
-  
+
 {
     char outputString[MAX_STRING_LENGTH];
     int opLen;
@@ -528,7 +529,7 @@ void _handlePCSample( struct ITMDecoder *i, struct ITMPacket *p )
 void _handleDataRWWP( struct ITMDecoder *i, struct ITMPacket *p )
 
 /* We got an alert due to a watch pointer */
-  
+
 {
     uint32_t comp = ( p->d[0] & 0x30 ) >> 4;
     BOOL isWrite = ( ( p->d[0] & 0x08 ) != 0 );
@@ -558,7 +559,7 @@ void _handleDataRWWP( struct ITMDecoder *i, struct ITMPacket *p )
 void _handleDataAccessWP( struct ITMDecoder *i, struct ITMPacket *p )
 
 /* We got an alert due to a watchpoint */
-  
+
 {
     uint32_t comp = ( p->d[0] & 0x30 ) >> 4;
     uint32_t data = ( p->d[1] ) | ( ( p->d[2] ) << 8 ) | ( ( p->d[3] ) << 16 ) | ( ( p->d[4] ) << 24 );
@@ -572,7 +573,7 @@ void _handleDataAccessWP( struct ITMDecoder *i, struct ITMPacket *p )
 void _handleDataOffsetWP( struct ITMDecoder *i, struct ITMPacket *p )
 
 /* We got an alert due to an offset write event */
-  
+
 {
     uint32_t comp = ( p->d[0] & 0x30 ) >> 4;
     uint32_t offset = ( p->d[1] ) | ( ( p->d[2] ) << 8 );
@@ -605,7 +606,7 @@ void _handleSW( struct ITMDecoder *i )
 void _handleHW( struct ITMDecoder *i )
 
 /* ... a hardware event has been received, dispatch it */
-  
+
 {
     struct ITMPacket p;
     ITMGetPacket( i, &p );
@@ -666,7 +667,7 @@ void _handleXTN( struct ITMDecoder *i )
 void _handleTS( struct ITMDecoder *i )
 
 /* ... a timestamp */
-  
+
 {
     char outputString[MAX_STRING_LENGTH];
     int opLen;
@@ -712,21 +713,24 @@ void _handleTS( struct ITMDecoder *i )
 void _itmPumpProcess( char c )
 
 /* Handle individual characters into the itm decoder */
-  
+
 {
     switch ( ITMPump( &_r.i, c ) )
     {
-      // ------------------------------------
+        // ------------------------------------
         case ITM_EV_NONE:
             break;
-      // ------------------------------------
+
+        // ------------------------------------
         case ITM_EV_UNSYNCED:
             if ( options.verbose )
             {
                 fprintf( stdout, "ITM Lost Sync (%d)\n", ITMDecoderGetStats( &_r.i )->lostSyncCount );
             }
+
             break;
-      // ------------------------------------
+
+        // ------------------------------------
         case ITM_EV_SYNCED:
             if ( options.verbose )
             {
@@ -734,14 +738,17 @@ void _itmPumpProcess( char c )
             }
 
             break;
-      // ------------------------------------
+
+        // ------------------------------------
         case ITM_EV_OVERFLOW:
             if ( options.verbose )
             {
                 fprintf( stdout, "ITM Overflow (%d)\n", ITMDecoderGetStats( &_r.i )->overflow );
             }
+
             break;
-      // ------------------------------------
+
+        // ------------------------------------
         case ITM_EV_ERROR:
             if ( options.verbose )
             {
@@ -749,23 +756,27 @@ void _itmPumpProcess( char c )
             }
 
             break;
-      // ------------------------------------
+
+        // ------------------------------------
         case ITM_EV_TS_PACKET_RXED:
             _handleTS( &_r.i );
             break;
-      // ------------------------------------
+
+        // ------------------------------------
         case ITM_EV_SW_PACKET_RXED:
             _handleSW( &_r.i );
             break;
-      // ------------------------------------
+
+        // ------------------------------------
         case ITM_EV_HW_PACKET_RXED:
             _handleHW( &_r.i );
             break;
-      // ------------------------------------
+
+        // ------------------------------------
         case ITM_EV_XTN_PACKET_RXED:
             _handleXTN( &_r.i );
             break;
-      // ------------------------------------
+            // ------------------------------------
     }
 }
 // ====================================================================================================
@@ -778,14 +789,14 @@ void _itmPumpProcess( char c )
 void _protocolPump( uint8_t c )
 
 /* Top level protocol pump */
-  
+
 {
     if ( options.useTPIU )
     {
         switch ( TPIUPump( &_r.t, c ) )
         {
-      // ------------------------------------
-	case TPIU_EV_SYNCED:
+            // ------------------------------------
+            case TPIU_EV_SYNCED:
                 if ( options.verbose )
                 {
                     printf( "TPIU In Sync (%d)\n", TPIUDecoderGetStats( &_r.t )->syncCount );
@@ -793,16 +804,19 @@ void _protocolPump( uint8_t c )
 
                 ITMDecoderForceSync( &_r.i, TRUE );
                 break;
-      // ------------------------------------
+
+            // ------------------------------------
             case TPIU_EV_RXING:
             case TPIU_EV_NONE:
                 break;
-      // ------------------------------------
+
+            // ------------------------------------
             case TPIU_EV_UNSYNCED:
                 printf( "TPIU Lost Sync (%d)\n", TPIUDecoderGetStats( &_r.t )->lostSync );
                 ITMDecoderForceSync( &_r.i, FALSE );
                 break;
-      // ------------------------------------
+
+            // ------------------------------------
             case TPIU_EV_RXEDPACKET:
                 if ( !TPIUGetPacket( &_r.t, &_r.p ) )
                 {
@@ -825,17 +839,19 @@ void _protocolPump( uint8_t c )
                         }
                     }
                 }
+
                 break;
-      // ------------------------------------
+
+            // ------------------------------------
             case TPIU_EV_ERROR:
                 fprintf( stderr, "****ERROR****\n" );
                 break;
-      // ------------------------------------
+                // ------------------------------------
         }
     }
     else
     {
-      /* There's no TPIU in use, so this goes straight to the ITM layer */
+        /* There's no TPIU in use, so this goes straight to the ITM layer */
         _itmPumpProcess( c );
     }
 }
@@ -873,8 +889,8 @@ int _processOptions( int argc, char *argv[] )
     while ( ( c = getopt ( argc, argv, "vts:i:p:f:hc:b:" ) ) != -1 )
         switch ( c )
         {
-      // ------------------------------------
-	  /* Config Information */
+            // ------------------------------------
+            /* Config Information */
             case 'v':
                 options.verbose = 1;
                 break;
@@ -886,7 +902,8 @@ int _processOptions( int argc, char *argv[] )
             case 'i':
                 options.tpiuITMChannel = atoi( optarg );
                 break;
-      // ------------------------------------
+
+            // ------------------------------------
             /* Source information */
             case 'p':
                 options.port = optarg;
@@ -903,7 +920,8 @@ int _processOptions( int argc, char *argv[] )
             case 'h':
                 _printHelp( argv[0] );
                 return FALSE;
-      // ------------------------------------
+
+            // ------------------------------------
             /* Individual channel setup */
             case 'c':
                 chanIndex = chanConfig = strdup( optarg );
@@ -944,7 +962,8 @@ int _processOptions( int argc, char *argv[] )
                 *chanIndex++ = 0;
                 options.channel[chan].presFormat = strdup( GenericsUnescape( chanIndex ) );
                 break;
-      // ------------------------------------
+
+            // ------------------------------------
             case 'b':
                 options.chanPath = optarg;
                 break;
@@ -960,10 +979,11 @@ int _processOptions( int argc, char *argv[] )
                 }
 
                 return FALSE;
-      // ------------------------------------
+
+            // ------------------------------------
             default:
                 return FALSE;
-      // ------------------------------------
+                // ------------------------------------
         }
 
     /* Now perform sanity checks.... */
@@ -1035,7 +1055,7 @@ int usbFeeder( void )
             return ( -1 );
         }
 
-	/* Snooze waiting for the device to appear .... this is useful for when they come and go */
+        /* Snooze waiting for the device to appear .... this is useful for when they come and go */
         while ( !( handle = libusb_open_device_with_vid_pid( NULL, VID, PID ) ) )
         {
             usleep( 500000 );
@@ -1043,7 +1063,7 @@ int usbFeeder( void )
 
         if ( !( dev = libusb_get_device( handle ) ) )
         {
-	  /* We didn't get the device, so try again in a while */
+            /* We didn't get the device, so try again in a while */
             continue;
         }
 

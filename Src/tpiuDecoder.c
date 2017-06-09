@@ -140,10 +140,11 @@ enum TPIUPumpEvent TPIUPump( struct TPIUDecoder *t, uint8_t d )
 
     switch ( t->state )
     {
-      // -----------------------------------
+        // -----------------------------------
         case TPIU_UNSYNCED:
             return TPIU_EV_NONE;
-      // -----------------------------------
+
+        // -----------------------------------
         case TPIU_RXING:
             t->rxedPacket[t->byteCount++] = d;
 
@@ -171,12 +172,13 @@ enum TPIUPumpEvent TPIUPump( struct TPIUDecoder *t, uint8_t d )
                 t->stats.lostSync++;
                 return TPIU_EV_UNSYNCED;
             }
-      // -----------------------------------
+
+        // -----------------------------------
         default:
             fprintf( stderr, "In illegal state %d\n", t->state );
             t->stats.error++;
             return TPIU_EV_ERROR;
-      // -----------------------------------
+            // -----------------------------------
     }
 }
 // ====================================================================================================

@@ -32,36 +32,39 @@
 #define ITM_MAX_PACKET  (5)  // This length can only happen for a timestamp
 #define ITM_DATA_PACKET (4)  // This is the maximum length of everything else
 
-enum ITMPumpEvent {
-  ITM_EV_NONE,
-  ITM_EV_UNSYNCED,
-  ITM_EV_SYNCED,
-  ITM_EV_TS_PACKET_RXED,
-  ITM_EV_SW_PACKET_RXED,
-  ITM_EV_HW_PACKET_RXED,
-  ITM_EV_XTN_PACKET_RXED,
-  ITM_EV_OVERFLOW,
-  ITM_EV_ERROR
+enum ITMPumpEvent
+{
+    ITM_EV_NONE,
+    ITM_EV_UNSYNCED,
+    ITM_EV_SYNCED,
+    ITM_EV_TS_PACKET_RXED,
+    ITM_EV_SW_PACKET_RXED,
+    ITM_EV_HW_PACKET_RXED,
+    ITM_EV_XTN_PACKET_RXED,
+    ITM_EV_OVERFLOW,
+    ITM_EV_ERROR
 };
 
-enum hwEvents {
-  HWEVENT_TS,
-  HWEVENT_PCSample,
-  HWEVENT_DWT,
-  HWEVENT_EXCEPTION,
-  HWEVENT_RWWT,
-  HWEVENT_AWP,
-  HWEVENT_OFS,
-  HWEVENT_TIMESTAMP
+enum hwEvents
+{
+    HWEVENT_TS,
+    HWEVENT_PCSample,
+    HWEVENT_DWT,
+    HWEVENT_EXCEPTION,
+    HWEVENT_RWWT,
+    HWEVENT_AWP,
+    HWEVENT_OFS,
+    HWEVENT_TIMESTAMP
 };
 
-enum _protoState {
-  ITM_UNSYNCED,
-  ITM_IDLE,
-  ITM_TS,
-  ITM_SW,
-  ITM_HW,
-  ITM_EXTENSION
+enum _protoState
+{
+    ITM_UNSYNCED,
+    ITM_IDLE,
+    ITM_TS,
+    ITM_SW,
+    ITM_HW,
+    ITM_EXTENSION
 
 };
 #define PROTO_NAME_LIST "UNSYNCED", "IDLE", "TS", "SW", "HW", "EXTENSION"

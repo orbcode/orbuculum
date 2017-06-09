@@ -102,12 +102,12 @@ struct
     struct TPIUDecoder t;
     struct TPIUPacket p;
 
-  /* The interface to the addr2line utility */
+    /* The interface to the addr2line utility */
 #ifdef OSX
     FILE *alhandle;
 #endif
 #ifdef LINUX
-  int pstdin,pstdout;
+    int pstdin, pstdout;
 #endif
 } _r;
 
@@ -119,36 +119,41 @@ struct
 // ====================================================================================================
 // ====================================================================================================
 #ifdef LINUX
-int _linuxpopen(const char *cmdline)
+int _linuxpopen( const char *cmdline )
 
 /* popen isn't bidirectional on linux, so we need to brew our own */
-  
+
 {
     int pipe_stdin[2], pipe_stdout[2];
     int p;
 
-    if ((pipe(pipe_stdin)) || (pipe(pipe_stdout))) return -1;
+    if ( ( pipe( pipe_stdin ) ) || ( pipe( pipe_stdout ) ) )
+    {
+        return -1;
+    }
 
     p = fork();
-    if (p < 0)
-      {
-	return p; /* Fork failed */
-      }
-    
-    if (p == 0)
-      {
-	/* This is the Child */
-        close(pipe_stdin[1]);
-        dup2(pipe_stdin[0], 0);
-        close(pipe_stdout[0]);
-        dup2(pipe_stdout[1], 1);
-        execl("/bin/sh", "sh", "-c", cmdline, (char *)0);
-        perror("execl"); exit(99);
-      }
+
+    if ( p < 0 )
+    {
+        return p; /* Fork failed */
+    }
+
+    if ( p == 0 )
+    {
+        /* This is the Child */
+        close( pipe_stdin[1] );
+        dup2( pipe_stdin[0], 0 );
+        close( pipe_stdout[0] );
+        dup2( pipe_stdout[1], 1 );
+        execl( "/bin/sh", "sh", "-c", cmdline, ( char * )0 );
+        perror( "execl" );
+        exit( 99 );
+    }
 
     _r.pstdin = pipe_stdin[1];
     _r.pstdout = pipe_stdout[0];
-    return 0; 
+    return 0;
 }
 #endif
 // ====================================================================================================
@@ -200,14 +205,14 @@ void _handleDWTEvent( struct ITMDecoder *i, struct ITMPacket *p )
 struct CodeLine *_lookup( uint32_t addr )
 
 /* Lookup function for OSX addr2line */
-  
+
 {
     static char fileContents[MAX_STRING_LENGTH];
     static char functionContents[MAX_STRING_LENGTH];
     static struct CodeLine l = {.file = fileContents, .function = functionContents};
     char *c = l.file;
 
-    
+
     if ( !_r.alhandle )
     {
         return NULL;
@@ -264,59 +269,69 @@ struct CodeLine *_lookup( uint32_t addr )
 struct CodeLine *_lookup( uint32_t addr )
 
 /* Lookup function for Linux addr2line */
-  
+
 {
-  char constructString[MAX_STRING_LENGTH];
-  int clen;
-  
-  static char fileContents[MAX_STRING_LENGTH];
+    char constructString[MAX_STRING_LENGTH];
+    int clen;
+
+    static char fileContents[MAX_STRING_LENGTH];
     static char functionContents[MAX_STRING_LENGTH];
     static struct CodeLine l = {.file = fileContents, .function = functionContents};
     char *c = l.file;
 
     /* Make sure connection is open */
-    if (( !_r.pstdin ) || ( !_r.pstdout))
+    if ( ( !_r.pstdin ) || ( !_r.pstdout ) )
     {
         return NULL;
     }
 
-    clen=snprintf(constructString,MAX_STRING_LENGTH,"0x%08x\n", addr );
-    if (clen!=write(_r.pstdin,constructString,clen))
+    clen = snprintf( constructString, MAX_STRING_LENGTH, "0x%08x\n", addr );
+
+    if ( clen != write( _r.pstdin, constructString, clen ) )
     {
-      _r.pstdin = _r.pstdout = 0;
-      return NULL;
+        _r.pstdin = _r.pstdout = 0;
+        return NULL;
     }
 
     /* Read response until it finishes */
-    c=l.function;
-    while (TRUE)
-      {
-	read(_r.pstdout,c,1);
-	if ((*c=='\n') || (*c=='\r'))
-	  {
-	    *c=0;
-	    break;
-	  }
-	c++;
-      }
+    c = l.function;
 
-    c=l.file;
-    while (TRUE)
-      {
-	read(_r.pstdout,c,1);
-	if ((*c=='\n') || (*c=='\r'))
-	  {
-	    *c=0;
-	    break;
-	  }
-	c++;
-      }
+    while ( TRUE )
+    {
+        read( _r.pstdout, c, 1 );
+
+        if ( ( *c == '\n' ) || ( *c == '\r' ) )
+        {
+            *c = 0;
+            break;
+        }
+
+        c++;
+    }
+
+    c = l.file;
+
+    while ( TRUE )
+    {
+        read( _r.pstdout, c, 1 );
+
+        if ( ( *c == '\n' ) || ( *c == '\r' ) )
+        {
+            *c = 0;
+            break;
+        }
+
+        c++;
+    }
 
 
     /* Spin through looking for the colon that represents the start of the line number */
     c = l.file;
 
-    while ( ( *c != ':' ) && ( *c ) ) c++;
+    while ( ( *c != ':' ) && ( *c ) )
+    {
+        c++;
+    }
 
     if ( !*c )
     {
@@ -381,7 +396,7 @@ int _report_sort_fn( void *a, void *b )
 void outputTop( void )
 
 /* Produce the output */
-  
+
 {
     struct CodeLine *l;
 
@@ -732,10 +747,11 @@ int main( int argc, char *argv[] )
     }
 
     if ( !options.elffile )
-      {
-	fprintf(stderr,"Elf File not specified\n");
-	exit( -2 );
-      }
+    {
+        fprintf( stderr, "Elf File not specified\n" );
+        exit( -2 );
+    }
+
     /* Reset the TPIU handler before we start */
     TPIUDecoderInit( &_r.t );
     ITMDecoderInit( &_r.i );
@@ -747,7 +763,7 @@ int main( int argc, char *argv[] )
 #endif
 
 #ifdef LINUX
-    _linuxpopen(constructString);
+    _linuxpopen( constructString );
 #endif
 
     /* A lookup of address 0 is unlikely to match a function, but it should be a valid response */
