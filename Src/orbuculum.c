@@ -489,8 +489,8 @@ void _handleException( struct ITMDecoder *i, struct ITMPacket *p )
     const char *exNames[] = {"Thread", "Reset", "NMI", "HardFault", "MemManage", "BusFault", "UsageFault", "UNKNOWN_7",
                              "UNKNOWN_8", "UNKNOWN_9", "UNKNOWN_10", "SVCall", "Debug Monitor", "UNKNOWN_13", "PendSV", "SysTick"
                             };
-    const char *exEvent[] = {"Enter", "Exit", "Resume"};
-    opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%s,%s\n", HWEVENT_EXCEPTION, exEvent[eventType], exNames[exceptionNumber] );
+    const char *exEvent[] = {"Enter", "Exit", "Resume", "Unknown"};
+    opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%s,%s\n", HWEVENT_EXCEPTION, exEvent[eventType&0x03], exNames[exceptionNumber&0x0F] );
     write( _r.c[HW_CHANNEL].handle, outputString, opLen );
 }
 // ====================================================================================================

@@ -50,24 +50,21 @@
 #include "tpiuDecoder.h"
 #include "itmDecoder.h"
 
-#define ADDR2LINE "arm-none-eabi-addr2line"
+#define ADDR2LINE "arm-none-eabi-addr2line"  /* Default addr2line to be used */
 
-#define SERVER_PORT 3443           // Server port definition 
+#define SERVER_PORT 3443                     /* Server port definition */
 #define TRANSFER_SIZE (64)
-#define TOP_UPDATE_INTERVAL (1000) // Interval between each on screen update
-#define MAX_STRING_LENGTH (256)    // Maximum length that will be output from a fifo for a single event
+#define TOP_UPDATE_INTERVAL (1000)           /* Interval between each on screen update */
+#define MAX_STRING_LENGTH (256)              /* Maximum length that will be output from a fifo for a single event */
 
-// Codeline entry returned from addr2line
-struct CodeLine
+struct CodeLine                              /* Codeline entry returned from addr2line */
 {
     char *file;
     char *function;
     int line;
 };
 
-// Structure for Hashmap of visited/observed addresses
-
-struct visitedAddr
+struct visitedAddr                           /* Structure for Hashmap of visited/observed addresses */
 {
     uint32_t addr;
     uint32_t visits;
@@ -76,8 +73,7 @@ struct visitedAddr
 
 static struct visitedAddr *addresses = NULL;
 
-// Record for options, either defaults or from command line
-struct
+struct                                      /* Record for options, either defaults or from command line */
 {
     /* Config information */
     BOOL verbose;
@@ -106,9 +102,55 @@ struct
     struct TPIUDecoder t;
     struct TPIUPacket p;
 
-    /* The interface to the addr2line utility */
+  /* The interface to the addr2line utility */
+#ifdef OSX
     FILE *alhandle;
+#endif
+#ifdef LINUX
+  int pstdin,pstdout;
+#endif
 } _r;
+
+// ====================================================================================================
+// ====================================================================================================
+// ====================================================================================================
+// Internally available routines
+// ====================================================================================================
+// ====================================================================================================
+// ====================================================================================================
+#ifdef LINUX
+int _linuxpopen(const char *cmdline)
+
+/* popen isn't bidirectional on linux, so we need to brew our own */
+  
+{
+    int pipe_stdin[2], pipe_stdout[2];
+    int p;
+
+    if ((pipe(pipe_stdin)) || (pipe(pipe_stdout))) return -1;
+
+    p = fork();
+    if (p < 0)
+      {
+	return p; /* Fork failed */
+      }
+    
+    if (p == 0)
+      {
+	/* This is the Child */
+        close(pipe_stdin[1]);
+        dup2(pipe_stdin[0], 0);
+        close(pipe_stdout[0]);
+        dup2(pipe_stdout[1], 1);
+        execl("/bin/sh", "sh", "-c", cmdline, (char *)0);
+        perror("execl"); exit(99);
+      }
+
+    _r.pstdin = pipe_stdin[1];
+    _r.pstdout = pipe_stdout[0];
+    return 0; 
+}
+#endif
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
@@ -154,14 +196,18 @@ void _handleDWTEvent( struct ITMDecoder *i, struct ITMPacket *p )
     }
 }
 // ====================================================================================================
+#ifdef OSX
 struct CodeLine *_lookup( uint32_t addr )
 
+/* Lookup function for OSX addr2line */
+  
 {
     static char fileContents[MAX_STRING_LENGTH];
     static char functionContents[MAX_STRING_LENGTH];
     static struct CodeLine l = {.file = fileContents, .function = functionContents};
     char *c = l.file;
 
+    
     if ( !_r.alhandle )
     {
         return NULL;
@@ -212,6 +258,76 @@ struct CodeLine *_lookup( uint32_t addr )
     l.line = atoi( c );
     return ( &l );
 }
+#endif
+
+#ifdef LINUX
+struct CodeLine *_lookup( uint32_t addr )
+
+/* Lookup function for Linux addr2line */
+  
+{
+  char constructString[MAX_STRING_LENGTH];
+  int clen;
+  
+  static char fileContents[MAX_STRING_LENGTH];
+    static char functionContents[MAX_STRING_LENGTH];
+    static struct CodeLine l = {.file = fileContents, .function = functionContents};
+    char *c = l.file;
+
+    /* Make sure connection is open */
+    if (( !_r.pstdin ) || ( !_r.pstdout))
+    {
+        return NULL;
+    }
+
+    clen=snprintf(constructString,MAX_STRING_LENGTH,"0x%08x\n", addr );
+    if (clen!=write(_r.pstdin,constructString,clen))
+    {
+      _r.pstdin = _r.pstdout = 0;
+      return NULL;
+    }
+
+    /* Read response until it finishes */
+    c=l.function;
+    while (TRUE)
+      {
+	read(_r.pstdout,c,1);
+	if ((*c=='\n') || (*c=='\r'))
+	  {
+	    *c=0;
+	    break;
+	  }
+	c++;
+      }
+
+    c=l.file;
+    while (TRUE)
+      {
+	read(_r.pstdout,c,1);
+	if ((*c=='\n') || (*c=='\r'))
+	  {
+	    *c=0;
+	    break;
+	  }
+	c++;
+      }
+
+
+    /* Spin through looking for the colon that represents the start of the line number */
+    c = l.file;
+
+    while ( ( *c != ':' ) && ( *c ) ) c++;
+
+    if ( !*c )
+    {
+        return NULL;
+    }
+
+    *c++ = 0;
+    l.line = atoi( c );
+    return ( &l );
+}
+#endif
 // ====================================================================================================
 uint64_t _timestamp( void )
 
@@ -264,6 +380,8 @@ int _report_sort_fn( void *a, void *b )
 // ====================================================================================================
 void outputTop( void )
 
+/* Produce the output */
+  
 {
     struct CodeLine *l;
 
@@ -613,14 +731,24 @@ int main( int argc, char *argv[] )
         exit( -1 );
     }
 
+    if ( !options.elffile )
+      {
+	fprintf(stderr,"Elf File not specified\n");
+	exit( -2 );
+      }
     /* Reset the TPIU handler before we start */
     TPIUDecoderInit( &_r.t );
     ITMDecoderInit( &_r.i );
 
     /* Now create a connection to addr2line...we can use cbw as a temporary buffer */
     snprintf( constructString, MAX_STRING_LENGTH, "%s -fse %s", options.addr2line, options.elffile );
-
+#ifdef OSX
     _r.alhandle = popen( constructString, "r+" ); // the logger app is another application
+#endif
+
+#ifdef LINUX
+    _linuxpopen(constructString);
+#endif
 
     /* A lookup of address 0 is unlikely to match a function, but it should be a valid response */
     if ( !_lookup( 0 ) )
