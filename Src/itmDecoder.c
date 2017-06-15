@@ -91,8 +91,8 @@ BOOL ITMGetPacket( struct ITMDecoder *i, struct ITMPacket *p )
     p->pageRegister = i->pageRegister;
 
     memcpy( p->d, i->rxPacket, p->len );
+    //    printf("L=%d (%d)                      %02X %02X %02X %02X\n",p->len,i->targetCount,i->rxPacket[0],i->rxPacket[1],i->rxPacket[2],i->rxPacket[3]);
     memset( &p->d[p->len], 0, ITM_MAX_PACKET - p->len );
-    i->currentCount = 0;
     return TRUE;
 }
 // ====================================================================================================
@@ -155,7 +155,6 @@ enum ITMPumpEvent ITMPump( struct ITMDecoder *i, uint8_t c )
                     {
                         /* This is TS packet format 1, so there's more to follow */
                         newState = ITM_TS;
-                        retVal = ITM_EV_NONE;
                     }
                     else
                     {
@@ -212,8 +211,8 @@ enum ITMPumpEvent ITMPump( struct ITMDecoder *i, uint8_t c )
                 {
                     /* This is a SW packet */
                     i->stats.SWPkt++;
-
-                    if ( ( i->targetCount = c & 0x03 ) == 3 )
+		    i->targetCount = (c & 0x03);
+                    if ( i->targetCount == 3 )
                     {
                         i->targetCount = 4;
                     }
@@ -229,8 +228,9 @@ enum ITMPumpEvent ITMPump( struct ITMDecoder *i, uint8_t c )
                 {
                     /* This is a HW packet */
                     i->stats.HWPkt++;
-
-                    if ( ( i->targetCount = c & 0x03 ) == 3 )
+		    //printf("H [%d] ",c&0x03);
+		    i->targetCount = (c & 0x03);
+                    if ( i->targetCount == 3 )
                     {
                         i->targetCount = 4;
                     }

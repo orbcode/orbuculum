@@ -53,7 +53,7 @@
 #define ADDR2LINE "arm-none-eabi-addr2line"  /* Default addr2line to be used */
 
 #define SERVER_PORT 3443                     /* Server port definition */
-#define TRANSFER_SIZE (64)
+#define MAX_IP_PACKET_LEN (1500)             /* Maximum packet we might receive */
 #define TOP_UPDATE_INTERVAL (1000)           /* Interval between each on screen update */
 #define MAX_STRING_LENGTH (256)              /* Maximum length that will be output from a fifo for a single event */
 
@@ -415,6 +415,7 @@ void outputTop( void )
 
         if ( !strcmp( l->function, "??" ) )
         {
+	  printf("%08x  %d\n",a->addr,a->visits);
             unknown += a->visits;
             total += a->visits;
         }
@@ -451,7 +452,7 @@ void outputTop( void )
 
     HASH_SORT( report, _report_sort_fn );
     struct reportLine *n;
-    fprintf( stdout, "\033[2J\033[;H" );
+    //    fprintf( stdout, "\033[2J\033[;H" );
 
     if ( total )
     {
@@ -473,6 +474,7 @@ void _handlePCSample( struct ITMDecoder *i, struct ITMPacket *p )
 {
     uint32_t pc = ( p->d[3] << 24 ) | ( p->d[2] << 16 ) | ( p->d[1] << 8 ) | ( p->d[0] );
     struct visitedAddr *a;
+    printf("%8x %02X %02X %02X %02X\n",pc,p->d[0],p->d[1],p->d[2],p->d[3]);
     HASH_FIND_INT( addresses, &pc, a );
 
     if ( a )
@@ -731,7 +733,7 @@ int main( int argc, char *argv[] )
     int sockfd;
     struct sockaddr_in serv_addr;
     struct hostent *server;
-    unsigned char cbw[TRANSFER_SIZE];
+    uint8_t cbw[MAX_IP_PACKET_LEN];
     char constructString[MAX_STRING_LENGTH];
     uint64_t lastTime;
 
@@ -756,7 +758,7 @@ int main( int argc, char *argv[] )
     TPIUDecoderInit( &_r.t );
     ITMDecoderInit( &_r.i );
 
-    /* Now create a connection to addr2line...we can use cbw as a temporary buffer */
+    /* Now create a connection to addr2line...*/
     snprintf( constructString, MAX_STRING_LENGTH, "%s -fse %s", options.addr2line, options.elffile );
 #ifdef OSX
     _r.alhandle = popen( constructString, "r+" ); // the logger app is another application
@@ -804,10 +806,10 @@ int main( int argc, char *argv[] )
         return -1;
     }
 
-    while ( ( t = read( sockfd, cbw, TRANSFER_SIZE ) ) > 0 )
+    while ( ( t = read( sockfd, cbw, MAX_IP_PACKET_LEN ) ) > 0 )
     {
-        unsigned char *c = cbw;
-
+        uint8_t *c = cbw;
+	printf("Size=%d\n",t);
         while ( t-- )
         {
             _protocolPump( *c++ );
