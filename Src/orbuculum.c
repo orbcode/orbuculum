@@ -1145,6 +1145,7 @@ int serialFeeder( void )
 
         while ( ( t = read( f, cbw, TRANSFER_SIZE ) ) > 0 )
         {
+            _sendToClients( t, cbw );
             unsigned char *c = cbw;
 
             while ( t-- )
@@ -1186,6 +1187,7 @@ int fileFeeder( void )
 
     while ( ( t = read( f, cbw, TRANSFER_SIZE ) ) > 0 )
     {
+        _sendToClients( t, cbw );
         unsigned char *c = cbw;
 
         while ( t-- )
