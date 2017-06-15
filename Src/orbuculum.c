@@ -1127,6 +1127,7 @@ int serialFeeder( void )
             return -3;
         }
 
+        settings.c_iflag &= ~( ISTRIP | INLCR | IGNCR | ICRNL | IXON | IXOFF );
         settings.c_lflag &= ~( ICANON | ECHO | ECHOE | ISIG );
         settings.c_cflag &= ~PARENB; /* no parity */
         settings.c_cflag &= ~CSTOPB; /* 1 stop bit */
