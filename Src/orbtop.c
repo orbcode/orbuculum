@@ -901,9 +901,16 @@ int main( int argc, char *argv[] )
             lastTime = _timestamp();
 	    outputTop();
         }
-    }
 
-    if ( options.verbose )
+	/* Check to make sure there's not an unexpected TPIU in here */
+	if (ITMDecoderGetStats( &_r.i )->tpiuSyncCount)
+	  {
+	    fprintf(stderr,"Got a TPIU sync while decoding ITM...did you miss a -t option?\n");
+	    break;
+	  }
+    }
+    
+    if (( options.verbose ) && (!ITMDecoderGetStats( &_r.i )->tpiuSyncCount))
     {
         fprintf( stderr, "Read failed\n" );
     }

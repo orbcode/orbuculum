@@ -87,6 +87,7 @@ struct ITMDecoderStats
 {
     uint32_t lostSyncCount;              /* Number of times sync has been lost */
     uint32_t syncCount;                  /* Number of times a sync event has been received */
+    uint32_t tpiuSyncCount;              /* Number of times a tpiu sync event has been received (shouldn't happen) */  
     uint32_t overflow;                   /* Number of times an overflow occured */
     uint32_t SWPkt;                      /* Number of SW Packets received */
     uint32_t TSPkt;                      /* Number of TS Packets received */

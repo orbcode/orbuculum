@@ -29,6 +29,8 @@
 #include "itmDecoder.h"
 #define SYNCMASK              0xFFFFFFFFFFFF
 #define SYNCPATTERN           0x000000000080
+#define TPIU_SYNCMASK         0xFFFFFFFF
+#define TPIU_SYNCPATTERN      0xFFFFFF7F      /* This should not be seen in ITM data */
 #define MAX_PACKET            (5)
 #define DEFAULT_PAGE_REGISTER (0x07)
 
@@ -120,6 +122,15 @@ enum ITMPumpEvent ITMPump( struct ITMDecoder *i, uint8_t c )
 
     i->syncStat = ( i->syncStat << 8 ) | c;
 
+    /* Just check for a TPIU sync ... this is incredibly unlikely in */
+    /* ITM data, so it's an indicator that the TPIU should have been */
+    /* switched in, and hasn't been. */
+    if ( ( ( i->syncStat )&TPIU_SYNCMASK ) == TPIU_SYNCPATTERN )
+    {
+        i->stats.tpiuSyncCount++;
+    }
+
+    
     if ( ( ( i->syncStat )&SYNCMASK ) == SYNCPATTERN )
     {
         i->stats.syncCount++;
