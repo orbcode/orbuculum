@@ -19,9 +19,9 @@
  */
 
 /*
- * Implementation of ITM/DWT decode according to the specification in Appendix E
+ * Implementation of ITM/DWT decode according to the specification in Appendix D4
  * of the ARMv7-M Architecture Refrence Manual document available
- * from https://web.eecs.umich.edu/~prabal/teaching/eecs373-f10/readings/ARMv7-M_ARM.pdf
+ * from https://static.docs.arm.com/ddi0403/e/DDI0403E_B_armv7m_arm.pdf
  */
 #include <stdio.h>
 #include <sys/time.h>
@@ -51,6 +51,17 @@ void ITMDecoderZeroStats( struct ITMDecoder *i )
 
 {
     memset( &i->stats, 0, sizeof( struct ITMDecoderStats ) );
+}
+// ====================================================================================================
+BOOL ITMDecoderIsSynced( struct ITMDecoder *i )
+
+{
+  return i->p!=ITM_UNSYNCED;
+}
+// ====================================================================================================
+struct ITMDecoderStats *ITMDecoderGetStats( struct ITMDecoder *i )
+{
+    return &i->stats;
 }
 // ====================================================================================================
 void ITMDecoderForceSync( struct ITMDecoder *i, BOOL isSynced )
@@ -91,7 +102,6 @@ BOOL ITMGetPacket( struct ITMDecoder *i, struct ITMPacket *p )
     p->pageRegister = i->pageRegister;
 
     memcpy( p->d, i->rxPacket, p->len );
-    //    printf("L=%d (%d)                      %02X %02X %02X %02X\n",p->len,i->targetCount,i->rxPacket[0],i->rxPacket[1],i->rxPacket[2],i->rxPacket[3]);
     memset( &p->d[p->len], 0, ITM_MAX_PACKET - p->len );
     return TRUE;
 }
@@ -124,7 +134,6 @@ enum ITMPumpEvent ITMPump( struct ITMDecoder *i, uint8_t c )
             // -----------------------------------------------------
             case ITM_UNSYNCED:
                 break;
-
             // -----------------------------------------------------
             case ITM_IDLE:
 
@@ -202,7 +211,6 @@ enum ITMPumpEvent ITMPump( struct ITMDecoder *i, uint8_t c )
                         i->stats.PagePkt++;
                         i->pageRegister = ( c >> 4 ) & 0x07;
                     }
-
                     break;
                 }
 
@@ -228,7 +236,6 @@ enum ITMPumpEvent ITMPump( struct ITMDecoder *i, uint8_t c )
                 {
                     /* This is a HW packet */
                     i->stats.HWPkt++;
-		    //printf("H [%d] ",c&0x03);
 		    i->targetCount = (c & 0x03);
                     if ( i->targetCount == 3 )
                     {

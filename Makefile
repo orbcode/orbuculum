@@ -1,7 +1,7 @@
 #VERBOSE=1
 #DEBUG=1
 
-CFLAGS=-DVERSION="\"0.14\""
+CFLAGS=-DVERSION="\"0.15\""
 
 CROSS_COMPILE=
 # Output Files

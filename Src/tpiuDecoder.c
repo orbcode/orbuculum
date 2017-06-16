@@ -43,6 +43,16 @@ void TPIUDecoderZeroStats( struct TPIUDecoder *t )
     memset( &t->stats, 0, sizeof( struct TPIUDecoderStats ) );
 }
 // ====================================================================================================
+BOOL TPIUDecoderSynced( struct TPIUDecoder *t )
+{
+  return t->state!=TPIU_UNSYNCED;
+}
+// ====================================================================================================
+struct TPIUDecoderStats *TPIUDecoderGetStats( struct TPIUDecoder *t )
+{
+    return &t->stats;
+}
+// ====================================================================================================
 void TPIUDecoderForceSync( struct TPIUDecoder *t, uint8_t offset )
 
 /* Force the decoder into a specific sync state */
@@ -55,6 +65,9 @@ void TPIUDecoderForceSync( struct TPIUDecoder *t, uint8_t offset )
 
     t->state = TPIU_RXING;
     t->byteCount = offset;
+
+    /* Consider this a valid timestamp */
+    gettimeofday( &t->lastPacket, NULL );
 }
 // ====================================================================================================
 BOOL TPIUGetPacket( struct TPIUDecoder *t, struct TPIUPacket *p )

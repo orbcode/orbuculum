@@ -5,12 +5,17 @@ An Orbuculum is a Crystal Ball, used for seeing things that would
  be otherwise invisible. A  nodding reference to (the) BlackMagic (debug probe).
 
 *This program is in heavy development. Check back frequently for new versions 
-with additional functionality. The current status (9th June) is that the software
+with additional functionality. The current status (16th June) is that the software
 runs on both Linux and OSX. ITM SW logging is working, and HW tracing
 (Watchpoints, Timestamps, PC Sampling
 etc.) is implemented and reported, but largely untested. Orbcat (to cat
 and mix multiple ITM channels simulteneously) has just been added, as has
-Orbtop to provide a 'top' utility.  I would
+Orbtop to provide a 'top' utility.  Orbtop has just received quite some
+special love to get it working and it is OK on most workloads, although it
+is not working well with WFI yet....code that doesn't use WFI _does_ give
+sensible output.
+
+I would
 not say the whole suite is throughly tested yet...that will come when full
 functionality has been completed. For now the 'happy flows' are working OK but
 the stuff might not look too pretty.* 

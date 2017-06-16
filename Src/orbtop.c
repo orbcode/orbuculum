@@ -72,6 +72,7 @@ struct visitedAddr                           /* Structure for Hashmap of visited
 };
 
 static struct visitedAddr *addresses = NULL;
+uint32_t sleeps;
 
 struct                                      /* Record for options, either defaults or from command line */
 {
@@ -89,7 +90,7 @@ struct                                      /* Record for options, either defaul
     /* Source information */
     int port;
     char *server;
-
+  
 } options = {.addr2line = ADDR2LINE,  .tpiuITMChannel = 1, .port = SERVER_PORT, .server = "localhost"};
 
 #define MAX_IP_PACKET_LEN (1500)
@@ -177,7 +178,7 @@ void _handleException( struct ITMDecoder *i, struct ITMPacket *p )
     const char *exNames[] = {"Thread", "Reset", "NMI", "HardFault", "MemManage", "BusFault", "UsageFault", "UNKNOWN_7",
                              "UNKNOWN_8", "UNKNOWN_9", "UNKNOWN_10", "SVCall", "Debug Monitor", "UNKNOWN_13", "PendSV", "SysTick"
                             };
-    const char *exEvent[] = {"Enter", "Exit", "Resume"};
+    const char *exEvent[] = {"Unknown", "Enter", "Exit", "Resume"};
     fprintf( stdout, "%d,%s,%s\n", HWEVENT_EXCEPTION, exEvent[eventType], exNames[exceptionNumber] );
 }
 // ====================================================================================================
@@ -405,44 +406,49 @@ void outputTop( void )
 
     uint32_t total = 0;
     uint32_t unknown = 0;
+    uint64_t samples = 0;
     uint32_t percentage;
 
     HASH_SORT( addresses, _addresses_sort_fn );
 
     for ( struct visitedAddr *a = addresses; a != NULL; a = a->hh.next )
-    {
-        l = _lookup( a->addr );
+      {
+	if (a->visits)
+	  {
+	    l = _lookup( a->addr );
 
-        if ( !strcmp( l->function, "??" ) )
-        {
-	  printf("%08x  %d\n",a->addr,a->visits);
-            unknown += a->visits;
-            total += a->visits;
-        }
-        else
-        {
-            if ( ( current ) && ( !strcmp( l->function, current->function ) ) )
-            {
-                /* This is another line in the same function */
-                current->count += a->visits;
-                total += a->visits;
-            }
-            else
-            {
-                if ( current )
-                {
-                    HASH_ADD_INT( report, count, current );
-                }
-
-                current = ( struct reportLine * )calloc( 1, sizeof( struct reportLine ) );
-
-                /* Reset these for the next iteration */
-                current->count = a->visits;
-                total += a->visits;
-                strcpy( current->function, l->function );
-            }
-        }
-    }
+	    if ( !strcmp( l->function, "??" ) )
+	      {
+		unknown += a->visits;
+		a->visits=0;
+	      }
+	    else
+	      {
+		if ( ( current ) && ( !strcmp( l->function, current->function ) ) )
+		  {
+		    /* This is another line in the same function */
+		    current->count += a->visits;
+		    total += a->visits;
+		    a->visits=0;
+		  }
+		else
+		  {
+		    if ( current )
+		      {
+			HASH_ADD_INT( report, count, current );
+		      }
+		    
+		    current = ( struct reportLine * )calloc( 1, sizeof( struct reportLine ) );
+		    
+		    /* Reset these for the next iteration */
+		    current->count = a->visits;
+		    total += a->visits;
+		    a->visits=0;
+		    strcpy( current->function, l->function );
+		  }
+	      }
+	  }
+      }
 
     /* If there's one left then add it in */
     if ( current )
@@ -450,44 +456,83 @@ void outputTop( void )
         HASH_ADD_INT( report, count, current );
     }
 
+    /* Add entries for Sleeping and unknown, if there are any of either */
+    if (sleeps)
+      {
+	current = ( struct reportLine * )calloc( 1, sizeof( struct reportLine ) );
+	/* Reset these for the next iteration */
+	current->count = sleeps;
+	total += sleeps;
+	sleeps=0;
+	strcpy( current->function,"** Sleeping ** " );
+	HASH_ADD_INT( report, count, current );
+      }
+
+    if (unknown)
+      {
+	current = ( struct reportLine * )calloc( 1, sizeof( struct reportLine ) );
+	/* Reset these for the next iteration */
+	current->count = unknown;
+	total += unknown;
+	
+	strcpy( current->function,"Unknown" );
+	HASH_ADD_INT( report, count, current );
+      }
+    
     HASH_SORT( report, _report_sort_fn );
     struct reportLine *n;
-    //    fprintf( stdout, "\033[2J\033[;H" );
+    fprintf( stdout, "\033[2J\033[;H" );
 
     if ( total )
     {
         for ( struct reportLine *r = report; r != NULL; r = n )
         {
             percentage = ( r->count * 10000 ) / total;
-            fprintf( stdout, "%3d.%02d%% %s\n", percentage / 100, percentage % 100, r->function );
+            if (r->count)
+	      {
+		fprintf( stdout, "%3d.%02d%% %8ld %s\n", percentage / 100, percentage % 100, r->count, r->function );
+	      }
+	    samples += r->count;
             n = r->hh.next;
-            free( r );
+	    free(r);
         }
-
-        percentage = ( unknown * 10000 ) / total;
-        fprintf( stdout, "%3d.%02d%% Unknown (%d Total Samples)\n", percentage / 100, percentage % 100, total );
+	fprintf( stdout,"-----------------\n");
+	fprintf( stdout,"        %8ld Samples\n",samples);
     }
+
+    /* ... and we are done with the report now, get rid of it */
+    HASH_CLEAR(hh,report);
 }
 // ====================================================================================================
 void _handlePCSample( struct ITMDecoder *i, struct ITMPacket *p )
 
 {
-    uint32_t pc = ( p->d[3] << 24 ) | ( p->d[2] << 16 ) | ( p->d[1] << 8 ) | ( p->d[0] );
-    struct visitedAddr *a;
-    printf("%8x %02X %02X %02X %02X\n",pc,p->d[0],p->d[1],p->d[2],p->d[3]);
-    HASH_FIND_INT( addresses, &pc, a );
-
-    if ( a )
+  uint32_t pc;
+  
+  if ( p->len==1 )
     {
-        a->visits++;
+      /* This is a sleep packet */
+      sleeps++;
     }
-    else
+  else
     {
-        /* Create a new record for this address */
-        a = ( struct visitedAddr * )malloc( sizeof( struct visitedAddr ) );
-        a->visits = 1;
-        a->addr = pc;
-        HASH_ADD_INT( addresses, addr, a );
+      pc = ( p->d[3] << 24 ) | ( p->d[2] << 16 ) | ( p->d[1] << 8 ) | ( p->d[0] );
+
+      struct visitedAddr *a;
+      HASH_FIND_INT( addresses, &pc, a );
+
+      if ( a )
+	{
+	  a->visits++;
+	}
+      else
+	{
+	  /* Create a new record for this address */
+	  a = ( struct visitedAddr * )malloc( sizeof( struct visitedAddr ) );
+	  a->visits = 1;
+	  a->addr = pc;
+	  HASH_ADD_INT( addresses, addr, a );
+	}
     }
 }
 // ====================================================================================================
@@ -522,36 +567,43 @@ void _handleHW( struct ITMDecoder *i )
 // ====================================================================================================
 void _itmPumpProcess( char c )
 
+/* Handle individual characters into the itm decoder */
+
 {
     switch ( ITMPump( &_r.i, c ) )
     {
+        // ------------------------------------
         case ITM_EV_NONE:
             break;
 
+        // ------------------------------------
         case ITM_EV_UNSYNCED:
             if ( options.verbose )
             {
-                fprintf( stdout, "ITM Unsynced\n" );
+                fprintf( stdout, "ITM Lost Sync (%d)\n", ITMDecoderGetStats( &_r.i )->lostSyncCount );
             }
 
             break;
 
+        // ------------------------------------
         case ITM_EV_SYNCED:
             if ( options.verbose )
             {
-                fprintf( stdout, "ITM Synced\n" );
+                fprintf( stdout, "ITM In Sync (%d)\n", ITMDecoderGetStats( &_r.i )->syncCount );
             }
 
             break;
 
+        // ------------------------------------
         case ITM_EV_OVERFLOW:
             if ( options.verbose )
             {
-                fprintf( stdout, "ITM Overflow\n" );
+                fprintf( stdout, "ITM Overflow (%d)\n", ITMDecoderGetStats( &_r.i )->overflow );
             }
 
             break;
 
+        // ------------------------------------
         case ITM_EV_ERROR:
             if ( options.verbose )
             {
@@ -560,12 +612,23 @@ void _itmPumpProcess( char c )
 
             break;
 
-        case ITM_EV_HW_PACKET_RXED:
-            _handleHW( &_r.i );
+        // ------------------------------------
+        case ITM_EV_TS_PACKET_RXED:
             break;
 
-        default:
+        // ------------------------------------
+        case ITM_EV_SW_PACKET_RXED:
+	  break;
+
+        // ------------------------------------
+        case ITM_EV_HW_PACKET_RXED:
+	  _handleHW( &_r.i );
             break;
+
+        // ------------------------------------
+        case ITM_EV_XTN_PACKET_RXED:
+            break;
+            // ------------------------------------
     }
 }
 // ====================================================================================================
@@ -577,23 +640,35 @@ void _itmPumpProcess( char c )
 // ====================================================================================================
 void _protocolPump( uint8_t c )
 
+/* Top level protocol pump */
+
 {
     if ( options.useTPIU )
     {
         switch ( TPIUPump( &_r.t, c ) )
         {
+            // ------------------------------------
             case TPIU_EV_SYNCED:
+                if ( options.verbose )
+                {
+                    printf( "TPIU In Sync (%d)\n", TPIUDecoderGetStats( &_r.t )->syncCount );
+                }
+
                 ITMDecoderForceSync( &_r.i, TRUE );
                 break;
 
+            // ------------------------------------
             case TPIU_EV_RXING:
             case TPIU_EV_NONE:
                 break;
 
+            // ------------------------------------
             case TPIU_EV_UNSYNCED:
+                printf( "TPIU Lost Sync (%d)\n", TPIUDecoderGetStats( &_r.t )->lostSync );
                 ITMDecoderForceSync( &_r.i, FALSE );
                 break;
 
+            // ------------------------------------
             case TPIU_EV_RXEDPACKET:
                 if ( !TPIUGetPacket( &_r.t, &_r.p ) )
                 {
@@ -619,13 +694,16 @@ void _protocolPump( uint8_t c )
 
                 break;
 
+            // ------------------------------------
             case TPIU_EV_ERROR:
                 fprintf( stderr, "****ERROR****\n" );
                 break;
+                // ------------------------------------
         }
     }
     else
     {
+        /* There's no TPIU in use, so this goes straight to the ITM layer */
         _itmPumpProcess( c );
     }
 }
@@ -758,6 +836,10 @@ int main( int argc, char *argv[] )
     TPIUDecoderInit( &_r.t );
     ITMDecoderInit( &_r.i );
 
+    /* Because we are connecting over IP, we only get synced packets, so force receivers into sync */
+    TPIUDecoderForceSync( &_r.t,0 );
+    ITMDecoderForceSync( &_r.i, TRUE );
+    
     /* Now create a connection to addr2line...*/
     snprintf( constructString, MAX_STRING_LENGTH, "%s -fse %s", options.addr2line, options.elffile );
 #ifdef OSX
@@ -808,8 +890,7 @@ int main( int argc, char *argv[] )
 
     while ( ( t = read( sockfd, cbw, MAX_IP_PACKET_LEN ) ) > 0 )
     {
-        uint8_t *c = cbw;
-	printf("Size=%d\n",t);
+      uint8_t *c = cbw;
         while ( t-- )
         {
             _protocolPump( *c++ );
@@ -818,7 +899,7 @@ int main( int argc, char *argv[] )
         if ( _timestamp() - lastTime > TOP_UPDATE_INTERVAL )
         {
             lastTime = _timestamp();
-            outputTop();
+	    outputTop();
         }
     }
 

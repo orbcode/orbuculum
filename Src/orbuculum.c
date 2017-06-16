@@ -343,7 +343,7 @@ static void *_client( void *args )
     {
         readDataLen = read( params->listenHandle, maxTransitPacket, MAX_IP_PACKET_LEN );
 
-        if ( write( params->portNo, maxTransitPacket, readDataLen ) < 0 )
+        if ((readDataLen<=0) || ( write( params->portNo, maxTransitPacket, readDataLen ) < 0 ))
         {
             /* This port went away, so remove it */
             if ( options.verbose )
@@ -490,7 +490,7 @@ void _handleException( struct ITMDecoder *i, struct ITMPacket *p )
     const char *exNames[] = {"Thread", "Reset", "NMI", "HardFault", "MemManage", "BusFault", "UsageFault", "UNKNOWN_7",
                              "UNKNOWN_8", "UNKNOWN_9", "UNKNOWN_10", "SVCall", "Debug Monitor", "UNKNOWN_13", "PendSV", "SysTick"
                             };
-    const char *exEvent[] = {"Enter", "Exit", "Resume", "Unknown"};
+    const char *exEvent[] = {"Unknown", "Enter", "Exit", "Resume"};
     opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%s,%s\n", HWEVENT_EXCEPTION, exEvent[eventType & 0x03], exNames[exceptionNumber & 0x0F] );
     write( _r.c[HW_CHANNEL].handle, outputString, opLen );
 }
@@ -521,8 +521,17 @@ void _handlePCSample( struct ITMDecoder *i, struct ITMPacket *p )
     char outputString[MAX_STRING_LENGTH];
     int opLen;
 
-    uint32_t pc = ( p->d[3] << 24 ) | ( p->d[2] << 16 ) | ( p->d[1] << 8 ) | ( p->d[0] );
-    opLen = snprintf( outputString, ( MAX_STRING_LENGTH - 1 ), "%d,0x%08x\n", HWEVENT_PCSample, pc );
+    if (p->len == 1)
+      {
+	/* This is a sleep packet */
+	opLen = snprintf( outputString, ( MAX_STRING_LENGTH - 1 ), "%d,__**SLEEP**__\n", HWEVENT_PCSample);
+      }
+    else
+      {
+	uint32_t pc = ( p->d[3] << 24 ) | ( p->d[2] << 16 ) | ( p->d[1] << 8 ) | ( p->d[0] );
+	opLen = snprintf( outputString, ( MAX_STRING_LENGTH - 1 ), "%d,0x%08x\n", HWEVENT_PCSample, pc );
+	printf("%d %08x\n",p->len,pc);    //FIXME
+      }
     write( _r.c[HW_CHANNEL].handle, outputString, opLen );
 }
 // ====================================================================================================

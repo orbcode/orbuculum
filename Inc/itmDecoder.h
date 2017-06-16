@@ -116,10 +116,8 @@ struct ITMDecoder
 // ====================================================================================================
 void ITMDecoderForceSync( struct ITMDecoder *i, BOOL isSynced );
 void ITMDecoderZeroStats( struct ITMDecoder *i );
-inline struct ITMDecoderStats *ITMDecoderGetStats( struct ITMDecoder *i )
-{
-    return &i->stats;
-}
+BOOL ITMDecoderIsSynced( struct ITMDecoder *i );
+struct ITMDecoderStats *ITMDecoderGetStats( struct ITMDecoder *i );
 BOOL ITMGetPacket( struct ITMDecoder *i, struct ITMPacket *p );
 enum ITMPumpEvent ITMPump( struct ITMDecoder *i, uint8_t c );
 

@@ -77,10 +77,8 @@ struct TPIUPacket
 void TPIUDecoderForceSync( struct TPIUDecoder *t, uint8_t offset );
 BOOL TPIUGetPacket( struct TPIUDecoder *t, struct TPIUPacket *p );
 void TPIUDecoderZeroStats( struct TPIUDecoder *t );
-inline struct TPIUDecoderStats *TPIUDecoderGetStats( struct TPIUDecoder *t )
-{
-    return &t->stats;
-}
+BOOL TPIUDecoderSynced( struct TPIUDecoder *t );
+struct TPIUDecoderStats *TPIUDecoderGetStats( struct TPIUDecoder *t );
 enum TPIUPumpEvent TPIUPump( struct TPIUDecoder *t, uint8_t d );
 
 void TPIUDecoderInit( struct TPIUDecoder *t );
