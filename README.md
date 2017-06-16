@@ -13,9 +13,7 @@ and mix multiple ITM channels simulteneously) has just been added, as has
 Orbtop to provide a 'top' utility.  Orbtop has just received quite some
 special love to get it working and it is OK on most workloads, although it
 is not working well with WFI yet....code that doesn't use WFI _does_ give
-sensible output.
-
-I would
+sensible output. I would
 not say the whole suite is throughly tested yet...that will come when full
 functionality has been completed. For now the 'happy flows' are working OK but
 the stuff might not look too pretty.* 
