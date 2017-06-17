@@ -1,0 +1,34 @@
+source config/gdbtrace.init
+target extended-remote /dev/ttyACM1
+monitor swdp_scan
+file ofiles/firmware.elf
+attach 1
+set mem inaccessible-by-default off
+set print pretty
+load
+monitor traceswo 2250000
+start
+
+
+# Configure STM32F1 SWD pin
+enableSTM32SWD
+
+# 2.25Mbps, use TPIU, don't use Manchester encoding
+prepareSWD 2250000 1 0
+
+dwtSamplePC 1
+dwtSyncTAP 3
+dwtPostTAP 1
+dwtPostInit 1
+dwtPostReset 15
+dwtCycEna 1
+
+ITMId 9
+ITMGSTFreq 3
+ITMTSPrescale 3
+ITMTXEna 1
+ITMSYNCEna 1
+ITMEna 1
+
+ITMTER 0 0xFFFFFFFF
+ITMTPR 0xFFFFFFFF

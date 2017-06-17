@@ -1,0 +1,480 @@
+# ====================================================================
+define orbuculum
+  help orbuculum
+end
+document orbuculum
+GDB SWO Trace Configuration Helpers
+===================================
+
+Setup Device
+------------
+enableSTM32F1SWD  : Enable SWO on STM32F1 pins
+prepareSWD        : Prepare SWD output in specified format
+
+Configure DWT
+-------------
+dwtPOSTCNT        : Enable POSTCNT underflow event counter packet generation
+dwtFOLDEVT        : Enable folded-instruction counter overflow event packet generation
+dwtLSUEVT         : Enable LSU counter overflow event packet generation
+dwtSLEEPEVT       : Enable Sleep counter overflow event packet generation
+dwtDEVEVT         : Enable Exception counter overflow event packet generation
+dwtCPIEVT         : Enable CPI counter overflow event packet generation
+dwtTraceException : Enable Exception Trace Event packet generation
+dwtSamplePC       : Enable PC sample using POSTCNT interval
+dwtSyncTap        : Set how often Sync packets are sent out (None, CYCCNT[24], CYCCNT[26] or CYCCNT[28])
+dwtPostTap        : Sets the POSTCNT tap (CYCCNT[6] or CYCCNT[10])
+dwtPostInit       : Sets the initial value for the POSTCNT counter
+dwtPostReset      : Sets the reload value for the POSTCNT counter
+dwtCycEna         : Enable or disable CYCCNT
+
+Configure ITM
+-------------
+ITMId             : Set the ITM ID for this device
+ITMGTSFreq        : Set Global Timestamp frequency 
+ITMTSPrescale     : Set Timestamp Prescale
+ITMSWDEna         : TS counter uses Processor Clock, or clock from TPIU Interface
+ITMTXEna          : Control if DWT packets are forwarded to the ITM
+ITMSYNCEna        : Control if sync packets are transmitted
+ITMTSEna          : Enable local timestamp generation
+ITMEna            : Master Enable for ITM
+end
+# ====================================================================
+define ITMTER
+  if (($argc!=2) || ($arg0<0) || ($arg0>7))
+    help ITMTER
+  else
+    set *0xe0000fb0 = 0xc5acce55
+    set *0xe0000e00 = 0xFFFFFFFF    
+  end
+end
+document ITMTER
+ITMTER <Block> <Bitmask> Set Trace Enable Register bitmap for 32*<Block>
+end
+# ====================================================================
+define ITMTPR
+  if ($argc!=1)
+    help ITMTPR
+  else
+    set *0xe0000fb0 = 0xc5acce55
+    set *0xe0000e40 = 0xFFFFFFFF    
+  end
+end
+document ITMTPR
+ITMTPR <Bitmask> Enable block 8*bit access from unprivledged code
+end
+
+
+
+end
+# ====================================================================
+
+define enableSTM32F1SWD
+  # RCC->APB2ENR |= RCC_APB2ENR_AFIOEN;
+  set *0x40021018 |= 1
+  #  AFIO->MAPR |= (2 << 24); // Disable JTAG to release TRACESWO
+  set *0x40010004 |= 0x2000000
+  #  DBGMCU->CR |= DBGMCU_CR_TRACE_IOEN;
+  set *0xE0042004 |= 0x20 
+end
+document enableSTM32F1SWD
+enableSTM32F1SWD Configure output pin on STM32F1 for SWO use.
+end
+
+# ====================================================================
+
+define prepareSWD
+  set $speed=2250000
+  set $useTPIU=1
+  set $useMan=0
+  
+  if $argc >= 1
+    set $speed = $arg0
+  end
+
+  if $argc >= 2
+    set $useTPIU = $arg1
+  end
+
+  if $argc >= 3
+    set $useMan = $arg2
+  end
+
+  # Output bits at speed dependent on SystemCoreClock
+  set *0xE0040010 = (SystemCoreClock/$speed)-1
+
+  if ($useMan==0)
+    # Use Async mode pin protocol
+    set *0xE00400F0 = 2
+  else
+    # Use Manchester mode pin protocol
+    set *0xE00400F0 = 0
+  end
+
+  if ($useTPIU==1)
+    # Use TPIU formatter and flush
+    set *0xE0040304 = 0x102
+  else
+    set *0xE0040304 = 0x0
+  end
+
+  # Flush all initial configuration
+#  set *0xe000edfc |= 0x1000000
+#  set *0xe0001000 = 0
+
+end
+document prepareSWD
+prepareSWD <Speed> <UseTPIU> <UseMan>: Prepare output trace data port at specified speed
+  <Speed>   : Speed to use (Ideally an integer divisor of SystemCoreClock)
+  <UseTPIU> : Set to 1 to use TPIU
+  <UseMan>  : Set to 1 use use Manchester encoding
+end
+
+# ====================================================================
+define dwtPOSTCNT
+  if ($argc!=1)
+    help dwtPOSTCNT
+  else
+    set *0xe000edfc |= 0x1000000
+    if ($arg0==1)
+      set *0xe0001000 |= (1<<22)
+    else
+      set *0xe0001000 &= ~(1<<22)
+    end
+  end
+end
+document dwtPOSTCNT
+dwtPOSTCNT <0|1> Enable POSTCNT underflow event counter packet generation
+end
+# ====================================================================
+define dwtFOLDEVT
+  if ($argc!=1)
+    help dwtFOLDEVT
+  else
+    set *0xe000edfc |= 0x1000000
+    if ($arg0==1)
+      set *0xe0001000 |= (1<<21)
+    else
+      set *0xe0001000 &= ~(1<<21)
+    end
+  end
+end
+document dwtFOLDEVT
+dwtFOLDEVT <0|1> Enable folded-instruction counter overflow event packet generation
+end
+# ====================================================================
+define dwtLSUEVT
+  if ($argc!=1)
+    help dwtLSUEVT
+  else
+    set *0xe000edfc |= 0x1000000
+    if ($arg0==1)
+      set *0xe0001000 |= (1<<20)
+    else
+      set *0xe0001000 &= ~(1<<20)
+    end
+  end
+end
+document dwtLSUEVT
+dwtLSUEVT <0|1> Enable LSU counter overflow event packet generation
+end
+# ====================================================================
+define dwtSLEEPEVT
+  if ($argc!=1)
+    help dwtSLEEPEVT
+  else
+    set *0xe000edfc |= 0x1000000
+    if ($arg0==1)
+      set *0xe0001000 |= (1<<19)
+    else
+      set *0xe0001000 &= ~(1<<19)
+    end
+  end
+end
+document dwtSLEEPEVT
+dwtSLEEPEVT <0|1> Enable Sleep counter overflow event packet generation
+end
+# ====================================================================
+define dwtCEVEVT
+  if ($argc!=1)
+    help dwtCEVEVT
+  else
+    set *0xe000edfc |= 0x1000000
+    if ($arg0==1)
+      set *0xe0001000 |= (1<<18)
+    else
+      set *0xe0001000 &= ~(1<<18)
+    end
+  end
+end
+document dwtCEVEVT
+dwtDEVEVT <0|1> Enable Exception counter overflow event packet generation
+end
+# ====================================================================
+define dwtCPIEVT
+  if ($argc!=1)
+    help dwtCPIEVT
+  else
+    set *0xe000edfc |= 0x1000000
+    if ($arg0==1)
+      set *0xe0001000 |= (1<<17)
+    else
+      set *0xe0001000 &= ~(1<<17)
+    end
+  end
+end
+document dwtCPIEVT
+dwtCPIEVT <0|1> Enable CPI counter overflow event packet generation
+end
+# ====================================================================
+define dwtTraceException
+  if ($argc!=1)
+    help dwtTraceException
+  else
+    set *0xe000edfc |= 0x1000000
+    if ($arg0==1)
+      set *0xe0001000 |= (1<<16)
+    else
+      set *0xe0001000 &= ~(1<<16)
+    end
+  end
+end
+document dwtTraceException
+dwtTraceException <0|1> Enable Exception Trace Event packet generation
+end
+# ====================================================================
+define dwtSamplePC
+  if ($argc!=1)
+    help dwtSamplePC
+  else
+    set *0xe000edfc |= 0x1000000
+    if ($arg0==1)
+      set *0xe0001000 |= (1<<12)
+    else
+      set *0xe0001000 &= ~(1<<12)
+    end
+  end
+end
+document dwtSamplePC
+dwtSamplePC <0|1> Enable PC sample using POSTCNT interval
+end
+# ====================================================================
+define dwtSyncTap
+  if (($argc!=1) || ($arg0<0) || ($arg0>3))
+    help dwtSyncTap
+  else
+    set *0xe000edfc |= 0x1000000
+    set *0xe0001000 &= ~(0x03<<10)
+    set *0xe0001000 |= (($arg0&0x03)<<10)
+  end
+end
+document dwtSyncTap
+dwtSyncTap <0..3> Set how often Sync packets are sent out (None, CYCCNT[24], CYCCNT[26] or CYCCNT[28])
+end
+# ====================================================================
+define dwtPostTap
+  if (($argc!=1) || ($arg0<0) || ($arg0>1))
+    help dwtPostTap
+  else
+    set *0xe000edfc |= 0x1000000
+    if ($arg0==0)
+      set *0xe0001000 &= ~(1<<9)
+    else
+      set *0xe0001000 |= (1<<9)      
+    end
+  end
+end
+document dwtPostTap
+dwtPostTap <0..1> Sets the POSTCNT tap (CYCCNT[6] or CYCCNT[10])
+end
+# ====================================================================
+define dwtPostInit
+  if (($argc!=1) || ($arg0<0) || ($arg0>15))
+    help dwtPostInit
+  else
+    set *0xe000edfc |= 0x1000000
+    set *0xe0001000 &= ~(0x0f<<5)    
+    set *0xe0001000 |= (($arg0&0x0f)<<5)
+  end
+end
+document dwtPostInit
+dwtPostInit <0..15> Sets the initial value for the POSTCNT counter
+end
+# ====================================================================
+define dwtPostReset
+  if (($argc!=1) || ($arg0<0) || ($arg0>15))
+    help dwtPostInit
+  else
+    set *0xe000edfc |= 0x1000000
+    set *0xe0001000 &= ~(0x0f<<1)    
+    set *0xe0001000 |= (($arg0&0x0f)<<1)
+  end
+end
+document dwtPostReset
+dwtPostReset <0..15> Sets the reload value for the POSTCNT counter
+end
+# ====================================================================
+define dwtCycEna
+  if ($argc!=1)
+    help dwtCycEna
+  else
+    set *0xe000edfc |= 0x1000000
+    if ($arg0==1)
+      set *0xe0001000 |= (1<<0)
+    else
+      set *0xe0001000 &= ~(1<<0)
+    end
+  end
+end
+document dwtPostInit
+dwtCycEna <0|1> Enable or disable CYCCNT
+end
+# ====================================================================
+# ====================================================================
+
+define ITMId
+  if (($argc!=1) || ($arg0<0) || ($arg0>127))
+    help ITMBusId
+  else
+    set *0xe0000fb0 = 0xc5acce55
+    set *0xe0000e80 &= ~(0x7F<<16)
+    set *0xe0000e80 |= (($arg0&0x7f)<<16)
+  end
+end
+document ITMId
+ITMId <0..127>: Set the ITM ID for this device
+end
+# ====================================================================
+define ITMGTSFreq
+  if (($argc!=1) || ($arg0<0) || ($arg0>3))
+    help ITMGTSFreq
+  else
+    set *0xe0000fb0 = 0xc5acce55
+    set *0xe0000e80 &= ~(0x3<<10)
+    set *0xe0000e80 |= (($arg0&3)<<10)
+  end
+end
+document ITMGTSFreq
+ITMGTSFreq <0..3> Set Global Timestamp frequency [0-Disable, 1-Approx 128 Cycles, 2-Approx 8192 Cycles, 3-Whenever possible
+end
+# ====================================================================
+define ITMTSPrescale
+  if (($argc!=1) || ($arg0<0) || ($arg0>3))
+    help ITMGTSFreq
+  else
+    set *0xe0000fb0 = 0xc5acce55
+    set *0xe0000e80 &= ~(0x3<<8)
+    set *0xe0000e80 |= (($arg0&3)<<8)
+  end
+end
+document ITMTSPrescale
+ITMTSPrescale <0..3> Set Timestamp Prescale [0-No Prescale, 1-/4, 2-/16, 3-/64
+end
+# ====================================================================
+define ITMSWOEna
+  if (($argc!=1) || ($arg0<0) || ($arg0>1))
+    help ITMSWOEna
+  else
+    set *0xe0000fb0 = 0xc5acce55
+    if ($arg0==0)
+      set *0xe0000e80 &= ~(0x1<<4)
+    else
+      set *0xe0000e80 |= (($arg0&1)<<4)
+    end
+  end
+end
+document ITMSWOEna
+ITMSWDEna <0|1> 0-TS counter uses Processor Clock, 
+                1-TS counter uses clock from TPIU Interface, and is held in reset while the output line is idle.
+end
+# ====================================================================
+define ITMTXEna
+  if (($argc!=1) || ($arg0<0) || ($arg0>1))
+    help ITMTXEna
+  else
+    set *0xe0000fb0 = 0xc5acce55
+    if ($arg0==0)
+      set *0xe0000e80 &= ~(0x1<<3)
+    else
+      set *0xe0000e80 |= (($arg0&1)<<3)
+    end
+  end
+end
+document ITMSWOEna
+ITMTXEna <0|1> 0-DWT packets are not forwarded to the ITM
+               1-DWT packets are output to the ITM
+end
+# ====================================================================
+define ITMSYNCEna
+  if (($argc!=1) || ($arg0<0) || ($arg0>1))
+    help ITMSYNCEna
+  else
+    set *0xe0000fb0 = 0xc5acce55
+    if ($arg0==0)
+      set *0xe0000e80 &= ~(0x1<<2)
+    else
+      set *0xe0000e80 |= (($arg0&1)<<2)
+    end
+  end
+end
+document ITMSYNCEna
+ITMSYNCEna <0|1> 0-Sync packets are not transmitted
+                 1-Sync paclets are transmitted
+end
+# ====================================================================
+define ITMTSEna
+  if (($argc!=1) || ($arg0<0) || ($arg0>1))
+    help ITMTSEna
+  else
+    set *0xe0000fb0 = 0xc5acce55
+    if ($arg0==0)
+      set *0xe0000e80 &= ~(0x1<<1)
+    else
+      set *0xe0000e80 |= (($arg0&1)<<1)
+    end
+  end
+end
+document ITMTSEna
+ITMTSEna <0|1> Enable local timestamp generation
+end
+# ====================================================================
+define ITMEna
+  if (($argc!=1) || ($arg0<0) || ($arg0>1))
+    help ITMEna
+  else
+    set *0xe0000fb0 = 0xc5acce55
+    if ($arg0==0)
+      set *0xe0000e80 &= ~(0x1<<0)
+    else
+      set *0xe0000e80 |= (($arg0&1)<<0)
+    end
+  end
+end
+document ITMEna
+ITMEna <0|1> Master Enable for ITM
+end
+# ====================================================================
+define ITMTER
+  if (($argc!=2) || ($arg0<0) || ($arg0>7))
+    help ITMTER
+  else
+    set *0xe0000fb0 = 0xc5acce55
+    set *0xe0000e00 = 0xFFFFFFFF    
+  end
+end
+document ITMTER
+ITMTER <Block> <Bitmask> Set Trace Enable Register bitmap for 32*<Block>
+end
+# ====================================================================
+define ITMTPR
+  if ($argc!=1)
+    help ITMTPR
+  else
+    set *0xe0000fb0 = 0xc5acce55
+    set *0xe0000e40 = 0xFFFFFFFF    
+  end
+end
+document ITMTPR
+ITMTPR <Bitmask> Enable block 8*bit access from unprivledged code
+end
+# ====================================================================
+

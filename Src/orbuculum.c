@@ -530,7 +530,6 @@ void _handlePCSample( struct ITMDecoder *i, struct ITMPacket *p )
       {
 	uint32_t pc = ( p->d[3] << 24 ) | ( p->d[2] << 16 ) | ( p->d[1] << 8 ) | ( p->d[0] );
 	opLen = snprintf( outputString, ( MAX_STRING_LENGTH - 1 ), "%d,0x%08x\n", HWEVENT_PCSample, pc );
-	printf("%d %08x\n",p->len,pc);    //FIXME
       }
     write( _r.c[HW_CHANNEL].handle, outputString, opLen );
 }
@@ -808,7 +807,7 @@ void _protocolPump( uint8_t c )
             case TPIU_EV_SYNCED:
                 if ( options.verbose )
                 {
-                    printf( "TPIU In Sync (%d)\n", TPIUDecoderGetStats( &_r.t )->syncCount );
+		  fprintf( stdout,"TPIU In Sync (%d)\n", TPIUDecoderGetStats( &_r.t )->syncCount );
                 }
 
                 ITMDecoderForceSync( &_r.i, TRUE );
@@ -821,7 +820,7 @@ void _protocolPump( uint8_t c )
 
             // ------------------------------------
             case TPIU_EV_UNSYNCED:
-                printf( "TPIU Lost Sync (%d)\n", TPIUDecoderGetStats( &_r.t )->lostSync );
+	      fprintf( stdout,"TPIU Lost Sync (%d)\n", TPIUDecoderGetStats( &_r.t )->lostSync );
                 ITMDecoderForceSync( &_r.i, FALSE );
                 break;
 
@@ -844,7 +843,7 @@ void _protocolPump( uint8_t c )
                     {
                         if ( options.verbose )
                         {
-                            printf( "Unknown TPIU channel %02x\n", _r.p.packet[g].s );
+			  fprintf( stdout,"Unknown TPIU channel %02x\n", _r.p.packet[g].s );
                         }
                     }
                 }
@@ -874,16 +873,16 @@ void intHandler( int dummy )
 void _printHelp( char *progName )
 
 {
-    printf( "Useage: %s <dhnv> <b basedir> <p port> <s speed>\n", progName );
-    printf( "        b: <basedir> for channels\n" );
-    printf( "        c: <Number>,<Name>,<Format> of channel to populate (repeat per channel)\n" );
-    printf( "        h: This help\n" );
-    printf( "        f: <filename> Take input from specified file\n" );
-    printf( "        i: <channel> Set ITM Channel in TPIU decode (defaults to 1)\n" );
-    printf( "        p: <serialPort> to use\n" );
-    printf( "        s: <serialSpeed> to use\n" );
-    printf( "        t: Use TPIU decoder\n" );
-    printf( "        v: Verbose mode\n" );
+  fprintf( stdout,"Useage: %s <dhnv> <b basedir> <p port> <s speed>\n", progName );
+    fprintf( stdout,"        b: <basedir> for channels\n" );
+    fprintf( stdout,"        c: <Number>,<Name>,<Format> of channel to populate (repeat per channel)\n" );
+    fprintf( stdout,"        h: This help\n" );
+    fprintf( stdout,"        f: <filename> Take input from specified file\n" );
+    fprintf( stdout,"        i: <channel> Set ITM Channel in TPIU decode (defaults to 1)\n" );
+    fprintf( stdout,"        p: <serialPort> to use\n" );
+    fprintf( stdout,"        s: <serialSpeed> to use\n" );
+    fprintf( stdout,"        t: Use TPIU decoder\n" );
+    fprintf( stdout,"        v: Verbose mode\n" );
 }
 // ====================================================================================================
 int _processOptions( int argc, char *argv[] )

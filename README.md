@@ -5,11 +5,11 @@ An Orbuculum is a Crystal Ball, used for seeing things that would
  be otherwise invisible. A  nodding reference to (the) BlackMagic (debug probe).
 
 *This program is in heavy development. Check back frequently for new versions 
-with additional functionality. The current status (16th June) is that the software
+with additional functionality. The current status (18th June) is that the software
 runs on both Linux and OSX. ITM SW logging is working, and HW tracing
 (Watchpoints, Timestamps, PC Sampling
 etc.) is implemented and reported, but largely untested. Orbcat (to cat
-and mix multiple ITM channels simulteneously) has just been added, as has
+and mix multiple ITM channels simulteneously) has been added, as has
 Orbtop to provide a 'top' utility.  Orbtop has just received quite some
 special love to get it working and it is OK on most workloads, although it
 is not working well with WFI yet....code that doesn't use WFI _does_ give
@@ -41,7 +41,7 @@ from the target;
 Information about using each individual interface can be found in the
 docs directory.
 
-It can use, or bypass, the TPIU. The TPIU adds (a small amount of) overhead
+Orbuculum can use, or bypass, the TPIU. The TPIU adds (a small amount of) overhead
 to the datastream, but provides better syncronisation if there is corruption
 on the link. To include the TPIU in decode stack, provide the -t 
 option on the command line.
@@ -53,10 +53,17 @@ but 921600 baud is normally acheivable. On BMP the baudrate is set via
 the gdb session with the 'monitor traceswo xxxx' command. For a TTL
 Serial device its set by the Orbuculum command line.
 
-Depending on what you're using to wake up SWO on the target, you
-may need code to get it into the correct mode and emitting data. You
-can do that via gdb direct memory accesses, or from program code.
- 
+Configuring the Target
+======================
+
+Generally speaking, you will need to configure the target device to output
+SWD data. You can either do that through program code, or through magic
+incantations in gdb. The gdb approach is more flexible, but I wrote the
+program code version first, so I'll leave it here for completeness.
+
+Program Code Version
+--------------------
+
 An example for a STM32F103 (it'll be pretty much the same for any
 other M3, but the dividers will be different);
 
@@ -115,6 +122,61 @@ other M3, but the dividers will be different);
     ETM->FFLR = 24; // Stall when less than N bytes free in FIFO (range 1..24)
                     // Larger values mean less latency in trace, but more stalls.
     }
+
+GDB Configuration Version
+-------------------------
+
+In the support directory you will find a script `gdbtrace.init` which contains a
+set of setup macros for the SWO functionality. Full details of how to set up these
+various registers are available from https://static.docs.arm.com/ddi0403/e/DDI0403E_B_armv7m_arm.pdf and
+you've got various options for the type of output generated, its frequency and it's content.
+
+Using these macros means you do not need to change your program code to be able to use
+facilities like orbtop. Obviously, if you want textual trace output, you've got to create
+that in the program!
+
+Information about the contets of this file can be found by importing it into your
+gdb session with `source gdbtrace.init` and then typing `help orbuculum`. Help on the
+parameters for each macro are available via the help system too.
+
+In general, you will configure orbuculum via your local `.gdbinit` file. An example file is
+alto in the Support directory, and looks like this;
+
+    source config/gdbtrace.init
+    target extended-remote /dev/ttyACM1
+    monitor swdp_scan
+    file ofiles/firmware.elf
+    attach 1
+    set mem inaccessible-by-default off
+    set print pretty
+    load
+    monitor traceswo 2250000
+    start
+
+    # Configure STM32F1 SWD pin
+    enableSTM32SWD
+
+    # 2.25Mbps, use TPIU, don't use Manchester encoding
+    prepareSWD 2250000 1 0
+
+    dwtSamplePC 1
+    dwtSyncTAP 3
+    dwtPostTAP 1
+    dwtPostInit 1
+    dwtPostReset 15
+    dwtCycEna 1
+
+    # Produce ITM output on channel 9
+    ITMId 9
+    ITMGSTFreq 3
+    ITMTSPrescale 3
+    ITMTXEna 1
+    ITMSYNCEna 1
+    ITMEna 1
+
+    ITMTER 0 0xFFFFFFFF
+    ITMTPR 0xFFFFFFFF
+
 
 Building
 ========
