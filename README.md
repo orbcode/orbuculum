@@ -11,12 +11,12 @@ runs on both Linux and OSX. ITM SW logging is working, and HW tracing
 etc.) is implemented and reported. Orbcat (to cat
 and mix multiple ITM channels simulteneously) has been added, as has
 Orbtop to provide a 'top' utility.  Orbtop has just received quite some
-special love to get it working and it seems robust on all tested workloads.
+special love to get it working and it seems robust on all tested workloads.*
 
 I would
 not say the whole suite is throughly tested yet...that will come when full
 functionality has been completed. For now the 'happy flows' are working OK but
-the stuff might not look too pretty.* 
+the stuff might not look too pretty.
 
 A few simple use cases are documented in the last section of this
 document. More will be added.
@@ -143,7 +143,7 @@ gdb session with `source gdbtrace.init` and then typing `help orbuculum`. Help o
 parameters for each macro are available via the help system too.
 
 In general, you will configure orbuculum via your local `.gdbinit` file. An example file is
-alto in the Support directory, and looks like this;
+also in the Support directory, and looks like this;
 
     source config/gdbtrace.init
     target extended-remote /dev/ttyACM1
@@ -497,7 +497,7 @@ create a TCP server to which an arbitary number of clients can
 connect. Those clients each decode the data flow independently of
 orbuculum, so you can present the data from the target simulteneously
 in multiple formats (you might log it to a file while also processing
-it via a plot routine, for example).
+it via a plot routine, for example).  You can also use the source code for orbcat or orbtop as the basis for creating your own specific decoders (and I'd really appreciate a copy to fold into this suite too please!).
 
 Using Orbtop
 ------------
@@ -538,4 +538,27 @@ fast will lead to flooding the SWO and potentially missing other
 important data such as channel output.  You do not need to restart
 orbuculum or orbtop in order to change the parameters in gdb - just
 CTRL-C, change, and restart.
+
+Here's a typical example of orbtop output for a Skeleton application based on FreeRTOS with USB over Serial (CDC) support. This table is updated once per second;
+
+     97.90%     4308 ** Sleeping ** 
+      1.25%       55 USB_LP_CAN1_RX0_IRQHandler
+      0.20%        9 xTaskIncrementTick
+      0.13%        6 Suspend
+      0.09%        4 SysTick_Handler
+      0.06%        3 Resume
+      0.06%        3 __WFI
+      0.04%        2 vTaskSwitchContext
+      0.04%        2 TIM_Cmd
+      0.02%        1 prvAddCurrentTaskToDelayedList
+      0.02%        1 xTaskResumeAll
+      0.02%        1 vTaskDelay
+      0.02%        1 PendSV_Handler
+      0.02%        1 __ISB
+      0.02%        1 taskIn
+      0.02%        1 statsGetRTVal
+      0.02%        1 taskOut
+    -----------------
+                4400 Samples
+
 
