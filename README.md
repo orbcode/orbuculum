@@ -5,18 +5,21 @@ An Orbuculum is a Crystal Ball, used for seeing things that would
  be otherwise invisible. A  nodding reference to (the) BlackMagic (debug probe).
 
 *This program is in heavy development. Check back frequently for new versions 
-with additional functionality. The current status (18th June) is that the software
+with additional functionality. The current status (20th June) is that the software
 runs on both Linux and OSX. ITM SW logging is working, and HW tracing
 (Watchpoints, Timestamps, PC Sampling
-etc.) is implemented and reported, but largely untested. Orbcat (to cat
+etc.) is implemented and reported. Orbcat (to cat
 and mix multiple ITM channels simulteneously) has been added, as has
 Orbtop to provide a 'top' utility.  Orbtop has just received quite some
-special love to get it working and it is OK on most workloads, although it
-is not working well with WFI yet....code that doesn't use WFI _does_ give
-sensible output. I would
+special love to get it working and it seems robust on all tested workloads.
+
+I would
 not say the whole suite is throughly tested yet...that will come when full
 functionality has been completed. For now the 'happy flows' are working OK but
 the stuff might not look too pretty.* 
+
+A few simple use cases are documented in the last section of this
+document. More will be added.
 
 On a CORTEX M Series device SWO is a datastream that comes out of a
 single pin when the debug interface is in SWD mode. It can be encoded
@@ -154,7 +157,7 @@ alto in the Support directory, and looks like this;
     start
 
     # Configure STM32F1 SWD pin
-    enableSTM32SWD
+    enableSTM32F1SWD
 
     # 2.25Mbps, use TPIU, don't use Manchester encoding
     prepareSWD 2250000 1 0
@@ -425,4 +428,114 @@ The output was;
 ```
 
 (On inspection, the last line of recorded data was indeed a 'D' line).
+
+Using SWO in Battle
+===================
+
+SWO gives you a number of powerful new capabilities in your debug
+arsenal. Here are a few examples....if you have more to add please
+send me an email.
+
+Multi-channel Debug
+-------------------
+
+The easiest and most obvious use of SWO is to give you multi-channel
+debug capability. By adding multiple '-c' definitions to the orbuculum
+comand line you can create multiple fifos which will each emit data of
+interest. So, for the simple case of two distinct serial streams,
+something like the following will suffice;
+
+`-c 0,out0,"%c" -c 1,out1,"%c"`
+
+...this will create two fifos in your output directory, `out0` and
+`out1`, each with distinct output data.  By default the CMSIS provided
+`ITM_SendChar` routine only outputs to channel0, so you will need a
+new routine that can output to a specified channel. Something like;
+
+    static __INLINE uint32_t ITM_SendChar (uint32_t c, uint32_t ch)
+    {
+      if ((CoreDebug->DEMCR & CoreDebug_DEMCR_TRCENA_Msk)  &&      /* Trace enabled */
+          (ITM->TCR & ITM_TCR_ITMENA_Msk)                  &&      /* ITM enabled */
+          (ITM->TER & (1ul << c)        )                    )     /* ITM Port c enabled */
+      {
+        while (ITM->PORT[c].u32 == 0);
+        ITM->PORT[c].u8 = (uint8_t) ch;
+      }  
+      return (ch);
+    }
+
+Now, this works perfectly for chars, but you can also write longer
+values into the transit buffer so if, for example, you wanted to write
+32 bit values from a calculation, just update the routine to take
+int32_t and change the channel definition to be something more like
+`-c 4,calcResult,"%d"`.
+
+Mixing Channels
+---------------
+
+It gets more complicated when you want to mix output from
+individual channels together. In this circumstance you can either
+write a bit of script to merge the channels together, or you can use
+`orbcat` to do the same thing from the command line. So if, for
+example, you wanted to merge the text from channel0 with the 32 bit values
+from channel 4, an orbcat line such as this would do the job;
+
+`orbcat -c 0,"%c" -c 4,"\nResult=%d\n"`
+
+...its obvious that the formatting of this buffer is completely
+dependent on the order in which data arrive from the target, so you
+might want to put some 'tags' or differentiators into each channel to
+keep them distinct - a typical mechanism might be to use commas to
+seperate the flows into different columns in a CSV file.
+
+Multiple Simulteneous Outputs
+-----------------------------
+
+Orbuculum will place fifos for any defined channels (plus the hardware event
+channel) in the specified output directory. It will simulteneously
+create a TCP server to which an arbitary number of clients can
+connect. Those clients each decode the data flow independently of
+orbuculum, so you can present the data from the target simulteneously
+in multiple formats (you might log it to a file while also processing
+it via a plot routine, for example).
+
+Using Orbtop
+------------
+Orbtop is an example client to orbuculum which processes the PC
+sampling information to identify what routines are running at any
+point in time.  This is essential information to understand what your
+target is actually doing and once you've got this data you'll find you
+become addicted to it! Just running orbtop with the details of your
+target binary and a path to the addr2line utility is enough for orbtop to
+do its magic (along with information about the configuration of the
+incoming SWO stream, of course);
+
+`orbtop -t -i 9 -a ~/bin/armgcc/bin/arm-none-eabi-addr2line -e firmware.elf`
+
+The amount (and indeed, presence) of sample data is set by a number of
+configuration options. These can be set from program code, but it's
+more flexible to set them from gdb. The main ones are;
+
+* `dwtSamplePC` : Enable or disable Program Counter sample generation
+* `dwtPostTap` : Set the count rate for the PC interval counter at
+either bit 6 or bit 10 of the main CPU clock.
+* `dwtPostInit` : set the initial value for the PC interval counter
+(this defines when the first sample is taken....you've got to be
+pretty precise if this is important to you!).
+* `dwtPostReset` : Set the reload value for the PC Interval Counter
+(higher values = slower counting).
+* `dwtCycEna` : Enable the cycle counter input (i.e. switch the whole
+* thing on). You won't get far without this set!
+
+The maximum speed at which you can generate samples is defined by the
+speed of your SWO connection but, with a 72MHz CPU, the slowest
+settings (`dwtPostTap 1` and `dwtPostReset 15`) still generate about
+4000 samples per second, so you will get useful information at that
+level of resolution. There is a risk that you could miss frequent, but
+short, routines if you're running too slow, so do vary the speeds to
+make sure you get consistent results...on the other hand running too
+fast will lead to flooding the SWO and potentially missing other
+important data such as channel output.  You do not need to restart
+orbuculum or orbtop in order to change the parameters in gdb - just
+CTRL-C, change, and restart.
 

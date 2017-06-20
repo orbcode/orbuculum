@@ -11,7 +11,7 @@ start
 
 
 # Configure STM32F1 SWD pin
-enableSTM32SWD
+enableSTM32F1SWD
 
 # 2.25Mbps, use TPIU, don't use Manchester encoding
 prepareSWD 2250000 1 0

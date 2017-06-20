@@ -37,37 +37,12 @@ ITMTXEna          : Control if DWT packets are forwarded to the ITM
 ITMSYNCEna        : Control if sync packets are transmitted
 ITMTSEna          : Enable local timestamp generation
 ITMEna            : Master Enable for ITM
+ITMTER            : Set Trace Enable Register bitmap for 32*<Block>
+ITMTPR            : Enable block 8*bit access from unprivledged code
 end
 # ====================================================================
-define ITMTER
-  if (($argc!=2) || ($arg0<0) || ($arg0>7))
-    help ITMTER
-  else
-    set *0xe0000fb0 = 0xc5acce55
-    set *0xe0000e00 = 0xFFFFFFFF    
-  end
-end
-document ITMTER
-ITMTER <Block> <Bitmask> Set Trace Enable Register bitmap for 32*<Block>
-end
 # ====================================================================
-define ITMTPR
-  if ($argc!=1)
-    help ITMTPR
-  else
-    set *0xe0000fb0 = 0xc5acce55
-    set *0xe0000e40 = 0xFFFFFFFF    
-  end
-end
-document ITMTPR
-ITMTPR <Bitmask> Enable block 8*bit access from unprivledged code
-end
-
-
-
-end
 # ====================================================================
-
 define enableSTM32F1SWD
   # RCC->APB2ENR |= RCC_APB2ENR_AFIOEN;
   set *0x40021018 |= 1
@@ -118,9 +93,10 @@ define prepareSWD
   end
 
   # Flush all initial configuration
-#  set *0xe000edfc |= 0x1000000
-#  set *0xe0001000 = 0
-
+  set *0xe000edfc |= 0x1000000
+  set *0xe0001000 = 0
+  set *0xe0000fb0 = 0xc5acce55
+  set *0xe0000e80 = 0
 end
 document prepareSWD
 prepareSWD <Speed> <UseTPIU> <UseMan>: Prepare output trace data port at specified speed
@@ -330,7 +306,6 @@ dwtCycEna <0|1> Enable or disable CYCCNT
 end
 # ====================================================================
 # ====================================================================
-
 define ITMId
   if (($argc!=1) || ($arg0<0) || ($arg0>127))
     help ITMBusId
@@ -354,7 +329,9 @@ define ITMGTSFreq
   end
 end
 document ITMGTSFreq
-ITMGTSFreq <0..3> Set Global Timestamp frequency [0-Disable, 1-Approx 128 Cycles, 2-Approx 8192 Cycles, 3-Whenever possible
+ITMGTSFreq <0..3> Set Global Timestamp frequency 
+          [0-Disable, 1-Approx 128 Cycles, 
+           2-Approx 8192 Cycles, 3-Whenever possible]
 end
 # ====================================================================
 define ITMTSPrescale
@@ -458,7 +435,7 @@ define ITMTER
     help ITMTER
   else
     set *0xe0000fb0 = 0xc5acce55
-    set *0xe0000e00 = 0xFFFFFFFF    
+    set *(0xe0000e00+4*$arg0) = $arg1
   end
 end
 document ITMTER
@@ -470,7 +447,7 @@ define ITMTPR
     help ITMTPR
   else
     set *0xe0000fb0 = 0xc5acce55
-    set *0xe0000e40 = 0xFFFFFFFF    
+    set *0xe0000e40 = $arg0 
   end
 end
 document ITMTPR
