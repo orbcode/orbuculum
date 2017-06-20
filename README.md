@@ -2,24 +2,25 @@ Orbuculum - ARM Cortex SWO Output Processing Tools
 ==================================================
 
 An Orbuculum is a Crystal Ball, used for seeing things that would 
- be otherwise invisible. A  nodding reference to (the) BlackMagic (debug probe).
+ be otherwise invisible. A  nodding reference to (the) BlackMagic
+ (debug probe), BMP.
 
 *This program is in heavy development. Check back frequently for new versions 
-with additional functionality. The current status (20th June) is that the software
-runs on both Linux and OSX. ITM SW logging is working, and HW tracing
-(Watchpoints, Timestamps, PC Sampling
+with additional functionality. The current status (21st June) is that
+the software runs on both Linux and OSX. ITM SW logging is working,
+and HW tracing (Watchpoints, Timestamps, PC Sampling
 etc.) is implemented and reported. Orbcat (to cat
 and mix multiple ITM channels simulteneously) has been added, as has
 Orbtop to provide a 'top' utility.  Orbtop has just received quite some
 special love to get it working and it seems robust on all tested workloads.*
 
-I would
-not say the whole suite is throughly tested yet...that will come when full
-functionality has been completed. For now the 'happy flows' are working OK but
-the stuff might not look too pretty.
+I would not say the whole suite is throughly tested yet...that will
+come when full functionality has been completed. For now the 'happy
+flows' are working OK but the stuff might not look too pretty.
 
 A few simple use cases are documented in the last section of this
-document. More will be added.
+document, as are example outputs of using orbtop to report on the
+activity of BMP while emitting SWO packets. More will be added.
 
 On a CORTEX M Series device SWO is a datastream that comes out of a
 single pin when the debug interface is in SWD mode. It can be encoded
@@ -561,4 +562,66 @@ Here's a typical example of orbtop output for a Skeleton application based on Fr
     -----------------
                 4400 Samples
 
+Dogfood
+=======
 
+Orbuculum was pointed at a a BMP instance (running on a 72MHz
+STM32F103C8) both with and without SWO running in asynchronous mode at
+2.25Mbps. 
+
+Firstly, without SWO;
+
+     26.96%     1186 gdb_if_update_buf
+     23.23%     1022 stm32f103_ep_read_packet
+     21.82%      960 gdb_if_getchar_to
+      6.66%      293 cdcacm_get_config
+      6.54%      288 platform_timeout_is_expired
+      5.61%      247 usbd_ep_read_packet
+      4.86%      214 platform_time_ms
+      3.90%      172 cdcacm_get_dtr
+      0.13%        6 _gpio_clear
+      0.06%        3 gpio_set_mode
+      0.04%        2 swdptap_turnaround
+      0.04%        2 swdptap_seq_out
+      0.02%        1 swdptap_bit_in
+      0.02%        1 swdptap_bit_in
+      0.02%        1 swdptap_turnaround
+      0.02%        1 platform_timeout_set
+    -----------------
+                4399 Samples
+
+...and then, with SWO running (note that in this second case the
+sample frequency had to be increased to be able to see the impact,
+which is reflected in `dma1_channel5_isr` and to a much lesser degree
+in `trace_buf_drain`. Note that when this trace was taken the target
+was emitting nearly 18000 PC samples per second, encoded in TPIU
+frames. 
+
+     18.17%     3198 stm32f103_ep_read_packet
+     17.35%     3054 gdb_if_getchar_to
+     15.05%     2648 gdb_if_update_buf
+     11.02%     1940 usbd_ep_read_packet
+      9.24%     1627 platform_time_ms
+      9.07%     1597 platform_timeout_is_expired
+      7.93%     1396 cdcacm_get_dtr
+      4.78%      842 cdcacm_get_config
+      4.72%      831 dma1_channel5_isr
+      1.52%      268 usb_copy_to_pm
+      0.45%       80 stm32f103_poll
+      0.17%       31 trace_buf_drain
+      0.06%       12 usb_lp_can_rx0_isr
+      0.05%        9 gpio_set_mode
+      0.03%        7 swdptap_turnaround
+      0.03%        7 swdptap_turnaround
+      0.03%        7 _gpio_clear
+      0.03%        7 usbd_poll
+      0.03%        6 swdptap_seq_out_parity
+      0.02%        5 swdptap_seq_out
+      0.02%        4 swdptap_seq_in_parity
+      0.01%        3 adiv5_swdp_low_access
+      0.01%        2 swdptap_bit_in
+      0.01%        2 swdptap_bit_out
+      0.01%        2 _gpio_set
+      (Anthing < 0.01% removed)
+    -----------------
+               17594 Samples
