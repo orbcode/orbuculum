@@ -593,7 +593,7 @@ Firstly, without SWO;
 ...and then, with SWO running (note that in this second case the
 sample frequency had to be increased to be able to see the impact,
 which is reflected in `dma1_channel5_isr` and to a much lesser degree
-in `trace_buf_drain`. Note that when this trace was taken the target
+in `trace_buf_drain`). When this trace was taken the target
 was emitting nearly 18000 PC samples per second, encoded in TPIU
 frames. 
 
