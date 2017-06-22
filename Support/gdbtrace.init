@@ -58,31 +58,36 @@ end
 # ====================================================================
 
 define prepareSWD
+  set $clockspeed=72000000
   set $speed=2250000
   set $useTPIU=1
   set $useMan=0
   
   if $argc >= 1
-    set $speed = $arg0
+    set $clockspeed = $arg0
   end
 
   if $argc >= 2
-    set $useTPIU = $arg1
+    set $speed = $arg1
   end
 
   if $argc >= 3
-    set $useMan = $arg2
+    set $useTPIU = $arg2
   end
 
-  # Output bits at speed dependent on SystemCoreClock
-  set *0xE0040010 = (SystemCoreClock/$speed)-1
+  if $argc >= 4
+    set $useMan = $arg3
+  end
+
+  # Output bits at speed dependent on system clock speed
+  set *0xE0040010 = ($clockspeed/$speed)-1
 
   if ($useMan==0)
     # Use Async mode pin protocol
     set *0xE00400F0 = 2
   else
     # Use Manchester mode pin protocol
-    set *0xE00400F0 = 0
+    set *0xE00400F0 = 1
   end
 
   if ($useTPIU==1)
@@ -99,7 +104,8 @@ define prepareSWD
   set *0xe0000e80 = 0
 end
 document prepareSWD
-prepareSWD <Speed> <UseTPIU> <UseMan>: Prepare output trace data port at specified speed
+prepareSWD <ClockSpd> <Speed> <UseTPIU> <UseMan>: Prepare output trace data port at specified speed
+  <ClockSpd>: Speed of the CPU SystemCoreClock
   <Speed>   : Speed to use (Ideally an integer divisor of SystemCoreClock)
   <UseTPIU> : Set to 1 to use TPIU
   <UseMan>  : Set to 1 use use Manchester encoding

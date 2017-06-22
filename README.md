@@ -154,15 +154,24 @@ also in the Support directory, and looks like this;
     set mem inaccessible-by-default off
     set print pretty
     load
+    # Adjust this for whichever probe you're using...for Bluepill;
     monitor traceswo 2250000
+    # For 'real' BMP (Uses Manchester encoding)
+    # monitor traceswo
+    # For serial (Async, but slower)
+    # monitor traceswo 1120000
+    
     start
 
     # Configure STM32F1 SWD pin
     enableSTM32F1SWD
 
-    # 2.25Mbps, use TPIU, don't use Manchester encoding
-    prepareSWD 2250000 1 0
+    # ...adjust to the speed set above, use TPIU, don't use Manchester encoding
+    prepareSWD SystemCoreClock 2250000 1 0
 
+    # If using real BMP, need to be slower, and use Manchester encoding
+    # prepareSWD SystemCoreClock 180000 1 1
+    
     dwtSamplePC 1
     dwtSyncTAP 3
     dwtPostTAP 1
@@ -327,18 +336,14 @@ spent in that function.  Any samples that do not match to an identifiable functi
 reported as 'Unknown'.
 
 As with Orbcat there can be any number of instances of orbtop running at the same time, 
-which might be useful to perform sampling over different time horizons.  Orbtop needs the 
-`addr2line` utility which will look for on the current path. A location for it can also be specified
-explicitly. A typical invocation line for orbtop would be;
+which might be useful to perform sampling over different time horizons. A typical invocation
+line for orbtop would be;
 
-`orbtop -a ~/bin/armgcc/bin/arm-none-eabi-addr2line -e ~/Develop/STM32F103-skel/ofiles/firmware.elf`
+`orbtop -e ~/Develop/STM32F103-skel/ofiles/firmware.elf`
 
-...the pointer to the elf file is always needed for orbtop to be able to recover symbols from.
+...the pointer to the elf file is always needed for orbtop to be able to recover symbols from. 
 
 Command line options for orbtop are;
-
- `-a`: Set location for addr2line for occasions where it cannot be found on the command line (defaults to
-       looking for a program called addr2line).
 
  `-e`: Set elf file for recovery of program symbols.
 
@@ -498,7 +503,9 @@ create a TCP server to which an arbitary number of clients can
 connect. Those clients each decode the data flow independently of
 orbuculum, so you can present the data from the target simulteneously
 in multiple formats (you might log it to a file while also processing
-it via a plot routine, for example).  You can also use the source code for orbcat or orbtop as the basis for creating your own specific decoders (and I'd really appreciate a copy to fold into this suite too please!).
+it via a plot routine, for example).  You can also use the source code for orbcat or
+orbtop as the basis for creating your own specific decoders
+(and I'd really appreciate a copy to fold into this suite too please!).
 
 Using Orbtop
 ------------
@@ -507,11 +514,11 @@ sampling information to identify what routines are running at any
 point in time.  This is essential information to understand what your
 target is actually doing and once you've got this data you'll find you
 become addicted to it! Just running orbtop with the details of your
-target binary and a path to the addr2line utility is enough for orbtop to
+target binary is enough for orbtop to
 do its magic (along with information about the configuration of the
 incoming SWO stream, of course);
 
-`orbtop -t -i 9 -a ~/bin/armgcc/bin/arm-none-eabi-addr2line -e firmware.elf`
+`orbtop -t -i 9 -a -e firmware.elf`
 
 The amount (and indeed, presence) of sample data is set by a number of
 configuration options. These can be set from program code, but it's
@@ -540,7 +547,8 @@ important data such as channel output.  You do not need to restart
 orbuculum or orbtop in order to change the parameters in gdb - just
 CTRL-C, change, and restart.
 
-Here's a typical example of orbtop output for a Skeleton application based on FreeRTOS with USB over Serial (CDC) support. This table is updated once per second;
+Here's a typical example of orbtop output for a Skeleton application based
+on FreeRTOS with USB over Serial (CDC) support. This table is updated once per second;
 
      97.90%     4308 ** Sleeping ** 
       1.25%       55 USB_LP_CAN1_RX0_IRQHandler

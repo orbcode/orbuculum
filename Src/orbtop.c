@@ -28,6 +28,7 @@
 #include <sys/stat.h>
 #include <stdio.h>
 #include <string.h>
+#include <elf.h>
 #if defined OSX
     #include <libusb.h>
 #else
@@ -50,19 +51,14 @@
 #include "tpiuDecoder.h"
 #include "itmDecoder.h"
 
-#define ADDR2LINE "arm-none-eabi-addr2line"  /* Default addr2line to be used */
-
 #define SERVER_PORT 3443                     /* Server port definition */
 #define MAX_IP_PACKET_LEN (1500)             /* Maximum packet we might receive */
-#define TOP_UPDATE_INTERVAL (1000)           /* Interval between each on screen update */
+#define TOP_UPDATE_INTERVAL (1000LL)         /* Interval between each on screen update */
 #define MAX_STRING_LENGTH (256)              /* Maximum length that will be output from a fifo for a single event */
 
-struct CodeLine                              /* Codeline entry returned from addr2line */
-{
-    char *file;
-    char *function;
-    int line;
-};
+/* Special tag values for unreal locations */
+#define SLEEPING ((void *)0xFFFFFFFF)
+#define UNKNOWN ((void *)0xFFFFFFFE)
 
 struct visitedAddr                           /* Structure for Hashmap of visited/observed addresses */
 {
@@ -71,8 +67,18 @@ struct visitedAddr                           /* Structure for Hashmap of visited
     UT_hash_handle hh;
 };
 
+#define MAX_IP_PACKET_LEN (1500)
+
+struct SymbolTableEntry                    /* Record for a function in the source file */
+{
+  uint32_t address;
+  char *name;
+};
+
 static struct visitedAddr *addresses = NULL;
 uint32_t sleeps;
+
+/* ---------- CONFIGURATION ----------------- */
 
 struct                                      /* Record for options, either defaults or from command line */
 {
@@ -83,18 +89,16 @@ struct                                      /* Record for options, either defaul
 
     uint32_t hwOutputs;
 
-    /* Addr2line config */
-    char *addr2line;
+    /* Target program config */
     char *elffile;
 
     /* Source information */
     int port;
     char *server;
   
-} options = {.addr2line = ADDR2LINE,  .tpiuITMChannel = 1, .port = SERVER_PORT, .server = "localhost"};
+} options = {.tpiuITMChannel = 1, .port = SERVER_PORT, .server = "localhost"};
 
-#define MAX_IP_PACKET_LEN (1500)
-
+/* ----------- LIVE STATE ----------------- */
 struct
 {
     /* The decoders and the packets from them */
@@ -103,13 +107,8 @@ struct
     struct TPIUDecoder t;
     struct TPIUPacket p;
 
-    /* The interface to the addr2line utility */
-#ifdef OSX
-    FILE *alhandle;
-#endif
-#ifdef LINUX
-    int pstdin, pstdout;
-#endif
+  uint32_t numSymbols;
+  struct SymbolTableEntry *symbols;
 } _r;
 
 // ====================================================================================================
@@ -119,44 +118,102 @@ struct
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
-#ifdef LINUX
-int _linuxpopen( const char *cmdline )
+ int _addrCompare(const void *a, const void *b)
 
-/* popen isn't bidirectional on linux, so we need to brew our own */
+ /* Embedded compare function for searching and sorting */
+   
+ {
+   return (((const struct SymbolTableEntry *)a)->address-((const struct SymbolTableEntry *)b)->address);
+ }
+
+
+BOOL _loadElfSymbols(void)
 
 {
-    int pipe_stdin[2], pipe_stdout[2];
-    int p;
+  int32_t fd;
+  Elf32_Ehdr elfHdr;
+  Elf32_Shdr *sHdr;
+  int32_t sTab;
 
-    if ( ( pipe( pipe_stdin ) ) || ( pipe( pipe_stdout ) ) )
+  /* Embedded function to get the section ------------- */
+  char *__alloc_and_read_section(int32_t fd, Elf32_Shdr sh)
+  {
+    char* buff = malloc(sh.sh_size);
+
+    if (buff)
+      {
+	lseek(fd, (off_t)sh.sh_offset, SEEK_SET);
+	read(fd, (void *)buff, sh.sh_size);
+      }
+    return buff;
+  }
+  /* ------------------------------------------------- */
+  
+  fd=open(options.elffile,O_RDONLY);
+  if (fd<0)
     {
-        return -1;
+      fprintf(stderr,"Couldn't open ELF file\n");
+      return FALSE;
     }
 
-    p = fork();
-
-    if ( p < 0 )
+  read(fd,&elfHdr,sizeof(elfHdr));
+  if (strncmp((char *)elfHdr.e_ident,"\177ELF",4))
     {
-        return p; /* Fork failed */
+      fprintf(stderr,"%s is not an ELF file\n",options.elffile);
+      return FALSE;
     }
 
-    if ( p == 0 )
-    {
-        /* This is the Child */
-        close( pipe_stdin[1] );
-        dup2( pipe_stdin[0], 0 );
-        close( pipe_stdout[0] );
-        dup2( pipe_stdout[1], 1 );
-        execl( "/bin/sh", "sh", "-c", cmdline, ( char * )0 );
-        perror( "execl" );
-        exit( 99 );
+  /* Collect the headers */
+  sHdr = malloc(elfHdr.e_shentsize * elfHdr.e_shnum);
+  lseek(fd, (off_t)elfHdr.e_shoff, SEEK_SET);
+  for(uint32_t i=0; i<elfHdr.e_shnum; i++)
+   {
+      read(fd, (void *)&sHdr[i], elfHdr.e_shentsize);
     }
 
-    _r.pstdin = pipe_stdin[1];
-    _r.pstdout = pipe_stdout[0];
-    return 0;
+  /* Now find the symbol table for import */
+  for (sTab=0; sTab<elfHdr.e_shnum; sTab++)
+    {
+      if (sHdr[sTab].sh_type==SHT_SYMTAB)
+	break;
+   }
+
+ if (sTab==elfHdr.e_shnum)
+   {
+     fprintf(stderr,"Couldn't find symbol table in ELF file\n");
+     free(sHdr);
+     close(fd);
+     return FALSE;
+   }
+
+
+ Elf32_Sym *sym_tbl = (Elf32_Sym*)__alloc_and_read_section(fd, sHdr[sTab]);
+ char *str_tbl = __alloc_and_read_section(fd, sHdr[sHdr[sTab].sh_link]);
+ uint32_t symbol_count = (sHdr[sTab].sh_size/sizeof(Elf32_Sym));
+
+ _r.symbols=(struct SymbolTableEntry *)malloc(symbol_count*sizeof(struct SymbolTableEntry));
+ _r.numSymbols=0;
+ 
+ for(uint32_t i=0; i< symbol_count; i++)
+   {
+     if (STT_FUNC==ELF32_ST_TYPE(sym_tbl[i].st_info))
+       {
+	 _r.symbols[_r.numSymbols].address=sym_tbl[i].st_value;
+	 _r.symbols[_r.numSymbols].name=strdup(str_tbl + sym_tbl[i].st_name);
+	 _r.numSymbols++;
+       }
+   }
+
+ /* Put the found addresses into order */
+ qsort(_r.symbols, _r.numSymbols, sizeof(struct SymbolTableEntry), _addrCompare);
+
+ /* ....get rid of the working memory we used */
+ free(str_tbl);
+ free(sym_tbl);
+ free(sHdr);
+ close(fd);
+ return TRUE;
 }
-#endif
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
@@ -202,148 +259,41 @@ void _handleDWTEvent( struct ITMDecoder *i, struct ITMPacket *p )
     }
 }
 // ====================================================================================================
-#ifdef OSX
-struct CodeLine *_lookup( uint32_t addr )
+struct SymbolTableEntry *_lookup( uint32_t addr )
 
-/* Lookup function for OSX addr2line */
-
-{
-    static char fileContents[MAX_STRING_LENGTH];
-    static char functionContents[MAX_STRING_LENGTH];
-    static struct CodeLine l = {.file = fileContents, .function = functionContents};
-    char *c = l.file;
-
-
-    if ( !_r.alhandle )
-    {
-        return NULL;
-    }
-
-    if ( fprintf( _r.alhandle, "0x%08x\n", addr ) <= 0 )
-    {
-        _r.alhandle = NULL;
-        return NULL;
-    }
-
-    if ( !fgets( l.function, MAX_STRING_LENGTH, _r.alhandle ) )
-    {
-        _r.alhandle = NULL;
-        return NULL;
-    }
-
-    c = l.function;
-
-    /* Remove newline from the end */
-    while ( ( *c ) && ( *c != '\n' ) && ( *c != '\r' ) )
-    {
-        c++;
-    }
-
-    *c = 0;
-
-    if ( !fgets( l.file, MAX_STRING_LENGTH, _r.alhandle ) )
-    {
-        _r.alhandle = NULL;
-        return NULL;
-    }
-
-    /* Spin through looking for the colon that represents the start of the line number */
-    c = l.file;
-
-    while ( ( *c != ':' ) && ( *c ) )
-    {
-        c++;
-    }
-
-    if ( !*c )
-    {
-        return NULL;
-    }
-
-    *c++ = 0;
-    l.line = atoi( c );
-    return ( &l );
-}
-#endif
-
-#ifdef LINUX
-struct CodeLine *_lookup( uint32_t addr )
-
-/* Lookup function for Linux addr2line */
+/* Lookup function for address to function */
 
 {
-    char constructString[MAX_STRING_LENGTH];
-    int clen;
+  uint32_t imax=_r.numSymbols;
+  uint32_t imin=0;
+  uint32_t imid;
+  
+  if ((addr<_r.symbols[imin].address) || (addr>_r.symbols[imax-1].address))
+  {
+    return FALSE;
+  }
 
-    static char fileContents[MAX_STRING_LENGTH];
-    static char functionContents[MAX_STRING_LENGTH];
-    static struct CodeLine l = {.file = fileContents, .function = functionContents};
-    char *c = l.file;
-
-    /* Make sure connection is open */
-    if ( ( !_r.pstdin ) || ( !_r.pstdout ) )
+  while (imax >= imin)
     {
-        return NULL;
-    }
+      imid = imin+((imax-imin)>>1);
+      
+      if ((addr>=_r.symbols[imid].address) && (addr<_r.symbols[imid+1].address))
+	{
+	  return &_r.symbols[imid];
+	}
 
-    clen = snprintf( constructString, MAX_STRING_LENGTH, "0x%08x\n", addr );
-
-    if ( clen != write( _r.pstdin, constructString, clen ) )
-    {
-        _r.pstdin = _r.pstdout = 0;
-        return NULL;
-    }
-
-    /* Read response until it finishes */
-    c = l.function;
-
-    while ( TRUE )
-    {
-        read( _r.pstdout, c, 1 );
-
-        if ( ( *c == '\n' ) || ( *c == '\r' ) )
+      if (_r.symbols[imid].address < addr)
+	{
+	  imin = imid + 1;
+	}
+      else         
         {
-            *c = 0;
-            break;
-        }
-
-        c++;
+	  imax = imid - 1;
+	}
     }
 
-    c = l.file;
-
-    while ( TRUE )
-    {
-        read( _r.pstdout, c, 1 );
-
-        if ( ( *c == '\n' ) || ( *c == '\r' ) )
-        {
-            *c = 0;
-            break;
-        }
-
-        c++;
-    }
-
-
-    /* Spin through looking for the colon that represents the start of the line number */
-    c = l.file;
-
-    while ( ( *c != ':' ) && ( *c ) )
-    {
-        c++;
-    }
-
-    if ( !*c )
-    {
-        return NULL;
-    }
-
-    *c++ = 0;
-    l.line = atoi( c );
-    return ( &l );
+   return NULL;
 }
-#endif
 // ====================================================================================================
 uint64_t _timestamp( void )
 
@@ -373,9 +323,9 @@ int _addresses_sort_fn( void *a, void *b )
 struct reportLine
 
 {
-    char function[MAX_STRING_LENGTH];
-    uint64_t count;
-    UT_hash_handle hh;
+  struct SymbolTableEntry *s;
+  uint64_t count;
+  UT_hash_handle hh;
 };
 // ====================================================================================================
 int _report_sort_fn( void *a, void *b )
@@ -399,7 +349,7 @@ void outputTop( void )
 /* Produce the output */
 
 {
-    struct CodeLine *l;
+    struct SymbolTableEntry *l=NULL;
 
     struct reportLine *report = NULL;
     struct reportLine *current = NULL;
@@ -409,22 +359,28 @@ void outputTop( void )
     uint64_t samples = 0;
     uint32_t percentage;
 
+    /* Put the address into order */
     HASH_SORT( addresses, _addresses_sort_fn );
 
+    /* Now merge them together */
     for ( struct visitedAddr *a = addresses; a != NULL; a = a->hh.next )
       {
 	if (a->visits)
 	  {
-	    l = _lookup( a->addr );
+	    if (!((l) && (l->address>a->addr)))
+	      {
+		l = _lookup( a->addr );
+	      }
 
-	    if ( !strcmp( l->function, "??" ) )
+
+	    if ( !l )
 	      {
 		unknown += a->visits;
 		a->visits=0;
 	      }
 	    else
 	      {
-		if ( ( current ) && ( !strcmp( l->function, current->function ) ) )
+		if ( ( current ) && ( l == current->s ) )
 		  {
 		    /* This is another line in the same function */
 		    current->count += a->visits;
@@ -442,9 +398,9 @@ void outputTop( void )
 		    
 		    /* Reset these for the next iteration */
 		    current->count = a->visits;
+		    current->s = l;
 		    total += a->visits;
 		    a->visits=0;
-		    strcpy( current->function, l->function );
 		  }
 	      }
 	  }
@@ -464,7 +420,7 @@ void outputTop( void )
 	current->count = sleeps;
 	total += sleeps;
 	sleeps=0;
-	strcpy( current->function,"** Sleeping ** " );
+	current->s = SLEEPING;
 	HASH_ADD_INT( report, count, current );
       }
 
@@ -474,14 +430,13 @@ void outputTop( void )
 	/* Reset these for the next iteration */
 	current->count = unknown;
 	total += unknown;
-	
-	strcpy( current->function,"Unknown" );
+	current->s = UNKNOWN;
 	HASH_ADD_INT( report, count, current );
       }
     
     HASH_SORT( report, _report_sort_fn );
     struct reportLine *n;
-    fprintf( stdout, "\033[2J\033[;H" );
+    //    fprintf( stdout, "\033[2J\033[;H" );
 
     if ( total )
     {
@@ -490,7 +445,20 @@ void outputTop( void )
             percentage = ( r->count * 10000 ) / total;
             if (r->count)
 	      {
-		fprintf( stdout, "%3d.%02d%% %8ld %s\n", percentage / 100, percentage % 100, r->count, r->function );
+		fprintf( stdout, "%3d.%02d%% %8ld ", percentage / 100, percentage % 100, r->count);
+		if (r->s==UNKNOWN)
+		  {
+		    fprintf( stdout, "** UNKNOWN **\n");
+		  }
+		else if (r->s==SLEEPING)
+		  {
+		    fprintf( stdout, "** SLEEPING **\n");
+		  }
+		else
+		  {
+		    fprintf( stdout, "%s\n",r->s->name);
+		  }
+		
 	      }
 	    samples += r->count;
             n = r->hh.next;
@@ -499,6 +467,12 @@ void outputTop( void )
 	fprintf( stdout,"-----------------\n");
 	fprintf( stdout,"        %8ld Samples\n",samples);
     }
+    else
+      {
+	fprintf( stdout, "No samples\n");
+      }
+
+    	fprintf( stdout,"Ovf=%6d  ITMSync=%4d TPIUSync=%4d\n",ITMDecoderGetStats(&_r.i)->overflow,ITMDecoderGetStats(&_r.i)->syncCount,TPIUDecoderGetStats(&_r.t)->syncCount);
 
     /* ... and we are done with the report now, get rid of it */
     HASH_CLEAR(hh,report);
@@ -712,7 +686,6 @@ void _printHelp( char *progName )
 
 {
     printf( "Useage: %s <htv> <-i channel> <-p port> <-s server>\n", progName );
-    printf( "        a: <Path/Filename> of addr2line to use (Defaults to %s)\n", ADDR2LINE );
     printf( "        e: <ElfFile> to use for symbols\n" );
     printf( "        h: This help\n" );
     printf( "        i: <channel> Set ITM Channel in TPIU decode (defaults to 1)\n" );
@@ -732,10 +705,6 @@ int _processOptions( int argc, char *argv[] )
         switch ( c )
         {
             /* Config Information */
-            case 'a':
-                options.addr2line = optarg;
-                break;
-
             case 'e':
                 options.elffile = optarg;
                 break;
@@ -778,6 +747,7 @@ int _processOptions( int argc, char *argv[] )
                 return FALSE;
 
             default:
+	      fprintf( stderr, "Unknown option %c\n", optopt);
                 return FALSE;
         }
 
@@ -792,16 +762,13 @@ int _processOptions( int argc, char *argv[] )
         fprintf( stdout, "orbtop V" VERSION " (Git %08X %s, Built " BUILD_DATE ")\n", GIT_HASH, ( GIT_DIRTY ? "Dirty" : "Clean" ) );
 
         fprintf( stdout, "Verbose   : TRUE\n" );
-        fprintf( stdout, "Addr2line : %s\n", options.addr2line );
         fprintf( stdout, "Server    : %s:%d", options.server, options.port );
 
         if ( options.useTPIU )
         {
             fprintf( stdout, "Using TPIU: TRUE (ITM on channel %d)\n", options.tpiuITMChannel );
         }
-
     }
-
     return TRUE;
 }
 // ====================================================================================================
@@ -812,7 +779,6 @@ int main( int argc, char *argv[] )
     struct sockaddr_in serv_addr;
     struct hostent *server;
     uint8_t cbw[MAX_IP_PACKET_LEN];
-    char constructString[MAX_STRING_LENGTH];
     uint64_t lastTime;
 
     ssize_t t;
@@ -832,6 +798,12 @@ int main( int argc, char *argv[] )
         exit( -2 );
     }
 
+
+    if (!_loadElfSymbols())
+      {
+	exit(-3);
+      }
+    
     /* Reset the TPIU handler before we start */
     TPIUDecoderInit( &_r.t );
     ITMDecoderInit( &_r.i );
@@ -840,23 +812,6 @@ int main( int argc, char *argv[] )
     TPIUDecoderForceSync( &_r.t,0 );
     ITMDecoderForceSync( &_r.i, TRUE );
     
-    /* Now create a connection to addr2line...*/
-    snprintf( constructString, MAX_STRING_LENGTH, "%s -fse %s", options.addr2line, options.elffile );
-#ifdef OSX
-    _r.alhandle = popen( constructString, "r+" ); // the logger app is another application
-#endif
-
-#ifdef LINUX
-    _linuxpopen( constructString );
-#endif
-
-    /* A lookup of address 0 is unlikely to match a function, but it should be a valid response */
-    if ( !_lookup( 0 ) )
-    {
-        fprintf( stderr, "Could not perform popen\n" );
-        exit( -1 );
-    }
-
     sockfd = socket( AF_INET, SOCK_STREAM, 0 );
     setsockopt( sockfd, SOL_SOCKET, SO_REUSEPORT, &flag, sizeof( flag ) );
 

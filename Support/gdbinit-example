@@ -14,7 +14,13 @@ start
 enableSTM32F1SWD
 
 # 2.25Mbps, use TPIU, don't use Manchester encoding
-prepareSWD 2250000 1 0
+# ConfigCoreClock is the current speed of the clock which the
+# divisors are based on...hence the reason it's needed
+prepareSWD ConfigCoreClock 2250000 1 0
+
+# 180Kbps, use TPIU and Manchester encoding
+# Typically used for 'real' BMP
+# prepareSWD ConfigCoreClock 180000 1 1
 
 dwtSamplePC 1
 dwtSyncTAP 3
