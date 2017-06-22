@@ -45,7 +45,7 @@ void TPIUDecoderZeroStats( struct TPIUDecoder *t )
 // ====================================================================================================
 BOOL TPIUDecoderSynced( struct TPIUDecoder *t )
 {
-  return t->state!=TPIU_UNSYNCED;
+    return t->state != TPIU_UNSYNCED;
 }
 // ====================================================================================================
 struct TPIUDecoderStats *TPIUDecoderGetStats( struct TPIUDecoder *t )

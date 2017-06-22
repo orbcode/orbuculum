@@ -58,7 +58,7 @@ void ITMDecoderZeroStats( struct ITMDecoder *i )
 BOOL ITMDecoderIsSynced( struct ITMDecoder *i )
 
 {
-  return i->p!=ITM_UNSYNCED;
+    return i->p != ITM_UNSYNCED;
 }
 // ====================================================================================================
 struct ITMDecoderStats *ITMDecoderGetStats( struct ITMDecoder *i )
@@ -130,7 +130,7 @@ enum ITMPumpEvent ITMPump( struct ITMDecoder *i, uint8_t c )
         i->stats.tpiuSyncCount++;
     }
 
-    
+
     if ( ( ( i->syncStat )&SYNCMASK ) == SYNCPATTERN )
     {
         i->stats.syncCount++;
@@ -145,6 +145,7 @@ enum ITMPumpEvent ITMPump( struct ITMDecoder *i, uint8_t c )
             // -----------------------------------------------------
             case ITM_UNSYNCED:
                 break;
+
             // -----------------------------------------------------
             case ITM_IDLE:
 
@@ -222,6 +223,7 @@ enum ITMPumpEvent ITMPump( struct ITMDecoder *i, uint8_t c )
                         i->stats.PagePkt++;
                         i->pageRegister = ( c >> 4 ) & 0x07;
                     }
+
                     break;
                 }
 
@@ -230,7 +232,8 @@ enum ITMPumpEvent ITMPump( struct ITMDecoder *i, uint8_t c )
                 {
                     /* This is a SW packet */
                     i->stats.SWPkt++;
-		    i->targetCount = (c & 0x03);
+                    i->targetCount = ( c & 0x03 );
+
                     if ( i->targetCount == 3 )
                     {
                         i->targetCount = 4;
@@ -247,7 +250,8 @@ enum ITMPumpEvent ITMPump( struct ITMDecoder *i, uint8_t c )
                 {
                     /* This is a HW packet */
                     i->stats.HWPkt++;
-		    i->targetCount = (c & 0x03);
+                    i->targetCount = ( c & 0x03 );
+
                     if ( i->targetCount == 3 )
                     {
                         i->targetCount = 4;

@@ -83,10 +83,10 @@ struct
     /* Config information */
     BOOL verbose;
     BOOL useTPIU;
-  BOOL segger;
-  char *seggerHost;
-  int32_t seggerPort;
-  
+    BOOL segger;
+    char *seggerHost;
+    int32_t seggerPort;
+
     uint32_t tpiuITMChannel;
 
     /* Sink information */
@@ -97,7 +97,7 @@ struct
     char *port;
     char *file;
     int speed;
-} options = {.chanPath = "", .speed = 115200, .tpiuITMChannel = 1, .seggerHost=SEGGER_HOST};
+} options = {.chanPath = "", .speed = 115200, .tpiuITMChannel = 1, .seggerHost = SEGGER_HOST};
 
 
 /* Runtime state */
@@ -349,7 +349,7 @@ static void *_client( void *args )
     {
         readDataLen = read( params->listenHandle, maxTransitPacket, MAX_IP_PACKET_LEN );
 
-        if ((readDataLen<=0) || ( write( params->portNo, maxTransitPacket, readDataLen ) < 0 ))
+        if ( ( readDataLen <= 0 ) || ( write( params->portNo, maxTransitPacket, readDataLen ) < 0 ) )
         {
             /* This port went away, so remove it */
             if ( options.verbose )
@@ -527,16 +527,17 @@ void _handlePCSample( struct ITMDecoder *i, struct ITMPacket *p )
     char outputString[MAX_STRING_LENGTH];
     int opLen;
 
-    if (p->len == 1)
-      {
-	/* This is a sleep packet */
-	opLen = snprintf( outputString, ( MAX_STRING_LENGTH - 1 ), "%d,__**SLEEP**__\n", HWEVENT_PCSample);
-      }
+    if ( p->len == 1 )
+    {
+        /* This is a sleep packet */
+        opLen = snprintf( outputString, ( MAX_STRING_LENGTH - 1 ), "%d,__**SLEEP**__\n", HWEVENT_PCSample );
+    }
     else
-      {
-	uint32_t pc = ( p->d[3] << 24 ) | ( p->d[2] << 16 ) | ( p->d[1] << 8 ) | ( p->d[0] );
-	opLen = snprintf( outputString, ( MAX_STRING_LENGTH - 1 ), "%d,0x%08x\n", HWEVENT_PCSample, pc );
-      }
+    {
+        uint32_t pc = ( p->d[3] << 24 ) | ( p->d[2] << 16 ) | ( p->d[1] << 8 ) | ( p->d[0] );
+        opLen = snprintf( outputString, ( MAX_STRING_LENGTH - 1 ), "%d,0x%08x\n", HWEVENT_PCSample, pc );
+    }
+
     write( _r.c[HW_CHANNEL].handle, outputString, opLen );
 }
 // ====================================================================================================
@@ -813,7 +814,7 @@ void _protocolPump( uint8_t c )
             case TPIU_EV_SYNCED:
                 if ( options.verbose )
                 {
-		  fprintf( stdout,"TPIU In Sync (%d)\n", TPIUDecoderGetStats( &_r.t )->syncCount );
+                    fprintf( stdout, "TPIU In Sync (%d)\n", TPIUDecoderGetStats( &_r.t )->syncCount );
                 }
 
                 ITMDecoderForceSync( &_r.i, TRUE );
@@ -826,7 +827,7 @@ void _protocolPump( uint8_t c )
 
             // ------------------------------------
             case TPIU_EV_UNSYNCED:
-	      fprintf( stdout,"TPIU Lost Sync (%d)\n", TPIUDecoderGetStats( &_r.t )->lostSync );
+                fprintf( stdout, "TPIU Lost Sync (%d)\n", TPIUDecoderGetStats( &_r.t )->lostSync );
                 ITMDecoderForceSync( &_r.i, FALSE );
                 break;
 
@@ -849,7 +850,7 @@ void _protocolPump( uint8_t c )
                     {
                         if ( options.verbose )
                         {
-			  fprintf( stdout,"Unknown TPIU channel %02x\n", _r.p.packet[g].s );
+                            fprintf( stdout, "Unknown TPIU channel %02x\n", _r.p.packet[g].s );
                         }
                     }
                 }
@@ -879,18 +880,18 @@ void intHandler( int dummy )
 void _printHelp( char *progName )
 
 {
-  fprintf( stdout,"Useage: %s <dhnv> <b basedir> <p port> <s speed>\n", progName );
-  fprintf( stdout,"        a: Set address for SEGGER JLink connection (default %s)\n",options.seggerHost );
-    fprintf( stdout,"        b: <basedir> for channels\n" );
-    fprintf( stdout,"        c: <Number>,<Name>,<Format> of channel to populate (repeat per channel)\n" );
-    fprintf( stdout,"        g: Connect using SEGGER JLink on specified port (normally 2332)\n" );
-    fprintf( stdout,"        h: This help\n" );
-    fprintf( stdout,"        f: <filename> Take input from specified file\n" );
-    fprintf( stdout,"        i: <channel> Set ITM Channel in TPIU decode (defaults to 1)\n" );
-    fprintf( stdout,"        p: <serialPort> to use\n" );
-    fprintf( stdout,"        s: <serialSpeed> to use\n" );
-    fprintf( stdout,"        t: Use TPIU decoder\n" );
-    fprintf( stdout,"        v: Verbose mode\n" );
+    fprintf( stdout, "Useage: %s <dhnv> <b basedir> <p port> <s speed>\n", progName );
+    fprintf( stdout, "        a: Set address for SEGGER JLink connection (default %s)\n", options.seggerHost );
+    fprintf( stdout, "        b: <basedir> for channels\n" );
+    fprintf( stdout, "        c: <Number>,<Name>,<Format> of channel to populate (repeat per channel)\n" );
+    fprintf( stdout, "        g: Connect using SEGGER JLink on specified port (normally 2332)\n" );
+    fprintf( stdout, "        h: This help\n" );
+    fprintf( stdout, "        f: <filename> Take input from specified file\n" );
+    fprintf( stdout, "        i: <channel> Set ITM Channel in TPIU decode (defaults to 1)\n" );
+    fprintf( stdout, "        p: <serialPort> to use\n" );
+    fprintf( stdout, "        s: <serialSpeed> to use\n" );
+    fprintf( stdout, "        t: Use TPIU decoder\n" );
+    fprintf( stdout, "        v: Verbose mode\n" );
 }
 // ====================================================================================================
 int _processOptions( int argc, char *argv[] )
@@ -911,14 +912,14 @@ int _processOptions( int argc, char *argv[] )
                 options.verbose = 1;
                 break;
 
-	case 'g':
-	  options.seggerPort = atoi( optarg );
-	  break;
+            case 'g':
+                options.seggerPort = atoi( optarg );
+                break;
 
-	case 'a':
-	  options.seggerHost = optarg;
-	  break;
-	  
+            case 'a':
+                options.seggerHost = optarg;
+                break;
+
             case 't':
                 options.useTPIU = TRUE;
                 break;
@@ -1030,9 +1031,9 @@ int _processOptions( int argc, char *argv[] )
             fprintf( stdout, "Serial Port: %s\nSerial Speed: %d\n", options.port, options.speed );
         }
 
-	if ( options.seggerPort )
+        if ( options.seggerPort )
         {
-	  fprintf( stdout, "SEGGER H/P: %s:%d\n",options.seggerHost,options.seggerPort);
+            fprintf( stdout, "SEGGER H/P: %s:%d\n", options.seggerHost, options.seggerPort );
         }
 
         if ( options.useTPIU )
@@ -1058,7 +1059,7 @@ int _processOptions( int argc, char *argv[] )
         fprintf( stdout, "        HW [Predefined] [" HWFIFO_NAME "]\n" );
     }
 
-    if ( ( options.file ) && (( options.port ) || (options.seggerPort)))
+    if ( ( options.file ) && ( ( options.port ) || ( options.seggerPort ) ) )
     {
         fprintf( stdout, "Cannot specify file and port or Segger at same time\n" );
         return FALSE;
@@ -1128,7 +1129,7 @@ int usbFeeder( void )
 int seggerFeeder( void )
 
 {
-  int sockfd;
+    int sockfd;
     struct sockaddr_in serv_addr;
     struct hostent *server;
     uint8_t cbw[MAX_IP_PACKET_LEN];
@@ -1138,6 +1139,7 @@ int seggerFeeder( void )
 
     bzero( ( char * ) &serv_addr, sizeof( serv_addr ) );
     server = gethostbyname( options.seggerHost );
+
     if ( !server )
     {
         fprintf( stderr, "Cannot find host\n" );
@@ -1150,42 +1152,46 @@ int seggerFeeder( void )
            server->h_length );
     serv_addr.sin_port = htons( options.seggerPort );
 
-    while (1)
-      {
-	sockfd = socket( AF_INET, SOCK_STREAM, 0 );
-	setsockopt( sockfd, SOL_SOCKET, SO_REUSEPORT, &flag, sizeof( flag ) );
+    while ( 1 )
+    {
+        sockfd = socket( AF_INET, SOCK_STREAM, 0 );
+        setsockopt( sockfd, SOL_SOCKET, SO_REUSEPORT, &flag, sizeof( flag ) );
 
-	if ( sockfd < 0 )
-	  {
-	    fprintf( stderr, "Error creating socket\n" );
-	    return -1;
-	  }
+        if ( sockfd < 0 )
+        {
+            fprintf( stderr, "Error creating socket\n" );
+            return -1;
+        }
 
-	while ( connect( sockfd, ( struct sockaddr * ) &serv_addr, sizeof( serv_addr ) ) < 0 )
-	  {
-	    usleep( 500000 );
-	  }
+        while ( connect( sockfd, ( struct sockaddr * ) &serv_addr, sizeof( serv_addr ) ) < 0 )
+        {
+            usleep( 500000 );
+        }
 
-	if (options.verbose)
-	  {
-	    fprintf( stdout,"Established Segger Link\n");
-	  }
-	while ( ( t = read( sockfd, cbw, MAX_IP_PACKET_LEN ) ) > 0 )
-	  {
-	    _sendToClients( t, cbw );
-	    uint8_t *c = cbw;
-	    while ( t-- )
-	      {
-		_protocolPump( *c++ );
-	      }
-	  }
+        if ( options.verbose )
+        {
+            fprintf( stdout, "Established Segger Link\n" );
+        }
 
-	close( sockfd );
-	if (options.verbose)
-	  {
-	    fprintf( stdout,"Lost Segger Link\n");
-	  }
-      }
+        while ( ( t = read( sockfd, cbw, MAX_IP_PACKET_LEN ) ) > 0 )
+        {
+            _sendToClients( t, cbw );
+            uint8_t *c = cbw;
+
+            while ( t-- )
+            {
+                _protocolPump( *c++ );
+            }
+        }
+
+        close( sockfd );
+
+        if ( options.verbose )
+        {
+            fprintf( stdout, "Lost Segger Link\n" );
+        }
+    }
+
     return -2;
 }
 // ====================================================================================================
