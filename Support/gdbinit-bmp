@@ -1,0 +1,47 @@
+# Example configuration file for using orbuculum with BMP
+# ...either a genuine one, or a 'Bluepill' variant
+
+source config/gdbtrace.init
+target extended-remote /dev/ttyACM1
+monitor swdp_scan
+file ofiles/firmware.elf
+attach 1
+set mem inaccessible-by-default off
+set print pretty
+load
+start
+
+# Configure STM32F1 SWD pin
+enableSTM32F1SWD
+
+# ==== This Section for Bluepill =======
+# 2.25Mbps, use TPIU, don't use Manchester encoding
+# ConfigCoreClock is the current speed of the clock which the
+# divisors are based on...hence the reason it's needed
+monitor traceswo 2250000
+prepareSWD ConfigCoreClock 2250000 1 0
+# ======================================
+
+# ==== This Section for genuine BMP =======
+# 180Kbps, use TPIU and Manchester encoding
+# Typically used for 'real' BMP
+monitor traceswo
+# prepareSWD ConfigCoreClock 180000 1 1
+# =========================================
+
+dwtSamplePC 1
+dwtSyncTAP 3
+dwtPostTAP 1
+dwtPostInit 1
+dwtPostReset 15
+dwtCycEna 1
+
+ITMId 9
+ITMGTSFreq 3
+ITMTSPrescale 3
+ITMTXEna 1
+ITMSYNCEna 1
+ITMEna 1
+
+ITMTER 0 0xFFFFFFFF
+ITMTPR 0xFFFFFFFF

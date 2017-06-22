@@ -1,26 +1,25 @@
-source config/gdbtrace.init
-target extended-remote /dev/ttyACM1
-monitor swdp_scan
+# This is an example gdbinit file for use with JLink. Tested with 6.16d
+
+source Support/gdbtrace.init
+target remote :2331
 file ofiles/firmware.elf
-attach 1
 set mem inaccessible-by-default off
 set print pretty
 load
-monitor traceswo 2250000
-start
 
+monitor reset
 
 # Configure STM32F1 SWD pin
 enableSTM32F1SWD
 
-# 2.25Mbps, use TPIU, don't use Manchester encoding
-# ConfigCoreClock is the current speed of the clock which the
-# divisors are based on...hence the reason it's needed
-prepareSWD ConfigCoreClock 2250000 1 0
+# Turn on SWO through JLink
+monitor SWO EnableTarget 0 0 1 0
+monitor SWO start 0 2250000
 
-# 180Kbps, use TPIU and Manchester encoding
-# Typically used for 'real' BMP
-# prepareSWD ConfigCoreClock 180000 1 1
+# 2.25Mbps, use TPIU, don't use Manchester encoding
+# SystemCoreClock is the current speed of the clock which the
+# divisors are based on...hence the reason it's needed
+prepareSWD SystemCoreClock 2250000 1 0
 
 dwtSamplePC 1
 dwtSyncTAP 3
@@ -30,7 +29,7 @@ dwtPostReset 15
 dwtCycEna 1
 
 ITMId 9
-ITMGSTFreq 3
+ITMGTSFreq 3
 ITMTSPrescale 3
 ITMTXEna 1
 ITMSYNCEna 1

@@ -436,7 +436,7 @@ void outputTop( void )
     
     HASH_SORT( report, _report_sort_fn );
     struct reportLine *n;
-    //    fprintf( stdout, "\033[2J\033[;H" );
+    fprintf( stdout, "\033[2J\033[;H" );
 
     if ( total )
     {
@@ -469,10 +469,10 @@ void outputTop( void )
     }
     else
       {
-	fprintf( stdout, "No samples\n");
+	//	fprintf( stdout, "No samples\n");
       }
 
-    	fprintf( stdout,"Ovf=%6d  ITMSync=%4d TPIUSync=%4d\n",ITMDecoderGetStats(&_r.i)->overflow,ITMDecoderGetStats(&_r.i)->syncCount,TPIUDecoderGetStats(&_r.t)->syncCount);
+    //    	fprintf( stdout,"Ovf=%6d  ITMSync=%4d TPIUSync=%4d\n",ITMDecoderGetStats(&_r.i)->overflow,ITMDecoderGetStats(&_r.i)->syncCount,TPIUDecoderGetStats(&_r.t)->syncCount);
 
     /* ... and we are done with the report now, get rid of it */
     HASH_CLEAR(hh,report);

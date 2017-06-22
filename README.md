@@ -6,13 +6,11 @@ An Orbuculum is a Crystal Ball, used for seeing things that would
  (debug probe), BMP.
 
 *This program is in heavy development. Check back frequently for new versions 
-with additional functionality. The current status (21st June) is that
+with additional functionality. The current status (22nd June) is that
 the software runs on both Linux and OSX. ITM SW logging is working,
 and HW tracing (Watchpoints, Timestamps, PC Sampling
-etc.) is implemented and reported. Orbcat (to cat
-and mix multiple ITM channels simulteneously) has been added, as has
-Orbtop to provide a 'top' utility.  Orbtop has just received quite some
-special love to get it working and it seems robust on all tested workloads.*
+etc.) is implemented and reported. Segger support has just been added. Orbtop has recently
+received quite some special love to get it working and it seems robust on all tested workloads.*
 
 I would not say the whole suite is throughly tested yet...that will
 come when full functionality has been completed. For now the 'happy
@@ -36,19 +34,22 @@ octave or whatever). Orbuculum itself doesn't care if the data
 originates from a RZ or NRZ port, or at what speed....that's the job
 of the interface.
 
-At the present time Orbuculum supports two devices for collecting SWO
+At the present time Orbuculum supports three devices for collecting SWO
 from the target;
  
-* the Black Magic Debug Probe (BMP) and 
+* the Black Magic Debug Probe (BMP)
+* the SEGGER JLink
 * generic USB TTL Serial Interfaces 
 
 Information about using each individual interface can be found in the
-docs directory.
+docs directory. gdb setup files for each device type can be found in the `Support` directory.
 
 Orbuculum can use, or bypass, the TPIU. The TPIU adds (a small amount of) overhead
-to the datastream, but provides better syncronisation if there is corruption
+to the datastream, but provides better synchronisation if there is corruption
 on the link. To include the TPIU in decode stack, provide the -t 
-option on the command line.
+option on the command line. If you don't provide it, and the ITM decoder sees
+TPIU syncs in the datastream, it will complain and barf out. This is deliberate
+after I spent two days trying to find an obscure bug 'cos I'd left the `-t` option off...
 
 When in NRZ mode the SWO data rate that comes out of the chip _must_
 match the rate that the debugger expects. On the BMP speeds of

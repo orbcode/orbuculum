@@ -43,6 +43,7 @@
 #include <termios.h>
 #include <pthread.h>
 #include <sys/socket.h>
+#include <netdb.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <signal.h>
@@ -53,6 +54,7 @@
 #include "itmDecoder.h"
 
 #define SERVER_PORT 3443                      /* Server port definition */
+#define SEGGER_HOST "localhost"               /* Address to connect to SEGGER */
 
 /* Descriptor information for BMP */
 #define VID       (0x1d50)
@@ -81,6 +83,10 @@ struct
     /* Config information */
     BOOL verbose;
     BOOL useTPIU;
+  BOOL segger;
+  char *seggerHost;
+  int32_t seggerPort;
+  
     uint32_t tpiuITMChannel;
 
     /* Sink information */
@@ -91,7 +97,7 @@ struct
     char *port;
     char *file;
     int speed;
-} options = {.chanPath = "", .speed = 115200, .tpiuITMChannel = 1};
+} options = {.chanPath = "", .speed = 115200, .tpiuITMChannel = 1, .seggerHost=SEGGER_HOST};
 
 
 /* Runtime state */
@@ -874,8 +880,10 @@ void _printHelp( char *progName )
 
 {
   fprintf( stdout,"Useage: %s <dhnv> <b basedir> <p port> <s speed>\n", progName );
+  fprintf( stdout,"        a: Set address for SEGGER JLink connection (default %s)\n",options.seggerHost );
     fprintf( stdout,"        b: <basedir> for channels\n" );
     fprintf( stdout,"        c: <Number>,<Name>,<Format> of channel to populate (repeat per channel)\n" );
+    fprintf( stdout,"        g: Connect using SEGGER JLink on specified port (normally 2332)\n" );
     fprintf( stdout,"        h: This help\n" );
     fprintf( stdout,"        f: <filename> Take input from specified file\n" );
     fprintf( stdout,"        i: <channel> Set ITM Channel in TPIU decode (defaults to 1)\n" );
@@ -894,7 +902,7 @@ int _processOptions( int argc, char *argv[] )
     char *chanIndex;
 #define DELIMITER ','
 
-    while ( ( c = getopt ( argc, argv, "vts:i:p:f:hc:b:" ) ) != -1 )
+    while ( ( c = getopt ( argc, argv, "a:vg:ts:i:p:f:hc:b:" ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -903,6 +911,14 @@ int _processOptions( int argc, char *argv[] )
                 options.verbose = 1;
                 break;
 
+	case 'g':
+	  options.seggerPort = atoi( optarg );
+	  break;
+
+	case 'a':
+	  options.seggerHost = optarg;
+	  break;
+	  
             case 't':
                 options.useTPIU = TRUE;
                 break;
@@ -1014,6 +1030,11 @@ int _processOptions( int argc, char *argv[] )
             fprintf( stdout, "Serial Port: %s\nSerial Speed: %d\n", options.port, options.speed );
         }
 
+	if ( options.seggerPort )
+        {
+	  fprintf( stdout, "SEGGER H/P: %s:%d\n",options.seggerHost,options.seggerPort);
+        }
+
         if ( options.useTPIU )
         {
             fprintf( stdout, "Using TPIU: TRUE (ITM on channel %d)\n", options.tpiuITMChannel );
@@ -1037,9 +1058,15 @@ int _processOptions( int argc, char *argv[] )
         fprintf( stdout, "        HW [Predefined] [" HWFIFO_NAME "]\n" );
     }
 
-    if ( ( options.file ) && ( options.port ) )
+    if ( ( options.file ) && (( options.port ) || (options.seggerPort)))
     {
-        fprintf( stdout, "Cannot specify file and port at same time\n" );
+        fprintf( stdout, "Cannot specify file and port or Segger at same time\n" );
+        return FALSE;
+    }
+
+    if ( ( options.port ) && ( options.seggerPort ) )
+    {
+        fprintf( stdout, "Cannot specify port and Segger at same time\n" );
         return FALSE;
     }
 
@@ -1096,6 +1123,70 @@ int usbFeeder( void )
     }
 
     return 0;
+}
+// ====================================================================================================
+int seggerFeeder( void )
+
+{
+  int sockfd;
+    struct sockaddr_in serv_addr;
+    struct hostent *server;
+    uint8_t cbw[MAX_IP_PACKET_LEN];
+
+    ssize_t t;
+    int flag = 1;
+
+    bzero( ( char * ) &serv_addr, sizeof( serv_addr ) );
+    server = gethostbyname( options.seggerHost );
+    if ( !server )
+    {
+        fprintf( stderr, "Cannot find host\n" );
+        return -1;
+    }
+
+    serv_addr.sin_family = AF_INET;
+    bcopy( ( char * )server->h_addr,
+           ( char * )&serv_addr.sin_addr.s_addr,
+           server->h_length );
+    serv_addr.sin_port = htons( options.seggerPort );
+
+    while (1)
+      {
+	sockfd = socket( AF_INET, SOCK_STREAM, 0 );
+	setsockopt( sockfd, SOL_SOCKET, SO_REUSEPORT, &flag, sizeof( flag ) );
+
+	if ( sockfd < 0 )
+	  {
+	    fprintf( stderr, "Error creating socket\n" );
+	    return -1;
+	  }
+
+	while ( connect( sockfd, ( struct sockaddr * ) &serv_addr, sizeof( serv_addr ) ) < 0 )
+	  {
+	    usleep( 500000 );
+	  }
+
+	if (options.verbose)
+	  {
+	    fprintf( stdout,"Established Segger Link\n");
+	  }
+	while ( ( t = read( sockfd, cbw, MAX_IP_PACKET_LEN ) ) > 0 )
+	  {
+	    _sendToClients( t, cbw );
+	    uint8_t *c = cbw;
+	    while ( t-- )
+	      {
+		_protocolPump( *c++ );
+	      }
+	  }
+
+	close( sockfd );
+	if (options.verbose)
+	  {
+	    fprintf( stdout,"Lost Segger Link\n");
+	  }
+      }
+    return -2;
 }
 // ====================================================================================================
 int serialFeeder( void )
@@ -1243,6 +1334,11 @@ int main( int argc, char *argv[] )
     }
 
     /* Using the exit construct rather than return ensures the atexit gets called */
+    if ( options.seggerPort )
+    {
+        exit( seggerFeeder() );
+    }
+
     if ( options.port )
     {
         exit( serialFeeder() );
