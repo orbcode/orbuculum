@@ -472,7 +472,7 @@ pretty precise if this is important to you!).
 * `dwtPostReset` : Set the reload value for the PC Interval Counter
 (higher values = slower counting).
 * `dwtCycEna` : Enable the cycle counter input (i.e. switch the whole
-* thing on). You won't get far without this set!
+thing on). You won't get far without this set!
 
 The maximum speed at which you can generate samples is defined by the
 speed of your SWO connection but, with a 72MHz CPU, the slowest
