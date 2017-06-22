@@ -16,12 +16,19 @@ I would not say the whole suite is throughly tested yet...that will
 come when full functionality has been completed. For now the 'happy
 flows' are working OK but the stuff might not look too pretty.
 
+What is it?
+===========
+Orbuculum is a set of tools for decoding and presenting output flows from
+the SWO pin of a CORTEX-M CPU. Numerous types of data can be output through this
+pin, from multiple channels of text messages through to Program Counter samples. Processing
+these data gives you a huge amount of insight into what is really going on inside
+your CPU.
+
 A few simple use cases are documented in the last section of this
 document, as are example outputs of using orbtop to report on the
 activity of BMP while emitting SWO packets. More will be added.
 
-On a CORTEX M Series device SWO is a datastream that comes out of a
-single pin when the debug interface is in SWD mode. It can be encoded
+The data flowing from the SWO pin can be encoded
 either using NRZ (UART) or RZ (Manchester) formats.  The pin is a
 dedicated one that would be used for TDO when the debug interface is
 in JTAG mode. 
@@ -56,80 +63,19 @@ match the rate that the debugger expects. On the BMP speeds of
 2.25Mbps are normal, TTL Serial devices tend to run a little slower
 but 921600 baud is normally acheivable. On BMP the baudrate is set via
 the gdb session with the 'monitor traceswo xxxx' command. For a TTL
-Serial device its set by the Orbuculum command line.
+Serial device its set by the Orbuculum command line.  Segger devices
+can normally work faster, but no experimentation has yet been done to
+find their max limits, which are probably dependent on the specific JLink
+you are using.
+
 
 Configuring the Target
 ======================
 
 Generally speaking, you will need to configure the target device to output
 SWD data. You can either do that through program code, or through magic
-incantations in gdb. The gdb approach is more flexible, but I wrote the
-program code version first, so I'll leave it here for completeness.
-
-Program Code Version
---------------------
-
-An example for a STM32F103 (it'll be pretty much the same for any
-other M3, but the dividers will be different);
-
-    void GenericsConfigureTracing(uint32_t itmChannel, uint32_t sampleInterval, uint32_t tsPrescale)
-    {
-    /* STM32 specific configuration to enable the TRACESWO IO pin */
-    RCC->APB2ENR |= RCC_APB2ENR_AFIOEN;
-    AFIO->MAPR |= (2 << 24); // Disable JTAG to release TRACESWO
-    DBGMCU->CR |= DBGMCU_CR_TRACE_IOEN; // Enable IO trace pins for Async trace
-    /* End of STM32 Specific instructions */
-
-    *((volatile unsigned *)(0xE0040010)) = 31;  // Output bits at 72000000/(31+1)=2.250MHz.
-    *((volatile unsigned *)(0xE00400F0)) = 2;  // Use Async mode pin protocol
-
-    if (!itmChannel)
-        {
-            *((volatile unsigned *)(0xE0040304)) = 0;  // Bypass the TPIU and send output directly
-        }
-    else
-        {
-            *((volatile unsigned *)(0xE0040304)) = 0x102; // Use TPIU formatter and flush
-        }
-
-    /* Configure Trace Port Interface Unit */
-    CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk; // Enable access to registers
-
-    /* Configure PC sampling and exception trace  */
-    DWT->CTRL = /* CYCEVTEN */ (1<<22) |
-                /* Sleep event overflow */ (1<<19)  |
-                /* Enable Exception Trace */ (1 << 16) |
-                /* PC Sample event */  (1<<12) |
-                /* Sync Packet Interval */ ((3&0x03) << 10) | /* 0 = Off, 1 = 2^23, 2 = Every 2^25, 3 = 2^27 */
-                /* CYCTap position */ (1 << 9) |  /* 0 = x32, 1=x512 */
-                /* Postscaler for PC sampling */ ((sampleInterval&0x0f) << 1) | /* Divider = value + 1 */
-                /* CYCCnt Enable */ (1 << 0);
-
-    /* Configure instrumentation trace macroblock */
-    ITM->LAR = ETM_LAR_KEY;
-    ITM->TCR = /* DWT Stimulus */ (1<<3)|
-               /* ITM Enable */   (1<<0)|
-               /* SYNC Enable */  (1<<2)|
-               /* TS Enable */    (1<<1)|
-               /* TC Prescale */  ((tsPrescale&0x03)<<8) |
-                ((itmChannel&0x7f)<<16);  /* Set trace bus ID and enable ITM */
-    ITM->TER = 0xFFFFFFFF; // Enable all stimulus ports
-
-    /* Configure embedded trace macroblock */
-    ETM->LAR = ETM_LAR_KEY;
-    ETM_SetupMode();
-    ETM->CR = ETM_CR_ETMEN // Enable ETM output port
-            | ETM_CR_STALL_PROCESSOR // Stall processor when fifo is full
-            | ETM_CR_BRANCH_OUTPUT; // Report all branches
-    ETM->TRACEIDR = 2; // Trace bus ID for TPIU
-    ETM->TECR1 = ETM_TECR1_EXCLUDE; // Trace always enabled
-    ETM->FFRR = ETM_FFRR_EXCLUDE; // Stalling always enabled
-    ETM->FFLR = 24; // Stall when less than N bytes free in FIFO (range 1..24)
-                    // Larger values mean less latency in trace, but more stalls.
-    }
-
-GDB Configuration Version
--------------------------
+incantations in gdb. The gdb approach is more flexible and the program code
+version is grandfathered. It's in the support directory if you want it.
 
 In the support directory you will find a script `gdbtrace.init` which contains a
 set of setup macros for the SWO functionality. Full details of how to set up these
@@ -144,53 +90,42 @@ Information about the contets of this file can be found by importing it into you
 gdb session with `source gdbtrace.init` and then typing `help orbuculum`. Help on the
 parameters for each macro are available via the help system too.
 
-In general, you will configure orbuculum via your local `.gdbinit` file. An example file is
-also in the Support directory, and looks like this;
+In general, you will configure orbuculum via your local `.gdbinit` file. Several example files are 
+also in the Support directory. Generically, it looks like this; 
 
-    source config/gdbtrace.init
-    target extended-remote /dev/ttyACM1
-    monitor swdp_scan
-    file ofiles/firmware.elf
-    attach 1
-    set mem inaccessible-by-default off
-    set print pretty
-    load
-    # Adjust this for whichever probe you're using...for Bluepill;
-    monitor traceswo 2250000
-    # For 'real' BMP (Uses Manchester encoding)
-    # monitor traceswo
-    # For serial (Async, but slower)
-    # monitor traceswo 1120000
+    source config/gdbtrace.init             <---- Source the trace specific stuff
+    target extended-remote /dev/ttyACM1     <-
+    monitor swdp_scan                       <-
+    file ofiles/firmware.elf                <- 
+    attach 1                                <---- Connect to the target
+    set mem inaccessible-by-default off	    <-
+    set print pretty                        <-
+    load                                    <---- Load the program
     
-    start
-
-    # Configure STM32F1 SWD pin
-    enableSTM32F1SWD
-
-    # ...adjust to the speed set above, use TPIU, don't use Manchester encoding
-    prepareSWD SystemCoreClock 2250000 1 0
-
-    # If using real BMP, need to be slower, and use Manchester encoding
-    # prepareSWD SystemCoreClock 180000 1 1
+    monitor traceswo 2250000                <---- wakeup tracing on the probe
     
-    dwtSamplePC 1
-    dwtSyncTAP 3
-    dwtPostTAP 1
-    dwtPostInit 1
-    dwtPostReset 15
-    dwtCycEna 1
+    start                                   <---- and get to main
 
-    # Produce ITM output on channel 9
-    ITMId 9
-    ITMGSTFreq 3
-    ITMTSPrescale 3
-    ITMTXEna 1
-    ITMSYNCEna 1
-    ITMEna 1
+    enableSTM32F1SWD                        <---- turn on SWO output pin on CPU
 
-    ITMTER 0 0xFFFFFFFF
-    ITMTPR 0xFFFFFFFF
+    prepareSWD SystemCoreClock 2250000 1 0  <---- Setup SWO timing
 
+    dwtSamplePC 1                           <-
+    dwtSyncTAP 3                            <-
+    dwtPostTAP 1                            <-
+    dwtPostInit 1                           <-
+    dwtPostReset 15                         <-
+    dwtCycEna 1                             <---- Configure Data Watch/Trace
+
+    ITMId 9                                 <-
+    ITMGSTFreq 3                            <-
+    ITMTSPrescale 3                         <-
+    ITMTXEna 1                              <-
+    ITMSYNCEna 1                            <-
+    ITMEna 1                                <---- Enable Instruction Trace Macrocell
+
+    ITMTER 0 0xFFFFFFFF                     <---- Enable Trace Ports
+    ITMTPR 0xFFFFFFFF                       <---- Make them accessible to user level code
 
 Building
 ========
