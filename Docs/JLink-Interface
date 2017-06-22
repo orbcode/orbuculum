@@ -1,0 +1,17 @@
+Using a JLink Interface
+=======================
+
+The SEGGER JLink is capable of issuing SWO data via TCP port 2332.
+Orbuculum simply connects to that and then re-issues the data using
+its standard mechanisms.
+
+To use this mode just connect SWO to the JLink and then configure the
+JLink to process the SWO data. This is done using the incantations
+you will find in the gdbinit-jlink file in the Support directory.
+
+For information about the Segger-specific commands in there I'm
+afraid you will need to refer to the Segger documentation.
+
+This has been tested on a Segger JLinkPro V4 H/W with DLL 6.16d. Please
+let dave@marples.net know what success you have with other configurations.
+
