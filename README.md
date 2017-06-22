@@ -98,7 +98,7 @@ also in the Support directory. Generically, it looks like this;
     monitor swdp_scan                       <-
     file ofiles/firmware.elf                <- 
     attach 1                                <---- Connect to the target
-    set mem inaccessible-by-default off	    <-
+    set mem inaccessible-by-default off     <-
     set print pretty                        <-
     load                                    <---- Load the program
     
@@ -198,17 +198,20 @@ Command Line Options
 
 Specific command line options of note are;
 
- `-b [basedir]`: for channels. Note that this is actually just leading text on the channel
+ `-a [name]`: Set hostname for JLinkGDB SWO source
+
+`-b [basedir]`: for channels. Note that this is actually just leading text on the channel
      name, so if you put xyz/chan then all ITM software channels will end up in a directory
      xyz, prepended with chan.  If xyz doesn't exist, then the channel creation will 
      fail silently.
 
- `-c [Number],[Name],[Format]`: of channel to populate (repeat per channel) using printf
-     formatting.
+ `-c [Number],[Name],[Format]`: of channel to populate (repeat per channel) using printf formatting.
 
- `-h`: Brief help.
+`-g [Port]`: Specify JLink port to connect to (Normally 2332)
 
- `-f [filename]`: Take input from specified file.
+`-h`: Brief help.
+
+`-f [filename]`: Take input from specified file.
 
  `-i [channel]`: Set Channel for ITM in TPIU decode (defaults to 1). Note that the TPIU must
      be in use for this to make sense.  If you call the GenericsConfigureTracing
