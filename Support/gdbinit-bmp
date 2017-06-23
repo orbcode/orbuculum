@@ -26,7 +26,7 @@ prepareSWD ConfigCoreClock 2250000 1 0
 # 180Kbps, use TPIU and Manchester encoding
 # Typically used for 'real' BMP
 monitor traceswo
-# prepareSWD ConfigCoreClock 180000 1 1
+# prepareSWD ConfigCoreClock 225000 1 1
 # =========================================
 
 dwtSamplePC 1

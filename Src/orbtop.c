@@ -479,10 +479,20 @@ void outputTop( void )
     }
     else
     {
-        //  fprintf( stdout, "No samples\n");
+      if (options.verbose)
+	{
+	  fprintf( stdout, "No samples\n");
+	}
     }
 
-    //      fprintf( stdout,"Ovf=%6d  ITMSync=%4d TPIUSync=%4d\n",ITMDecoderGetStats(&_r.i)->overflow,ITMDecoderGetStats(&_r.i)->syncCount,TPIUDecoderGetStats(&_r.t)->syncCount);
+    if (options.verbose)
+      {
+	fprintf( stdout,"         Ovf=%3d  ITMSync=%3d TPIUSync=%3d ITMErrors=%3d\n",
+		 ITMDecoderGetStats(&_r.i)->overflow,
+		 ITMDecoderGetStats(&_r.i)->syncCount,
+		 TPIUDecoderGetStats(&_r.t)->syncCount,
+		 ITMDecoderGetStats(&_r.i)->ErrorPkt);
+      }
 
     /* ... and we are done with the report now, get rid of it */
     HASH_CLEAR( hh, report );

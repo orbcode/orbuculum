@@ -71,21 +71,23 @@ void ITMDecoderForceSync( struct ITMDecoder *i, BOOL isSynced )
 /* Force the decoder into a specific sync state */
 
 {
-    if ( ( i->p == ITM_UNSYNCED ) && ( isSynced ) )
-    {
-        i->p = ITM_IDLE;
-        i->stats.syncCount++;
-        i->currentCount = 0;
-    }
+    if ( i->p == ITM_UNSYNCED )
+      {
+	if ( isSynced )
+	  {
+	    i->p = ITM_IDLE;
+	    i->stats.syncCount++;
+	    i->currentCount = 0;
+	  }
+      }
     else
-    {
-        if ( i->p != ITM_UNSYNCED )
-        {
+      {
+	if ( !isSynced )
+	  {
             i->stats.lostSyncCount++;
-        }
-
-        i->p = ITM_UNSYNCED;
-    }
+	    i->p = ITM_UNSYNCED;
+	  }
+      }
 }
 // ====================================================================================================
 BOOL ITMGetPacket( struct ITMDecoder *i, struct ITMPacket *p )
