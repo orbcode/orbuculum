@@ -1,0 +1,6 @@
+#!/bin/bash
+while [ 1 ]
+do
+      gnuplot Support/orbtop.gplt > ~/Desktop/a.pdf
+      sleep 1
+done

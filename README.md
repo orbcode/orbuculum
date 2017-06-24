@@ -10,7 +10,8 @@ with additional functionality. The current status (22nd June) is that
 the software runs on both Linux and OSX. ITM SW logging is working,
 and HW tracing (Watchpoints, Timestamps, PC Sampling
 etc.) is implemented and reported. Segger support has just been added. Orbtop has recently
-received quite some special love to get it working and it seems robust on all tested workloads.*
+received quite some special love to get it working and it seems robust on all tested workloads,
+and now can produce graphs too.*
 
 I would not say the whole suite is throughly tested yet...that will
 come when full functionality has been completed. For now the 'happy
@@ -292,7 +293,13 @@ Command line options for orbtop are;
      be in use for this to make sense.  If you call the GenericsConfigureTracing
      routine above with the ITM Channel set to 0 then the TPIU will be bypassed.
 
+ `-m <MaxHistory>`: Number of intervals to record in history file
+
+ `-o <filename>`: Set file to be used for output history 
+ 
  `-p [port]`: to use. Defaults to 3443, the standard orbuculum port.
+
+ `-r <routines>`: Number of lines to record in history file 
 
  `-s [server]`: to connect to. Defaults to localhost.
 

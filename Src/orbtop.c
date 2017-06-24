@@ -92,11 +92,18 @@ struct                                      /* Record for options, either defaul
     /* Target program config */
     char *elffile;
 
+  /* File to putput historic information */
+  char *outfile;
+
+  /* Historic information to emit */
+  uint32_t maxRoutines;
+  uint32_t maxHistory;
+  
     /* Source information */
     int port;
     char *server;
 
-} options = {.tpiuITMChannel = 1, .port = SERVER_PORT, .server = "localhost"};
+} options = {.tpiuITMChannel = 1, .outfile = NULL, .maxRoutines = 8, .maxHistory = 30, .port = SERVER_PORT, .server = "localhost"};
 
 /* ----------- LIVE STATE ----------------- */
 struct
@@ -365,6 +372,9 @@ void outputTop( void )
     uint64_t samples = 0;
     uint32_t percentage;
 
+    uint32_t c;
+    FILE *p=NULL;
+
     /* Put the address into order */
     HASH_SORT( addresses, _addresses_sort_fn );
 
@@ -446,6 +456,12 @@ void outputTop( void )
 
     if ( total )
     {
+      c=0;
+      if (options.outfile)
+	{
+	  p=fopen(options.outfile,"w");
+	}
+      
         for ( struct reportLine *r = report; r != NULL; r = n )
         {
             percentage = ( r->count * 10000 ) / total;
@@ -469,6 +485,25 @@ void outputTop( void )
 
             }
 
+	    if (p)
+	      {
+		if (c++<options.maxRoutines)
+		  {
+		    if ( r->s == UNKNOWN )
+		      {
+			fprintf( p, "** UNKNOWN **" );
+		      }
+		    else if ( r->s == SLEEPING )
+		      {
+			fprintf( p, "** SLEEPING **" );
+		      }
+		    else
+		      {
+			fprintf( p, "%s", r->s->name );
+		      }
+		    fprintf(p,",%3d.%02d\n", percentage / 100, percentage % 100 );
+		  }
+	      }
             samples += r->count;
             n = r->hh.next;
             free( r );
@@ -485,6 +520,11 @@ void outputTop( void )
 	}
     }
 
+    if (p)
+      {
+	fclose(p);
+	p=NULL;
+      }
     if (options.verbose)
       {
 	fprintf( stdout,"         Ovf=%3d  ITMSync=%3d TPIUSync=%3d ITMErrors=%3d\n",
@@ -709,7 +749,10 @@ void _printHelp( char *progName )
     printf( "        e: <ElfFile> to use for symbols\n" );
     printf( "        h: This help\n" );
     printf( "        i: <channel> Set ITM Channel in TPIU decode (defaults to 1)\n" );
+    printf( "        m: <MaxHistory> to record in history file (default %d intervals)\n", options.maxHistory );
+    printf( "        o: <filename> to be used for output history file\n" );
     printf( "        p: <Port> to use\n" );
+    printf( "        r: <routines> to record in history file (default %d routines)\n", options.maxRoutines );
     printf( "        s: <Server> to use\n" );
     printf( "        t: Use TPIU decoder\n" );
     printf( "        v: Verbose mode (this will intermingle state info with the output flow)\n" );
@@ -721,12 +764,24 @@ int _processOptions( int argc, char *argv[] )
     int c;
 #define DELIMITER ','
 
-    while ( ( c = getopt ( argc, argv, "a:e:hti:p:s:v" ) ) != -1 )
+    while ( ( c = getopt ( argc, argv, "a:e:hti:m:o:p:r:s:v" ) ) != -1 )
         switch ( c )
         {
             /* Config Information */
             case 'e':
                 options.elffile = optarg;
+                break;
+
+	case 'r':
+	  options.maxRoutines = atoi(optarg);
+                break;
+
+	case 'm':
+	  options.maxHistory = atoi(optarg);
+                break;
+
+            case 'o':
+                options.outfile = optarg;
                 break;
 
             case 'v':
