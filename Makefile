@@ -8,6 +8,7 @@ CROSS_COMPILE=
 ORBUCULUM = orbuculum
 ORBCAT = orbcat
 ORBTOP = orbtop
+ORBDUMP = orbdump
 
 ##########################################################################
 # Check Host OS
@@ -65,7 +66,8 @@ INCLUDE_PATHS += -IInc -I$(OLOC)
 
 ORBUCULUM_CFILES = $(App_DIR)/$(ORBUCULUM).c 
 ORBCAT_CFILES = $(App_DIR)/$(ORBCAT).c 
-ORBTOP_CFILES = $(App_DIR)/$(ORBTOP).c 
+ORBTOP_CFILES = $(App_DIR)/$(ORBTOP).c
+ORBDUMP_CFILES = $(App_DIR)/$(ORBDUMP).c 
 
 ##########################################################################
 # GNU GCC compiler prefix and location
@@ -127,6 +129,10 @@ ORBTOP_OBJS =  $(OBJS) $(patsubst %.c,%.o,$(ORBTOP_CFILES))
 ORBTOP_POBJS = $(POJBS) $(patsubst %,$(OLOC)/%,$(ORBTOP_OBJS))
 ORBTOP_PDEPS = $(PDEPS) $(ORBTOP_POBJS:.o=.d)
 
+ORBDUMP_OBJS =  $(OBJS) $(patsubst %.c,%.o,$(ORBDUMP_CFILES))
+ORBDUMP_POBJS = $(POJBS) $(patsubst %,$(OLOC)/%,$(ORBDUMP_OBJS))
+ORBDUMP_PDEPS = $(PDEPS) $(ORBDUMP_POBJS:.o=.d)
+
 CFILES += $(App_DIR)/itmDecoder.c $(App_DIR)/tpiuDecoder.c $(App_DIR)/generics.c
 
 ##########################################################################
@@ -143,7 +149,7 @@ $(OLOC)/%.o : %.c
 	$(call cmd, \$(CC) -c $(CFLAGS) -MMD -o $@ $< ,\
 	Compiling $<)
 
-build: $(ORBUCULUM) $(ORBCAT) $(ORBTOP)
+build: $(ORBUCULUM) $(ORBCAT) $(ORBTOP) $(ORBDUMP)
 
 $(ORBUCULUM) : get_version $(ORBUCULUM_POBJS) $(SYS_OBJS)
 	$(Q)$(LD) $(LDFLAGS) -o $(OLOC)/$(ORBUCULUM) $(MAP) $(ORBUCULUM_POBJS) $(LDLIBS)
@@ -156,6 +162,10 @@ $(ORBCAT) : get_version $(ORBCAT_POBJS) $(SYS_OBJS)
 $(ORBTOP) : get_version $(ORBTOP_POBJS) $(SYS_OBJS)
 	$(Q)$(LD) $(LDFLAGS) -o $(OLOC)/$(ORBTOP) $(MAP) $(ORBTOP_POBJS) $(LDLIBS)
 	-@echo "Completed build of" $(ORBTOP)
+
+$(ORBDUMP) : get_version $(ORBDUMP_POBJS) $(SYS_OBJS)
+	$(Q)$(LD) $(LDFLAGS) -o $(OLOC)/$(ORBDUMP) $(MAP) $(ORBDUMP_POBJS) $(LDLIBS)
+	-@echo "Completed build of" $(ORBDUMP)
 
 tags:
 	-@etags $(CFILES) 2> /dev/null

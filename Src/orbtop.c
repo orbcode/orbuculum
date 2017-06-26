@@ -67,8 +67,6 @@ struct visitedAddr                           /* Structure for Hashmap of visited
     UT_hash_handle hh;
 };
 
-#define MAX_IP_PACKET_LEN (1500)
-
 struct SymbolTableEntry                    /* Record for a function in the source file */
 {
     uint32_t address;
@@ -92,7 +90,7 @@ struct                                      /* Record for options, either defaul
     /* Target program config */
     char *elffile;
 
-  /* File to putput historic information */
+  /* File to output historic information */
   char *outfile;
 
   /* Historic information to emit */
@@ -103,7 +101,15 @@ struct                                      /* Record for options, either defaul
     int port;
     char *server;
 
-} options = {.tpiuITMChannel = 1, .outfile = NULL, .maxRoutines = 8, .maxHistory = 30, .port = SERVER_PORT, .server = "localhost"};
+} options = {
+  .useTPIU=TRUE,
+  .tpiuITMChannel = 1,
+  .outfile = NULL,
+  .maxRoutines = 8,
+  .maxHistory = 30,
+  .port = SERVER_PORT,
+  .server = "localhost"
+};
 
 /* ----------- LIVE STATE ----------------- */
 struct
@@ -745,7 +751,7 @@ void _protocolPump( uint8_t c )
 void _printHelp( char *progName )
 
 {
-    printf( "Useage: %s <htv> <-i channel> <-p port> <-s server>\n", progName );
+    printf( "Useage: %s <htv> <-e ElfFile> <-m MaxHistory> <-o filename> -r <routines> <-i channel> <-p port> <-s server>\n", progName );
     printf( "        e: <ElfFile> to use for symbols\n" );
     printf( "        h: This help\n" );
     printf( "        i: <channel> Set ITM Channel in TPIU decode (defaults to 1)\n" );
@@ -762,7 +768,6 @@ int _processOptions( int argc, char *argv[] )
 
 {
     int c;
-#define DELIMITER ','
 
     while ( ( c = getopt ( argc, argv, "a:e:hti:m:o:p:r:s:v" ) ) != -1 )
         switch ( c )
@@ -832,6 +837,12 @@ int _processOptions( int argc, char *argv[] )
         return FALSE;
     }
 
+    if ( !options.elffile )
+    {
+        fprintf( stderr, "Elf File not specified\n" );
+        exit( -2 );
+    }
+
     if ( options.verbose )
     {
         fprintf( stdout, "orbtop V" VERSION " (Git %08X %s, Built " BUILD_DATE ")\n", GIT_HASH, ( GIT_DIRTY ? "Dirty" : "Clean" ) );
@@ -868,13 +879,6 @@ int main( int argc, char *argv[] )
         exit( -1 );
     }
 
-    if ( !options.elffile )
-    {
-        fprintf( stderr, "Elf File not specified\n" );
-        exit( -2 );
-    }
-
-
     if ( !_loadElfSymbols() )
     {
         exit( -3 );
@@ -883,10 +887,6 @@ int main( int argc, char *argv[] )
     /* Reset the TPIU handler before we start */
     TPIUDecoderInit( &_r.t );
     ITMDecoderInit( &_r.i );
-
-    /* Because we are connecting over IP, we only get synced packets, so force receivers into sync */
-    TPIUDecoderForceSync( &_r.t, 0 );
-    ITMDecoderForceSync( &_r.i, TRUE );
 
     sockfd = socket( AF_INET, SOCK_STREAM, 0 );
     setsockopt( sockfd, SOL_SOCKET, SO_REUSEPORT, &flag, sizeof( flag ) );

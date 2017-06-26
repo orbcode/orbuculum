@@ -97,7 +97,13 @@ struct
     char *port;
     char *file;
     int speed;
-} options = {.chanPath = "", .speed = 115200, .tpiuITMChannel = 1, .seggerHost = SEGGER_HOST};
+} options = {
+  .chanPath = "",
+  .speed = 115200,
+  .useTPIU = TRUE,
+  .tpiuITMChannel = 1,
+  .seggerHost = SEGGER_HOST
+};
 
 
 /* Runtime state */
