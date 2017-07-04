@@ -25,8 +25,10 @@
 
 #ifndef BOOL
     #define BOOL  int
-    #define FALSE (0)
-    #define TRUE  (!FALSE)
+    #ifndef FALSE
+        #define FALSE (0)
+        #define TRUE  (!FALSE)
+    #endif
 #endif
 
 // ====================================================================================================

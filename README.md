@@ -6,11 +6,11 @@ An Orbuculum is a Crystal Ball, used for seeing things that would
  (debug probe), BMP.
 
 *This program is in heavy development. Check back frequently for new versions 
-with additional functionality. The current status (22nd June) is that
+with additional functionality. The current status (4th July) is that
 the software runs on both Linux and OSX. ITM SW logging is working,
 and HW tracing (Watchpoints, Timestamps, PC Sampling
 etc.) is implemented and reported. Segger support has just been added. Orbtop has recently
-received quite some special love to get it working and it seems robust on all tested workloads,
+received even more special love and it seems robust on all tested workloads,
 and now can produce graphs too.*
 
 I would not say the whole suite is throughly tested yet...that will
@@ -466,6 +466,10 @@ incoming SWO stream, of course);
 
 `orbtop -t -i 9 -a -e firmware.elf`
 
+orbtop can aggregate per function or per program line. By default it aggregates
+per function but to work per-line just add the `-l` option...usually that gives you
+too much information though.
+
 The amount (and indeed, presence) of sample data is set by a number of
 configuration options. These can be set from program code, but it's
 more flexible to set them from gdb. The main ones are;
@@ -491,7 +495,9 @@ make sure you get consistent results...on the other hand running too
 fast will lead to flooding the SWO and potentially missing other
 important data such as channel output.  You do not need to restart
 orbuculum or orbtop in order to change the parameters in gdb - just
-CTRL-C, change, and restart.
+CTRL-C, change, and restart. With a setting of `dwtPostReset 1` there
+are no overflows when using a async interface at 2.25Mbps, which equates
+to 35200 Program Counter samples per second.
 
 Here's a typical example of orbtop output for a Skeleton application based
 on FreeRTOS with USB over Serial (CDC) support. This table is updated once per second;
@@ -515,6 +521,11 @@ on FreeRTOS with USB over Serial (CDC) support. This table is updated once per s
       0.02%        1 taskOut
     -----------------
                 4400 Samples
+
+orbtop can also generate graph output. You will find utilities to support this for
+gnuplot in the `Support` directory.  Just start orbtop with the option `-o <filename>`
+to generate the output data and then run `Support/orbtop_plot` to generate the output.
+By default it generates pdf graphs once per second, but that's easily changed.
 
 Dogfood
 =======

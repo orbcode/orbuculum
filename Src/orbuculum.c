@@ -97,12 +97,13 @@ struct
     char *port;
     char *file;
     int speed;
-} options = {
-  .chanPath = "",
-  .speed = 115200,
-  .useTPIU = TRUE,
-  .tpiuITMChannel = 1,
-  .seggerHost = SEGGER_HOST
+} options =
+{
+    .chanPath = "",
+    .speed = 115200,
+    .useTPIU = TRUE,
+    .tpiuITMChannel = 1,
+    .seggerHost = SEGGER_HOST
 };
 
 
@@ -388,8 +389,8 @@ static void *_client( void *args )
 static void *_listenTask( void *arg )
 
 {
-    uint32_t *sockfd = ( uint32_t * )arg;
-    uint32_t newsockfd;
+    int sockfd = *( int * )arg;
+    int newsockfd;
     socklen_t clilen;
     struct sockaddr_in cli_addr;
     int f[2];                               /* File descriptor set for pipe */
@@ -398,9 +399,9 @@ static void *_listenTask( void *arg )
 
     while ( 1 )
     {
-        listen( *sockfd, 5 );
+        listen( sockfd, 5 );
         clilen = sizeof( cli_addr );
-        newsockfd = accept( *sockfd, ( struct sockaddr * ) &cli_addr, &clilen );
+        newsockfd = accept( sockfd, ( struct sockaddr * ) &cli_addr, &clilen );
 
         if ( options.verbose )
         {

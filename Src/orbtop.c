@@ -16,6 +16,13 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ * This code uses the bdf library. It originally used libdwarf, but that
+ * was painful. Unfortunately bdf isn't well documented so you've got to
+ * go through the binutils source to find your way around it.  The bdf
+ * dependencies are well partitioned into the _lookup routine and it's
+ * supporting cast.
+ *
  */
 
 #include <stdlib.h>
@@ -28,7 +35,9 @@
 #include <sys/stat.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdarg.h>
 #include <elf.h>
+#include <bfd.h>
 #if defined OSX
     #include <libusb.h>
 #else
@@ -45,20 +54,25 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netdb.h>
+
 #include "uthash.h"
 #include "git_version_info.h"
 #include "generics.h"
 #include "tpiuDecoder.h"
 #include "itmDecoder.h"
 
+#define TEXT_SEGMENT ".text"
 #define SERVER_PORT 3443                     /* Server port definition */
 #define MAX_IP_PACKET_LEN (1500)             /* Maximum packet we might receive */
 #define TOP_UPDATE_INTERVAL (1000LL)         /* Interval between each on screen update */
-#define MAX_STRING_LENGTH (256)              /* Maximum length that will be output from a fifo for a single event */
 
-/* Special tag values for unreal locations */
-#define SLEEPING ((void *)0xFFFFFFFF)
-#define UNKNOWN ((void *)0xFFFFFFFE)
+struct lineInfo
+{
+    uint32_t addr;
+    const char *filename;
+    const char *function;
+    uint32_t line;
+};
 
 struct visitedAddr                           /* Structure for Hashmap of visited/observed addresses */
 {
@@ -67,61 +81,53 @@ struct visitedAddr                           /* Structure for Hashmap of visited
     UT_hash_handle hh;
 };
 
-struct SymbolTableEntry                    /* Record for a function in the source file */
-{
-    uint32_t address;
-    char *name;
-};
-
-static struct visitedAddr *addresses = NULL;
-uint32_t sleeps;
-
 /* ---------- CONFIGURATION ----------------- */
-
-struct                                      /* Record for options, either defaults or from command line */
+struct                                       /* Record for options, either defaults or from command line */
 {
-    /* Config information */
-    BOOL verbose;
-    BOOL useTPIU;
-    uint32_t tpiuITMChannel;
+    BOOL verbose;                            /* Talk more.... */
+    BOOL useTPIU;                            /* Are we decoding via the TPIU? */
+    uint32_t tpiuITMChannel;                 /* What channel? */
 
-    uint32_t hwOutputs;
+    uint32_t hwOutputs;                      /* What hardware outputs are enabled */
 
-    /* Target program config */
-    char *elffile;
+    char *elffile;                           /* Target program config */
 
-  /* File to output historic information */
-  char *outfile;
+    char *outfile;                           /* File to output historic information */
 
-  /* Historic information to emit */
-  uint32_t maxRoutines;
-  uint32_t maxHistory;
-  
-    /* Source information */
-    int port;
+    uint32_t maxRoutines;                    /* Historic information to emit */
+    uint32_t maxHistory;
+    BOOL lineDisaggregation;                 /* Aggregate per line or per function? */
+
+    int port;                                /* Source information */
     char *server;
 
-} options = {
-  .useTPIU=TRUE,
-  .tpiuITMChannel = 1,
-  .outfile = NULL,
-  .maxRoutines = 8,
-  .maxHistory = 30,
-  .port = SERVER_PORT,
-  .server = "localhost"
+} options =
+{
+    .useTPIU = TRUE,
+    .tpiuITMChannel = 1,
+    .outfile = NULL,
+    .lineDisaggregation = FALSE,
+    .maxRoutines = 8,
+    .maxHistory = 30,
+    .port = SERVER_PORT,
+    .server = "localhost"
 };
 
 /* ----------- LIVE STATE ----------------- */
 struct
 {
-    /* The decoders and the packets from them */
-    struct ITMDecoder i;
+    struct ITMDecoder i;                    /* The decoders and the packets from them */
     struct ITMPacket h;
     struct TPIUDecoder t;
     struct TPIUPacket p;
 
-    uint32_t numSymbols;
-    struct SymbolTableEntry *symbols;
+    asymbol **syms;                         /* Symbol table */
+    uint32_t symcount;                      /* Number of symbols */
+    bfd *abfd;                              /* BFD handle to file */
+
+    struct visitedAddr *addresses;          /* Addresses we received in the SWV */
+    uint32_t sleeps;
+
 } _r;
 
 // ====================================================================================================
@@ -131,106 +137,62 @@ struct
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
-int _addrCompare( const void *a, const void *b )
-
-/* Embedded compare function for searching and sorting */
+BOOL _loadSymbols( void )
 
 {
-    return ( ( ( const struct SymbolTableEntry * )a )->address - ( ( const struct SymbolTableEntry * )b )->address );
-}
+    uint32_t storage;
+    BOOL dynamic = FALSE;
+    char **matching;
 
+    bfd_init();
 
-BOOL _loadElfSymbols( void )
+    _r.abfd = bfd_openr( options.elffile, NULL );
 
-{
-    int32_t fd;
-    Elf32_Ehdr elfHdr;
-    Elf32_Shdr *sHdr;
-    int32_t sTab;
-
-    /* Embedded function to get the section ------------- */
-    char *__alloc_and_read_section( int32_t fd, Elf32_Shdr sh )
-    {
-        char *buff = malloc( sh.sh_size );
-
-        if ( buff )
-        {
-            lseek( fd, ( off_t )sh.sh_offset, SEEK_SET );
-            read( fd, ( void * )buff, sh.sh_size );
-        }
-
-        return buff;
-    }
-    /* ------------------------------------------------- */
-
-    fd = open( options.elffile, O_RDONLY );
-
-    if ( fd < 0 )
+    if ( !_r.abfd )
     {
         fprintf( stderr, "Couldn't open ELF file\n" );
         return FALSE;
     }
 
-    read( fd, &elfHdr, sizeof( elfHdr ) );
+    _r.abfd->flags |= BFD_DECOMPRESS;
 
-    if ( strncmp( ( char * )elfHdr.e_ident, "\177ELF", 4 ) )
+    if ( bfd_check_format( _r.abfd, bfd_archive ) )
     {
-        fprintf( stderr, "%s is not an ELF file\n", options.elffile );
+        fprintf( stderr, "Cannot get addresses from archive %s\n", options.elffile );
         return FALSE;
     }
 
-    /* Collect the headers */
-    sHdr = malloc( elfHdr.e_shentsize * elfHdr.e_shnum );
-    lseek( fd, ( off_t )elfHdr.e_shoff, SEEK_SET );
-
-    for ( uint32_t i = 0; i < elfHdr.e_shnum; i++ )
+    if ( ! bfd_check_format_matches ( _r.abfd, bfd_object, &matching ) )
     {
-        read( fd, ( void * )&sHdr[i], elfHdr.e_shentsize );
-    }
-
-    /* Now find the symbol table for import */
-    for ( sTab = 0; sTab < elfHdr.e_shnum; sTab++ )
-    {
-        if ( sHdr[sTab].sh_type == SHT_SYMTAB )
-        {
-            break;
-        }
-    }
-
-    if ( sTab == elfHdr.e_shnum )
-    {
-        fprintf( stderr, "Couldn't find symbol table in ELF file\n" );
-        free( sHdr );
-        close( fd );
+        fprintf( stderr, "Ambigious format for file\n" );
         return FALSE;
     }
 
-
-    Elf32_Sym *sym_tbl = ( Elf32_Sym * )__alloc_and_read_section( fd, sHdr[sTab] );
-    char *str_tbl = __alloc_and_read_section( fd, sHdr[sHdr[sTab].sh_link] );
-    uint32_t symbol_count = ( sHdr[sTab].sh_size / sizeof( Elf32_Sym ) );
-
-    _r.symbols = ( struct SymbolTableEntry * )malloc( symbol_count * sizeof( struct SymbolTableEntry ) );
-    _r.numSymbols = 0;
-
-    for ( uint32_t i = 0; i < symbol_count; i++ )
+    if ( ( bfd_get_file_flags ( _r.abfd ) & HAS_SYMS ) == 0 )
     {
-        if ( STT_FUNC == ELF32_ST_TYPE( sym_tbl[i].st_info ) )
-        {
-            _r.symbols[_r.numSymbols].address = sym_tbl[i].st_value;
-            _r.symbols[_r.numSymbols].name = strdup( str_tbl + sym_tbl[i].st_name );
-            _r.numSymbols++;
-        }
+        printf( "No symbols found\n" );
+        return FALSE;
     }
 
-    /* Put the found addresses into order */
-    qsort( _r.symbols, _r.numSymbols, sizeof( struct SymbolTableEntry ), _addrCompare );
+    storage = bfd_get_symtab_upper_bound ( _r.abfd ); /* This is returned in bytes */
 
-    /* ....get rid of the working memory we used */
-    free( str_tbl );
-    free( sym_tbl );
-    free( sHdr );
-    close( fd );
+    if ( storage == 0 )
+    {
+        storage = bfd_get_dynamic_symtab_upper_bound ( _r.abfd );
+        dynamic = TRUE;
+    }
+
+    _r.syms = ( asymbol ** )malloc( storage );
+
+    if ( dynamic )
+    {
+        _r.symcount = bfd_canonicalize_dynamic_symtab ( _r.abfd, _r.syms );
+    }
+    else
+    {
+        _r.symcount = bfd_canonicalize_symtab ( _r.abfd, _r.syms );
+    }
+
     return TRUE;
 }
 // ====================================================================================================
@@ -278,40 +240,37 @@ void _handleDWTEvent( struct ITMDecoder *i, struct ITMPacket *p )
     }
 }
 // ====================================================================================================
-struct SymbolTableEntry *_lookup( uint32_t addr )
+struct lineInfo *_lookup( uint32_t addr, asection *section )
 
-/* Lookup function for address to function */
+/* Lookup function for address to line, and hence to function */
 
 {
-    uint32_t imax = _r.numSymbols;
-    uint32_t imin = 0;
-    uint32_t imid;
+    static struct lineInfo l;
 
-    if ( ( addr < _r.symbols[imin].address ) || ( addr > _r.symbols[imax - 1].address ) )
+    if ( ( bfd_get_section_flags( _r.abfd, section ) & SEC_ALLOC ) == 0 )
     {
         return FALSE;
     }
 
-    while ( imax >= imin )
+    if ( addr <  bfd_get_section_vma( _r.abfd, section ) )
     {
-        imid = imin + ( ( imax - imin ) >> 1 );
-
-        if ( ( addr >= _r.symbols[imid].address ) && ( addr < _r.symbols[imid + 1].address ) )
-        {
-            return &_r.symbols[imid];
-        }
-
-        if ( _r.symbols[imid].address < addr )
-        {
-            imin = imid + 1;
-        }
-        else
-        {
-            imax = imid - 1;
-        }
+        return FALSE;
     }
 
-    return NULL;
+    addr -= bfd_get_section_vma( _r.abfd, section );
+
+    if ( addr > bfd_section_size( _r.abfd, section ) )
+    {
+        return FALSE;
+    }
+
+    if ( !bfd_find_nearest_line( _r.abfd, section, _r.syms, addr, &l.filename, &l.function, &l.line ) )
+    {
+        return FALSE;
+    }
+
+    l.addr = addr;
+    return &l;
 }
 // ====================================================================================================
 uint64_t _timestamp( void )
@@ -342,25 +301,16 @@ int _addresses_sort_fn( void *a, void *b )
 struct reportLine
 
 {
-    struct SymbolTableEntry *s;
+    const char *filename;
+    const char *function;
+    uint32_t line;
     uint64_t count;
-    UT_hash_handle hh;
 };
 // ====================================================================================================
-int _report_sort_fn( void *a, void *b )
+int _report_sort_fn( const void *a, const void *b )
 
 {
-    if ( ( ( ( struct reportLine * )a )->count ) < ( ( ( struct reportLine * )b )->count ) )
-    {
-        return 1;
-    }
-
-    if ( ( ( ( struct reportLine * )a )->count ) > ( ( ( struct reportLine * )b )->count ) )
-    {
-        return -1;
-    }
-
-    return 0;
+    return ( ( struct reportLine * )b )->count - ( ( struct reportLine * )a )->count;
 }
 // ====================================================================================================
 void outputTop( void )
@@ -368,180 +318,143 @@ void outputTop( void )
 /* Produce the output */
 
 {
-    struct SymbolTableEntry *l = NULL;
-
     struct reportLine *report = NULL;
-    struct reportLine *current = NULL;
+    uint32_t reportLines = 0;
+    struct lineInfo *l;
 
     uint32_t total = 0;
     uint32_t unknown = 0;
     uint64_t samples = 0;
     uint32_t percentage;
 
-    uint32_t c;
-    FILE *p=NULL;
+    FILE *p = NULL;
 
     /* Put the address into order */
-    HASH_SORT( addresses, _addresses_sort_fn );
+    HASH_SORT( _r.addresses, _addresses_sort_fn );
 
     /* Now merge them together */
-    for ( struct visitedAddr *a = addresses; a != NULL; a = a->hh.next )
+    for ( struct visitedAddr *a = _r.addresses; a != NULL; a = a->hh.next )
     {
-        if ( a->visits )
+        if ( !a->visits )
         {
-            if ( !( ( l ) && ( l->address > a->addr ) ) )
-            {
-                l = _lookup( a->addr );
-            }
-
-
-            if ( !l )
-            {
-                unknown += a->visits;
-                a->visits = 0;
-            }
-            else
-            {
-                if ( ( current ) && ( l == current->s ) )
-                {
-                    /* This is another line in the same function */
-                    current->count += a->visits;
-                    total += a->visits;
-                    a->visits = 0;
-                }
-                else
-                {
-                    if ( current )
-                    {
-                        HASH_ADD_INT( report, count, current );
-                    }
-
-                    current = ( struct reportLine * )calloc( 1, sizeof( struct reportLine ) );
-
-                    /* Reset these for the next iteration */
-                    current->count = a->visits;
-                    current->s = l;
-                    total += a->visits;
-                    a->visits = 0;
-                }
-            }
+            continue;
         }
-    }
 
-    /* If there's one left then add it in */
-    if ( current )
-    {
-        HASH_ADD_INT( report, count, current );
+        l = _lookup( a->addr, bfd_get_section_by_name( _r.abfd, TEXT_SEGMENT ) );
+
+        if ( !l )
+        {
+            printf( "%x\n", a->addr );
+            unknown += a->visits;
+            a->visits = 0;
+            continue;
+        }
+
+        if ( ( reportLines == 0 ) ||
+                ( strcmp( report[reportLines - 1].filename, l->filename ) ) ||
+                ( strcmp( report[reportLines - 1].function, l->function ) ) ||
+                ( ( report[reportLines - 1].line != l->line ) && ( options.lineDisaggregation ) ) )
+        {
+            /* Make room for a report line */
+            reportLines++;
+            report = ( struct reportLine * )realloc( report, sizeof( struct reportLine ) * ( reportLines ) );
+            report[reportLines - 1].filename = l->filename;
+            report[reportLines - 1].function = l->function;
+            report[reportLines - 1].line = l->line;
+            report[reportLines - 1].count = 0;
+        }
+
+        report[reportLines - 1].count += a->visits;
+        total += a->visits;
+        a->visits = 0;
     }
 
     /* Add entries for Sleeping and unknown, if there are any of either */
-    if ( sleeps )
+    if ( _r.sleeps )
     {
-        current = ( struct reportLine * )calloc( 1, sizeof( struct reportLine ) );
-        /* Reset these for the next iteration */
-        current->count = sleeps;
-        total += sleeps;
-        sleeps = 0;
-        current->s = SLEEPING;
-        HASH_ADD_INT( report, count, current );
+        report = ( struct reportLine * )realloc( report, sizeof( struct reportLine ) * ( reportLines + 1 ) );
+        report[reportLines].filename = "";
+        report[reportLines].function = "** SLEEPING **";
+        report[reportLines].line = 0;
+        report[reportLines].count = _r.sleeps;
+        reportLines++;
+        total += _r.sleeps;
+        _r.sleeps = 0;
     }
 
     if ( unknown )
     {
-        current = ( struct reportLine * )calloc( 1, sizeof( struct reportLine ) );
-        /* Reset these for the next iteration */
-        current->count = unknown;
+        report = ( struct reportLine * )realloc( report, sizeof( struct reportLine ) * ( reportLines + 1 ) );
+        report[reportLines].filename = "";
+        report[reportLines].function = "** Unknown **";
+        report[reportLines].line = 0;
+        report[reportLines].count = unknown;
+        reportLines++;
         total += unknown;
-        current->s = UNKNOWN;
-        HASH_ADD_INT( report, count, current );
     }
 
-    HASH_SORT( report, _report_sort_fn );
-    struct reportLine *n;
+    /* Now put the whole thing into order of number of samples */
+    qsort( report, reportLines, sizeof( struct reportLine ), _report_sort_fn );
+
+    if ( options.outfile )
+    {
+        p = fopen( options.outfile, "w" );
+    }
+
     fprintf( stdout, "\033[2J\033[;H" );
 
-    if ( total )
+    for ( uint32_t n = 0; n < reportLines; n++ )
     {
-      c=0;
-      if (options.outfile)
-	{
-	  p=fopen(options.outfile,"w");
-	}
-      
-        for ( struct reportLine *r = report; r != NULL; r = n )
+        percentage = ( report[n].count * 10000 ) / total;
+        samples += report[n].count;
+
+        if ( report[n].count )
         {
-            percentage = ( r->count * 10000 ) / total;
+            fprintf( stdout, "%3d.%02d%% %8ld ", percentage / 100, percentage % 100, report[n].count );
 
-            if ( r->count )
+            if ( options.lineDisaggregation )
             {
-                fprintf( stdout, "%3d.%02d%% %8ld ", percentage / 100, percentage % 100, r->count );
+                fprintf( stdout, "%s::%d\n", report[n].function, report[n].line );
+            }
+            else
+            {
+                fprintf( stdout, "%s\n", report[n].function );
+            }
 
-                if ( r->s == UNKNOWN )
+            if ( ( p )  && ( n < options.maxRoutines ) )
+            {
+                if ( !options.lineDisaggregation )
                 {
-                    fprintf( stdout, "** UNKNOWN **\n" );
-                }
-                else if ( r->s == SLEEPING )
-                {
-                    fprintf( stdout, "** SLEEPING **\n" );
+                    fprintf( p, "%s,%3d.%02d\n", report[n].function, percentage / 100, percentage % 100 );
                 }
                 else
                 {
-                    fprintf( stdout, "%s\n", r->s->name );
+                    fprintf( p, "%s::%d,%3d.%02d\n", report[n].function, report[n].line, percentage / 100, percentage % 100 );
                 }
-
             }
-
-	    if (p)
-	      {
-		if (c++<options.maxRoutines)
-		  {
-		    if ( r->s == UNKNOWN )
-		      {
-			fprintf( p, "** UNKNOWN **" );
-		      }
-		    else if ( r->s == SLEEPING )
-		      {
-			fprintf( p, "** SLEEPING **" );
-		      }
-		    else
-		      {
-			fprintf( p, "%s", r->s->name );
-		      }
-		    fprintf(p,",%3d.%02d\n", percentage / 100, percentage % 100 );
-		  }
-	      }
-            samples += r->count;
-            n = r->hh.next;
-            free( r );
         }
-
-        fprintf( stdout, "-----------------\n" );
-        fprintf( stdout, "        %8ld Samples\n", samples );
     }
-    else
+
+    fprintf( stdout, "-----------------\n" );
+    fprintf( stdout, "        %8ld Samples\n", samples );
+
+    if ( p )
     {
-      if (options.verbose)
-	{
-	  fprintf( stdout, "No samples\n");
-	}
+        fclose( p );
+        p = NULL;
     }
 
-    if (p)
-      {
-	fclose(p);
-	p=NULL;
-      }
-    if (options.verbose)
-      {
-	fprintf( stdout,"         Ovf=%3d  ITMSync=%3d TPIUSync=%3d ITMErrors=%3d\n",
-		 ITMDecoderGetStats(&_r.i)->overflow,
-		 ITMDecoderGetStats(&_r.i)->syncCount,
-		 TPIUDecoderGetStats(&_r.t)->syncCount,
-		 ITMDecoderGetStats(&_r.i)->ErrorPkt);
-      }
+    if ( options.verbose )
+    {
+        fprintf( stdout, "         Ovf=%3d  ITMSync=%3d TPIUSync=%3d ITMErrors=%3d\n",
+                 ITMDecoderGetStats( &_r.i )->overflow,
+                 ITMDecoderGetStats( &_r.i )->syncCount,
+                 TPIUDecoderGetStats( &_r.t )->syncCount,
+                 ITMDecoderGetStats( &_r.i )->ErrorPkt );
+    }
 
     /* ... and we are done with the report now, get rid of it */
-    HASH_CLEAR( hh, report );
+    free( report );
 }
 // ====================================================================================================
 void _handlePCSample( struct ITMDecoder *i, struct ITMPacket *p )
@@ -552,14 +465,14 @@ void _handlePCSample( struct ITMDecoder *i, struct ITMPacket *p )
     if ( p->len == 1 )
     {
         /* This is a sleep packet */
-        sleeps++;
+        _r.sleeps++;
     }
     else
     {
         pc = ( p->d[3] << 24 ) | ( p->d[2] << 16 ) | ( p->d[1] << 8 ) | ( p->d[0] );
 
         struct visitedAddr *a;
-        HASH_FIND_INT( addresses, &pc, a );
+        HASH_FIND_INT( _r.addresses, &pc, a );
 
         if ( a )
         {
@@ -571,7 +484,7 @@ void _handlePCSample( struct ITMDecoder *i, struct ITMPacket *p )
             a = ( struct visitedAddr * )malloc( sizeof( struct visitedAddr ) );
             a->visits = 1;
             a->addr = pc;
-            HASH_ADD_INT( addresses, addr, a );
+            HASH_ADD_INT( _r.addresses, addr, a );
         }
     }
 }
@@ -601,7 +514,7 @@ void _handleHW( struct ITMDecoder *i )
         // --------------
         default:
             break;
-            // --------------
+        // --------------
     }
 }
 // ====================================================================================================
@@ -755,6 +668,7 @@ void _printHelp( char *progName )
     printf( "        e: <ElfFile> to use for symbols\n" );
     printf( "        h: This help\n" );
     printf( "        i: <channel> Set ITM Channel in TPIU decode (defaults to 1)\n" );
+    printf( "        l: Aggregate per line rather than per function\n" );
     printf( "        m: <MaxHistory> to record in history file (default %d intervals)\n", options.maxHistory );
     printf( "        o: <filename> to be used for output history file\n" );
     printf( "        p: <Port> to use\n" );
@@ -769,7 +683,7 @@ int _processOptions( int argc, char *argv[] )
 {
     int c;
 
-    while ( ( c = getopt ( argc, argv, "a:e:hti:m:o:p:r:s:v" ) ) != -1 )
+    while ( ( c = getopt ( argc, argv, "a:e:hti:lm:o:p:r:s:v" ) ) != -1 )
         switch ( c )
         {
             /* Config Information */
@@ -777,12 +691,16 @@ int _processOptions( int argc, char *argv[] )
                 options.elffile = optarg;
                 break;
 
-	case 'r':
-	  options.maxRoutines = atoi(optarg);
+            case 'l':
+                options.lineDisaggregation = TRUE;
                 break;
 
-	case 'm':
-	  options.maxHistory = atoi(optarg);
+            case 'r':
+                options.maxRoutines = atoi( optarg );
+                break;
+
+            case 'm':
+                options.maxHistory = atoi( optarg );
                 break;
 
             case 'o':
@@ -847,12 +765,12 @@ int _processOptions( int argc, char *argv[] )
     {
         fprintf( stdout, "orbtop V" VERSION " (Git %08X %s, Built " BUILD_DATE ")\n", GIT_HASH, ( GIT_DIRTY ? "Dirty" : "Clean" ) );
 
-        fprintf( stdout, "Verbose   : TRUE\n" );
-        fprintf( stdout, "Server    : %s:%d", options.server, options.port );
+        fprintf( stdout, "Verbose     : TRUE\n" );
+        fprintf( stdout, "Server      : %s:%d\n", options.server, options.port );
 
         if ( options.useTPIU )
         {
-            fprintf( stdout, "Using TPIU: TRUE (ITM on channel %d)\n", options.tpiuITMChannel );
+            fprintf( stdout, "Using TPIU  : TRUE (ITM on channel %d)\n", options.tpiuITMChannel );
         }
     }
 
@@ -879,7 +797,7 @@ int main( int argc, char *argv[] )
         exit( -1 );
     }
 
-    if ( !_loadElfSymbols() )
+    if ( !_loadSymbols() )
     {
         exit( -3 );
     }

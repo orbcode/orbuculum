@@ -1,5 +1,5 @@
 #VERBOSE=1
-#DEBUG=1
+DEBUG=1
 
 CFLAGS=-DVERSION="\"0.15\""
 
@@ -43,7 +43,7 @@ CFILES =
 SFILES =
 OLOC = ofiles
 INCLUDE_PATHS = -I/usr/local/include/libusb-1.0 
-LDLIBS = -L/usr/local/lib -lusb-1.0
+LDLIBS = -L/usr/local/lib -lusb-1.0 -lelf -lbfd
 
 #ifdef LINUX
 LDLIBS += -lpthread

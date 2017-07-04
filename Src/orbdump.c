@@ -67,25 +67,26 @@ struct                                      /* Record for options, either defaul
     BOOL useTPIU;
     uint32_t tpiuITMChannel;
 
-  /* File to output dump to */
-  char *outfile;
+    /* File to output dump to */
+    char *outfile;
 
-  /* Do we need to write syncronously */
-  BOOL writeSync;
+    /* Do we need to write syncronously */
+    BOOL writeSync;
 
-  /* How long to dump */
-  uint32_t timelen;
-  
+    /* How long to dump */
+    uint32_t timelen;
+
     /* Source information */
     int port;
     char *server;
-} options = {
-  .useTPIU=TRUE,
-  .tpiuITMChannel=1,
-  .outfile = DEFAULT_OUTFILE,
-  .timelen = DEFAULT_TIMELEN,
-  .port = SERVER_PORT,
-  .server = "localhost"
+} options =
+{
+    .useTPIU = TRUE,
+    .tpiuITMChannel = 1,
+    .outfile = DEFAULT_OUTFILE,
+    .timelen = DEFAULT_TIMELEN,
+    .port = SERVER_PORT,
+    .server = "localhost"
 };
 
 /* ----------- LIVE STATE ----------------- */
@@ -155,7 +156,7 @@ void _protocolPump( uint8_t c )
                 {
                     if ( _r.p.packet[g].s == options.tpiuITMChannel )
                     {
-		      ITMPump( &_r.i, _r.p.packet[g].d );
+                        ITMPump( &_r.i, _r.p.packet[g].d );
                         continue;
                     }
 
@@ -180,7 +181,7 @@ void _protocolPump( uint8_t c )
     else
     {
         /* There's no TPIU in use, so this goes straight to the ITM layer */
-      ITMPump( &_r.i, c );
+        ITMPump( &_r.i, c );
     }
 }
 // ====================================================================================================
@@ -211,8 +212,8 @@ int _processOptions( int argc, char *argv[] )
                 options.outfile = optarg;
                 break;
 
-	case 'l':
-	  options.timelen = atoi(optarg);
+            case 'l':
+                options.timelen = atoi( optarg );
                 break;
 
             case 'w':
@@ -273,8 +274,8 @@ int _processOptions( int argc, char *argv[] )
 
         fprintf( stdout, "Verbose   : TRUE\n" );
         fprintf( stdout, "Server    : %s:%d\n", options.server, options.port );
-	fprintf( stdout, "Rec Length: %dmS\n", options.timelen);
-	fprintf( stdout, "Sync Write: %s\n", options.writeSync?"TRUE":"FALSE");
+        fprintf( stdout, "Rec Length: %dmS\n", options.timelen );
+        fprintf( stdout, "Sync Write: %s\n", options.writeSync ? "TRUE" : "FALSE" );
 
         if ( options.useTPIU )
         {
@@ -292,15 +293,15 @@ int main( int argc, char *argv[] )
     struct sockaddr_in serv_addr;
     struct hostent *server;
     uint8_t cbw[MAX_IP_PACKET_LEN];
-    uint64_t firstTime=0;
-    size_t octetsRxed=0;
+    uint64_t firstTime = 0;
+    size_t octetsRxed = 0;
     FILE *opFile;
 
     ssize_t readLength, t;
     int flag = 1;
 
-    BOOL haveSynced=FALSE;
-    
+    BOOL haveSynced = FALSE;
+
     if ( !_processOptions( argc, argv ) )
     {
         exit( -1 );
@@ -319,7 +320,7 @@ int main( int argc, char *argv[] )
         return -1;
     }
 
-    
+
     /* Now open the network connection */
     bzero( ( char * ) &serv_addr, sizeof( serv_addr ) );
     server = gethostbyname( options.server );
@@ -343,30 +344,32 @@ int main( int argc, char *argv[] )
     }
 
     /* .... and the file to dump it into */
-    opFile=fopen(options.outfile,"wb");
-    if (!opFile)
-      {
-	fprintf( stderr, "Could not open output file for writing\n");
-	return -2;
-      }
+    opFile = fopen( options.outfile, "wb" );
 
-    if (options.verbose)
-      {
-	fprintf( stdout,"Waiting for sync\n");
-      }
+    if ( !opFile )
+    {
+        fprintf( stderr, "Could not open output file for writing\n" );
+        return -2;
+    }
+
+    if ( options.verbose )
+    {
+        fprintf( stdout, "Waiting for sync\n" );
+    }
 
     /* Start the process of collecting the data */
-    while (( readLength = read( sockfd, cbw, MAX_IP_PACKET_LEN ) ) > 0 )
-      {
-	if ((firstTime != 0) && ( (_timestamp()-firstTime)>options.timelen) )
-	  {
-	    /* This packet arrived at the end of the window...finish the write process */
-	    break;
-	  }
-	
+    while ( ( readLength = read( sockfd, cbw, MAX_IP_PACKET_LEN ) ) > 0 )
+    {
+        if ( ( firstTime != 0 ) && ( ( _timestamp() - firstTime ) > options.timelen ) )
+        {
+            /* This packet arrived at the end of the window...finish the write process */
+            break;
+        }
+
         uint8_t *c = cbw;
 
-	t = readLength;
+        t = readLength;
+
         while ( t-- )
         {
             _protocolPump( *c++ );
@@ -379,48 +382,51 @@ int main( int argc, char *argv[] )
             break;
         }
 
-	/* ... now check if we've acheived sync so can write frames */
-	if (!haveSynced)
-	  {
-	    if (!ITMDecoderIsSynced( &_r.i ))
-	      {
-		continue;
-	      }
-	    haveSynced=TRUE;
-	    /* Fill in the time to start from */
-	    firstTime = _timestamp();
-	    if (options.verbose)
-	      {
-		fprintf(stdout,"Started recording\n");
-	      }
-	  }
+        /* ... now check if we've acheived sync so can write frames */
+        if ( !haveSynced )
+        {
+            if ( !ITMDecoderIsSynced( &_r.i ) )
+            {
+                continue;
+            }
 
-	octetsRxed+=fwrite(cbw,1,readLength,opFile);
+            haveSynced = TRUE;
+            /* Fill in the time to start from */
+            firstTime = _timestamp();
 
-	if (!ITMDecoderIsSynced( &_r.i ))
-	  {
-	    fprintf( stderr, "Warning:Sync lost while writing output\n");
-	  }
-	
-	if (options.writeSync)
-	  {
-	    sync();
-	  }
+            if ( options.verbose )
+            {
+                fprintf( stdout, "Started recording\n" );
+            }
+        }
+
+        octetsRxed += fwrite( cbw, 1, readLength, opFile );
+
+        if ( !ITMDecoderIsSynced( &_r.i ) )
+        {
+            fprintf( stderr, "Warning:Sync lost while writing output\n" );
+        }
+
+        if ( options.writeSync )
+        {
+            sync();
+        }
     }
 
     close( sockfd );
     fclose( opFile );
 
-    if ( readLength<= 0 )
+    if ( readLength <= 0 )
     {
         fprintf( stderr, "Network Read failed\n" );
-	return -2;
+        return -2;
     }
 
-    if (options.verbose)
-      {
-	fprintf( stdout,"Wrote %ld bytes of data\n",octetsRxed);
-      }
+    if ( options.verbose )
+    {
+        fprintf( stdout, "Wrote %ld bytes of data\n", octetsRxed );
+    }
+
     return 0;
 }
 // ====================================================================================================
