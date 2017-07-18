@@ -9,6 +9,7 @@ ORBUCULUM = orbuculum
 ORBCAT = orbcat
 ORBTOP = orbtop
 ORBDUMP = orbdump
+ORBSTAT = orbstat
 
 ##########################################################################
 # Check Host OS
@@ -67,7 +68,8 @@ INCLUDE_PATHS += -IInc -I$(OLOC)
 ORBUCULUM_CFILES = $(App_DIR)/$(ORBUCULUM).c 
 ORBCAT_CFILES = $(App_DIR)/$(ORBCAT).c 
 ORBTOP_CFILES = $(App_DIR)/$(ORBTOP).c
-ORBDUMP_CFILES = $(App_DIR)/$(ORBDUMP).c 
+ORBDUMP_CFILES = $(App_DIR)/$(ORBDUMP).c
+ORBSTAT_CFILES = $(App_DIR)/$(ORBSTAT).c 
 
 ##########################################################################
 # GNU GCC compiler prefix and location
@@ -133,6 +135,10 @@ ORBDUMP_OBJS =  $(OBJS) $(patsubst %.c,%.o,$(ORBDUMP_CFILES))
 ORBDUMP_POBJS = $(POJBS) $(patsubst %,$(OLOC)/%,$(ORBDUMP_OBJS))
 ORBDUMP_PDEPS = $(PDEPS) $(ORBDUMP_POBJS:.o=.d)
 
+ORBSTAT_OBJS =  $(OBJS) $(patsubst %.c,%.o,$(ORBSTAT_CFILES))
+ORBSTAT_POBJS = $(POJBS) $(patsubst %,$(OLOC)/%,$(ORBSTAT_OBJS))
+ORBSTAT_PDEPS = $(PDEPS) $(ORBSTAT_POBJS:.o=.d)
+
 CFILES += $(App_DIR)/itmDecoder.c $(App_DIR)/tpiuDecoder.c $(App_DIR)/generics.c
 
 ##########################################################################
@@ -149,7 +155,7 @@ $(OLOC)/%.o : %.c
 	$(call cmd, \$(CC) -c $(CFLAGS) -MMD -o $@ $< ,\
 	Compiling $<)
 
-build: $(ORBUCULUM) $(ORBCAT) $(ORBTOP) $(ORBDUMP)
+build: $(ORBUCULUM) $(ORBCAT) $(ORBTOP) $(ORBDUMP) $(ORBSTAT)
 
 $(ORBUCULUM) : get_version $(ORBUCULUM_POBJS) $(SYS_OBJS)
 	$(Q)$(LD) $(LDFLAGS) -o $(OLOC)/$(ORBUCULUM) $(MAP) $(ORBUCULUM_POBJS) $(LDLIBS)
@@ -167,11 +173,15 @@ $(ORBDUMP) : get_version $(ORBDUMP_POBJS) $(SYS_OBJS)
 	$(Q)$(LD) $(LDFLAGS) -o $(OLOC)/$(ORBDUMP) $(MAP) $(ORBDUMP_POBJS) $(LDLIBS)
 	-@echo "Completed build of" $(ORBDUMP)
 
+$(ORBSTAT) : get_version $(ORBSTAT_POBJS) $(SYS_OBJS)
+	$(Q)$(LD) $(LDFLAGS) -o $(OLOC)/$(ORBSTAT) $(MAP) $(ORBSTAT_POBJS) $(LDLIBS)
+	-@echo "Completed build of" $(ORBSTAT)
+
 tags:
 	-@etags $(CFILES) 2> /dev/null
 
 clean:
-	-$(call cmd, \rm -f $(POBJS) $(LD_TEMP) $(ORBUCULUM) $(ORBCAT) $(OUTFILE).map $(EXPORT) ,\
+	-$(call cmd, \rm -f $(POBJS) $(LD_TEMP) $(ORBUCULUM) $(ORBCAT) $(ORBDUMP) $(ORBSTAT) $(OUTFILE).map $(EXPORT) ,\
 	Cleaning )
 	$(Q)-rm -rf SourceDoc/*
 	$(Q)-rm -rf *~ core

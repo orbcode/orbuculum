@@ -1,6 +1,6 @@
 /*
- * SWO Top for Blackmagic Probe and TTL Serial Interfaces
- * ======================================================
+ * Stats interface for Blackmagic Probe and TTL Serial Interfaces
+ * ==============================================================
  *
  * Copyright (C) 2017  Dave Marples  <dave@marples.net>
  *
@@ -55,61 +55,61 @@
 #include <netinet/in.h>
 #include <netdb.h>
 
-#include "uthash.h"
 #include "git_version_info.h"
+#include "uthash.h"
 #include "generics.h"
 #include "tpiuDecoder.h"
 #include "itmDecoder.h"
 
 #define TEXT_SEGMENT ".text"
 #define TRACE_CHANNEL  1                     /* Channel that we expect trace data to arrive on */
-#define INTERRUPT 0xFFFFFFFD                 /* Special memory address interrupt origin */
-#define CUTOFF      10                       /* Default cutoff at 0.1% */
+
+#define INTERRUPT    0xFFFFFFF8              /* Special memory address - interrupt origin */
+#define NOT_FOUND    0xFFFFFFFF              /* Special memory address - not found */
+
+
 #define SERVER_PORT 3443                     /* Server port definition */
 #define MAX_IP_PACKET_LEN (1500)             /* Maximum packet we might receive */
 #define TOP_UPDATE_INTERVAL (1000LL)         /* Interval between each on screen update */
 
-struct lineInfo
-{
-    uint32_t addr;
-    char *filename;
-    char *function;
-    uint32_t line;
-};
+/* Interface to/from target */
+#define COMMS_MASK (0xF0000000)
+#define IN_EVENT   (0x40000000)
+#define OUT_EVENT  (0x50000000)
 
-struct visitedAddr                           /* Structure for Hashmap of visited/observed addresses */
-{
-    uint32_t addr;
-    uint32_t visits;
-    UT_hash_handle hh;
-};
-
-/* Call data */
-struct callData
-{
-    uint32_t src;
-    uint32_t dst;
-    uint32_t count;
-};
-
-struct edge
-{
-    struct lineInfo srcl;
-    struct lineInfo dstl;
-    uint32_t count;
-};
-
-struct reportLine
-
+/* An entry in the names table */
+struct nameEntryHash
 {
     const char *filename;
     const char *function;
-    uint32_t addr;
+    uint32_t index;
     uint32_t line;
-    uint64_t count;
+    uint32_t addr;
+    BOOL seen;
+
+    UT_hash_handle hh;
 };
 
-enum CDState { CD_waitcount, CD_waitsrc, CD_waitdst };
+/* A calling edge */
+struct edge
+{
+    uint32_t src;
+    uint32_t dst;
+    uint64_t tstamp;
+    BOOL in;
+};
+
+/* Processed subcalls from routine to routine */
+struct subcalls
+{
+    uint32_t src;
+    uint32_t dst;
+    uint64_t myCost;
+    uint64_t total;
+};
+
+/* States for sample reception state machine */
+enum CDState { CD_waitinout, CD_waitsrc, CD_waitdst };
 
 /* ---------- CONFIGURATION ----------------- */
 struct                                       /* Record for options, either defaults or from command line */
@@ -118,9 +118,7 @@ struct                                       /* Record for options, either defau
     BOOL useTPIU;                            /* Are we decoding via the TPIU? */
     uint32_t tpiuITMChannel;                 /* What channel? */
 
-    uint32_t hwOutputs;                      /* What hardware outputs are enabled */
-
-    char *deleteMaterial;                    /* Material to delete off filenames for target */
+    char *deleteMaterial;                    /* Material to strip off front of filenames for target */
 
     char *elffile;                           /* Target program config */
 
@@ -130,9 +128,10 @@ struct                                       /* Record for options, either defau
 
     uint32_t maxRoutines;                    /* Historic information to emit */
     uint32_t maxHistory;
+
     BOOL lineDisaggregation;                 /* Aggregate per line or per function? */
 
-    int port;                                /* Source information */
+    int port;                                /* Source information for where to connect to */
     char *server;
 
 } options =
@@ -155,18 +154,31 @@ struct
     struct TPIUDecoder t;
     struct TPIUPacket p;
 
+    /* Symbol table related info */
     asymbol **syms;                         /* Symbol table */
     uint32_t symcount;                      /* Number of symbols */
     bfd *abfd;                              /* BFD handle to file */
     asection *sect;                         /* Address data for the program section */
 
-    struct visitedAddr *addresses;          /* Addresses we received in the SWV */
-    uint32_t sleeps;
-
+    /* Calls related info */
     enum CDState CDState;                   /* State of the call data machine */
-    struct callData callsConstruct;         /* Call data entry under construction */
-    struct callData *calls;                 /* Call data table */
+    struct edge callsConstruct;             /* Call data entry under construction */
+    struct edge *calls;                     /* Call data table */
+    struct subcalls *sub;                   /* Construct data */
+
+    uint32_t subPsn;                        /* Counter for sub calls */
+    uint32_t psn;                           /* Current position in assessment of data */
     uint32_t cdCount;                       /* Call data count */
+
+    FILE *c;                                /* Writable file */
+
+    /* Turn addresses into files and routines tags */
+    uint32_t nameCount;
+    struct nameEntryHash *name;
+
+    /* Used for stretching number of bits in target timer */
+    uint32_t oldt;
+    uint64_t highOrdert;
 } _r;
 
 // ====================================================================================================
@@ -177,6 +189,8 @@ struct
 // ====================================================================================================
 // ====================================================================================================
 BOOL _loadSymbols( void )
+
+/* Load symbols from bfd library compatible file */
 
 {
     uint32_t storage;
@@ -242,44 +256,6 @@ BOOL _loadSymbols( void )
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
-void _handleException( struct ITMDecoder *i, struct ITMPacket *p )
-
-{
-    if ( !( options.hwOutputs & ( 1 << HWEVENT_EXCEPTION ) ) )
-    {
-        return;
-    }
-
-    uint32_t exceptionNumber = ( ( p->d[1] & 0x01 ) << 8 ) | p->d[0];
-    uint32_t eventType = p->d[1] >> 4;
-
-    const char *exNames[] = {"Thread", "Reset", "NMI", "HardFault", "MemManage", "BusFault", "UsageFault", "UNKNOWN_7",
-                             "UNKNOWN_8", "UNKNOWN_9", "UNKNOWN_10", "SVCall", "Debug Monitor", "UNKNOWN_13", "PendSV", "SysTick"
-                            };
-    const char *exEvent[] = {"Unknown", "Enter", "Exit", "Resume"};
-    fprintf( stdout, "%d,%s,%s\n", HWEVENT_EXCEPTION, exEvent[eventType], exNames[exceptionNumber] );
-}
-// ====================================================================================================
-void _handleDWTEvent( struct ITMDecoder *i, struct ITMPacket *p )
-
-{
-    if ( !( options.hwOutputs & ( 1 << HWEVENT_DWT ) ) )
-    {
-        return;
-    }
-
-    uint32_t event = p->d[1] & 0x2F;
-    const char *evName[] = {"CPI", "Exc", "Sleep", "LSU", "Fold", "Cyc"};
-
-    for ( uint32_t i = 0; i < 6; i++ )
-    {
-        if ( event & ( 1 << i ) )
-        {
-            fprintf( stdout, "%d,%s\n", HWEVENT_DWT, evName[event] );
-        }
-    }
-}
-// ====================================================================================================
 void _handleSW( struct ITMDecoder *i )
 
 {
@@ -295,29 +271,46 @@ void _handleSW( struct ITMDecoder *i )
             switch ( _r.CDState )
             {
                 // --------------------
-                case CD_waitcount:
-                    if ( ( d & 0xFFFF0000 ) == 0x40000000 )
+                case CD_waitinout:
+                    if ( ( d & COMMS_MASK ) == IN_EVENT )
                     {
-                        _r.callsConstruct.count = d & 0xFFFF;
+                        _r.callsConstruct.in = TRUE;
                         _r.CDState = CD_waitsrc;
                     }
 
+                    if ( ( d & COMMS_MASK ) == OUT_EVENT )
+                    {
+                        _r.callsConstruct.in = FALSE;
+                        _r.CDState = CD_waitsrc;
+                    }
+
+                    /* Time is encoded in lowest two octets ...accomodate rollover */
+                    uint32_t t = d & 0xFFFF;
+
+                    if ( t < _r.oldt )
+                    {
+                        _r.highOrdert++;
+                    }
+
+                    _r.oldt = t;
+                    _r.callsConstruct.tstamp = ( _r.highOrdert << 16 ) | t;
                     break;
 
                 // --------------------
                 case CD_waitsrc:
-                    _r.callsConstruct.src = d;
+                    /* Source address is the address of the _return_, so subtract 4 */
+                    _r.callsConstruct.src = ( d - 4 );
                     _r.CDState = CD_waitdst;
                     break;
 
                 // --------------------
                 case CD_waitdst:
                     _r.callsConstruct.dst = d;
-                    _r.CDState = CD_waitcount;
+                    _r.CDState = CD_waitinout;
 
                     /* Now store this for later processing */
-                    _r.calls = ( struct callData * )realloc( _r.calls, sizeof( struct callData ) * ( _r.cdCount + 1 ) );
-                    memcpy( &_r.calls[_r.cdCount], &_r.callsConstruct, sizeof( struct callData ) );
+                    _r.calls = ( struct edge * )realloc( _r.calls, sizeof( struct edge ) * ( _r.cdCount + 1 ) );
+                    memcpy( &_r.calls[_r.cdCount], &_r.callsConstruct, sizeof( struct edge ) );
                     _r.cdCount++;
                     break;
                     // --------------------
@@ -326,61 +319,99 @@ void _handleSW( struct ITMDecoder *i )
     }
 }
 // ====================================================================================================
-BOOL _lookup( struct lineInfo *l, uint32_t addr, asection *section )
+BOOL _lookup( struct nameEntryHash **n, uint32_t addr, asection *section )
 
-/* Lookup function for address to line, and hence to function */
+/* Lookup function for address to line, and hence to function, and cache in case we need it later */
 
 {
-    /* Dummy line for case that lookup returns no data */
-    static struct lineInfo dummyLine = {.filename = "Unknown", .function = "Unknown", .line = 0};
+    const char *function = NULL;
+    const char *filename = NULL;
 
-    if ( addr == INTERRUPT )
+    uint32_t line;
+    BOOL found = FALSE;
+
+    HASH_FIND_INT( _r.name, &addr, *n );
+
+    if ( *n )
     {
-        l->filename = "None";
-        l->function = "INTERRUPT";
-        l->line = 0;
-        return TRUE;
+        found = TRUE;
     }
     else
     {
-        addr -= bfd_get_section_vma( _r.abfd, section );
+        uint32_t workingAddr = addr - bfd_get_section_vma( _r.abfd, section );
 
-        if ( addr > bfd_section_size( _r.abfd, section ) )
+        if ( workingAddr <= bfd_section_size( _r.abfd, section ) )
         {
-            memcpy( l, &dummyLine, sizeof( struct lineInfo ) );
-            return FALSE;
-        }
+            if ( bfd_find_nearest_line( _r.abfd, section, _r.syms, workingAddr, &filename, &function, &line ) )
+            {
 
-        if ( !bfd_find_nearest_line( _r.abfd, section, _r.syms, addr, ( const char ** )&l->filename, ( const char ** )&l->function, &l->line ) )
-        {
-            memcpy( l, &dummyLine, sizeof( struct lineInfo ) );
-            return FALSE;
+                /* Remove any frontmatter off filename string that matches */
+                if ( options.deleteMaterial )
+                {
+                    char *m = options.deleteMaterial;
+
+                    while ( ( *m ) && ( *filename ) && ( *filename == *m ) )
+                    {
+                        m++;
+                        filename++;
+                    }
+                }
+
+                /* Was found, so create new hash entry for this */
+                ( *n ) = ( struct nameEntryHash * )malloc( sizeof( struct nameEntryHash ) );
+                ( *n )->filename = filename;
+                ( *n )->function = function;
+                ( *n )->addr = addr;
+                ( *n )->index = _r.nameCount++;
+                ( *n )->line = line;
+                HASH_ADD_INT( _r.name, addr, ( *n ) );
+                found = TRUE;
+            }
         }
     }
 
-    /* Deal with case that filename wasn't recorded */
-    if ( !l->filename )
+    if ( !found )
     {
-        l->filename = "Unknown";
-    }
-
-    /* Remove any frontmatter off filename string that matches */
-    if ( options.deleteMaterial )
-    {
-        char *m = options.deleteMaterial;
-
-        while ( ( *m ) && ( *l->filename ) && ( *l->filename == *m ) )
+        if ( addr == INTERRUPT )
         {
-            m++;
-            l->filename++;
+            ( *n ) = ( struct nameEntryHash * )malloc( sizeof( struct nameEntryHash ) );
+            ( *n )->filename = "";
+            ( *n )->function = "INTERRUPT";
+            ( *n )->addr = addr;
+            ( *n )->index = _r.nameCount++;
+            ( *n )->line = 0;
+            HASH_ADD_INT( _r.name, addr, ( *n ) );
+        }
+        else
+        {
+            uint32_t foundTag = NOT_FOUND;
+            /* Create the not found entry if it's not already present */
+            HASH_FIND_INT( _r.name, &foundTag, ( *n ) );
+
+            if ( !( *n ) )
+            {
+                ( *n ) = ( struct nameEntryHash * )malloc( sizeof( struct nameEntryHash ) );
+                ( *n )->filename = "Unknown";
+                ( *n )->function = "Unknown";
+                ( *n )->addr = foundTag;
+                ( *n )->index = _r.nameCount++;
+                ( *n )->line = 0;
+                HASH_ADD_INT( _r.name, addr, ( *n ) );
+            }
+            else
+            {
+                found = TRUE;
+            }
         }
     }
 
-    l->addr = addr;
-    return TRUE;
+    /* However we got here, we can refer the requested line entry to a valid name tag */
+    return found;
 }
 // ====================================================================================================
 uint64_t _timestamp( void )
+
+/* Return a timestamp */
 
 {
     struct timeval te;
@@ -389,493 +420,206 @@ uint64_t _timestamp( void )
     return milliseconds;
 }
 // ====================================================================================================
-int _addresses_sort_fn( void *a, void *b )
+int _addresses_sort_fn( const void *a, const void *b )
+
+/* Sort addresses first by src, then by dst */
 
 {
-    if ( ( ( ( struct visitedAddr * )a )->addr ) < ( ( ( struct visitedAddr * )b )->addr ) )
+    int32_t c = ( ( ( struct subcalls * )a )->src ) - ( ( ( struct subcalls * )b )->src );
+
+    if ( c )
     {
-        return -1;
+        return c;
     }
 
-    if ( ( ( ( struct visitedAddr * )a )->addr ) > ( ( ( struct visitedAddr * )b )->addr ) )
-    {
-        return 1;
-    }
-
-    return 0;
+    return ( ( ( struct subcalls * )a )->dst ) - ( ( ( struct subcalls * )b )->dst );
 }
 // ====================================================================================================
-int _report_sort_fn( const void *a, const void *b )
+int _addresses_sort_dest_fn( const void *a, const void *b )
+
+/* Sort addresses first by dst, then by src */
 
 {
-    return ( ( struct reportLine * )b )->count - ( ( struct reportLine * )a )->count;
+    int32_t c = ( ( ( struct subcalls * )a )->dst ) - ( ( ( struct subcalls * )b )->dst );
+
+    if ( c )
+    {
+        return c;
+    }
+
+    return ( ( ( struct subcalls * )a )->src ) - ( ( ( struct subcalls * )b )->src );
 }
 // ====================================================================================================
-int _calls_sort_src_fn( const void *a, const void *b )
+void _dumpProfile( void )
+
+/* Dump profile to Valgrind (KCacheGrind compatible) file format */
 
 {
-    struct edge *ae = ( struct edge * )a;
-    struct edge *be = ( struct edge * )b;
-    int r;
+    struct nameEntryHash *f, *t;
 
-    r = strcmp( ae->srcl.filename, be->srcl.filename );
+    uint64_t myCost;
+    uint64_t totalCost;
+    uint32_t totalCalls;
 
-    if ( r )
+    /* Empty the 'seen' field of the name cache */
+    HASH_ITER( hh, _r.name, f, t )
     {
-        return r;
+        f->seen = FALSE;
     }
 
-    r = strcmp( ae->srcl.function, be->srcl.function );
+    /* Record any destination routine and the time it's taken */
+    qsort( _r.sub, _r.subPsn, sizeof( struct subcalls ), _addresses_sort_dest_fn );
 
-    if ( r )
+    for ( uint32_t i = 0; i < _r.subPsn - 1; i++ )
     {
-        return r;
-    }
+        /* Collect total cost and sub costs for this dest routine */
+        myCost = _r.sub[i].myCost;
 
-    r = strcmp( ae->dstl.filename, be->dstl.filename );
-
-    if ( r )
-    {
-        return r;
-    }
-
-    return strcmp( ae->dstl.function, be->dstl.function );
-}
-// ====================================================================================================
-int _calls_sort_dst_fn( const void *a, const void *b )
-
-{
-    struct edge *ae = ( struct edge * )a;
-    struct edge *be = ( struct edge * )b;
-    int r;
-
-    r = strcmp( ae->dstl.filename, be->dstl.filename );
-
-    if ( r )
-    {
-        return r;
-    }
-
-    r = strcmp( ae->dstl.function, be->dstl.function );
-
-    if ( r )
-    {
-        return r;
-    }
-
-    r = strcmp( ae->srcl.filename, be->srcl.filename );
-
-    if ( r )
-    {
-        return r;
-    }
-
-    return strcmp( ae->srcl.function, be->srcl.function );
-}
-// ====================================================================================================
-void _outputDot( struct edge *edgeInfo )
-
-/* Output call graph to dot file */
-
-{
-    FILE *c;
-    uint32_t i;
-    uint64_t count;
-    char *currentSrc = NULL;
-
-    if ( !options.dotfile )
-    {
-        return;
-    }
-
-    c = fopen( options.dotfile, "w" );
-    fprintf( c, "digraph calls\n{\n  overlap=false; splines=true; size=\"7.75,10.25\"; orientation=portrait; sep=0.1; nodesep=0.1;\n" );
-
-    /* firstly write out the nodes in each subgraph - dest side indexed */
-    qsort( edgeInfo, _r.cdCount, sizeof( struct edge ), _calls_sort_dst_fn );
-    i = 0;
-
-    while ( i < _r.cdCount )
-    {
-        i++;
-        fprintf( c, "  subgraph \"cluster_%s\"\n{\n    label=\"%s\";\n    bgcolor=lightgrey;\n", edgeInfo[i - 1].dstl.filename, edgeInfo[i - 1].dstl.filename );
-
-        while ( i < _r.cdCount )
+        while ( ( i < _r.subPsn - 1 ) && ( _r.sub[i].dst == _r.sub[i + 1].dst ) )
         {
-            /* Now output each function in the subgraph */
-            fprintf( c, "   %s [style=filled, fillcolor=white];\n", edgeInfo[i - 1].dstl.function );
+            myCost += _r.sub[i++].myCost;
+        }
 
-            /* Spin forwards until the function name _or_ filename changes */
-            while ( ( i < _r.cdCount ) &&
-                    ( !( ( strcmp( edgeInfo[i - 1].dstl.filename, edgeInfo[i].dstl.filename ) )
-                         || ( strcmp( edgeInfo[i - 1].dstl.function, edgeInfo[i].dstl.function ) ) ) ) )
-            {
-                i++;
-            }
+        _lookup( &t, _r.sub[i].dst, _r.sect );
 
-            if ( ( i >= _r.cdCount ) || ( strcmp( edgeInfo[i - 1].dstl.filename, edgeInfo[i].dstl.filename ) ) )
-            {
-                break;
-            }
+        if ( !t->seen )
+        {
+            /* Haven't seen it before, so announce it */
+            fprintf( _r.c, "fl=(%d) %s\nfn=(%d) %s\n0x%08x %d %ld\n", t->index, t->filename, t->index, t->function, t->addr, t->line, myCost );
+            t->seen = TRUE;
+        }
+    }
 
+
+    /* OK, now proceed to report the calls */
+
+    fprintf( _r.c, "\n\n## ------------------- Calls Follow ------------------------\n" );
+
+    for ( uint32_t i = 0; i < _r.subPsn - 2; i++ )
+    {
+        myCost = _r.sub[i].myCost;
+        totalCost = _r.sub[i].total;
+        totalCalls = 1;
+
+        while ( ( i < _r.subPsn - 2 ) && ( _r.sub[i].dst == _r.sub[i + 1].dst ) && ( _r.sub[i].src == _r.sub[i + 1].src ) )
+        {
             i++;
+            totalCost += _r.sub[i].total;
+            myCost += _r.sub[i].myCost;
+            totalCalls++;
         }
 
-        fprintf( c, "  }\n\n" );
-    }
+        _lookup( &t, _r.sub[i].dst, _r.sect );
 
-    /* now repeat for source side - it doesn't matter if nodes get repeated */
-    qsort( edgeInfo, _r.cdCount, sizeof( struct edge ), _calls_sort_src_fn );
-    i = 0;
-
-    while ( i < _r.cdCount )
-    {
-        i++;
-        fprintf( c, "  subgraph \"cluster_%s\"\n{\n    label=\"%s\";bgcolor=lightgrey;\n", edgeInfo[i - 1].srcl.filename, edgeInfo[i - 1].srcl.filename );
-
-        while ( i < _r.cdCount )
+        if ( !t->seen )
         {
-            /* Now output each function in the subgraph */
-            fprintf( c, "   %s [style=filled, fillcolor=white];\n", edgeInfo[i - 1].srcl.function );
-
-            /* Spin forwards until the function name _or_ filename changes */
-            while ( ( i < _r.cdCount ) &&
-                    ( !( ( strcmp( edgeInfo[i - 1].srcl.filename, edgeInfo[i].srcl.filename ) )
-                         || ( strcmp( edgeInfo[i - 1].srcl.function, edgeInfo[i].srcl.function ) ) ) ) )
-            {
-                i++;
-            }
-
-            if ( ( i >= _r.cdCount ) || ( strcmp( edgeInfo[i - 1].srcl.filename, edgeInfo[i].srcl.filename ) ) )
-            {
-                break;
-            }
-
-            i++;
+            /* This is a previously unseen dest, announce it */
+            fprintf( _r.c, "fl=(%d) %s\nfn=(%d) %s\n0x%08x %d %ld\n", t->index, t->filename, t->index, t->function, t->addr, t->line, myCost );
+            t->seen = TRUE;
         }
 
-        fprintf( c, "  }\n\n" );
-    }
+        _lookup( &f, _r.sub[i].src, _r.sect );
 
-
-    /* Now go through and label the arrows... */
-
-    i = 0;
-
-    while ( i < _r.cdCount )
-    {
-        i++;
-        count = edgeInfo[i - 1].count;
-
-        /* Cycle through until something changes */
-        while ( i < _r.cdCount )
+        if ( !f->seen )
         {
-            if ( ( strcmp( edgeInfo[i - 1].srcl.filename, edgeInfo[i].srcl.filename ) ) ||
-                    ( strcmp( edgeInfo[i - 1].srcl.function, edgeInfo[i].srcl.function ) ) ||
-                    ( strcmp( edgeInfo[i - 1].dstl.filename, edgeInfo[i].dstl.filename ) ) ||
-                    ( strcmp( edgeInfo[i - 1].dstl.function, edgeInfo[i].dstl.function ) ) )
-            {
-                break;
-            }
-
-            count += edgeInfo[i - 1].count;
-            i++;
+            /* Add this in, but cost of the caller is not visible here...we need to put 1 else no code is visible */
+            fprintf( _r.c, "fl=(%d) %s\nfn=(%d) %s\n0x%08x %d 1\n", f->index, f->filename, f->index, f->function, f->addr, f->line );
+            f->seen = TRUE;
         }
-
-        if ( ( !currentSrc ) || ( strcmp( currentSrc, edgeInfo[i - 1].srcl.function ) ) )
+        else
         {
-            if ( currentSrc )
-            {
-                free( currentSrc );
-            }
-
-            currentSrc = strdup( edgeInfo[i - 1].srcl.function );
+            fprintf( _r.c, "fl=(%d)\nfn=(%d)\n", f->index, f->index );
         }
 
-        fprintf( c, "    %s -> ", edgeInfo[i - 1].srcl.function );
-
-        fprintf( c, "%s [label=%ld , weight=0.1;];\n", edgeInfo[i - 1].dstl.function, count );
+        /* Now publish the call destination. By definition is is known, so can be shortformed */
+        fprintf( _r.c, "cfi=(%d)\ncfn=(%d)\ncalls=%d 0x%08x %d\n", t->index, t->index, totalCalls, _r.sub[i].dst, t->line );
+        fprintf( _r.c, "0x%08x %d %ld\n", _r.sub[i].src, f->line, totalCost );
     }
-
-    fprintf( c, "}\n" );
-    fclose( c );
 }
 // ====================================================================================================
-void _outputProfile( struct edge *edgeInfo, uint32_t reportLines, struct reportLine *report )
+uint64_t _traverse( uint32_t layer )
+
+/* Recursively traverse the calls tree, recording each subroutine call as we go along */
 
 {
-    FILE *c;
-    uint32_t i;
-    uint64_t count;
-    struct lineInfo f, t;
+    uint32_t startPoint = _r.psn; /* Record where we came in on this iteration */
+    uint64_t childCost = 0;      /* ...and keep a record of any children visited */
 
-
-    c = fopen( options.profile, "w" );
-    fprintf( c, "# callgrind format\n" );
-    fprintf( c, "positions: instr line\nevents: Samples\n" );
-
-    fprintf( c, "ob=%s\n", options.elffile );
-
-#if 1==0
-
-    for ( uint32_t t = 0; t < reportLines; t++ )
+    /* If this is an out and we're already at the top level then it's to be ignored */
+    if ( ( layer == 0 ) && ( !_r.calls[_r.psn].in ) )
     {
-        fprintf( c, "fi=%s\nfn=%s\n0x%08x %d %ld\n", report[t].filename, report[t].function, 0x08000000 | report[t].addr, report[t].line, report[t].count );
+        _r.psn++;
+        return 0;
     }
 
-#endif
+    _r.psn++; /* Move past my node... */
 
-    i = 0;
+    /* Two cases...either an in node, in which case there is more to be covered */
+    /* or an out node, in which case we're done and we can just record what we've got */
 
-    while ( i < _r.cdCount )
+    /* ...of course there might be a whole sequence if in calls if we call several routines from ours */
+    while ( _r.calls[_r.psn].in )
     {
-        i++;
-        count = 0;
-
-        /* Rollup all entries for this source address */
-        while ( ( i < _r.cdCount ) && ( _r.calls[i].src == _r.calls[i - 1].src ) )
+        if ( _r.psn >= _r.cdCount - 2 )
         {
-            count += _r.calls[i - 1].count;
-            i++;
+            return 0;
         }
 
-        _lookup( &f, _r.calls[i - 1].src, _r.sect );
-        fprintf( c, "\nfi=%s\nfn=%s\n0x%08x %d 1\n", f.filename, f.function, ( 0x08000000 | _r.calls[i - 1].src ) & 0xFFFFFFFE, f.line );
-        //fprintf(c,"\nfi=%s\nfn=%s\n",f.filename,f.function);
-
-        _lookup( &t, _r.calls[i - 1].dst, _r.sect );
-        fprintf( c, "cfi=%s\ncfn=%s\ncalls=%ld 1\n", t.filename, t.function, count );
-        fprintf( c, "0x%08x %d 1\n", ( 0x08000000 | _r.calls[i - 1].src ) & 0xFFFFFFFE, f.line );
+        childCost += _traverse( layer + 1 );
     }
 
-    fclose( c );
+
+    /* This is my out node....they may have been others below, but this one matches my in node */
+    /* At this point startPoint is the in node, and r_psn is the exit node, so store this entry */
+
+    _r.sub = ( struct subcalls * )realloc( _r.sub, ( ++_r.subPsn ) * ( sizeof( struct subcalls ) ) );
+    _r.sub[_r.subPsn - 1].dst = _r.calls[_r.psn].dst;
+    _r.sub[_r.subPsn - 1].src = _r.calls[_r.psn].src;
+    _r.sub[_r.subPsn - 1].total = _r.calls[_r.psn].tstamp - _r.calls[startPoint].tstamp;
+    _r.sub[_r.subPsn - 1].myCost = _r.sub[_r.subPsn - 1].total - childCost;
+
+    _r.psn++;
+
+    /* ...and float to level above any cost we've got */
+    return _r.sub[_r.subPsn - 1].total;
 }
 // ====================================================================================================
-void _processCalls( uint32_t reportLines, struct reportLine *report )
+void _outputProfile( void )
 
-/* Process logged call graphs into sensible output */
-
-{
-    struct edge *edgeInfo;
-
-    if ( !_r.calls )
-    {
-        /* If we didn't collect any data don't try and do anything with it */
-        return;
-    }
-
-    uint32_t i = 0;
-
-    /* Make room for the maximum set of edges.... */
-    edgeInfo = ( struct edge * )malloc( sizeof( struct edge ) * _r.cdCount );
-
-    /* Put in all the names of functions. There may be multiple addresses that match to a function */
-    while ( i < _r.cdCount )
-    {
-        _lookup( &( edgeInfo[i].srcl ), _r.calls[i].src, _r.sect );
-        _lookup( &( edgeInfo[i].dstl ), _r.calls[i].dst, _r.sect );
-        edgeInfo[i].count = _r.calls[i].count;
-        i++;
-    }
-
-    if ( options.dotfile )
-    {
-        _outputDot( edgeInfo );
-    }
-
-    if ( options.profile )
-    {
-        _outputProfile( edgeInfo, reportLines, report );
-    }
-
-    /* Now free up this seconds data */
-    free( edgeInfo );
-    free( _r.calls );
-    _r.calls = NULL;
-    _r.cdCount = 0;
-}
-// ====================================================================================================
-void outputTop( void )
-
-/* Produce the output */
+/* Output a KCacheGrind compatible profile */
 
 {
-    struct reportLine *report = NULL;
-    uint32_t reportLines = 0;
-    struct lineInfo l;
+    _r.c = fopen( options.profile, "w" );
+    fprintf( _r.c, "# callgrind format\n" );
+    fprintf( _r.c, "positions: line instr\nevent: uS : Real Time in uS\nevents: uS\n" );
+    /* Samples are in time order, so we can determine the extent of time.... */
+    fprintf( _r.c, "summary: %ld\n", _r.calls[_r.cdCount - 1].tstamp - _r.calls[0].tstamp );
+    fprintf( _r.c, "ob=%s\n", options.elffile );
 
-    uint32_t total = 0;
-    uint32_t unknown = 0;
-    uint64_t samples = 0;
-    uint32_t percentage;
-    uint32_t totPercent = 0;
-
-    FILE *p = NULL;
-
-    /* Put the address into order */
-    HASH_SORT( _r.addresses, _addresses_sort_fn );
-
-    /* Now merge them together */
-    for ( struct visitedAddr *a = _r.addresses; a != NULL; a = a->hh.next )
+    /* If we have a set of sub-calls from a previous run then delete them */
+    if ( _r.sub )
     {
-        if ( !a->visits )
-        {
-            continue;
-        }
-
-        if ( !_lookup( &l, a->addr, _r.sect ) )
-        {
-            printf( "%x\n", a->addr );
-            unknown += a->visits;
-            a->visits = 0;
-            continue;
-        }
-
-        if ( ( reportLines == 0 ) ||
-                ( strcmp( report[reportLines - 1].filename, l.filename ) ) ||
-                ( strcmp( report[reportLines - 1].function, l.function ) ) ||
-                ( ( report[reportLines - 1].line != l.line ) && ( options.lineDisaggregation ) ) )
-        {
-            /* Make room for a report line */
-            reportLines++;
-            report = ( struct reportLine * )realloc( report, sizeof( struct reportLine ) * ( reportLines ) );
-            report[reportLines - 1].addr = l.addr;
-            report[reportLines - 1].filename = l.filename;
-            report[reportLines - 1].function = l.function;
-            report[reportLines - 1].line = l.line;
-            report[reportLines - 1].count = 0;
-        }
-
-        report[reportLines - 1].count += a->visits;
-        total += a->visits;
-        a->visits = 0;
+        free( _r.sub );
+        _r.sub = NULL;
     }
 
-    /* Add entries for Sleeping and unknown, if there are any of either */
-    if ( _r.sleeps )
+    _r.subPsn = 0;
+
+    _r.psn = 0;
+
+    while ( _r.psn < _r.cdCount - 2 )
     {
-        report = ( struct reportLine * )realloc( report, sizeof( struct reportLine ) * ( reportLines + 1 ) );
-        report[reportLines].filename = "";
-        report[reportLines].function = "** SLEEPING **";
-        report[reportLines].line = 0;
-        report[reportLines].count = _r.sleeps;
-        reportLines++;
-        total += _r.sleeps;
-        _r.sleeps = 0;
+        _traverse( 0 );
     }
 
-    if ( unknown )
-    {
-        report = ( struct reportLine * )realloc( report, sizeof( struct reportLine ) * ( reportLines + 1 ) );
-        report[reportLines].filename = "";
-        report[reportLines].function = "** Unknown **";
-        report[reportLines].line = 0;
-        report[reportLines].count = unknown;
-        reportLines++;
-        total += unknown;
-    }
-
-    /* Now put the whole thing into order of number of samples */
-    qsort( report, reportLines, sizeof( struct reportLine ), _report_sort_fn );
-
-    if ( options.outfile )
-    {
-        p = fopen( options.outfile, "w" );
-    }
-
-    fprintf( stdout, "\033[2J\033[;H" );
-
-    for ( uint32_t n = 0; n < reportLines; n++ )
-    {
-        percentage = ( report[n].count * 10000 ) / total;
-        samples += report[n].count;
-
-        if ( report[n].count )
-        {
-            if ( percentage >= CUTOFF )
-            {
-                fprintf( stdout, "%3d.%02d%% %8ld ", percentage / 100, percentage % 100, report[n].count );
-
-                if ( options.lineDisaggregation )
-                {
-                    fprintf( stdout, "%s::%d\n", report[n].function, report[n].line );
-                }
-                else
-                {
-                    fprintf( stdout, "%s\n", report[n].function );
-                }
-
-                totPercent += percentage;
-            }
-
-            if ( ( p )  && ( n < options.maxRoutines ) )
-            {
-                if ( !options.lineDisaggregation )
-                {
-                    fprintf( p, "%s,%3d.%02d\n", report[n].function, percentage / 100, percentage % 100 );
-                }
-                else
-                {
-                    fprintf( p, "%s::%d,%3d.%02d\n", report[n].function, report[n].line, percentage / 100, percentage % 100 );
-                }
-            }
-        }
-    }
-
-    fprintf( stdout, "-----------------\n" );
-    fprintf( stdout, "%3d.%02d%% %8ld Samples\n", totPercent / 100, totPercent % 100, samples );
-
-    if ( p )
-    {
-        fclose( p );
-        p = NULL;
-    }
-
-    _processCalls( reportLines, report );
-
-    if ( options.verbose )
-    {
-        fprintf( stdout, "         Ovf=%3d  ITMSync=%3d TPIUSync=%3d ITMErrors=%3d\n",
-                 ITMDecoderGetStats( &_r.i )->overflow,
-                 ITMDecoderGetStats( &_r.i )->syncCount,
-                 TPIUDecoderGetStats( &_r.t )->syncCount,
-                 ITMDecoderGetStats( &_r.i )->ErrorPkt );
-    }
-
-    /* ... and we are done with the report now, get rid of it */
-    free( report );
+    _dumpProfile();
+    fclose( _r.c );
 }
 // ====================================================================================================
 void _handlePCSample( struct ITMDecoder *i, struct ITMPacket *p )
 
 {
-    uint32_t pc;
-
-    if ( p->len == 1 )
-    {
-        /* This is a sleep packet */
-        _r.sleeps++;
-    }
-    else
-    {
-        pc = ( p->d[3] << 24 ) | ( p->d[2] << 16 ) | ( p->d[1] << 8 ) | ( p->d[0] );
-
-        struct visitedAddr *a;
-        HASH_FIND_INT( _r.addresses, &pc, a );
-
-        if ( a )
-        {
-            a->visits++;
-        }
-        else
-        {
-            /* Create a new record for this address */
-            a = ( struct visitedAddr * )malloc( sizeof( struct visitedAddr ) );
-            a->visits = 1;
-            a->addr = pc;
-            HASH_ADD_INT( _r.addresses, addr, a );
-        }
-    }
+    return;
 }
 // ====================================================================================================
 void _handleHW( struct ITMDecoder *i )
@@ -892,7 +636,6 @@ void _handleHW( struct ITMDecoder *i )
 
         // --------------
         case 1: /* Exception */
-            _handleException( i, &p );
             break;
 
         // --------------
@@ -1257,7 +1000,22 @@ int main( int argc, char *argv[] )
         if ( _timestamp() - lastTime > TOP_UPDATE_INTERVAL )
         {
             lastTime = _timestamp();
-            outputTop();
+
+            if ( options.dotfile )
+            {
+                //      _outputDot();
+            }
+
+            if ( ( options.profile ) && ( _r.cdCount ) )
+            {
+                _outputProfile();
+            }
+
+            fprintf( stdout, "%d records processed\n", _r.cdCount );
+            /* Now free up this seconds data */
+            free( _r.calls );
+            _r.calls = NULL;
+            _r.cdCount = 0;
         }
 
         /* Check to make sure there's not an unexpected TPIU in here */

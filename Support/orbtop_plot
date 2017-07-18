@@ -2,5 +2,6 @@
 while [ 1 ]
 do
       gnuplot Support/orbtop.gplt > ~/Desktop/a.pdf
+      neato calls.dot -Tpdf -o ~/Desktop/output.pdf
       sleep 1
 done

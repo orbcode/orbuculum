@@ -6,10 +6,9 @@ An Orbuculum is a Crystal Ball, used for seeing things that would
  (debug probe), BMP.
 
 *This program is in heavy development. Check back frequently for new versions 
-with additional functionality. The current status (4th July) is that
-the software runs on both Linux and OSX. ITM SW logging is working,
-and HW tracing (Watchpoints, Timestamps, PC Sampling
-etc.) is implemented and reported. Segger support has just been added. Orbtop has recently
+with additional functionality. The current status (18th July) is that orbstat
+has just been added, which, initially, provides KCacheGrind compatible output
+for program visualisation. The software runs on both Linux and OSX.  Orbtop has recently
 received even more special love and it seems robust on all tested workloads,
 and now can produce graphs too.*
 
@@ -23,7 +22,21 @@ Orbuculum is a set of tools for decoding and presenting output flows from
 the SWO pin of a CORTEX-M CPU. Numerous types of data can be output through this
 pin, from multiple channels of text messages through to Program Counter samples. Processing
 these data gives you a huge amount of insight into what is really going on inside
-your CPU.
+your CPU. The current tools are;
+
+* orbuculum: The main program and multiplexer...used as a base interface to the target by
+other programmes in the suite. Generally you can just leave this running and it'll grab
+data from the target and make it available to clients whenever it can.
+
+* orbcat: A simple cat utility for ITM channel data.
+
+* orbdump: A utility for dumping raw SWO data to a sfile for post-processing.
+
+* orbtop: A top utility to see what's actually going on with your target. It can also
+provide dot and gnuplot source data for perty graphics.
+
+* orbstat: An analysis/statistics utility which can produce KCacheGrind input files. KCacheGrind
+is a very powerful code performance analysis tool.
 
 A few simple use cases are documented in the last section of this
 document, as are example outputs of using orbtop to report on the
