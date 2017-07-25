@@ -101,7 +101,7 @@ struct
 {
     .chanPath = "",
     .speed = 115200,
-    .useTPIU = TRUE,
+    .useTPIU = FALSE,
     .tpiuITMChannel = 1,
     .seggerHost = SEGGER_HOST
 };
@@ -142,6 +142,9 @@ struct
     struct nwClient *firstClient;                /* Head of linked list of network clients */
     pthread_t ipThread;                          /* The listening thread for n/w clients */
 
+    /* Timestamp info */
+    uint64_t lastHWExceptionTS;
+  
     /* The decoders and the packets from them */
     struct ITMDecoder i;
     struct ITMPacket h;
@@ -337,6 +340,14 @@ static void _removeFifoTasks( void )
     }
 }
 // ====================================================================================================
+uint64_t _timestampuS( void )
+
+{
+    struct timeval te;
+    gettimeofday( &te, NULL ); // get current time
+    return (te.tv_sec * 1000000LL + te.tv_usec); // caculate microseconds
+}
+// ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
 // Network server implementation for raw SWO feed
@@ -389,7 +400,7 @@ static void *_client( void *args )
 static void *_listenTask( void *arg )
 
 {
-    int sockfd = *( int * )arg;
+  int sockfd = *(( int * )arg);
     int newsockfd;
     socklen_t clilen;
     struct sockaddr_in cli_addr;
@@ -402,7 +413,6 @@ static void *_listenTask( void *arg )
         listen( sockfd, 5 );
         clilen = sizeof( cli_addr );
         newsockfd = accept( sockfd, ( struct sockaddr * ) &cli_addr, &clilen );
-
         if ( options.verbose )
         {
             inet_ntop( AF_INET, &cli_addr.sin_addr, s, 99 );
@@ -446,7 +456,7 @@ static BOOL _makeServerTask( void )
 /* Creating the listening server thread */
 
 {
-    int sockfd;
+  static int sockfd;  /* This needs to be static to keep it available for the inferior */
     struct sockaddr_in serv_addr;
     int flag = 1;
 
@@ -495,32 +505,51 @@ static void _sendToClients( uint32_t len, uint8_t *buffer )
 void _handleException( struct ITMDecoder *i, struct ITMPacket *p )
 
 {
+    uint64_t ts = _timestampuS(); /* Stamp as early as possible */
     char outputString[MAX_STRING_LENGTH];
     int opLen;
     uint32_t exceptionNumber = ( ( p->d[1] & 0x01 ) << 8 ) | p->d[0];
     uint32_t eventType = p->d[1] >> 4;
+    uint64_t eventdifftS = ts - _r.lastHWExceptionTS;
+
 
     const char *exNames[] = {"Thread", "Reset", "NMI", "HardFault", "MemManage", "BusFault", "UsageFault", "UNKNOWN_7",
                              "UNKNOWN_8", "UNKNOWN_9", "UNKNOWN_10", "SVCall", "Debug Monitor", "UNKNOWN_13", "PendSV", "SysTick"
                             };
     const char *exEvent[] = {"Unknown", "Enter", "Exit", "Resume"};
-    opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%s,%s\n", HWEVENT_EXCEPTION, exEvent[eventType & 0x03], exNames[exceptionNumber & 0x0F] );
+
+    _r.lastHWExceptionTS = ts;
+
+    if (exceptionNumber<16)
+      {
+	/* This is a system based exception */
+	opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%ld,%s,%s\n", HWEVENT_EXCEPTION, eventdifftS,exEvent[eventType & 0x03], exNames[exceptionNumber & 0x0F] );
+      }
+    else
+      {
+	/* This is a CPU defined exception */
+	opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%ld,%s,External,%d\n", HWEVENT_EXCEPTION, eventdifftS, exEvent[eventType & 0x03], exceptionNumber-16 );
+      }
     write( _r.c[HW_CHANNEL].handle, outputString, opLen );
 }
 // ====================================================================================================
 void _handleDWTEvent( struct ITMDecoder *i, struct ITMPacket *p )
 
 {
+    uint64_t ts = _timestampuS(); /* Stamp as early as possible */  
     char outputString[MAX_STRING_LENGTH];
     int opLen;
     uint32_t event = p->d[1] & 0x2F;
     const char *evName[] = {"CPI", "Exc", "Sleep", "LSU", "Fold", "Cyc"};
-
+    uint64_t eventdifftS = ts - _r.lastHWExceptionTS;
+    
+    _r.lastHWExceptionTS = ts;
+    
     for ( uint32_t i = 0; i < 6; i++ )
     {
         if ( event & ( 1 << i ) )
         {
-            opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%s\n", HWEVENT_DWT, evName[event] );
+            opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%ld,%s\n", HWEVENT_DWT, eventdifftS, evName[event] );
             write( _r.c[HW_CHANNEL].handle, outputString, opLen );
         }
     }
@@ -531,18 +560,22 @@ void _handlePCSample( struct ITMDecoder *i, struct ITMPacket *p )
 /* We got a sample of the PC */
 
 {
+    uint64_t ts = _timestampuS(); /* Stamp as early as possible */  
     char outputString[MAX_STRING_LENGTH];
     int opLen;
+    uint64_t eventdifftS = ts - _r.lastHWExceptionTS;
 
+    _r.lastHWExceptionTS = ts;
+    
     if ( p->len == 1 )
     {
         /* This is a sleep packet */
-        opLen = snprintf( outputString, ( MAX_STRING_LENGTH - 1 ), "%d,__**SLEEP**__\n", HWEVENT_PCSample );
+      opLen = snprintf( outputString, ( MAX_STRING_LENGTH - 1 ), "%d,%ld,**SLEEP**\n", HWEVENT_PCSample, eventdifftS );
     }
     else
     {
         uint32_t pc = ( p->d[3] << 24 ) | ( p->d[2] << 16 ) | ( p->d[1] << 8 ) | ( p->d[0] );
-        opLen = snprintf( outputString, ( MAX_STRING_LENGTH - 1 ), "%d,0x%08x\n", HWEVENT_PCSample, pc );
+        opLen = snprintf( outputString, ( MAX_STRING_LENGTH - 1 ), "%d,%ld,0x%08x\n", HWEVENT_PCSample, eventdifftS, pc );
     }
 
     write( _r.c[HW_CHANNEL].handle, outputString, opLen );
@@ -553,12 +586,15 @@ void _handleDataRWWP( struct ITMDecoder *i, struct ITMPacket *p )
 /* We got an alert due to a watch pointer */
 
 {
+    uint64_t ts = _timestampuS(); /* Stamp as early as possible */
     uint32_t comp = ( p->d[0] & 0x30 ) >> 4;
     BOOL isWrite = ( ( p->d[0] & 0x08 ) != 0 );
     uint32_t data;
     char outputString[MAX_STRING_LENGTH];
     int opLen;
-
+    uint64_t eventdifftS = ts - _r.lastHWExceptionTS;
+    
+    _r.lastHWExceptionTS = ts;
     switch ( p->len )
     {
         case 1:
@@ -574,7 +610,7 @@ void _handleDataRWWP( struct ITMDecoder *i, struct ITMPacket *p )
             break;
     }
 
-    opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%d,%s,0x%x\n", HWEVENT_RWWT, comp, isWrite ? "Write" : "Read", data );
+    opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%ld,%d,%s,0x%x\n", HWEVENT_RWWT, eventdifftS, comp, isWrite ? "Write" : "Read", data );
     write( _r.c[HW_CHANNEL].handle, outputString, opLen );
 }
 // ====================================================================================================
@@ -583,12 +619,16 @@ void _handleDataAccessWP( struct ITMDecoder *i, struct ITMPacket *p )
 /* We got an alert due to a watchpoint */
 
 {
+    uint64_t ts = _timestampuS(); /* Stamp as early as possible */
     uint32_t comp = ( p->d[0] & 0x30 ) >> 4;
     uint32_t data = ( p->d[1] ) | ( ( p->d[2] ) << 8 ) | ( ( p->d[3] ) << 16 ) | ( ( p->d[4] ) << 24 );
     char outputString[MAX_STRING_LENGTH];
     int opLen;
 
-    opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%d,0x%08x\n", HWEVENT_AWP, comp, data );
+    uint64_t eventdifftS = ts - _r.lastHWExceptionTS;
+    
+    _r.lastHWExceptionTS = ts;
+    opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%ld,%d,0x%08x\n", HWEVENT_AWP, eventdifftS, comp, data );
     write( _r.c[HW_CHANNEL].handle, outputString, opLen );
 }
 // ====================================================================================================
@@ -597,11 +637,15 @@ void _handleDataOffsetWP( struct ITMDecoder *i, struct ITMPacket *p )
 /* We got an alert due to an offset write event */
 
 {
+    uint64_t ts = _timestampuS(); /* Stamp as early as possible */
     uint32_t comp = ( p->d[0] & 0x30 ) >> 4;
     uint32_t offset = ( p->d[1] ) | ( ( p->d[2] ) << 8 );
     char outputString[MAX_STRING_LENGTH];
     int opLen;
-    opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%d,0x%04x\n", HWEVENT_OFS, comp, offset );
+    uint64_t eventdifftS = ts - _r.lastHWExceptionTS;
+    
+    _r.lastHWExceptionTS = ts;
+    opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%ld,%d,0x%04x\n", HWEVENT_OFS, eventdifftS, comp, offset );
     write( _r.c[HW_CHANNEL].handle, outputString, opLen );
 }
 // ====================================================================================================
@@ -1346,6 +1390,10 @@ int main( int argc, char *argv[] )
         exit( -1 );
     }
 
+    /* Make sure there's an initial timestamp to work with */
+    
+    _r.lastHWExceptionTS=_timestampuS();
+    
     /* Using the exit construct rather than return ensures the atexit gets called */
     if ( options.seggerPort )
     {

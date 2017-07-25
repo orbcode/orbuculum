@@ -48,9 +48,9 @@ enum ITMPumpEvent
 enum hwEvents
 {
     HWEVENT_TS,
+    HWEVENT_EXCEPTION,
     HWEVENT_PCSample,
     HWEVENT_DWT,
-    HWEVENT_EXCEPTION,
     HWEVENT_RWWT,
     HWEVENT_AWP,
     HWEVENT_OFS,

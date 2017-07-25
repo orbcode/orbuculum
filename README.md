@@ -5,6 +5,9 @@ An Orbuculum is a Crystal Ball, used for seeing things that would
  be otherwise invisible. A  nodding reference to (the) BlackMagic
  (debug probe), BMP.
 
+You can find information about using this suite on the Embedded Rambling
+blog at http://shadetail.com/.
+
 *This program is in heavy development. Check back frequently for new versions 
 with additional functionality. The current status (18th July) is that orbstat
 has just been added, which, initially, provides KCacheGrind compatible output

@@ -15,18 +15,18 @@ start
 enableSTM32F1SWD
 
 # ==== This Section for Bluepill =======
-# 2.25Mbps, use TPIU, don't use Manchester encoding
+# 2.25Mbps, don't use TPIU, don't use Manchester encoding
 # ConfigCoreClock is the current speed of the clock which the
 # divisors are based on...hence the reason it's needed
 monitor traceswo 2250000
-prepareSWD ConfigCoreClock 2250000 1 0
+prepareSWD ConfigCoreClock 2250000 0 0
 # ======================================
 
 # ==== This Section for genuine BMP =======
-# 200Kbps, use TPIU and Manchester encoding
+# 200Kbps, don't use TPIU and Manchester encoding
 # Typically used for 'real' BMP
-monitor traceswo
-# prepareSWD ConfigCoreClock 200000 1 1
+# monitor traceswo
+# prepareSWD ConfigCoreClock 200000 0 1
 # =========================================
 
 dwtSamplePC 1

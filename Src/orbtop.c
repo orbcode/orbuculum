@@ -137,7 +137,7 @@ struct                                       /* Record for options, either defau
 
 } options =
 {
-    .useTPIU = TRUE,
+    .useTPIU = FALSE,
     .tpiuITMChannel = 1,
     .outfile = NULL,
     .lineDisaggregation = FALSE,
