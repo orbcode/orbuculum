@@ -124,7 +124,6 @@ struct                                       /* Record for options, either defau
 
     char *elffile;                           /* Target program config */
 
-    char *dotfile;                           /* File to output dot information */
     char *profile;                           /* File to output profile information */
     char *outfile;                           /* File to output historic information */
 
@@ -473,228 +472,6 @@ int _calls_sort_dst_fn( const void *a, const void *b )
     return strcmp( ae->srcl.function, be->srcl.function );
 }
 // ====================================================================================================
-void _outputDot( struct edge *edgeInfo )
-
-/* Output call graph to dot file */
-
-{
-    FILE *c;
-    uint32_t i;
-    uint64_t count;
-    char *currentSrc = NULL;
-
-    if ( !options.dotfile )
-    {
-        return;
-    }
-
-    c = fopen( options.dotfile, "w" );
-    fprintf( c, "digraph calls\n{\n  overlap=false; splines=true; size=\"7.75,10.25\"; orientation=portrait; sep=0.1; nodesep=0.1;\n" );
-
-    /* firstly write out the nodes in each subgraph - dest side indexed */
-    qsort( edgeInfo, _r.cdCount, sizeof( struct edge ), _calls_sort_dst_fn );
-    i = 0;
-
-    while ( i < _r.cdCount )
-    {
-        i++;
-        fprintf( c, "  subgraph \"cluster_%s\"\n{\n    label=\"%s\";\n    bgcolor=lightgrey;\n", edgeInfo[i - 1].dstl.filename, edgeInfo[i - 1].dstl.filename );
-
-        while ( i < _r.cdCount )
-        {
-            /* Now output each function in the subgraph */
-            fprintf( c, "   %s [style=filled, fillcolor=white];\n", edgeInfo[i - 1].dstl.function );
-
-            /* Spin forwards until the function name _or_ filename changes */
-            while ( ( i < _r.cdCount ) &&
-                    ( !( ( strcmp( edgeInfo[i - 1].dstl.filename, edgeInfo[i].dstl.filename ) )
-                         || ( strcmp( edgeInfo[i - 1].dstl.function, edgeInfo[i].dstl.function ) ) ) ) )
-            {
-                i++;
-            }
-
-            if ( ( i >= _r.cdCount ) || ( strcmp( edgeInfo[i - 1].dstl.filename, edgeInfo[i].dstl.filename ) ) )
-            {
-                break;
-            }
-
-            i++;
-        }
-
-        fprintf( c, "  }\n\n" );
-    }
-
-    /* now repeat for source side - it doesn't matter if nodes get repeated */
-    qsort( edgeInfo, _r.cdCount, sizeof( struct edge ), _calls_sort_src_fn );
-    i = 0;
-
-    while ( i < _r.cdCount )
-    {
-        i++;
-        fprintf( c, "  subgraph \"cluster_%s\"\n{\n    label=\"%s\";bgcolor=lightgrey;\n", edgeInfo[i - 1].srcl.filename, edgeInfo[i - 1].srcl.filename );
-
-        while ( i < _r.cdCount )
-        {
-            /* Now output each function in the subgraph */
-            fprintf( c, "   %s [style=filled, fillcolor=white];\n", edgeInfo[i - 1].srcl.function );
-
-            /* Spin forwards until the function name _or_ filename changes */
-            while ( ( i < _r.cdCount ) &&
-                    ( !( ( strcmp( edgeInfo[i - 1].srcl.filename, edgeInfo[i].srcl.filename ) )
-                         || ( strcmp( edgeInfo[i - 1].srcl.function, edgeInfo[i].srcl.function ) ) ) ) )
-            {
-                i++;
-            }
-
-            if ( ( i >= _r.cdCount ) || ( strcmp( edgeInfo[i - 1].srcl.filename, edgeInfo[i].srcl.filename ) ) )
-            {
-                break;
-            }
-
-            i++;
-        }
-
-        fprintf( c, "  }\n\n" );
-    }
-
-
-    /* Now go through and label the arrows... */
-
-    i = 0;
-
-    while ( i < _r.cdCount )
-    {
-        i++;
-        count = edgeInfo[i - 1].count;
-
-        /* Cycle through until something changes */
-        while ( i < _r.cdCount )
-        {
-            if ( ( strcmp( edgeInfo[i - 1].srcl.filename, edgeInfo[i].srcl.filename ) ) ||
-                    ( strcmp( edgeInfo[i - 1].srcl.function, edgeInfo[i].srcl.function ) ) ||
-                    ( strcmp( edgeInfo[i - 1].dstl.filename, edgeInfo[i].dstl.filename ) ) ||
-                    ( strcmp( edgeInfo[i - 1].dstl.function, edgeInfo[i].dstl.function ) ) )
-            {
-                break;
-            }
-
-            count += edgeInfo[i - 1].count;
-            i++;
-        }
-
-        if ( ( !currentSrc ) || ( strcmp( currentSrc, edgeInfo[i - 1].srcl.function ) ) )
-        {
-            if ( currentSrc )
-            {
-                free( currentSrc );
-            }
-
-            currentSrc = strdup( edgeInfo[i - 1].srcl.function );
-        }
-
-        fprintf( c, "    %s -> ", edgeInfo[i - 1].srcl.function );
-
-        fprintf( c, "%s [label=%ld , weight=0.1;];\n", edgeInfo[i - 1].dstl.function, count );
-    }
-
-    fprintf( c, "}\n" );
-    fclose( c );
-}
-// ====================================================================================================
-void _outputProfile( struct edge *edgeInfo, uint32_t reportLines, struct reportLine *report )
-
-{
-    FILE *c;
-    uint32_t i;
-    uint64_t count;
-    struct lineInfo f, t;
-
-
-    c = fopen( options.profile, "w" );
-    fprintf( c, "# callgrind format\n" );
-    fprintf( c, "positions: instr line\nevents: Samples\n" );
-
-    fprintf( c, "ob=%s\n", options.elffile );
-
-#if 1==0
-
-    for ( uint32_t t = 0; t < reportLines; t++ )
-    {
-        fprintf( c, "fi=%s\nfn=%s\n0x%08x %d %ld\n", report[t].filename, report[t].function, 0x08000000 | report[t].addr, report[t].line, report[t].count );
-    }
-
-#endif
-
-    i = 0;
-
-    while ( i < _r.cdCount )
-    {
-        i++;
-        count = 0;
-
-        /* Rollup all entries for this source address */
-        while ( ( i < _r.cdCount ) && ( _r.calls[i].src == _r.calls[i - 1].src ) )
-        {
-            count += _r.calls[i - 1].count;
-            i++;
-        }
-
-        _lookup( &f, _r.calls[i - 1].src, _r.sect );
-        fprintf( c, "\nfi=%s\nfn=%s\n0x%08x %d 1\n", f.filename, f.function, ( 0x08000000 | _r.calls[i - 1].src ) & 0xFFFFFFFE, f.line );
-        //fprintf(c,"\nfi=%s\nfn=%s\n",f.filename,f.function);
-
-        _lookup( &t, _r.calls[i - 1].dst, _r.sect );
-        fprintf( c, "cfi=%s\ncfn=%s\ncalls=%ld 1\n", t.filename, t.function, count );
-        fprintf( c, "0x%08x %d 1\n", ( 0x08000000 | _r.calls[i - 1].src ) & 0xFFFFFFFE, f.line );
-    }
-
-    fclose( c );
-}
-// ====================================================================================================
-void _processCalls( uint32_t reportLines, struct reportLine *report )
-
-/* Process logged call graphs into sensible output */
-
-{
-    struct edge *edgeInfo;
-
-    if ( !_r.calls )
-    {
-        /* If we didn't collect any data don't try and do anything with it */
-        return;
-    }
-
-    uint32_t i = 0;
-
-    /* Make room for the maximum set of edges.... */
-    edgeInfo = ( struct edge * )malloc( sizeof( struct edge ) * _r.cdCount );
-
-    /* Put in all the names of functions. There may be multiple addresses that match to a function */
-    while ( i < _r.cdCount )
-    {
-        _lookup( &( edgeInfo[i].srcl ), _r.calls[i].src, _r.sect );
-        _lookup( &( edgeInfo[i].dstl ), _r.calls[i].dst, _r.sect );
-        edgeInfo[i].count = _r.calls[i].count;
-        i++;
-    }
-
-    if ( options.dotfile )
-    {
-        _outputDot( edgeInfo );
-    }
-
-    if ( options.profile )
-    {
-        _outputProfile( edgeInfo, reportLines, report );
-    }
-
-    /* Now free up this seconds data */
-    free( edgeInfo );
-    free( _r.calls );
-    _r.calls = NULL;
-    _r.cdCount = 0;
-}
-// ====================================================================================================
 void outputTop( void )
 
 /* Produce the output */
@@ -830,8 +607,6 @@ void outputTop( void )
         fclose( p );
         p = NULL;
     }
-
-    _processCalls( reportLines, report );
 
     if ( options.verbose )
     {
@@ -1067,8 +842,6 @@ void _printHelp( char *progName )
     printf( "        s: <Server> to use\n" );
     printf( "        t: Use TPIU decoder\n" );
     printf( "        v: Verbose mode (this will intermingle state info with the output flow)\n" );
-    printf( "        y: <Filename> dotty filename for structured callgraph output\n" );
-    printf( "        z: <Filename> profile filename for kcachegrind output\n" );
 }
 // ====================================================================================================
 int _processOptions( int argc, char *argv[] )
@@ -1076,20 +849,11 @@ int _processOptions( int argc, char *argv[] )
 {
     int c;
 
-    while ( ( c = getopt ( argc, argv, "a:d:e:hti:lm:o:p:r:s:vz:" ) ) != -1 )
+    while ( ( c = getopt ( argc, argv, "d:e:hi:lm:o:p:r:s:v" ) ) != -1 )
         switch ( c )
         {
-            /* Config Information */
-            case 'z':
-                options.profile = optarg;
-                break;
-
             case 'e':
                 options.elffile = optarg;
-                break;
-
-            case 'y':
-                options.dotfile = optarg;
                 break;
 
             case 'd':
@@ -1174,7 +938,6 @@ int _processOptions( int argc, char *argv[] )
         fprintf( stdout, "Server      : %s:%d\n", options.server, options.port );
         fprintf( stdout, "Delete Mat  : %s\n", options.deleteMaterial ? options.deleteMaterial : "None" );
         fprintf( stdout, "Elf File    : %s\n", options.elffile );
-        fprintf( stdout, "DOT file    : %s\n", options.dotfile ? options.dotfile : "None" );
 
         if ( options.useTPIU )
         {
