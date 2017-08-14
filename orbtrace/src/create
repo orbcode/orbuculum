@@ -1,0 +1,5 @@
+yosys -p "synth_ice40 -blif tracIF.blif" toplevel.v uart.v traceIF.v || exit 1
+arachne-pnr -d 8k -P ct256 -p toplevel.pcf tracIF.blif -o traceIF.txt || exit 1
+icepack traceIF.txt traceIF.bin || exit 1
+iceprog -S traceIF.bin || exit 1
+
