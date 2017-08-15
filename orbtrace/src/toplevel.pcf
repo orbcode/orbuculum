@@ -25,5 +25,5 @@ set_io D4   C4
 set_io D3   B3
 
 
-set_io x K14
+set_io x P16
 

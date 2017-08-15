@@ -10,7 +10,6 @@ module topLevel(
 		output 	    sync_led,
 		output 	    rxInd_led, // Received UART Data indication
 		output 	    txInd_led, // Transmitted UART Data indication
-		output reg  x,
 		output 	    nDv,
 		input 	    clkIn,
 		input 	    rst,
@@ -19,7 +18,8 @@ module topLevel(
 		output 	    D5,
 		output 	    D4,
 		output 	    D3,
-		output      cts 	    
+		output 	    cts ,
+		output      x	    
 		);
    
 
@@ -51,16 +51,7 @@ module topLevel(
 		.sync(sync_led)
                 );
 
-
-/*
- uartTB #(.CLOCKFRQ(70500000)) uart_tb (
-					.clk(clk),
-					.nRst(~rst),
-					.nDValid(nDvalid_tl),
-					.dOut(dOut_tl)
-					);
-*/
-   uart #(.CLOCKFRQ(70500000))  receiver (
+   uart #(.CLOCKFRQ(48000000))  receiver (
 	.clk(clk),
 	.nRst(~rst),
 	.rx(uartrx),
@@ -75,13 +66,15 @@ module topLevel(
         .tx_overf(txOvf_led)
     );
 
-   // Set up clock for 70.5Mhz with input of 12MHz
+   assign x=uarttx;
+  
+ // Set up clock for 48Mhz with input of 12MHz
    SB_PLL40_CORE #(
 		   .FEEDBACK_PATH("SIMPLE"),
 		   .PLLOUT_SELECT("GENCLK"),
 		   .DIVR(4'b0000),
-		   .DIVF(7'b0101110),
-		   .DIVQ(3'b011),
+		   .DIVF(7'b0111111),
+		   .DIVQ(3'b100),
 		   .FILTER_RANGE(3'b001)
 		   ) uut (
 			  .LOCK(lock),
@@ -90,10 +83,6 @@ module topLevel(
 			  .REFERENCECLK(clkIn),
 			  .PLLOUTCORE(clk)
 			  );
-
-   assign x=uartrx;
-   
-   
 
    always @(negedge rst)
      begin

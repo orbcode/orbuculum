@@ -1,5 +1,6 @@
 #VERBOSE=1
 DEBUG=1
+WITH_FTDI=1
 
 CFLAGS=-DVERSION="\"0.15\""
 
@@ -49,6 +50,11 @@ LDLIBS = -L/usr/local/lib -lusb-1.0 -lelf -lbfd
 #ifdef LINUX
 LDLIBS += -lpthread
 #endif
+
+ifdef WITH_FTDI
+CFLAGS+=-DINCLUDE_FTDI_SUPPORT
+LDLIBS += -lftdi1
+endif
 
 DEBUG_OPTS = -g3 -gdwarf-2 -ggdb
 

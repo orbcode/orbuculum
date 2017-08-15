@@ -9,9 +9,10 @@ You can find information about using this suite on the Embedded Rambling
 blog at http://shadetail.com/.
 
 *This program is in heavy development. Check back frequently for new versions 
-with additional functionality. The current status (18th July) is that orbstat
-has just been added, which, initially, provides KCacheGrind compatible output
-for program visualisation. The software runs on both Linux and OSX.  Orbtop has recently
+with additional functionality. The current status (15th Aug) is that work is underway
+on a parallel trace hardware using ice40-HX8K hardware. A side effect of that is that
+ft2232 drivers have been integrated into orbuculum which will give you up to 12Mbps SWO
+sampling. The software runs on both Linux and OSX.  Orbtop has recently
 received even more special love and it seems robust on all tested workloads,
 and now can produce graphs too.*
 
@@ -241,6 +242,9 @@ Specific command line options of note are;
  `-t`: Use TPIU decoder.  This will not sync if TPIU is not configured, so you won't see
      packets in that case.
 
+ `-u`: Use Ultraspeed ftdi interface. This will support operation up to 12Mbps and is currently
+    the best option for SWO decode.
+    
  `-v`: Verbose mode.
 
 Orbcat

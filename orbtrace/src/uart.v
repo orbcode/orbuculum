@@ -37,7 +37,7 @@ module uart(
     );
 
    parameter CLOCKFRQ=240000000;                   // Frequency of the oscillator
-   parameter BAUDRATE=3500000;                      // Required baudrate
+   parameter BAUDRATE=12000000;                      // Required baudrate
    parameter CLOCK_DIVIDE=(CLOCKFRQ/(BAUDRATE*4)); // clock rate (240Mhz) / (baud rate (9600) * 4)  
 
 // States for the receiving state machine.
@@ -72,18 +72,18 @@ reg [7:0] tx_data;
 
 reg [5:0] ovf_ledstretch;
 reg [16:0] tx_ledstretch;
-reg [16:0] rx_ledstretch;   
-   
+reg [16:0] rx_ledstretch;
+
 assign received = recv_state == RX_RECEIVED;
 assign recv_error = recv_state == RX_ERROR;
-assign is_receiving = (rx_ledstretch != 0); //recv_state != RX_IDLE;
+assign is_receiving = (rx_ledstretch != 0); 
 assign rx_byte = rx_data;
 
 assign tx_overf = (ovf_ledstretch != 0);
    
    
 assign tx = tx_out;
-assign is_transmitting = (tx_ledstretch != 0); //tx_state != TX_IDLE;
+assign is_transmitting = (tx_ledstretch != 0);
 
 always @(posedge clk) begin
 	if (!nRst) begin
@@ -205,7 +205,7 @@ always @(posedge clk) begin
 		      ovf_ledstretch = 0;
 		      tx_ledstretch = ~0;
 		      
-				tx_data = tx_byte;
+		      tx_data <= tx_byte;
 				// Send the initial, low pulse of 1 bit period
 				// to signal the start, followed by the data
 				tx_clk_divider = CLOCK_DIVIDE;
@@ -229,7 +229,7 @@ always @(posedge clk) begin
 				end else begin
 					// Set delay to send out 2 stop bits.
 					tx_out = 1;
-					tx_countdown = 8;
+				   tx_countdown = 8;
 					tx_state = TX_DELAY_RESTART;
 				end
 			end

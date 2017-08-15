@@ -53,6 +53,15 @@
 #include "tpiuDecoder.h"
 #include "itmDecoder.h"
 
+#ifdef INCLUDE_FTDI_SUPPORT
+#include <libftdi1/ftdi.h>
+
+#define FTDI_TRANSFER_SIZE (4096)
+#define FTDI_VID  (0x0403)
+#define FTDI_PID  (0x6010)
+#define FTDI_INTERFACE (INTERFACE_B)
+#endif
+
 #define SERVER_PORT 3443                      /* Server port definition */
 #define SEGGER_HOST "localhost"               /* Address to connect to SEGGER */
 
@@ -84,6 +93,9 @@ struct
     BOOL verbose;
     BOOL useTPIU;
     BOOL segger;
+#ifdef INCLUDE_FTDI_SUPPORT
+  BOOL ftdi;
+#endif
     char *seggerHost;
     int32_t seggerPort;
 
@@ -150,6 +162,10 @@ struct
     struct ITMPacket h;
     struct TPIUDecoder t;
     struct TPIUPacket p;
+
+#ifdef INCLUDE_FTDI_SUPPORT
+  struct ftdi_context *ftdi;
+#endif
 } _r;
 
 /* Structure for parameters passed to a software task thread */
@@ -942,6 +958,9 @@ void _printHelp( char *progName )
     fprintf( stdout, "        p: <serialPort> to use\n" );
     fprintf( stdout, "        s: <serialSpeed> to use\n" );
     fprintf( stdout, "        t: Use TPIU decoder\n" );
+#ifdef INCLUDE_FTDI_SUPPORT
+    fprintf( stdout, "        u: Use ultraspeed on ftdi interface\n" );
+#endif
     fprintf( stdout, "        v: Verbose mode\n" );
 }
 // ====================================================================================================
@@ -954,7 +973,7 @@ int _processOptions( int argc, char *argv[] )
     char *chanIndex;
 #define DELIMITER ','
 
-    while ( ( c = getopt ( argc, argv, "a:vg:ts:i:p:f:hc:b:" ) ) != -1 )
+    while ( ( c = getopt ( argc, argv, "a:vg:ts:i:p:uf:hc:b:" ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -970,7 +989,11 @@ int _processOptions( int argc, char *argv[] )
             case 'a':
                 options.seggerHost = optarg;
                 break;
-
+#ifdef INCLUDE_FTDI_SUPPORT
+	    case 'u':
+  	      options.ftdi = TRUE;
+                break;
+#endif
             case 't':
                 options.useTPIU = TRUE;
                 break;
@@ -1087,6 +1110,12 @@ int _processOptions( int argc, char *argv[] )
             fprintf( stdout, "SEGGER H/P: %s:%d\n", options.seggerHost, options.seggerPort );
         }
 
+#ifdef INCLUDE_FTDI_SUPPORT
+        if ( options.ftdi )
+        {
+ 	  fprintf( stdout, "FTDI Ultra: TRUE\n");
+        }
+#endif
         if ( options.useTPIU )
         {
             fprintf( stdout, "Using TPIU: TRUE (ITM on channel %d)\n", options.tpiuITMChannel );
@@ -1319,6 +1348,76 @@ int serialFeeder( void )
     }
 }
 // ====================================================================================================
+#ifdef INCLUDE_FTDI_SUPPORT
+int ftdiFeeder( void )
+
+{
+  int f,t;
+  uint8_t cbw[FTDI_TRANSFER_SIZE];
+
+    _r.ftdi=ftdi_new();
+    while ( 1 )
+    {
+      do
+	{
+	  ftdi_set_interface(_r.ftdi,FTDI_INTERFACE);
+	  f=ftdi_usb_open(_r.ftdi,FTDI_VID,FTDI_PID);
+	  if (f<0)
+	    {
+	      if (options.verbose)
+		fprintf( stderr, "Cannot open device (%s)\n",ftdi_get_error_string(_r.ftdi));
+	      usleep(50000);
+	    }
+	} while (f<0);
+
+      if ( options.verbose )
+        {
+	  fprintf( stderr, "Port opened\n" );
+        }
+
+      f=ftdi_set_baudrate(_r.ftdi,options.speed);
+      if (f<0)
+	{
+	  fprintf(stderr,"Cannot set baudate %d %d (%s)\n",f,options.speed,ftdi_get_error_string(_r.ftdi));
+	  return -2;
+	}
+
+      ftdi_set_line_property(_r.ftdi,8,STOP_BIT_1,NONE);
+
+      ftdi_read_data_set_chunksize(_r.ftdi,FTDI_TRANSFER_SIZE);      
+      ftdi_setdtr(_r.ftdi,TRUE);
+      while ( ( t = ftdi_read_data(_r.ftdi,cbw, FTDI_TRANSFER_SIZE ) ) >= 0 )
+        {
+	  if (t)
+	    {
+	      _sendToClients( t, cbw );
+	      uint8_t *c = cbw;
+
+	      while ( t-- )
+	      {
+                _protocolPump( *c++ );
+	      }
+	    }
+        }
+      ftdi_setdtr(_r.ftdi,FALSE);
+        if ( options.verbose )
+        {
+            fprintf( stderr, "Read failed\n" );
+        }
+
+	ftdi_usb_close(_r.ftdi);
+	_r.ftdi=NULL;
+    }
+}
+// ====================================================================================================
+void ftdiFeederClose(void)
+
+{
+  if (_r.ftdi)
+    ftdi_setdtr(_r.ftdi,FALSE);
+}
+#endif
+// ====================================================================================================
 int fileFeeder( void )
 
 {
@@ -1354,7 +1453,7 @@ int fileFeeder( void )
 
     if ( options.verbose )
     {
-        fprintf( stdout, "File read\b" );
+        fprintf( stdout, "File read\n" );
     }
 
     close( f );
@@ -1395,6 +1494,13 @@ int main( int argc, char *argv[] )
     _r.lastHWExceptionTS=_timestampuS();
     
     /* Using the exit construct rather than return ensures the atexit gets called */
+#ifdef INCLUDE_FTDI_SUPPORT
+    if ( options.ftdi )
+    {
+      atexit(ftdiFeederClose);
+      exit( ftdiFeeder() );
+    }
+#endif
     if ( options.seggerPort )
     {
         exit( seggerFeeder() );

@@ -42,7 +42,7 @@ module traceIF(
        dvalid<=1'b1;
      else
        dvalid<=1'b0;       
-   
+
    always @( negedge clk ) // ---------------------------------------------------------------
      begin
 	if (nRst)
