@@ -24,7 +24,7 @@ module topLevel(
    
 
    // Parameters =============================================================================
-   parameter CHUNKSIZE=(4-1);
+
    
    // Internals =============================================================================
 
@@ -56,13 +56,17 @@ module topLevel(
 	.nRst(~rst),
 	.rx(uartrx),
 	.tx(uarttx),
+					  
 	.transmit(dvalid_tl),
 	.tx_byte(dOut_tl),
+					  
 	.received(rxTrig_tl),
 	.rx_byte(rx_byte_tl),
+					 
+	.recv_error(rxErr_tl),
+
 	.is_receiving(rxInd_led),
 	.is_transmitting(txInd_led),
-	.recv_error(rxErr_tl),
         .tx_overf(txOvf_led)
     );
 

@@ -1386,6 +1386,7 @@ int ftdiFeeder( void )
 
       ftdi_read_data_set_chunksize(_r.ftdi,FTDI_TRANSFER_SIZE);      
       ftdi_setdtr(_r.ftdi,TRUE);
+      
       while ( ( t = ftdi_read_data(_r.ftdi,cbw, FTDI_TRANSFER_SIZE ) ) >= 0 )
         {
 	  if (t)
@@ -1395,6 +1396,7 @@ int ftdiFeeder( void )
 
 	      while ( t-- )
 	      {
+		printf("%02x ",*c);
                 _protocolPump( *c++ );
 	      }
 	    }
@@ -1413,8 +1415,14 @@ int ftdiFeeder( void )
 void ftdiFeederClose(void)
 
 {
+  printf("Closing feeder\n");
   if (_r.ftdi)
-    ftdi_setdtr(_r.ftdi,FALSE);
+    for (uint32_t attempts=25; attempts; attempts--)
+      {
+	ftdi_setdtr(_r.ftdi,FALSE);
+	usleep(5000);
+      }
+  ftdi_usb_close(_r.ftdi);
 }
 #endif
 // ====================================================================================================

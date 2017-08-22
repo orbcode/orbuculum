@@ -10,27 +10,24 @@ module traceIF_tb();
    reg 	    traceClk;
    reg 	    clk;
    reg 	    nRst;
-   reg [1:0] width_tb;
 
-   wire      dvalid_tb;
-   wire [7:0] dout_tb;
-   wire      sync_tb;
+   wire     dAvail_tb;
+   wire [3:0] dout_tb;
    
-   integer  w;
-   integer  simcount=0;
+   reg 	    dReqNext_tb;
    
    traceIF DUT (
-		.traceDin(traceDin),
-		.width(width_tb),
-		.traceClk(traceClk),
-		.clk(clk),
-		.nRst(nRst),
+		.traceDin(traceDin), // Tracedata ... 1-4 bits
+		.traceClk(traceClk), // Tracedata clock
+		.clk(clk), // System Clock
+		.nRst(nRst), // Async reset
 
-		.dvalid(dvalid_tb),
-		.dOut(dout_tb),
-		.sync(sync_tb)
-		);
-   
+		
+		.dNext(dReqNext_tb), // Strobe for requesting next data element
+		.dAvail(dAvail_tb), // Flag indicating data is available
+		.dOut(dout_tb) // ...the valid data write position
+   );
+
    //-----------------------------------------------------------
    task sendByte;
       input[7:0] byteToSend;
@@ -61,8 +58,9 @@ module traceIF_tb();
      end
       
    initial begin
-      assign width_tb=chunksize;
       nRst=1;
+      dReqNext_tb=0;
+      
       traceDin=0;
       traceClk=0;
 
@@ -75,21 +73,49 @@ module traceIF_tb();
 
       // Initially send some junk while out of sync
       sendByte(8'hfe);
-      sendByte(8'h22);
+      sendByte(8'h23);
 
       // Now send Sync Sequence
       sendByte(8'hff);
+      dReqNext_tb=1;
+      #10;
+      dReqNext_tb=0;      
       sendByte(8'hff);
       sendByte(8'hff);
       sendByte(8'h7f);
-
       // ....and a sane message
       sendByte(8'h42);
+      dReqNext_tb=1;
+      #10;
+      dReqNext_tb=0;      
+      
       sendByte(8'h71);
       sendByte(8'h19);
       sendByte(8'h69);
       sendByte(8'h12);      
       #30;
+      dReqNext_tb=1;
+      #10;
+      dReqNext_tb=0;      
+      #10;
+      dReqNext_tb=1;
+      #10;
+      dReqNext_tb=0;      
+      #10;
+      dReqNext_tb=1;
+      #10;
+      dReqNext_tb=0;      
+      #10;
+      dReqNext_tb=1;
+      #10;
+      dReqNext_tb=0;      
+      #10;
+      dReqNext_tb=1;
+      #10;
+      dReqNext_tb=0;      
+      #10
+;
+      
       $finish;
       
    end

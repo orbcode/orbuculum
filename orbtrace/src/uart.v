@@ -199,21 +199,21 @@ always @(posedge clk) begin
 	case (tx_state)
 		TX_IDLE: begin
 		   if (transmit) begin
-				// If the transmit flag is raised in the idle
-				// state, start transmitting the current content
-				// of the tx_byte input.
+		      // If the transmit flag is raised in the idle
+		      // state, start transmitting the current content
+		      // of the tx_byte input.
 		      ovf_ledstretch = 0;
 		      tx_ledstretch = ~0;
 		      
 		      tx_data <= tx_byte;
-				// Send the initial, low pulse of 1 bit period
-				// to signal the start, followed by the data
-				tx_clk_divider = CLOCK_DIVIDE;
-				tx_countdown = 4;
-				tx_out = 0;
-				tx_bits_remaining = 8;
-				tx_state = TX_SENDING;
-			end
+		      // Send the initial, low pulse of 1 bit period
+		      // to signal the start, followed by the data
+		      tx_clk_divider = CLOCK_DIVIDE;
+		      tx_countdown = 4;
+		      tx_out = 0;
+		      tx_bits_remaining = 8;
+		      tx_state = TX_SENDING;
+		   end
 		end
 		TX_SENDING: begin
 		       if (transmit)
