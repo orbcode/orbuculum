@@ -5,29 +5,29 @@
 // it back into complete packets which can then be processed by layers above.
 //
 module packCollect (
-		   input 	 clk, // System Clock
-		   input 	 nRst, // System reset
-		   input [1:0] 	 width, // Current trace buffer width
-		   output  	 sync, // Indicator of if we are in sync
+		   input 	     clk, // System Clock
+		   input 	     rst, // System reset
+
+ 		   input [1:0] 	     width, // Current trace buffer width
 
 		   // Downwards interface to trace elements
-		   output reg 	 TraceNext, // Strobe for requesting next trace data element
-		   input 	 TraceAvail, // Flag indicating trace data is available
-		   input [3:0] 	 TraceIn, // ...the valid Trace Data
-
+		   output reg 	     TraceNext, // Strobe for requesting next trace data element
+		   input 	     TraceAvail, // Flag indicating trace data is available
+		   input [15:0]      TraceIn, // ...the valid Trace Data
+		    
 		   // Upwards interface to packet processor
-		   output 	 PacketAvail, // Flag indicating packet is available
-		   input	 PacketNext, // Strobe for requesting next packet
-		   input	 PacketNextWd, // Strobe for next 16 bit word in packet	 
+		   output 	     PacketAvail, // Flag indicating packet is available
+		   input 	     PacketNext, // Strobe for requesting next packet
+		   input 	     PacketNextWd, // Strobe for next 16 bit word in packet	 
 
 		   output reg [15:0] PacketOut, // The next packet word
-		   output reg [7:0]  PacketFinal // The last word in the packet (used for reconstruction)
+		   output reg [7:0]  PacketFinal, // The last word in the packet (used for reconstruction)
+		   output reg 	     Probe
 		   );
 
    // Parameters =============================================================================
 
    parameter PACKET_LENGTH=16;    // How many bytes are in a TPIU packet
-   parameter SYNC_COUNTOUT=20000; // Count before sync is considered lost
    
    parameter STATE_CHECK_AVAIL=0; // STATE: Request next bytes 
    parameter STATE_GET_DATA=1;    // STATE: Get them
@@ -42,9 +42,6 @@ module packCollect (
    reg [4:0] 		 packetmemOffsRp;   // Read pointer for offset in the packet
    reg [4:0] 		 packetReading;     // Packet I am currently reading in the buffer
       
-   reg [31:0] 		 dBuff;             // Last 32 bits read from stream - used for establishing sync
-   reg [7:0] 		 readBits;          // Number of bits read from the stream
-
    reg [18:0] 		 lostSync;          // Counter for sync loss
 
    reg                   rxState;           // Current reception state from trace interface
@@ -52,11 +49,20 @@ module packCollect (
    // Code ===================================================================================
 
    assign PacketAvail=(packetmemNumWp!=packetmemNumRp); // Flag showing that there is a packet available to process
-   assign sync=(lostSync!=SYNC_COUNTOUT);               // Flag indicating that we are currently in sync
-   
-   always @( negedge clk ) // ---------------------------------------------------------------
+   always @( posedge clk ) // ---------------------------------------------------------------
      begin
-	if (nRst)
+	if (rst)
+	  begin
+	     // Handle reset conditions
+	     PacketFinal <= 0;
+	     packetmemNumWp <= 0;
+	     packetmemOffsWp <= 0;
+	     packetmemNumRp <= 0;
+	     packetmemOffsRp <= 0;
+	     packetReading <= 0;
+	     readBits <= 0;
+	  end
+	else
 	  begin
 	     // ================================================
 	     if (rxState==STATE_CHECK_AVAIL)
@@ -74,43 +80,16 @@ module packCollect (
 	     else // Deal with case of (rxState==STATE_GET_DATA)
 	       begin
 		  TraceNext <= 1'b0;
-		  dBuff<=dBuff>>(width+1)|(TraceIn<<(31-width));
-		  readBits<=readBits+(width+1);
 		  rxState<=STATE_CHECK_AVAIL;
-	       end
-	     
-	     // ==================================================
-	     if (dBuff==32'h7fffffff) //----- Deal with sync pulse
-	       begin
-		  // This only arrives inter-frame, so just reset the pointers
-		  lostSync <= 0;
-		  readBits <= 0;
-		  dBuff <= 0;
-		  packetmemOffsWp <= 0;
-	       end
-	     else
-	       begin
-		  if (lostSync<SYNC_COUNTOUT)
-		    begin
-		       lostSync<=lostSync+1;
-		    end
-	       end
 
-	     // =====================================================
-	     if (readBits==16) //----- Deal with entire pair of bytes received
-	       begin
-		  if (sync==1'b1)
+		  packetmem[{packetmemNumWp,packetmemOffsWp[3:0] }]<=TraceIn;
+		  packetmemOffsWp<=packetmemOffsWp+1;
+		  
+		  if (packetmemOffsWp==(PACKET_LENGTH/2)) //----- Deal with entire frame received
 		    begin
-		       packetmem[{packetmemNumWp,packetmemOffsWp[3:0] }]<=dBuff[31:16];
-		       packetmemOffsWp<=packetmemOffsWp+1;
+		       packetmemNumWp<=packetmemNumWp+1;
+		       packetmemOffsWp<=0;
 		    end
-		  readBits<=0;
-	       end
-
-	     if (packetmemOffsWp==(PACKET_LENGTH/2)) //----- Deal with entire frame received
-	       begin
-		  packetmemNumWp<=packetmemNumWp+1;
-		  packetmemOffsWp<=0;
 	       end
 
 	     // =================================================================
@@ -135,20 +114,5 @@ module packCollect (
 		    end
 	       end
 	  end
-	else
-	  begin
-	   // Handle reset conditions
-	     lostSync <= SYNC_COUNTOUT;
-	     PacketFinal <= 0;
-	     packetmemNumWp <= 0;
-	     packetmemOffsWp <= 0;
-	     packetmemNumRp <= 0;
-	     packetmemOffsRp <= 0;
-	     packetReading <= 0;
-	     dBuff <= 0;	     
-	     readBits <= 0;
-	  end
-     end // always @ (negedge clk)
+     end // always @ ( posedge clk )
 endmodule // packCollect
-
-    

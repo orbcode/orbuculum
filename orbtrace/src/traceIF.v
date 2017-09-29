@@ -1,75 +1,172 @@
 // traceIF
 // =======
 // Concatenates defined bus width input data from TRACEDATA using TRACECLK to bring it into
-// specified word lengths of output data.  Samples are recorded at maximum width even if only
-// a subset are actualy configured for use (this level doesn't even know).
+// 16 bit chunks which are stored in memory if they're not 'pass' cases. Also deals with top
+// level sync. Above this level nothing needs to know how wide the tracebus actually is.
 // 
 // Working from CoreSight TPIU-Lite Technical Reference Manual Revision: r0p0
 
+module traceIF(
+	       input 		 clk,          // System Clock
+	       input 		 rst,          // Reset synchronised to clock
 
-module traceIF (
-		input [MAX_BUS_WIDTH-1:0]      traceDin, // Tracedata ... 1-n bits
-		input 			       traceClk, // Tracedata clock
+	       // Downwards interface to the trace pins
+	       input [3:0] 	 traceDina,    // Tracedata rising edge... 1-n bits max, can be less
+	       input [3:0] 	 traceDinb,    // Tracedata falling edge... 1-n bits max, can be less	
+	       input 		 traceClkin,   // Tracedata clock... async to clk
+	       input [2:0] 	 width,        // How wide the bus under consideration is 1..4 (0, 3 & >4 invalid)
 
-		input 			       clk, // System Clock
-		input 			       nRst, // Async reset
+		// Upwards interface to packet processor
+	       output reg 	 PacketAvail,  // Flag indicating packet is available
+	       input 		 PacketNext,   // Strobe for requesting next packet
+	       input 		 PacketNextWd, // Strobe for next 16 bit word in packet	 
 
-		input 			       dNext, // Strobe for requesting next data element
-		output 			       dAvail, // Flag indicating data is available
-		output reg [MAX_BUS_WIDTH-1:0] dOut // ...the valid data write position
-   );
+	       output reg [15:0] PacketOut,    // The next packet word
+	       output reg 	 sync,         // Indicator that we are in sync
 
-   // Parameters =============================================================================
-
-   parameter MAX_BUS_WIDTH=4;  // Maximum bus width that system is set for 
+	       output 		 Probe,
+	       output reg 	 Probe2 
+	       );		  
    
    // Internals =============================================================================
 
-   assign dAvail = (tracememWp!=tracememRp);  // Flag showing that there is trace data available
-   
-   reg [9:0] 	    tracememWp;               // Write pointer in trace memory
-   reg [9:0] 	    tracememRp;               // Read pointer in trace memory
+   reg [31:0] 	    construct;                // Track of data being constructed
+   reg [4:0] 	    readBits;                 // How many bits of the sample we have
 	    
-   reg [MAX_BUS_WIDTH-1:0] tracemem[0:1023];  // Sample memory
+   reg [15:0] 	    traceipmem[0:255];        // Storage for packet under construction (16 bits wide, 2 bytes at a time)
+   reg [4:0] 	    traceipmemNumWp;          // Write pointer for packet number 
+   reg [3:0] 	    traceipmemOffsWp;         // Write pointer for offset in the packet
 
-   reg 		    traceClkB;
-   reg 		    oldTraceClk;
+   reg [4:0] 	    traceipmemNumRp;          // Read pointer for packet number
+   reg [2:0] 	    traceipmemOffsRp;         // Read pointer for offset in the packet
+   reg [4:0] 	    packetReading;            // Packet I am currently reading in the buffer
 
-   reg 		    dNextPrev;                // Used for spotting edges in upper level sample requests
- 		    
-   always @( negedge clk ) // Move traceClk into on-chip clock domain
-     if (nRst)
-       begin
-	  traceClkB<=traceClk;
+   reg [2:0]        gotSync;                  // Pulse stretch between domains for sync
+   
+   reg [24:0] 	    lostSync;                 // Counter for sync loss timeour
 
-	  if (traceClkB!=oldTraceClk)
-	    begin
-	       //  ------ There was a trace clock state change - clock the data
-	       tracemem[tracememWp]<=traceDin;
-	       tracememWp<=tracememWp+1;
-	       oldTraceClk<=traceClkB;
-	    end
+   // ================== Input data against traceclock from target system ====================
+   always @(posedge traceClkin) 
+     begin
+	if (rst)
+	  begin
+	     traceipmemNumWp <= 0;
+	     traceipmemOffsWp <= 0;
+	     readBits<=0;
+	     construct<=0;
+	     gotSync<=1'b0;
+	  end
+	else
+	  begin
+	     // Deal with sync flagging ===============================================
+	     if (construct==32'h7fff_ffff)
+	       begin
+		  Probe<=~Probe;
+		  gotSync<=~0;          // We synced, let people know
+		  readBits<=width<<1;   // ... and reset writing position in recevied data
+		  traceipmemOffsWp<=0;  // ... and in the packet
+	       end
+	     else
+	       begin
+		  // Countdown the sync flag ==========================================
+		  if (gotSync>0) gotSync<=gotSync-1;
+		  
+		  // Deal with element reception ======================================
+		  if (readBits==16)
+		    begin
+		       // Got a full set of bits, so store them
+		       if ((construct[31:16]!=16'h7fff) && (sync))
+			 begin
+			    // This is useful data, and we are in sync, so store it
+			    traceipmem[{traceipmemNumWp[4:0],traceipmemOffsWp[2:0]}]<=construct[31:16];
 
-	  if ((dNext==1'b1) && (dNextPrev==1'b0))
-	    begin
-	       // A positive clock edge - make the next sample available
-	       dOut<=tracemem[tracememRp];
-	       tracememRp<=tracememRp+1;
-	       dNextPrev<=1'b1;
-	    end
-	  else
-	    begin
-	       dNextPrev<=dNext;
-	    end
-       end
-     else
-       begin
-	  // Reset states
-	  oldTraceClk<=traceClk;
-	  traceClkB<=traceClk;
-	  dNextPrev<=dNext;
-	  tracememWp<=0;
-	  tracememRp<=0;
-	  dOut<=0;
-       end // else: !if(nRst)
+			    // Check if we are still collecting this packet, adjust pointers appropriately
+		            if (traceipmemOffsWp<7)
+			      begin
+				 traceipmemOffsWp<=traceipmemOffsWp+1;
+			      end 
+			    else
+			      begin
+				 // This packet is complete, move on to the next one
+				 traceipmemNumWp<=traceipmemNumWp+1;
+				 traceipmemOffsWp<=0;
+			      end
+			 end // if ((construct[31:16]!=16'h7fff) && (sync))
+		       
+		       // Either a 7fff packet to be ignored or real data. Either way, we got 16 bits
+		       // of it, so reset the bits counter
+		       readBits<=width<<1;
+		    end // if (readBits==16)
+		  else
+		    begin
+		       // We are still collecting data...increment the bits counter
+		       readBits<=readBits+(width<<1);
+		    end // else: !if(readBits==16)
+	       end // else: !if(construct==32'h7fff_ffff)
+	     
+	     // Now get the new data elements that have arrived
+	     case (width)
+	       1: construct<={traceDinb[0],traceDina[0],construct[31:2]};
+	       2: construct<={traceDinb[1:0],traceDina[1:0],construct[31:4]};
+	       4: construct<={traceDinb[3:0],traceDina[3:0],construct[31:8]};
+	       default:  construct<=0;  // These cases cannot really occur!
+	     endcase // case (width)
+	  end // else: !if(rst)
+     end // always @ (posedge traceClk)
+   
+   // ============= Move traceclk synced data into on-chip domain =====================
+   always @( posedge clk ) // Move traceClk into on-chip clock domain
+     begin
+	if (rst)
+	  begin
+	     // Reset states
+	     traceipmemNumRp <= 0;
+	     traceipmemOffsRp <= 0;
+	     packetReading <= 0;
+	     PacketAvail<=0;
+	     PacketOut<=0;
+	     lostSync<=0;
+	     sync<=0;
+	  end // else: !if(!rst)
+	else
+	  begin
+	     // Let everyone know the state of sync at the moment
+	     sync<=(lostSync!=0);
+
+	     // ...and count down sync in case we don't see it again
+	     if (gotSync)
+	       begin
+		  lostSync<=~0;
+	       end
+	     else if (lostSync>0)
+	       begin
+		  lostSync<=lostSync-1;
+	       end
+
+	     // Flag for upstairs showing that there is a packet available to process
+	     PacketAvail<=(traceipmemNumWp!=traceipmemNumRp);
+
+	     // If upstairs is asking us for data then send it if we've got it
+	     if (PacketNext==1'b1) // Request to read next packet 
+	       begin
+		  if (traceipmemNumWp!=traceipmemNumRp)
+		    begin
+		       // Yes, we've got one, get it ready to go
+		       packetReading<=traceipmemNumRp;
+		       traceipmemOffsRp<=0;
+		       traceipmemNumRp<=traceipmemNumRp+1;
+		    end
+	       end
+	     else
+	       if (PacketNextWd==1'b1)  // Deal with request to read next word from packet
+		 begin
+		    if (traceipmemOffsRp<8) // Don't wander off the end of the packet
+		      begin
+			 PacketOut<=traceipmem[{packetReading,traceipmemOffsRp[2:0]}];
+			 traceipmemOffsRp<=traceipmemOffsRp+1;
+		      end
+		 end
+	  end // else: !if(rst)
+     end // always @ ( posedge clk )
 endmodule // traceIF
+
