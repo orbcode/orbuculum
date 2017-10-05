@@ -64,10 +64,11 @@ enum _protoState
     ITM_TS,
     ITM_SW,
     ITM_HW,
-    ITM_EXTENSION
-
+    ITM_EXTENSION,
+    ITM_GTS1,
+    ITM_GTS2
 };
-#define PROTO_NAME_LIST "UNSYNCED", "IDLE", "TS", "SW", "HW", "EXTENSION"
+#define PROTO_NAME_LIST "UNSYNCED", "IDLE", "TS", "SW", "HW", "EXTENSION", "GTS1", "GTS2"
 
 /* Type of the packet received over the link */
 struct ITMPacket

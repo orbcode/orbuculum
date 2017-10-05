@@ -78,55 +78,47 @@ document enableSTM32F4TRACE
 enableSTM32F4TRACE Enable TRACE on STM32F4 pins
 end
 # ====================================================================
-Enable TRACE on STM32F4 pins
+# Enable TRACE on STM32F4 pins
 define prepareTRACE
-  set $clockspeed=72000000
-  set $speed=2250000
   set $bits=4
   
   if $argc >= 1
-    set $clockspeed = $arg0
+    set $bits = $arg0
   end
 
-  if $argc >= 2
-    set $speed = $arg1
-  end
+  if (($bits<1) || ($bits==3) || ($bits>4))
+  help prepareTRACE
+  else
+     set $bits = $bits-1
 
-  if $argc >= 3
-    set $bits = $arg2
-  end
+     # Enable Trace TRCENA
+     set *0xE000EDFC=(1<<24)
 
-  if $bits == 4
-    set $bits = 3
-  end
+     # Set number of bits in DBGMCU_CR
+     set *0xE0042004 &= ~(3<<6)
 
-  # Enable Trace TRCENA
-  set *0xE000EDFC=(1<<24)
+     if ($bits<3)
+       set *0xE0042004 |= ((($bits+1)<<6) | (1<<5))
+     else
+       set *0xE0042004 |= ((($bits)<<6) | (1<<5))
+     end
+   
+     # Set port size
+     set *0xE0040004 = (1<<$bits)
 
-  # Set number of bits
-  set *0xE0042004 &= ~(3<<6)
-  set *0xE0042004 |= (($bits<<6) | (1<<5))
-
-  # Set port size
-  set *0xE0040004 = (1<<$bits)
-
-  # Set pin protocol to Sync Trace Port
-  set *0xE00400F0=0
+     # Set pin protocol to Sync Trace Port
+     set *0xE00400F0=0
   
-  # Output bits at speed dependent on system clock speed
-  # set *0xE0040010 = ($clockspeed/$speed)-1
-
-  # Flush all initial configuration
-  set *0xe000edfc |= 0x1000000
-  set *0xe0001000 = 0
-  set *0xe0000fb0 = 0xc5acce55
-  set *0xe0000e80 = 0
+     # Flush all initial configuration
+     set *0xe000edfc |= 0x1000000
+     set *0xe0001000 = 0
+     set *0xe0000fb0 = 0xc5acce55
+     set *0xe0000e80 = 0
+  end
 end
 document prepareTRACE
-prepareTRACE <ClockSpd> <Speed> <Width>: Prepare TRACE output in specified format
-  <ClockSpd>: Speed of the CPU SystemCoreClock
-  <Speed>   : Speed to use (Ideally an integer divisor of SystemCoreClock)
-  <Width>   : Number of bits wide (1,2 or 4)
+prepareTRACE <Width>: Prepare TRACE output in specified format
+  <Width>   : Number of bits wide (1,2 or 4 only)
 end
 # ====================================================================
 define prepareSWD

@@ -53,13 +53,13 @@
 #include "tpiuDecoder.h"
 #include "itmDecoder.h"
 
-#ifdef INCLUDE_FTDI_SUPPORT
-#include <libftdi1/ftdi.h>
+#ifdef INCLUDE_FPGA_SUPPORT
+    #include <libftdi1/ftdi.h>
 
-#define FTDI_TRANSFER_SIZE (4096)
-#define FTDI_VID  (0x0403)
-#define FTDI_PID  (0x6010)
-#define FTDI_INTERFACE (INTERFACE_B)
+    #define FTDI_TRANSFER_SIZE (4096)
+    #define FTDI_VID  (0x0403)
+    #define FTDI_PID  (0x6010)
+    #define FTDI_INTERFACE (INTERFACE_B)
 #endif
 
 #define SERVER_PORT 3443                      /* Server port definition */
@@ -93,8 +93,8 @@ struct
     BOOL verbose;
     BOOL useTPIU;
     BOOL segger;
-#ifdef INCLUDE_FTDI_SUPPORT
-  BOOL ftdi;
+#ifdef INCLUDE_FPGA_SUPPORT
+    BOOL orbtrace;
 #endif
     char *seggerHost;
     int32_t seggerPort;
@@ -156,15 +156,15 @@ struct
 
     /* Timestamp info */
     uint64_t lastHWExceptionTS;
-  
+
     /* The decoders and the packets from them */
     struct ITMDecoder i;
     struct ITMPacket h;
     struct TPIUDecoder t;
     struct TPIUPacket p;
 
-#ifdef INCLUDE_FTDI_SUPPORT
-  struct ftdi_context *ftdi;
+#ifdef INCLUDE_FPGA_SUPPORT
+    struct ftdi_context *ftdi;
 #endif
 } _r;
 
@@ -361,7 +361,7 @@ uint64_t _timestampuS( void )
 {
     struct timeval te;
     gettimeofday( &te, NULL ); // get current time
-    return (te.tv_sec * 1000000LL + te.tv_usec); // caculate microseconds
+    return ( te.tv_sec * 1000000LL + te.tv_usec ); // caculate microseconds
 }
 // ====================================================================================================
 // ====================================================================================================
@@ -416,7 +416,7 @@ static void *_client( void *args )
 static void *_listenTask( void *arg )
 
 {
-  int sockfd = *(( int * )arg);
+    int sockfd = *( ( int * )arg );
     int newsockfd;
     socklen_t clilen;
     struct sockaddr_in cli_addr;
@@ -429,6 +429,7 @@ static void *_listenTask( void *arg )
         listen( sockfd, 5 );
         clilen = sizeof( cli_addr );
         newsockfd = accept( sockfd, ( struct sockaddr * ) &cli_addr, &clilen );
+
         if ( options.verbose )
         {
             inet_ntop( AF_INET, &cli_addr.sin_addr, s, 99 );
@@ -472,7 +473,7 @@ static BOOL _makeServerTask( void )
 /* Creating the listening server thread */
 
 {
-  static int sockfd;  /* This needs to be static to keep it available for the inferior */
+    static int sockfd;  /* This needs to be static to keep it available for the inferior */
     struct sockaddr_in serv_addr;
     int flag = 1;
 
@@ -536,31 +537,32 @@ void _handleException( struct ITMDecoder *i, struct ITMPacket *p )
 
     _r.lastHWExceptionTS = ts;
 
-    if (exceptionNumber<16)
-      {
-	/* This is a system based exception */
-	opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%ld,%s,%s\n", HWEVENT_EXCEPTION, eventdifftS,exEvent[eventType & 0x03], exNames[exceptionNumber & 0x0F] );
-      }
+    if ( exceptionNumber < 16 )
+    {
+        /* This is a system based exception */
+        opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%ld,%s,%s\n", HWEVENT_EXCEPTION, eventdifftS, exEvent[eventType & 0x03], exNames[exceptionNumber & 0x0F] );
+    }
     else
-      {
-	/* This is a CPU defined exception */
-	opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%ld,%s,External,%d\n", HWEVENT_EXCEPTION, eventdifftS, exEvent[eventType & 0x03], exceptionNumber-16 );
-      }
+    {
+        /* This is a CPU defined exception */
+        opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%ld,%s,External,%d\n", HWEVENT_EXCEPTION, eventdifftS, exEvent[eventType & 0x03], exceptionNumber - 16 );
+    }
+
     write( _r.c[HW_CHANNEL].handle, outputString, opLen );
 }
 // ====================================================================================================
 void _handleDWTEvent( struct ITMDecoder *i, struct ITMPacket *p )
 
 {
-    uint64_t ts = _timestampuS(); /* Stamp as early as possible */  
+    uint64_t ts = _timestampuS(); /* Stamp as early as possible */
     char outputString[MAX_STRING_LENGTH];
     int opLen;
     uint32_t event = p->d[1] & 0x2F;
     const char *evName[] = {"CPI", "Exc", "Sleep", "LSU", "Fold", "Cyc"};
     uint64_t eventdifftS = ts - _r.lastHWExceptionTS;
-    
+
     _r.lastHWExceptionTS = ts;
-    
+
     for ( uint32_t i = 0; i < 6; i++ )
     {
         if ( event & ( 1 << i ) )
@@ -576,17 +578,17 @@ void _handlePCSample( struct ITMDecoder *i, struct ITMPacket *p )
 /* We got a sample of the PC */
 
 {
-    uint64_t ts = _timestampuS(); /* Stamp as early as possible */  
+    uint64_t ts = _timestampuS(); /* Stamp as early as possible */
     char outputString[MAX_STRING_LENGTH];
     int opLen;
     uint64_t eventdifftS = ts - _r.lastHWExceptionTS;
 
     _r.lastHWExceptionTS = ts;
-    
+
     if ( p->len == 1 )
     {
         /* This is a sleep packet */
-      opLen = snprintf( outputString, ( MAX_STRING_LENGTH - 1 ), "%d,%ld,**SLEEP**\n", HWEVENT_PCSample, eventdifftS );
+        opLen = snprintf( outputString, ( MAX_STRING_LENGTH - 1 ), "%d,%ld,**SLEEP**\n", HWEVENT_PCSample, eventdifftS );
     }
     else
     {
@@ -609,8 +611,9 @@ void _handleDataRWWP( struct ITMDecoder *i, struct ITMPacket *p )
     char outputString[MAX_STRING_LENGTH];
     int opLen;
     uint64_t eventdifftS = ts - _r.lastHWExceptionTS;
-    
+
     _r.lastHWExceptionTS = ts;
+
     switch ( p->len )
     {
         case 1:
@@ -642,7 +645,7 @@ void _handleDataAccessWP( struct ITMDecoder *i, struct ITMPacket *p )
     int opLen;
 
     uint64_t eventdifftS = ts - _r.lastHWExceptionTS;
-    
+
     _r.lastHWExceptionTS = ts;
     opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%ld,%d,0x%08x\n", HWEVENT_AWP, eventdifftS, comp, data );
     write( _r.c[HW_CHANNEL].handle, outputString, opLen );
@@ -659,7 +662,7 @@ void _handleDataOffsetWP( struct ITMDecoder *i, struct ITMPacket *p )
     char outputString[MAX_STRING_LENGTH];
     int opLen;
     uint64_t eventdifftS = ts - _r.lastHWExceptionTS;
-    
+
     _r.lastHWExceptionTS = ts;
     opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%ld,%d,0x%04x\n", HWEVENT_OFS, eventdifftS, comp, offset );
     write( _r.c[HW_CHANNEL].handle, outputString, opLen );
@@ -878,11 +881,14 @@ void _protocolPump( uint8_t c )
         switch ( TPIUPump( &_r.t, c ) )
         {
             // ------------------------------------
-            case TPIU_EV_SYNCED:
+            case TPIU_EV_NEWSYNC:
                 if ( options.verbose )
                 {
                     fprintf( stdout, "TPIU In Sync (%d)\n", TPIUDecoderGetStats( &_r.t )->syncCount );
                 }
+
+            // This fall-through is deliberate
+            case TPIU_EV_SYNCED:
 
                 ITMDecoderForceSync( &_r.i, TRUE );
                 break;
@@ -913,7 +919,7 @@ void _protocolPump( uint8_t c )
                         continue;
                     }
 
-                    if ( ( _r.p.packet[g].s != 0 ) && ( options.verbose ) )
+                    if ( ( _r.p.packet[g].s != 0 ) && ( _r.p.packet[g].s != 0x7f ) && ( options.verbose ) )
                     {
                         if ( options.verbose )
                         {
@@ -955,12 +961,12 @@ void _printHelp( char *progName )
     fprintf( stdout, "        h: This help\n" );
     fprintf( stdout, "        f: <filename> Take input from specified file\n" );
     fprintf( stdout, "        i: <channel> Set ITM Channel in TPIU decode (defaults to 1)\n" );
+#ifdef INCLUDE_FPGA_SUPPORT
+    fprintf( stdout, "        o: Use orbuculum custom interface\n" );
+#endif
     fprintf( stdout, "        p: <serialPort> to use\n" );
     fprintf( stdout, "        s: <serialSpeed> to use\n" );
     fprintf( stdout, "        t: Use TPIU decoder\n" );
-#ifdef INCLUDE_FTDI_SUPPORT
-    fprintf( stdout, "        u: Use ultraspeed on ftdi interface\n" );
-#endif
     fprintf( stdout, "        v: Verbose mode\n" );
 }
 // ====================================================================================================
@@ -973,7 +979,7 @@ int _processOptions( int argc, char *argv[] )
     char *chanIndex;
 #define DELIMITER ','
 
-    while ( ( c = getopt ( argc, argv, "a:vg:ts:i:p:uf:hc:b:" ) ) != -1 )
+    while ( ( c = getopt ( argc, argv, "a:vg:ts:i:p:of:hc:b:" ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -989,11 +995,14 @@ int _processOptions( int argc, char *argv[] )
             case 'a':
                 options.seggerHost = optarg;
                 break;
-#ifdef INCLUDE_FTDI_SUPPORT
-	    case 'u':
-  	      options.ftdi = TRUE;
+
+#ifdef INCLUDE_FPGA_SUPPORT
+
+            case 'o':
+                options.orbtrace = TRUE;
                 break;
 #endif
+
             case 't':
                 options.useTPIU = TRUE;
                 break;
@@ -1081,6 +1090,7 @@ int _processOptions( int argc, char *argv[] )
 
             // ------------------------------------
             default:
+                printf( "%c\n", c );
                 return FALSE;
                 // ------------------------------------
         }
@@ -1110,12 +1120,15 @@ int _processOptions( int argc, char *argv[] )
             fprintf( stdout, "SEGGER H/P: %s:%d\n", options.seggerHost, options.seggerPort );
         }
 
-#ifdef INCLUDE_FTDI_SUPPORT
-        if ( options.ftdi )
+#ifdef INCLUDE_FPGA_SUPPORT
+
+        if ( options.orbtrace )
         {
- 	  fprintf( stdout, "FTDI Ultra: TRUE\n");
+            fprintf( stdout, "Orbtrace: TRUE\n" );
         }
+
 #endif
+
         if ( options.useTPIU )
         {
             fprintf( stdout, "Using TPIU: TRUE (ITM on channel %d)\n", options.tpiuITMChannel );
@@ -1253,6 +1266,9 @@ int seggerFeeder( void )
             fprintf( stdout, "Established Segger Link\n" );
         }
 
+        TPIUDecoderForceSync( &_r.t, 0 );
+        ITMDecoderForceSync( &_r.i, TRUE );
+
         while ( ( t = read( sockfd, cbw, MAX_IP_PACKET_LEN ) ) > 0 )
         {
             _sendToClients( t, cbw );
@@ -1260,8 +1276,11 @@ int seggerFeeder( void )
 
             while ( t-- )
             {
+                //          printf("%02x ",*c);
                 _protocolPump( *c++ );
             }
+
+            //      printf("\n\r");
         }
 
         close( sockfd );
@@ -1348,81 +1367,100 @@ int serialFeeder( void )
     }
 }
 // ====================================================================================================
-#ifdef INCLUDE_FTDI_SUPPORT
-int ftdiFeeder( void )
+#ifdef INCLUDE_FPGA_SUPPORT
+int fpgaFeeder( void )
 
 {
-  int f,t;
-  uint8_t cbw[FTDI_TRANSFER_SIZE];
+    int f, t;
+    uint8_t cbw[FTDI_TRANSFER_SIZE];
+    uint8_t *c;
 
-    _r.ftdi=ftdi_new();
+    _r.ftdi = ftdi_new();
+
     while ( 1 )
     {
-      do
-	{
-	  ftdi_set_interface(_r.ftdi,FTDI_INTERFACE);
-	  f=ftdi_usb_open(_r.ftdi,FTDI_VID,FTDI_PID);
-	  if (f<0)
-	    {
-	      if (options.verbose)
-		fprintf( stderr, "Cannot open device (%s)\n",ftdi_get_error_string(_r.ftdi));
-	      usleep(50000);
-	    }
-	} while (f<0);
-
-      if ( options.verbose )
+        do
         {
-	  fprintf( stderr, "Port opened\n" );
+            ftdi_set_interface( _r.ftdi, FTDI_INTERFACE );
+            f = ftdi_usb_open( _r.ftdi, FTDI_VID, FTDI_PID );
+
+            if ( f < 0 )
+            {
+                if ( options.verbose )
+                {
+                    fprintf( stderr, "Cannot open device (%s)\n", ftdi_get_error_string( _r.ftdi ) );
+                }
+
+                usleep( 50000 );
+            }
+        }
+        while ( f < 0 );
+
+        if ( options.verbose )
+        {
+            fprintf( stderr, "Port opened\n" );
         }
 
-      f=ftdi_set_baudrate(_r.ftdi,options.speed);
-      if (f<0)
-	{
-	  fprintf(stderr,"Cannot set baudate %d %d (%s)\n",f,options.speed,ftdi_get_error_string(_r.ftdi));
-	  return -2;
-	}
+        f = ftdi_set_baudrate( _r.ftdi, options.speed );
 
-      ftdi_set_line_property(_r.ftdi,8,STOP_BIT_1,NONE);
-
-      ftdi_read_data_set_chunksize(_r.ftdi,FTDI_TRANSFER_SIZE);      
-      ftdi_setdtr(_r.ftdi,TRUE);
-      
-      while ( ( t = ftdi_read_data(_r.ftdi,cbw, FTDI_TRANSFER_SIZE ) ) >= 0 )
+        if ( f < 0 )
         {
-	  if (t)
-	    {
-	      _sendToClients( t, cbw );
-	      uint8_t *c = cbw;
+            fprintf( stderr, "Cannot set baudate %d %d (%s)\n", f, options.speed, ftdi_get_error_string( _r.ftdi ) );
+            return -2;
+        }
 
-	      while ( t-- )
-	      {
-		printf("%02x ",*c);
+        ftdi_set_line_property( _r.ftdi, 8, STOP_BIT_1, NONE );
+
+        ftdi_read_data_set_chunksize( _r.ftdi, FTDI_TRANSFER_SIZE );
+        ftdi_setdtr( _r.ftdi, TRUE );
+
+        while ( ( t = ftdi_read_data( _r.ftdi, cbw, FTDI_TRANSFER_SIZE ) ) >= 0 )
+        {
+            if ( !t )
+            {
+                continue;
+            }
+
+            /*      printf("RXED %4d ",t);
+            for (uint32_t i=0; i<t; i++)
+              printf("%02x ",cbw[i]);
+
+            printf("\n\r");
+            */
+            c = cbw;
+
+            while ( t-- )
+            {
                 _protocolPump( *c++ );
-	      }
-	    }
+            }
         }
-      ftdi_setdtr(_r.ftdi,FALSE);
+
+        ftdi_setdtr( _r.ftdi, FALSE );
+
         if ( options.verbose )
         {
             fprintf( stderr, "Read failed\n" );
         }
 
-	ftdi_usb_close(_r.ftdi);
-	_r.ftdi=NULL;
+        ftdi_usb_close( _r.ftdi );
+        _r.ftdi = NULL;
     }
 }
 // ====================================================================================================
-void ftdiFeederClose(void)
+void fpgaFeederClose( void )
 
 {
-  printf("Closing feeder\n");
-  if (_r.ftdi)
-    for (uint32_t attempts=25; attempts; attempts--)
-      {
-	ftdi_setdtr(_r.ftdi,FALSE);
-	usleep(5000);
-      }
-  ftdi_usb_close(_r.ftdi);
+    /* OK, this is a bit odd.  Because there may have been a transfer in progress we need to close down */
+    /* and re-open the driver in order to perform the DTR drop. Since we're in the process of leaving */
+    /* anyway there's not too much point in error checking! */
+
+    ftdi_usb_close( _r.ftdi );
+    ftdi_deinit( _r.ftdi );
+    _r.ftdi = ftdi_new();
+    ftdi_set_interface( _r.ftdi, FTDI_INTERFACE );
+    ftdi_usb_open( _r.ftdi, FTDI_VID, FTDI_PID );
+    ftdi_setdtr_rts( _r.ftdi, FALSE, FALSE );
+    ftdi_usb_close( _r.ftdi );
 }
 #endif
 // ====================================================================================================
@@ -1498,17 +1536,20 @@ int main( int argc, char *argv[] )
     }
 
     /* Make sure there's an initial timestamp to work with */
-    
-    _r.lastHWExceptionTS=_timestampuS();
-    
+
+    _r.lastHWExceptionTS = _timestampuS();
+
     /* Using the exit construct rather than return ensures the atexit gets called */
-#ifdef INCLUDE_FTDI_SUPPORT
-    if ( options.ftdi )
+#ifdef INCLUDE_FPGA_SUPPORT
+
+    if ( options.orbtrace )
     {
-      atexit(ftdiFeederClose);
-      exit( ftdiFeeder() );
+        atexit( fpgaFeederClose );
+        exit( fpgaFeeder() );
     }
+
 #endif
+
     if ( options.seggerPort )
     {
         exit( seggerFeeder() );

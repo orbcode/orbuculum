@@ -1,6 +1,6 @@
 #VERBOSE=1
 DEBUG=1
-WITH_FTDI=1
+WITH_FPGA=1
 
 CFLAGS=-DVERSION="\"0.15\""
 
@@ -51,8 +51,8 @@ LDLIBS = -L/usr/local/lib -lusb-1.0 -lelf -lbfd
 LDLIBS += -lpthread
 #endif
 
-ifdef WITH_FTDI
-CFLAGS+=-DINCLUDE_FTDI_SUPPORT
+ifdef WITH_FPGA
+CFLAGS+=-DINCLUDE_FPGA_SUPPORT
 LDLIBS += -lftdi1
 endif
 

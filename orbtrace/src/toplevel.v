@@ -1,5 +1,3 @@
-
-
 module topLevel(
 		input [3:0] traceDin, // Port is always 4 bits wide, even if we use less
 		input 	    traceClk, // Supporting clock for input - must be on a global clock pin
@@ -111,7 +109,7 @@ SB_IO #(.PULLUP(1)) MtraceIn3
                    .traceDina(tTraceDina),       // Tracedata rising edge ... 1-n bits
                    .traceDinb(tTraceDinb),       // Tracedata falling edge (LSB) ... 1-n bits		   
                    .traceClkin(BtraceClk),       // Tracedata clock
-		   .width(1),                    // Current trace buffer width 
+		   .width(4),                    // Current trace buffer width 
 
 		   // Upwards interface to packet processor
 		   .PacketAvail(packetizer_avail_flag),   // Flag indicating packet is available
@@ -120,14 +118,10 @@ SB_IO #(.PULLUP(1)) MtraceIn3
 
 		   .PacketOut(packetizer_packet),         // The next packet word
 
-		   .sync(sync_led),                       // Indicator of if we are in sync
-		   
-		   .Probe(target_a),
-		   .Probe2(target_b)
+		   .sync(sync_led)                        // Indicator of if we are in sync
                    );
 
    assign green=target_a; // Ch 0
-   assign yellow=target_b; // Ch 1
    
 
    packSend splitter (
@@ -150,6 +144,7 @@ SB_IO #(.PULLUP(1)) MtraceIn3
                    .DataOverf(txOvf_led),                   // Too much data in buffer
 		   .Probe(filter_a)
  		      );
+   assign yellow=filter_a; // Ch 1
    
    assign doTransmit = dataAvail & txFree;
 

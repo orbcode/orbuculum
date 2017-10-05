@@ -1,5 +1,5 @@
-Orbuculum - ARM Cortex SWO Output Processing Tools
-==================================================
+Orbuculum - ARM Cortex Debug Output Processing Tools
+====================================================
 
 An Orbuculum is a Crystal Ball, used for seeing things that would 
  be otherwise invisible. A  nodding reference to (the) BlackMagic
@@ -9,8 +9,9 @@ You can find information about using this suite on the Embedded Rambling
 blog at http://shadetail.com/.
 
 *This program is in heavy development. Check back frequently for new versions 
-with additional functionality. The current status (15th Aug) is that work is underway
-on a parallel trace hardware using ice40-HX8K hardware. A side effect of that is that
+with additional functionality. The current status (5th Oct) is that 
+parallel trace hardware using a iCE40HX-8K breakout board and the icestorm tools
+has just been integrated. A side effect of that is that
 ft2232 drivers have been integrated into orbuculum which will give you up to 12Mbps SWO
 sampling. The software runs on both Linux and OSX.  Orbtop has recently
 received even more special love and it seems robust on all tested workloads,
@@ -22,14 +23,18 @@ flows' are working OK but the stuff might not look too pretty.
 
 What is it?
 ===========
+
 Orbuculum is a set of tools for decoding and presenting output flows from
-the SWO pin of a CORTEX-M CPU. Numerous types of data can be output through this
-pin, from multiple channels of text messages through to Program Counter samples. Processing
+the Debug pins of a CORTEX-M CPU. Originally it only used the SWO pin but it now also
+supports hardware for parallel tracing through the TRACE pins too using the iCE40HX-8K
+FPGA Breakout Board. Numerous types of data can be output through these
+pins, from multiple channels of text messages through to Program Counter samples. Processing
 these data gives you a huge amount of insight into what is really going on inside
 your CPU. The current tools are;
 
 * orbuculum: The main program and multiplexer...used as a base interface to the target by
-other programmes in the suite. Generally you can just leave this running and it'll grab
+other programmes in the suite. Generally you configure this for the interface you're using
+and then you can just leave it running and it'll grab
 data from the target and make it available to clients whenever it can.
 
 * orbcat: A simple cat utility for ITM channel data.
@@ -42,6 +47,8 @@ provide dot and gnuplot source data for perty graphics.
 * orbstat: An analysis/statistics utility which can produce KCacheGrind input files. KCacheGrind
 is a very powerful code performance analysis tool.
 
+* orbtrace: The fpga configuration bitstream maker to support parallel trace operation.
+
 A few simple use cases are documented in the last section of this
 document, as are example outputs of using orbtop to report on the
 activity of BMP while emitting SWO packets. More will be added.
@@ -49,32 +56,39 @@ activity of BMP while emitting SWO packets. More will be added.
 The data flowing from the SWO pin can be encoded
 either using NRZ (UART) or RZ (Manchester) formats.  The pin is a
 dedicated one that would be used for TDO when the debug interface is
-in JTAG mode. 
+in JTAG mode.
+
+The data flowing from the TRACE pins is clocked using a separate TRACECLK pin. There can
+be 1-4 TRACE pins which obviously give you much higher bandwidth than the single SWO.
 
 Orbuculum takes this output and makes it accessible to tools on the host
-PC. At its core it takes the data from the SWO, decodes it and presents
+PC. At its core it takes the data from the source, decodes it and presents
 it to a set of unix fifos which can then be used as the input to other
 programs (e.g. cat, or something more sophisticated like gnuplot,
 octave or whatever). Orbuculum itself doesn't care if the data
 originates from a RZ or NRZ port, or at what speed....that's the job
 of the interface.
 
-At the present time Orbuculum supports three devices for collecting SWO
+At the present time Orbuculum supports five devices for collecting trace
 from the target;
  
 * the Black Magic Debug Probe (BMP)
 * the SEGGER JLink
-* generic USB TTL Serial Interfaces 
+* generic USB TTL Serial Interfaces
+* FTDI High speed serial interfaces
+* The ice40-HX8K Breakout Board for parallel trace.
 
 Information about using each individual interface can be found in the
 docs directory. gdb setup files for each device type can be found in the `Support` directory.
 
-Orbuculum can use, or bypass, the TPIU. The TPIU adds (a small amount of) overhead
+When using SWO Orbuculum can use, or bypass, the TPIU. The TPIU adds (a small amount of) overhead
 to the datastream, but provides better synchronisation if there is corruption
 on the link. To include the TPIU in decode stack, provide the -t 
 option on the command line. If you don't provide it, and the ITM decoder sees
 TPIU syncs in the datastream, it will complain and barf out. This is deliberate
 after I spent two days trying to find an obscure bug 'cos I'd left the `-t` option off...
+
+Beware that in parallel trace the TPIU is mandatory, so therefore so is the -t option.
 
 When in NRZ mode the SWO data rate that comes out of the chip _must_
 match the rate that the debugger expects. On the BMP speeds of
@@ -86,12 +100,17 @@ can normally work faster, but no experimentation has yet been done to
 find their max limits, which are probably dependent on the specific JLink
 you are using.
 
+When using parallel trace you are limited by the capabilities of the FPGA configuration and
+the speed you can get data off the chip. The current maximum speed supported for the
+target is around 150MHz but you will swamp the chip very quickly if you start streaming
+data at that speed. The offboard link is only 12Mbps serial. This issue will be
+resolved when dedicated FPGA target hardware is available (it's on its way).
 
 Configuring the Target
 ======================
 
 Generally speaking, you will need to configure the target device to output
-SWD data. You can either do that through program code, or through magic
+SWD or parallel data. You can either do that through program code, or through magic
 incantations in gdb. The gdb approach is more flexible and the program code
 version is grandfathered. It's in the support directory if you want it.
 
@@ -120,13 +139,13 @@ also in the Support directory. Generically, it looks like this;
     set print pretty                        <-
     load                                    <---- Load the program
     
-    monitor traceswo 2250000                <---- wakeup tracing on the probe
+    monitor traceswo 2250000                <*--- wakeup tracing on the probe
     
     start                                   <---- and get to main
 
-    enableSTM32F1SWD                        <---- turn on SWO output pin on CPU
+    enableSTM32F1SWD                        <*--- turn on SWO output pin on CPU
 
-    prepareSWD SystemCoreClock 2250000 1 0  <---- Setup SWO timing
+    prepareSWD SystemCoreClock 2250000 1 0  <*--- Setup SWO timing
 
     dwtSamplePC 1                           <-
     dwtSyncTAP 3                            <-
@@ -145,15 +164,27 @@ also in the Support directory. Generically, it looks like this;
     ITMTER 0 0xFFFFFFFF                     <---- Enable Trace Ports
     ITMTPR 0xFFFFFFFF                       <---- Make them accessible to user level code
 
+Alternatively, if you're using parallel trace via the ice40 remove the lines marked <*- above and
+replace them with the following;
+
+   enableSTM32F4TRACE                       <---- Switch on parallel trace on the STM32F4
+   prepareTRACE 4                           <---- Set up the TPIU for 4 bit output (or 2 or 1)
+
+...be careful to set the trace width to be the same as what you've configured on the FPGA.
+
 Building
 ========
 
-The command line to build the Orbuculum tool is;
+The command line to build the Orbuculum tool suite is;
 
 make
 
 ...you may need to change the paths to your libusb files, depending on
 how well your build environment is set up.
+
+To build the FPGA and load it into the board, install the incredible icestorm tools from Clifford
+Wolf, then go into the `orbtrace/src` directory and type `./create`. It will take about 30 seconds
+to compile the image and burn it to the board.
 
 Using
 =====
@@ -211,6 +242,8 @@ network clients can connect. This port delivers raw TPIU frames to any
 client that is connected (such as orbcat, and shortly by orbtop). 
 The practical limit to the number of clients that can connect is set by the speed of the host machine.
 
+
+
 Command Line Options
 ====================
 
@@ -234,6 +267,8 @@ Specific command line options of note are;
  `-i [channel]`: Set Channel for ITM in TPIU decode (defaults to 1). Note that the TPIU must
      be in use for this to make sense.  If you call the GenericsConfigureTracing
      routine above with the ITM Channel set to 0 then the TPIU will be bypassed.
+
+ `-o`: Use the custom (ice40 FPGA) based interface.
 
  `-p [serialPort]`: to use. If not specified then the program defaults to Blackmagic probe.
 
@@ -284,7 +319,6 @@ options for orbcat are;
 
  `-v`: Verbose mode.
 
-
 Orbtop
 ======
 
@@ -328,11 +362,27 @@ Command line options for orbtop are;
 
  `-v`: Verbose mode.
 
+Using the ice40HX8K board
+=========================
+
+There are a set of LEDs on the HX8K board which show the status of the communication
+links as follows;
+
+  * D9: Sync has been established with the target.
+  * D8: Data Receive from host computer.
+  * D7: Data Send to host computer.
+  * D2: Data overflow (too much data for FPGA to host link).
+
+For normal operation you can burn the program image into the configuration serial memory
+(J7:1-2, J6:2-4, and J6:1-3). For development just load it directly (J6:1-2 and
+J6:3-4. Jumper J7 not installed). See Pg. 5 of the iCE40HX-8K Breakout Board User's Guide for
+more information.
+
 Reliability
 ===========
 
-A whole chunk of work has gone into making sure the dataflow over the
-SWO link is reliable....but it's pretty dependent on the debug
+A whole chunk of work has gone into making sure the dataflow over both the
+SWO link and parallel Trace is reliable....but it's pretty dependent on the debug
 interface itself.  The TL;DR is that if the interface _is_ reliable
 then Orbuculum will be. There are factors outside of our control
 (i.e. the USB bus you are connected to) that could potentially break the

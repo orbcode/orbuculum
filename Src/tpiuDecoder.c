@@ -142,13 +142,26 @@ enum TPIUPumpEvent TPIUPump( struct TPIUDecoder *t, uint8_t d )
 
     if ( t->syncMonitor == SYNCPATTERN )
     {
+
+        enum TPIUPumpEvent r;
+
+        if ( t->state != TPIU_UNSYNCED )
+        {
+            r = TPIU_EV_SYNCED;
+        }
+        else
+        {
+            r = TPIU_EV_NEWSYNC;
+        }
+
         t->state = TPIU_RXING;
         t->stats.syncCount++;
         t->byteCount = 0;
 
         /* Consider this a valid timestamp */
         gettimeofday( &t->lastPacket, NULL );
-        return TPIU_EV_SYNCED;
+
+        return r;
     }
 
     switch ( t->state )
@@ -180,7 +193,7 @@ enum TPIUPumpEvent TPIUPump( struct TPIUDecoder *t, uint8_t d )
             }
             else
             {
-                fprintf( stderr, ">>>>>>>>> PACKET INTERVAL TOO LONG <<<<<<<<<<<<<<\n" );
+                //fprintf( stderr, ">>>>>>>>> PACKET INTERVAL TOO LONG <<<<<<<<<<<<<<\n" );
                 t->state = TPIU_UNSYNCED;
                 t->stats.lostSync++;
                 return TPIU_EV_UNSYNCED;

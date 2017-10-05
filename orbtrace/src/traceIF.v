@@ -22,15 +22,12 @@ module traceIF(
 	       input 		 PacketNextWd, // Strobe for next 16 bit word in packet	 
 
 	       output reg [15:0] PacketOut,    // The next packet word
-	       output reg 	 sync,         // Indicator that we are in sync
-
-	       output 		 Probe,
-	       output reg 	 Probe2 
+	       output reg 	 sync          // Indicator that we are in sync
 	       );		  
    
    // Internals =============================================================================
 
-   reg [31:0] 	    construct;                // Track of data being constructed
+   reg [39:0] 	    construct;                // Track of data being constructed
    reg [4:0] 	    readBits;                 // How many bits of the sample we have
 	    
    reg [15:0] 	    traceipmem[0:255];        // Storage for packet under construction (16 bits wide, 2 bytes at a time)
@@ -43,7 +40,12 @@ module traceIF(
 
    reg [2:0]        gotSync;                  // Pulse stretch between domains for sync
    
-   reg [24:0] 	    lostSync;                 // Counter for sync loss timeour
+   reg [24:0] 	    lostSync;                 // Counter for sync loss timeout
+
+   reg [1:0] 	    ofs;
+   reg [2:0] 	    ofsSet;
+	
+   reg 		    storeWaiting;
 
    // ================== Input data against traceclock from target system ====================
    always @(posedge traceClkin) 
@@ -55,60 +57,90 @@ module traceIF(
 	     readBits<=0;
 	     construct<=0;
 	     gotSync<=1'b0;
+	     storeWaiting<=0;
 	  end
 	else
 	  begin
 	     // Deal with sync flagging ===============================================
-	     if (construct==32'h7fff_ffff)
+	     ofsSet[2]=1;
+
+	     // These apply for all cases
+	     if (construct[39:8]==32'h7fff_ffff) ofsSet=0;
+	     if (construct[38:7]==32'h7fff_ffff) ofsSet=1;
+
+	     // For a two bit bus
+	     if ((width==3'd2) || (width==3'd4))
 	       begin
-		  Probe<=~Probe;
+		  if (construct[37:6]==32'h7fff_ffff) ofsSet=2;
+		  if (construct[36:5]==32'h7fff_ffff) ofsSet=3;
+	       end
+
+	     // For a four bit bus...
+	     if (width==3'd4)
+	       begin
+		  if (construct[36:5]==32'h7fff_ffff) ofsSet=4;
+		  if (construct[35:4]==32'h7fff_ffff) ofsSet=5;
+		  if (construct[34:3]==32'h7fff_ffff) ofsSet=6;
+		  if (construct[33:2]==32'h7fff_ffff) ofsSet=7;
+	       end
+
+	     if (!ofsSet[2])
+	       begin
 		  gotSync<=~0;          // We synced, let people know
 		  readBits<=width<<1;   // ... and reset writing position in recevied data
 		  traceipmemOffsWp<=0;  // ... and in the packet
+		  ofs<=ofsSet[1:0];
 	       end
 	     else
 	       begin
 		  // Countdown the sync flag ==========================================
 		  if (gotSync>0) gotSync<=gotSync-1;
-		  
-		  // Deal with element reception ======================================
-		  if (readBits==16)
-		    begin
-		       // Got a full set of bits, so store them
-		       if ((construct[31:16]!=16'h7fff) && (sync))
-			 begin
-			    // This is useful data, and we are in sync, so store it
-			    traceipmem[{traceipmemNumWp[4:0],traceipmemOffsWp[2:0]}]<=construct[31:16];
 
-			    // Check if we are still collecting this packet, adjust pointers appropriately
-		            if (traceipmemOffsWp<7)
-			      begin
-				 traceipmemOffsWp<=traceipmemOffsWp+1;
-			      end 
-			    else
-			      begin
-				 // This packet is complete, move on to the next one
-				 traceipmemNumWp<=traceipmemNumWp+1;
-				 traceipmemOffsWp<=0;
-			      end
-			 end // if ((construct[31:16]!=16'h7fff) && (sync))
+		  // The store is done post-collection to speed up the critical path through the logic
+		  if (storeWaiting)
+		    begin
+		       storeWaiting<=0;
+		       // Sample to be stored has moved back one more step in memory..so accomodate that
+		       traceipmem[{traceipmemNumWp[4:0],traceipmemOffsWp[2:0]}]<=construct[39-ofs-(width*2):24-ofs-(width*2)];
 		       
+		       // Check if we are still collecting this packet, adjust pointers appropriately
+		       if (traceipmemOffsWp<7)
+			 begin
+			    traceipmemOffsWp<=traceipmemOffsWp+1;
+			 end 
+		       else
+			 begin
+			    // This packet is complete, move on to the next one
+			    traceipmemNumWp<=traceipmemNumWp+1;
+			    traceipmemOffsWp<=0;
+			 end
+		    end
+
+		  // Deal with element reception ======================================
+		  if ((sync) && (readBits==16))
+		    begin
+		       // Got a full set of bits, so store them ... except if they're useless
+		       if (construct[39-ofs:24-ofs]!=16'h7fff)
+			 begin
+			    // This is useful data, and we are in sync, so flag to store it
+			    storeWaiting<=1'b1;
+			 end // if ((construct[31:16]!=16'h7fff) && (sync))
 		       // Either a 7fff packet to be ignored or real data. Either way, we got 16 bits
-		       // of it, so reset the bits counter
+		       // of it, so reset the bits counter (bearing in mind we'll take a sample this cycle)
 		       readBits<=width<<1;
-		    end // if (readBits==16)
+		    end // if ((sync && (readBits==16))
 		  else
 		    begin
 		       // We are still collecting data...increment the bits counter
 		       readBits<=readBits+(width<<1);
 		    end // else: !if(readBits==16)
-	       end // else: !if(construct==32'h7fff_ffff)
+	       end // else: !if(!ofsSet[2])
 	     
 	     // Now get the new data elements that have arrived
 	     case (width)
-	       1: construct<={traceDinb[0],traceDina[0],construct[31:2]};
-	       2: construct<={traceDinb[1:0],traceDina[1:0],construct[31:4]};
-	       4: construct<={traceDinb[3:0],traceDina[3:0],construct[31:8]};
+	       1: construct<={traceDinb[0],traceDina[0],construct[39:2]};
+	       2: construct<={traceDinb[1:0],traceDina[1:0],construct[39:4]};
+	       4: construct<={traceDinb[3:0],traceDina[3:0],construct[39:8]};
 	       default:  construct<=0;  // These cases cannot really occur!
 	     endcase // case (width)
 	  end // else: !if(rst)
@@ -169,4 +201,3 @@ module traceIF(
 	  end // else: !if(rst)
      end // always @ ( posedge clk )
 endmodule // traceIF
-

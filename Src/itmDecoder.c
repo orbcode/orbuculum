@@ -136,6 +136,7 @@ enum ITMPumpEvent ITMPump( struct ITMDecoder *i, uint8_t c )
     if ( ( ( i->syncStat )&SYNCMASK ) == SYNCPATTERN )
     {
         i->stats.syncCount++;
+        i->pageRegister = 0;
         retVal = ITM_EV_SYNCED;
         newState = ITM_IDLE;
     }
@@ -183,6 +184,22 @@ enum ITMPumpEvent ITMPump( struct ITMDecoder *i, uint8_t c )
                     {
                         /* This is TS packet format 2, no more to come, and no change of state */
                         retVal = ITM_EV_TS_PACKET_RXED;
+                    }
+
+                    break;
+                }
+
+                // **********
+                if ( ( c & 0b11011111 ) == 0b10010100 )
+                {
+                    /* This is a global timestamp packet */
+                    if ( ( c & 0b00100000 ) == 0 )
+                    {
+                        newState = ITM_GTS1;
+                    }
+                    else
+                    {
+                        newState = ITM_GTS2;
                     }
 
                     break;
@@ -270,6 +287,24 @@ enum ITMPumpEvent ITMPump( struct ITMDecoder *i, uint8_t c )
                 fprintf( stderr, "General error for packet type %02x\n", c );
 #endif
                 retVal = ITM_EV_ERROR;
+                break;
+
+            // -----------------------------------------------------
+            case ITM_GTS1:  // Collecting GTS1 timestamp - wait for a zero continuation bit
+                if ( ( c & 0x80 ) == 0 )
+                {
+                    newState = ITM_IDLE;
+                }
+
+                break;
+
+            // -----------------------------------------------------
+            case ITM_GTS2: // Collecting GTS2 timestamp - wait for a zero continuation bit
+                if ( ( c & 0x80 ) == 0 )
+                {
+                    newState = ITM_IDLE;
+                }
+
                 break;
 
             // -----------------------------------------------------

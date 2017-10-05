@@ -9,7 +9,7 @@ module packCollect_tb();
    reg[3:0] traceDin;  // Port is always 4 bits wide, even if we use less
    reg 	    traceClk;
    reg 	    clk;
-   reg 	    nRst;
+   reg 	    rst;
    reg [1:0] width_tb;
 	    
    wire     dAvail_tb;
@@ -28,12 +28,11 @@ module packCollect_tb();
    wire     [7:0] pack_final_tb;
    
    traceIF trace (
+		.clk(clk), // System Clock
+		.rst(rst), // Async reset
 		.traceDin(traceDin), // Tracedata ... 1-4 bits
 		.traceClk(traceClk), // Tracedata clock
-		.clk(clk), // System Clock
-		.nRst(nRst), // Async reset
 
-		
 		.dNext(dReqNext_tb), // Strobe for requesting next data element
 		.dAvail(dAvail_tb), // Flag indicating data is available
 		.dOut(dout_tb) // ...the valid data write position
@@ -41,7 +40,7 @@ module packCollect_tb();
 
    packCollect DUT (
 		   .clk(clk), // System Clock
-		   .nRst(nRst), // System reset
+		   .rst(rst), // System reset
 		   .width(width_tb), // Current trace buffer width
 		    .sync(sync_tb), // Indicator of if we are in sync
 
@@ -90,7 +89,7 @@ module packCollect_tb();
      end
       
    initial begin
-      nRst=1;
+      rst=0;
       width_tb=chunksize;
       pack_next_tb=0;      
       traceDin=0;
@@ -98,9 +97,9 @@ module packCollect_tb();
 
       clk=0;
       #10;
-      nRst=0;
+      rst=1;
       #10;
-      nRst=1;
+      rst=0;
       #100;
 
       // Initially send some junk while out of sync
@@ -223,5 +222,4 @@ module packCollect_tb();
    end
 endmodule 
 
-   
-   
+  

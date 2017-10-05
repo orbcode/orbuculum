@@ -59,7 +59,7 @@ module packSend(
 	       if (PacketAvail)
 		 begin
 		    // We got a flag for a new packet, so start requesting it
-		    ipstate<=ipstate+1;
+		    ipstate<=STATE_END_PACKET_STROBE;
 		    PacketNext<=1; 
 		 end
 	    end
@@ -76,7 +76,13 @@ module packSend(
 		     lostSync<=0;
 		     ipstate<=STATE_SEND_FF1;
 		  end else
-		    ipstate<=STATE_BYTE_0;
+		    begin
+		       // This ensures that a Sync is send once in a while in the normal flow
+		       if (outputWp<16)
+			 ipstate<=STATE_SEND_FF1;
+		       else
+			 ipstate<=STATE_BYTE_0;
+		       end
 	     end
 
 	   // ----------------------------------------------------------------------------------
@@ -88,6 +94,8 @@ module packSend(
 		   (ipstate==STATE_SEND_FF2) || 
 		   (ipstate==STATE_SEND_FF3))
 		 begin
+		    Probe=~Probe;
+		    
 		    PacketNextWd<=0;
 		    opbuffmem[outputWp]<=8'hff;
 		    ipstate<=ipstate+1;
@@ -104,14 +112,16 @@ module packSend(
 		    if (ipstate[0]==1'b0)
 		      begin
 			 // This is the lower byte
-			 opbuffmem[outputWp]<=PacketIn[7:0];
+			 opbuffmem[outputWp]<=PacketIn[7:0]; 
 			 PacketNextWd<=1'b1;
 		      end
 		    else
 		      begin
 			 opbuffmem[outputWp]<=PacketIn[15:8];
 			 PacketNextWd<=1'b0;
-		      end
+		      end // else: !if(ipstate[0]==1'b0)
+
+		    // One all packet is transmitted this will roll over to STATE_CHECK_AVAIL
 		    ipstate<=ipstate+1;
 		 end // else: !if(ipstate==STATE_SEND_F7)
 
@@ -159,8 +169,7 @@ module packSend(
 	else 
 	  begin
 	     // ============= Setup reset conditions ============================
-	     ipstate<=STATE_CHECK_AVAIL;
-	     
+	     ipstate<=STATE_CHECK_AVAIL;	     
 	     outputRp<=0;	     
 	     outputWp<=0;
 	     lostSync<=1'b1;	     
