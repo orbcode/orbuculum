@@ -167,10 +167,11 @@ also in the Support directory. Generically, it looks like this;
 Alternatively, if you're using parallel trace via the ice40 remove the lines marked <*- above and
 replace them with the following;
 
-   enableSTM32F4TRACE                       <---- Switch on parallel trace on the STM32F4
-   prepareTRACE 4                           <---- Set up the TPIU for 4 bit output (or 2 or 1)
+    enableSTM32F4TRACE                       <---- Switch on parallel trace on the STM32F4
+    prepareTRACE 4                           <---- Set up the TPIU for 4 bit output (or 2 or 1)
 
-...be careful to set the trace width to be the same as what you've configured on the FPGA.
+...be careful to set the trace width to be the same as what you've configured on the FPGA (the .width
+parameter in toplevel.v).
 
 Building
 ========
