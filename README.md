@@ -378,6 +378,16 @@ For normal operation you can burn the program image into the configuration seria
 J6:3-4. Jumper J7 not installed). See Pg. 5 of the iCE40HX-8K Breakout Board User's Guide for
 more information.
 
+The ice40 breakout board is connected to the target via J2 as follows;
+
+   * traceDin[0] C16
+   * traceDin[1] D16
+   * traceDin[2] E16
+   * traceDin[3] F16
+   * traceClk    H16
+
+Obviously you don't need the whole of traceDin[0..3] if you're only using 1 or 2 bit trace.
+
 Reliability
 ===========
 
