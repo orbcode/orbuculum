@@ -26,6 +26,8 @@
 #define SYNCPATTERN 0xFFFFFF7F
 #define NO_CHANNEL_CHANGE (0xFF)
 
+#define EOL "\n\r"
+
 // ====================================================================================================
 void TPIUDecoderInit( struct TPIUDecoder *t )
 
@@ -193,7 +195,7 @@ enum TPIUPumpEvent TPIUPump( struct TPIUDecoder *t, uint8_t d )
             }
             else
             {
-                //fprintf( stderr, ">>>>>>>>> PACKET INTERVAL TOO LONG <<<<<<<<<<<<<<\n" );
+                //fprintf( stderr, ">>>>>>>>> PACKET INTERVAL TOO LONG <<<<<<<<<<<<<<" EOL );
                 t->state = TPIU_UNSYNCED;
                 t->stats.lostSync++;
                 return TPIU_EV_UNSYNCED;
@@ -201,7 +203,7 @@ enum TPIUPumpEvent TPIUPump( struct TPIUDecoder *t, uint8_t d )
 
         // -----------------------------------
         default:
-            fprintf( stderr, "In illegal state %d\n", t->state );
+            fprintf( stderr, "In illegal state %d" EOL, t->state );
             t->stats.error++;
             return TPIU_EV_ERROR;
             // -----------------------------------

@@ -154,6 +154,7 @@ CFILES += $(App_DIR)/itmDecoder.c $(App_DIR)/tpiuDecoder.c $(App_DIR)/generics.c
 all : build 
 
 get_version:
+	$(Q)mkdir -p $(OLOC)
 	$(Q)$(GET_GIT_HASH) > $(OLOC)/$(GIT_HASH_FILENAME)
 
 $(OLOC)/%.o : %.c

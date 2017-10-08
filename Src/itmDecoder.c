@@ -34,6 +34,8 @@
 #define MAX_PACKET            (5)
 #define DEFAULT_PAGE_REGISTER (0x07)
 
+#define EOL "\n\r"
+
 // Define this to get transitions printed out
 //#define PRINT_TRANSITIONS
 // ====================================================================================================
@@ -284,7 +286,7 @@ enum ITMPumpEvent ITMPump( struct ITMDecoder *i, uint8_t c )
 
                 // **********
 #ifdef PRINT_TRANSITIONS
-                fprintf( stderr, "General error for packet type %02x\n", c );
+                fprintf( stderr, "General error for packet type %02x" EOL, c );
 #endif
                 retVal = ITM_EV_ERROR;
                 break;
@@ -371,7 +373,7 @@ enum ITMPumpEvent ITMPump( struct ITMDecoder *i, uint8_t c )
 
     if ( ( i->p != ITM_UNSYNCED ) || ( newState != ITM_UNSYNCED ) )
     {
-        printf( "%02x %s --> %s(%d)\n", c, _protoNames[i->p], _protoNames[newState], i->targetCount );
+        printf( "%02x %s --> %s(%d)" EOL, c, _protoNames[i->p], _protoNames[newState], i->targetCount );
     }
 
 #endif

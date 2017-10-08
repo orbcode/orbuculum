@@ -55,8 +55,6 @@
 
 #ifdef INCLUDE_FPGA_SUPPORT
     #include <libftdi1/ftdi.h>
-
-    #define FTDI_TRANSFER_SIZE (4096)
     #define FTDI_VID  (0x0403)
     #define FTDI_PID  (0x6010)
     #define FTDI_INTERFACE (INTERFACE_B)
@@ -71,12 +69,13 @@
 #define INTERFACE (5)
 #define ENDPOINT  (0x85)
 
-#define TRANSFER_SIZE (64)
+#define TRANSFER_SIZE (4096)
 #define NUM_CHANNELS  32
 #define HW_CHANNEL    (NUM_CHANNELS)         /* Make the hardware fifo on the end of the software ones */
 
 #define MAX_STRING_LENGTH (100)              /* Maximum length that will be output from a fifo for a single event */
 
+#define EOL           "\n\r"
 /* Information for an individual channel */
 struct Channel
 {
@@ -145,8 +144,6 @@ struct nwClientParams
     int portNo;
     int listenHandle;
 };
-
-#define MAX_IP_PACKET_LEN (1500)
 
 struct
 {
@@ -377,18 +374,18 @@ static void *_client( void *args )
 {
     struct nwClientParams *params = ( struct nwClientParams * )args;
     int readDataLen;
-    uint8_t maxTransitPacket[MAX_IP_PACKET_LEN];
+    uint8_t maxTransitPacket[TRANSFER_SIZE];
 
     while ( 1 )
     {
-        readDataLen = read( params->listenHandle, maxTransitPacket, MAX_IP_PACKET_LEN );
+        readDataLen = read( params->listenHandle, maxTransitPacket, TRANSFER_SIZE );
 
         if ( ( readDataLen <= 0 ) || ( write( params->portNo, maxTransitPacket, readDataLen ) < 0 ) )
         {
             /* This port went away, so remove it */
             if ( options.verbose )
             {
-                fprintf( stdout, "Connection dropped\n" );
+                fprintf( stdout, "Connection dropped" EOL );
             }
 
             close( params->portNo );
@@ -433,7 +430,7 @@ static void *_listenTask( void *arg )
         if ( options.verbose )
         {
             inet_ntop( AF_INET, &cli_addr.sin_addr, s, 99 );
-            fprintf( stdout, "New connection from %s\n", s );
+            fprintf( stdout, "New connection from %s" EOL, s );
         }
 
         /* We got a new connection - spawn a thread to handle it */
@@ -482,7 +479,7 @@ static BOOL _makeServerTask( void )
 
     if ( sockfd < 0 )
     {
-        fprintf( stderr, "Error opening socket\n" );
+        fprintf( stderr, "Error opening socket" EOL );
         return FALSE;
     }
 
@@ -493,14 +490,14 @@ static BOOL _makeServerTask( void )
 
     if ( bind( sockfd, ( struct sockaddr * ) &serv_addr, sizeof( serv_addr ) ) < 0 )
     {
-        fprintf( stderr, "Error on binding\n" );
+        fprintf( stderr, "Error on binding" EOL );
         return FALSE;
     }
 
     /* We have the listening socket - spawn a thread to handle it */
     if ( pthread_create( &( _r.ipThread ), NULL, &_listenTask, &sockfd ) )
     {
-        fprintf( stderr, "Failed to create listening thread\n" );
+        fprintf( stderr, "Failed to create listening thread" EOL );
         return FALSE;
     }
 
@@ -540,12 +537,12 @@ void _handleException( struct ITMDecoder *i, struct ITMPacket *p )
     if ( exceptionNumber < 16 )
     {
         /* This is a system based exception */
-        opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%ld,%s,%s\n", HWEVENT_EXCEPTION, eventdifftS, exEvent[eventType & 0x03], exNames[exceptionNumber & 0x0F] );
+        opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%ld,%s,%s" EOL, HWEVENT_EXCEPTION, eventdifftS, exEvent[eventType & 0x03], exNames[exceptionNumber & 0x0F] );
     }
     else
     {
         /* This is a CPU defined exception */
-        opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%ld,%s,External,%d\n", HWEVENT_EXCEPTION, eventdifftS, exEvent[eventType & 0x03], exceptionNumber - 16 );
+        opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%ld,%s,External,%d" EOL, HWEVENT_EXCEPTION, eventdifftS, exEvent[eventType & 0x03], exceptionNumber - 16 );
     }
 
     write( _r.c[HW_CHANNEL].handle, outputString, opLen );
@@ -567,7 +564,7 @@ void _handleDWTEvent( struct ITMDecoder *i, struct ITMPacket *p )
     {
         if ( event & ( 1 << i ) )
         {
-            opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%ld,%s\n", HWEVENT_DWT, eventdifftS, evName[event] );
+            opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%ld,%s" EOL, HWEVENT_DWT, eventdifftS, evName[event] );
             write( _r.c[HW_CHANNEL].handle, outputString, opLen );
         }
     }
@@ -588,12 +585,12 @@ void _handlePCSample( struct ITMDecoder *i, struct ITMPacket *p )
     if ( p->len == 1 )
     {
         /* This is a sleep packet */
-        opLen = snprintf( outputString, ( MAX_STRING_LENGTH - 1 ), "%d,%ld,**SLEEP**\n", HWEVENT_PCSample, eventdifftS );
+        opLen = snprintf( outputString, ( MAX_STRING_LENGTH - 1 ), "%d,%ld,**SLEEP**" EOL, HWEVENT_PCSample, eventdifftS );
     }
     else
     {
         uint32_t pc = ( p->d[3] << 24 ) | ( p->d[2] << 16 ) | ( p->d[1] << 8 ) | ( p->d[0] );
-        opLen = snprintf( outputString, ( MAX_STRING_LENGTH - 1 ), "%d,%ld,0x%08x\n", HWEVENT_PCSample, eventdifftS, pc );
+        opLen = snprintf( outputString, ( MAX_STRING_LENGTH - 1 ), "%d,%ld,0x%08x" EOL, HWEVENT_PCSample, eventdifftS, pc );
     }
 
     write( _r.c[HW_CHANNEL].handle, outputString, opLen );
@@ -629,7 +626,7 @@ void _handleDataRWWP( struct ITMDecoder *i, struct ITMPacket *p )
             break;
     }
 
-    opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%ld,%d,%s,0x%x\n", HWEVENT_RWWT, eventdifftS, comp, isWrite ? "Write" : "Read", data );
+    opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%ld,%d,%s,0x%x" EOL, HWEVENT_RWWT, eventdifftS, comp, isWrite ? "Write" : "Read", data );
     write( _r.c[HW_CHANNEL].handle, outputString, opLen );
 }
 // ====================================================================================================
@@ -647,7 +644,7 @@ void _handleDataAccessWP( struct ITMDecoder *i, struct ITMPacket *p )
     uint64_t eventdifftS = ts - _r.lastHWExceptionTS;
 
     _r.lastHWExceptionTS = ts;
-    opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%ld,%d,0x%08x\n", HWEVENT_AWP, eventdifftS, comp, data );
+    opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%ld,%d,0x%08x" EOL, HWEVENT_AWP, eventdifftS, comp, data );
     write( _r.c[HW_CHANNEL].handle, outputString, opLen );
 }
 // ====================================================================================================
@@ -664,7 +661,7 @@ void _handleDataOffsetWP( struct ITMDecoder *i, struct ITMPacket *p )
     uint64_t eventdifftS = ts - _r.lastHWExceptionTS;
 
     _r.lastHWExceptionTS = ts;
-    opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%ld,%d,0x%04x\n", HWEVENT_OFS, eventdifftS, comp, offset );
+    opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%ld,%d,0x%04x" EOL, HWEVENT_OFS, eventdifftS, comp, offset );
     write( _r.c[HW_CHANNEL].handle, outputString, opLen );
 }
 // ====================================================================================================
@@ -741,11 +738,11 @@ void _handleXTN( struct ITMDecoder *i )
 
     if ( ITMGetPacket( i, &p ) )
     {
-        printf( "XTN len=%d (%02x)\n", p.len, p.d[0] );
+        printf( "XTN len=%d (%02x)" EOL, p.len, p.d[0] );
     }
     else
     {
-        printf( "GET FAILED\n" );
+        printf( "GET FAILED" EOL );
     }
 }
 // ====================================================================================================
@@ -791,7 +788,7 @@ void _handleTS( struct ITMDecoder *i )
         i->timeStamp += stamp;
     }
 
-    opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%d,%" PRIu64 "\n", HWEVENT_TS, i->timeStatus, i->timeStamp );
+    opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%d,%" PRIu64 EOL, HWEVENT_TS, i->timeStatus, i->timeStamp );
     write( _r.c[HW_CHANNEL].handle, outputString, opLen );
 }
 // ====================================================================================================
@@ -810,7 +807,7 @@ void _itmPumpProcess( char c )
         case ITM_EV_UNSYNCED:
             if ( options.verbose )
             {
-                fprintf( stdout, "ITM Lost Sync (%d)\n", ITMDecoderGetStats( &_r.i )->lostSyncCount );
+                fprintf( stdout, "ITM Lost Sync (%d)" EOL, ITMDecoderGetStats( &_r.i )->lostSyncCount );
             }
 
             break;
@@ -819,7 +816,7 @@ void _itmPumpProcess( char c )
         case ITM_EV_SYNCED:
             if ( options.verbose )
             {
-                fprintf( stdout, "ITM In Sync (%d)\n", ITMDecoderGetStats( &_r.i )->syncCount );
+                fprintf( stdout, "ITM In Sync (%d)" EOL, ITMDecoderGetStats( &_r.i )->syncCount );
             }
 
             break;
@@ -828,7 +825,7 @@ void _itmPumpProcess( char c )
         case ITM_EV_OVERFLOW:
             if ( options.verbose )
             {
-                fprintf( stdout, "ITM Overflow (%d)\n", ITMDecoderGetStats( &_r.i )->overflow );
+                fprintf( stdout, "ITM Overflow (%d)" EOL, ITMDecoderGetStats( &_r.i )->overflow );
             }
 
             break;
@@ -837,7 +834,7 @@ void _itmPumpProcess( char c )
         case ITM_EV_ERROR:
             if ( options.verbose )
             {
-                fprintf( stdout, "ITM Error\n" );
+                fprintf( stdout, "ITM Error" EOL );
             }
 
             break;
@@ -884,7 +881,7 @@ void _protocolPump( uint8_t c )
             case TPIU_EV_NEWSYNC:
                 if ( options.verbose )
                 {
-                    fprintf( stdout, "TPIU In Sync (%d)\n", TPIUDecoderGetStats( &_r.t )->syncCount );
+                    fprintf( stdout, "TPIU In Sync (%d)" EOL, TPIUDecoderGetStats( &_r.t )->syncCount );
                 }
 
             // This fall-through is deliberate
@@ -900,7 +897,7 @@ void _protocolPump( uint8_t c )
 
             // ------------------------------------
             case TPIU_EV_UNSYNCED:
-                fprintf( stdout, "TPIU Lost Sync (%d)\n", TPIUDecoderGetStats( &_r.t )->lostSync );
+                fprintf( stdout, "TPIU Lost Sync (%d)" EOL, TPIUDecoderGetStats( &_r.t )->lostSync );
                 ITMDecoderForceSync( &_r.i, FALSE );
                 break;
 
@@ -908,7 +905,7 @@ void _protocolPump( uint8_t c )
             case TPIU_EV_RXEDPACKET:
                 if ( !TPIUGetPacket( &_r.t, &_r.p ) )
                 {
-                    fprintf( stderr, "TPIUGetPacket fell over\n" );
+                    fprintf( stderr, "TPIUGetPacket fell over" EOL );
                 }
 
                 for ( uint32_t g = 0; g < _r.p.len; g++ )
@@ -923,7 +920,7 @@ void _protocolPump( uint8_t c )
                     {
                         if ( options.verbose )
                         {
-                            fprintf( stdout, "Unknown TPIU channel %02x\n", _r.p.packet[g].s );
+                            fprintf( stdout, "Unknown TPIU channel %02x" EOL, _r.p.packet[g].s );
                         }
                     }
                 }
@@ -932,7 +929,7 @@ void _protocolPump( uint8_t c )
 
             // ------------------------------------
             case TPIU_EV_ERROR:
-                fprintf( stderr, "****ERROR****\n" );
+                fprintf( stderr, "****ERROR****" EOL );
                 break;
                 // ------------------------------------
         }
@@ -953,21 +950,21 @@ void intHandler( int dummy )
 void _printHelp( char *progName )
 
 {
-    fprintf( stdout, "Useage: %s <dhnv> <b basedir> <p port> <s speed>\n", progName );
-    fprintf( stdout, "        a: Set address for SEGGER JLink connection (default %s)\n", options.seggerHost );
-    fprintf( stdout, "        b: <basedir> for channels\n" );
-    fprintf( stdout, "        c: <Number>,<Name>,<Format> of channel to populate (repeat per channel)\n" );
-    fprintf( stdout, "        g: Connect using SEGGER JLink on specified port (normally 2332)\n" );
-    fprintf( stdout, "        h: This help\n" );
-    fprintf( stdout, "        f: <filename> Take input from specified file\n" );
-    fprintf( stdout, "        i: <channel> Set ITM Channel in TPIU decode (defaults to 1)\n" );
+    fprintf( stdout, "Useage: %s <dhnv> <b basedir> <p port> <s speed>" EOL, progName );
+    fprintf( stdout, "        a: Set address for SEGGER JLink connection (default %s)" EOL, options.seggerHost );
+    fprintf( stdout, "        b: <basedir> for channels" EOL );
+    fprintf( stdout, "        c: <Number>,<Name>,<Format> of channel to populate (repeat per channel)" EOL );
+    fprintf( stdout, "        g: Connect using SEGGER JLink on specified port (normally 2332)" EOL );
+    fprintf( stdout, "        h: This help" EOL );
+    fprintf( stdout, "        f: <filename> Take input from specified file" EOL );
+    fprintf( stdout, "        i: <channel> Set ITM Channel in TPIU decode (defaults to 1)" EOL );
 #ifdef INCLUDE_FPGA_SUPPORT
-    fprintf( stdout, "        o: Use orbuculum custom interface\n" );
+    fprintf( stdout, "        o: Use orbuculum custom interface" EOL );
 #endif
-    fprintf( stdout, "        p: <serialPort> to use\n" );
-    fprintf( stdout, "        s: <serialSpeed> to use\n" );
-    fprintf( stdout, "        t: Use TPIU decoder\n" );
-    fprintf( stdout, "        v: Verbose mode\n" );
+    fprintf( stdout, "        p: <serialPort> to use" EOL );
+    fprintf( stdout, "        s: <serialSpeed> to use" EOL );
+    fprintf( stdout, "        t: Use TPIU decoder" EOL );
+    fprintf( stdout, "        v: Verbose mode" EOL );
 }
 // ====================================================================================================
 int _processOptions( int argc, char *argv[] )
@@ -999,12 +996,15 @@ int _processOptions( int argc, char *argv[] )
 #ifdef INCLUDE_FPGA_SUPPORT
 
             case 'o':
+                // Generally you need TPIU for orbtrace, but allow it to be toggled
+                options.useTPIU = !options.useTPIU;
                 options.orbtrace = TRUE;
                 break;
 #endif
 
             case 't':
-                options.useTPIU = TRUE;
+                // Make this a toggle option so it can be switched off if it's on
+                options.useTPIU = !options.useTPIU;
                 break;
 
             case 'i':
@@ -1037,7 +1037,7 @@ int _processOptions( int argc, char *argv[] )
 
                 if ( chan >= NUM_CHANNELS )
                 {
-                    fprintf( stderr, "Channel index out of range\n" );
+                    fprintf( stderr, "Channel index out of range" EOL );
                     return FALSE;
                 }
 
@@ -1049,7 +1049,7 @@ int _processOptions( int argc, char *argv[] )
 
                 if ( !*chanIndex )
                 {
-                    fprintf( stderr, "No filename for channel %d\n", chan );
+                    fprintf( stderr, "No filename for channel %d" EOL, chan );
                     return FALSE;
                 }
 
@@ -1063,7 +1063,7 @@ int _processOptions( int argc, char *argv[] )
 
                 if ( !*chanIndex )
                 {
-                    fprintf( stderr, "No output format for channel %d\n", chan );
+                    fprintf( stderr, "No output format for channel %d" EOL, chan );
                     return FALSE;
                 }
 
@@ -1079,18 +1079,18 @@ int _processOptions( int argc, char *argv[] )
             case '?':
                 if ( optopt == 'b' )
                 {
-                    fprintf ( stderr, "Option '%c' requires an argument.\n", optopt );
+                    fprintf ( stderr, "Option '%c' requires an argument." EOL, optopt );
                 }
                 else if ( !isprint ( optopt ) )
                 {
-                    fprintf ( stderr, "Unknown option character `\\x%x'.\n", optopt );
+                    fprintf ( stderr, "Unknown option character `\\x%x'." EOL, optopt );
                 }
 
                 return FALSE;
 
             // ------------------------------------
             default:
-                printf( "%c\n", c );
+                printf( "%c" EOL, c );
                 return FALSE;
                 // ------------------------------------
         }
@@ -1098,69 +1098,69 @@ int _processOptions( int argc, char *argv[] )
     /* Now perform sanity checks.... */
     if ( ( options.useTPIU ) && ( !options.tpiuITMChannel ) )
     {
-        fprintf( stderr, "TPIU set for use but no channel set for ITM output\n" );
+        fprintf( stderr, "TPIU set for use but no channel set for ITM output" EOL );
         return FALSE;
     }
 
     /* ... and dump the config if we're being verbose */
     if ( options.verbose )
     {
-        fprintf( stdout, "Orbuculum V" VERSION " (Git %08X %s, Built " BUILD_DATE ")\n", GIT_HASH, ( GIT_DIRTY ? "Dirty" : "Clean" ) );
+        fprintf( stdout, "Orbuculum V" VERSION " (Git %08X %s, Built " BUILD_DATE ")" EOL, GIT_HASH, ( GIT_DIRTY ? "Dirty" : "Clean" ) );
 
-        fprintf( stdout, "Verbose   : TRUE\n" );
-        fprintf( stdout, "BasePath  : %s\n", options.chanPath );
+        fprintf( stdout, "Verbose   : TRUE" EOL );
+        fprintf( stdout, "BasePath  : %s" EOL, options.chanPath );
 
         if ( options.port )
         {
-            fprintf( stdout, "Serial Port: %s\nSerial Speed: %d\n", options.port, options.speed );
+            fprintf( stdout, "Serial Port: %s" EOL "Serial Speed: %d" EOL, options.port, options.speed );
         }
 
         if ( options.seggerPort )
         {
-            fprintf( stdout, "SEGGER H/P: %s:%d\n", options.seggerHost, options.seggerPort );
+            fprintf( stdout, "SEGGER H/P: %s:%d" EOL, options.seggerHost, options.seggerPort );
         }
 
 #ifdef INCLUDE_FPGA_SUPPORT
 
         if ( options.orbtrace )
         {
-            fprintf( stdout, "Orbtrace: TRUE\n" );
+            fprintf( stdout, "Orbtrace: TRUE" EOL );
         }
 
 #endif
 
         if ( options.useTPIU )
         {
-            fprintf( stdout, "Using TPIU: TRUE (ITM on channel %d)\n", options.tpiuITMChannel );
+            fprintf( stdout, "Using TPIU: TRUE (ITM on channel %d)" EOL, options.tpiuITMChannel );
         }
 
         if ( options.file )
         {
-            fprintf( stdout, "Input File: %s\n", options.file );
+            fprintf( stdout, "Input File: %s" EOL, options.file );
         }
 
-        fprintf( stdout, "Channels  :\n" );
+        fprintf( stdout, "Channels  :" EOL );
 
         for ( int g = 0; g < NUM_CHANNELS; g++ )
         {
             if ( options.channel[g].chanName )
             {
-                fprintf( stdout, "        %02d [%s] [%s]\n", g, GenericsEscape( options.channel[g].presFormat ), options.channel[g].chanName );
+                fprintf( stdout, "        %02d [%s] [%s]" EOL, g, GenericsEscape( options.channel[g].presFormat ), options.channel[g].chanName );
             }
         }
 
-        fprintf( stdout, "        HW [Predefined] [" HWFIFO_NAME "]\n" );
+        fprintf( stdout, "        HW [Predefined] [" HWFIFO_NAME "]" EOL );
     }
 
     if ( ( options.file ) && ( ( options.port ) || ( options.seggerPort ) ) )
     {
-        fprintf( stdout, "Cannot specify file and port or Segger at same time\n" );
+        fprintf( stdout, "Cannot specify file and port or Segger at same time" EOL );
         return FALSE;
     }
 
     if ( ( options.port ) && ( options.seggerPort ) )
     {
-        fprintf( stdout, "Cannot specify port and Segger at same time\n" );
+        fprintf( stdout, "Cannot specify port and Segger at same time" EOL );
         return FALSE;
     }
 
@@ -1180,7 +1180,7 @@ int usbFeeder( void )
     {
         if ( libusb_init( NULL ) < 0 )
         {
-            fprintf( stderr, "Failed to initalise USB interface\n" );
+            fprintf( stderr, "Failed to initalise USB interface" EOL );
             return ( -1 );
         }
 
@@ -1198,7 +1198,7 @@ int usbFeeder( void )
 
         if ( libusb_claim_interface ( handle, INTERFACE ) < 0 )
         {
-            fprintf( stderr, "Failed to claim interface\n" );
+            fprintf( stderr, "Failed to claim interface" EOL );
             return 0;
         }
 
@@ -1225,7 +1225,7 @@ int seggerFeeder( void )
     int sockfd;
     struct sockaddr_in serv_addr;
     struct hostent *server;
-    uint8_t cbw[MAX_IP_PACKET_LEN];
+    uint8_t cbw[TRANSFER_SIZE];
 
     ssize_t t;
     int flag = 1;
@@ -1235,7 +1235,7 @@ int seggerFeeder( void )
 
     if ( !server )
     {
-        fprintf( stderr, "Cannot find host\n" );
+        fprintf( stderr, "Cannot find host" EOL );
         return -1;
     }
 
@@ -1252,7 +1252,7 @@ int seggerFeeder( void )
 
         if ( sockfd < 0 )
         {
-            fprintf( stderr, "Error creating socket\n" );
+            fprintf( stderr, "Error creating socket" EOL );
             return -1;
         }
 
@@ -1263,31 +1263,28 @@ int seggerFeeder( void )
 
         if ( options.verbose )
         {
-            fprintf( stdout, "Established Segger Link\n" );
+            fprintf( stdout, "Established Segger Link" EOL );
         }
 
         TPIUDecoderForceSync( &_r.t, 0 );
         ITMDecoderForceSync( &_r.i, TRUE );
 
-        while ( ( t = read( sockfd, cbw, MAX_IP_PACKET_LEN ) ) > 0 )
+        while ( ( t = read( sockfd, cbw, TRANSFER_SIZE ) ) > 0 )
         {
             _sendToClients( t, cbw );
             uint8_t *c = cbw;
 
             while ( t-- )
             {
-                //          printf("%02x ",*c);
                 _protocolPump( *c++ );
             }
-
-            //      printf("\n\r");
         }
 
         close( sockfd );
 
         if ( options.verbose )
         {
-            fprintf( stdout, "Lost Segger Link\n" );
+            fprintf( stdout, "Lost Segger Link" EOL );
         }
     }
 
@@ -1308,7 +1305,7 @@ int serialFeeder( void )
         {
             if ( options.verbose )
             {
-                fprintf( stderr, "Can't open serial port\n" );
+                fprintf( stderr, "Can't open serial port" EOL );
             }
 
             usleep( 500000 );
@@ -1316,7 +1313,7 @@ int serialFeeder( void )
 
         if ( options.verbose )
         {
-            fprintf( stderr, "Port opened\n" );
+            fprintf( stderr, "Port opened" EOL );
         }
 
         if ( tcgetattr( f, &settings ) < 0 )
@@ -1341,7 +1338,7 @@ int serialFeeder( void )
 
         if ( tcsetattr( f, TCSANOW, &settings ) < 0 )
         {
-            fprintf( stderr, "Unsupported baudrate\n" );
+            fprintf( stderr, "Unsupported baudrate" EOL );
             exit( -3 );
         }
 
@@ -1360,7 +1357,7 @@ int serialFeeder( void )
 
         if ( options.verbose )
         {
-            fprintf( stderr, "Read failed\n" );
+            fprintf( stderr, "Read failed" EOL );
         }
 
         close( f );
@@ -1372,7 +1369,7 @@ int fpgaFeeder( void )
 
 {
     int f, t;
-    uint8_t cbw[FTDI_TRANSFER_SIZE];
+    uint8_t cbw[TRANSFER_SIZE];
     uint8_t *c;
 
     _r.ftdi = ftdi_new();
@@ -1388,7 +1385,7 @@ int fpgaFeeder( void )
             {
                 if ( options.verbose )
                 {
-                    fprintf( stderr, "Cannot open device (%s)\n", ftdi_get_error_string( _r.ftdi ) );
+                    fprintf( stderr, "Cannot open device (%s)" EOL, ftdi_get_error_string( _r.ftdi ) );
                 }
 
                 usleep( 50000 );
@@ -1398,35 +1395,30 @@ int fpgaFeeder( void )
 
         if ( options.verbose )
         {
-            fprintf( stderr, "Port opened\n" );
+            fprintf( stderr, "Port opened" EOL );
         }
 
         f = ftdi_set_baudrate( _r.ftdi, options.speed );
 
         if ( f < 0 )
         {
-            fprintf( stderr, "Cannot set baudate %d %d (%s)\n", f, options.speed, ftdi_get_error_string( _r.ftdi ) );
+            fprintf( stderr, "Cannot set baudate %d %d (%s)" EOL, f, options.speed, ftdi_get_error_string( _r.ftdi ) );
             return -2;
         }
 
         ftdi_set_line_property( _r.ftdi, 8, STOP_BIT_1, NONE );
 
-        ftdi_read_data_set_chunksize( _r.ftdi, FTDI_TRANSFER_SIZE );
+        ftdi_read_data_set_chunksize( _r.ftdi, TRANSFER_SIZE );
         ftdi_setdtr( _r.ftdi, TRUE );
 
-        while ( ( t = ftdi_read_data( _r.ftdi, cbw, FTDI_TRANSFER_SIZE ) ) >= 0 )
+        while ( ( t = ftdi_read_data( _r.ftdi, cbw, TRANSFER_SIZE ) ) >= 0 )
         {
             if ( !t )
             {
                 continue;
             }
 
-            /*      printf("RXED %4d ",t);
-            for (uint32_t i=0; i<t; i++)
-              printf("%02x ",cbw[i]);
-
-            printf("\n\r");
-            */
+            _sendToClients( t, cbw );
             c = cbw;
 
             while ( t-- )
@@ -1439,7 +1431,7 @@ int fpgaFeeder( void )
 
         if ( options.verbose )
         {
-            fprintf( stderr, "Read failed\n" );
+            fprintf( stderr, "Read failed" EOL );
         }
 
         ftdi_usb_close( _r.ftdi );
@@ -1475,7 +1467,7 @@ int fileFeeder( void )
     {
         if ( options.verbose )
         {
-            fprintf( stderr, "Can't open file %s\n", options.file );
+            fprintf( stderr, "Can't open file %s" EOL, options.file );
         }
 
         exit( -4 );
@@ -1483,7 +1475,7 @@ int fileFeeder( void )
 
     if ( options.verbose )
     {
-        fprintf( stdout, "Reading from file\n" );
+        fprintf( stdout, "Reading from file" EOL );
     }
 
     while ( ( t = read( f, cbw, TRANSFER_SIZE ) ) > 0 )
@@ -1499,7 +1491,7 @@ int fileFeeder( void )
 
     if ( options.verbose )
     {
-        fprintf( stdout, "File read\n" );
+        fprintf( stdout, "File read" EOL );
     }
 
     close( f );
@@ -1525,13 +1517,13 @@ int main( int argc, char *argv[] )
 
     if ( !_makeFifoTasks() )
     {
-        fprintf( stderr, "Failed to make channel devices\n" );
+        fprintf( stderr, "Failed to make channel devices" EOL );
         exit( -1 );
     }
 
     if ( !_makeServerTask() )
     {
-        fprintf( stderr, "Failed to make network server\n" );
+        fprintf( stderr, "Failed to make network server" EOL );
         exit( -1 );
     }
 

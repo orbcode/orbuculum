@@ -283,6 +283,23 @@ Specific command line options of note are;
     
  `-v`: Verbose mode.
 
+
+Using orbuculum with Other info Sources
+=======================================
+
+As Karl Palsson pointed out in Issue #4 on github, all of the support tools just need a stream
+of 'clean' trace data. Normally that is provided by the network connection that orbuculum exports, but you
+can also use something like netcat to generate the stream for orbuculum or its clients.
+For example, from a file that is written to via something like openocd;
+
+    > tail -f swo.dump.log | nc -v -v -l 9999 -k
+
+and then;
+
+    > ./ofiles/orbuculum -g 9999 -b md/ -c 0,text,"%c"
+
+
+
 Orbcat
 ======
 
