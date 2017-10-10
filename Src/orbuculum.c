@@ -1478,9 +1478,17 @@ int fileFeeder( void )
         fprintf( stdout, "Reading from file" EOL );
     }
 
-    while ( ( t = read( f, cbw, TRANSFER_SIZE ) ) > 0 )
+    while ( ( t = read( f, cbw, TRANSFER_SIZE ) ) >=0 )
     {
-        _sendToClients( t, cbw );
+
+      if (!t)
+	{
+	  // Just spin for a while to avoid clogging the CPU
+	  usleep(100000);
+	  continue;
+	}
+      
+      _sendToClients( t, cbw );
         unsigned char *c = cbw;
 
         while ( t-- )
@@ -1491,7 +1499,7 @@ int fileFeeder( void )
 
     if ( options.verbose )
     {
-        fprintf( stdout, "File read" EOL );
+        fprintf( stderr, "File read error" EOL );
     }
 
     close( f );
