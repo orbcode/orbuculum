@@ -396,7 +396,8 @@ void _protocolPump( uint8_t c )
     {
         switch ( TPIUPump( &_r.t, c ) )
         {
-            case TPIU_EV_SYNCED:
+            case TPIU_EV_NEWSYNC:
+	    case TPIU_EV_SYNCED:
                 ITMDecoderForceSync( &_r.i, TRUE );
                 break;
 
@@ -628,6 +629,7 @@ int main( int argc, char *argv[] )
         {
             _protocolPump( *c++ );
         }
+	fflush(stdout);
     }
 
     if ( options.verbose )

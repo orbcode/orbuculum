@@ -131,7 +131,8 @@ void _protocolPump( uint8_t c )
         switch ( TPIUPump( &_r.t, c ) )
         {
             // ------------------------------------
-            case TPIU_EV_SYNCED:
+            case TPIU_EV_NEWSYNC:
+	    case TPIU_EV_SYNCED:
                 ITMDecoderForceSync( &_r.i, TRUE );
                 break;
 
