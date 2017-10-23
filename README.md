@@ -9,13 +9,11 @@ You can find information about using this suite on the Embedded Rambling
 blog at http://shadetail.com/.
 
 *This program is in heavy development. Check back frequently for new versions 
-with additional functionality. The current status (5th Oct) is that 
+with additional functionality. The current status (23rd Oct) is that 
 parallel trace hardware using a iCE40HX-8K breakout board and the icestorm tools
 has just been integrated. A side effect of that is that
 ft2232 drivers have been integrated into orbuculum which will give you up to 12Mbps SWO
-sampling. The software runs on both Linux and OSX.  Orbtop has recently
-received even more special love and it seems robust on all tested workloads,
-and now can produce graphs too.*
+sampling. The software runs on both Linux and OSX.
 
 I would not say the whole suite is throughly tested yet...that will
 come when full functionality has been completed. For now the 'happy
@@ -263,7 +261,7 @@ Specific command line options of note are;
 
 `-h`: Brief help.
 
-`-f [filename]`: Take input from specified file.
+`-f [filename]`: Take input from specified file. (CTRL-C to abort from this)
 
  `-i [channel]`: Set Channel for ITM in TPIU decode (defaults to 1). Note that the TPIU must
      be in use for this to make sense.  If you call the GenericsConfigureTracing
@@ -298,7 +296,8 @@ and then;
 
     > ./ofiles/orbuculum -g 9999 -b md/ -c 0,text,"%c"
 
-
+However, that's probably over-complicated now...the orbuculum -f option supports ongoing streaming from
+a file directly.  This information is just left here to show the flexibilities you have got available.
 
 Orbcat
 ======
