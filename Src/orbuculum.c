@@ -1196,15 +1196,20 @@ int usbFeeder( void )
             continue;
         }
 
-        if ( libusb_claim_interface ( handle, INTERFACE ) < 0 )
+        if (libusb_claim_interface ( handle, INTERFACE ) < 0 )
         {
             fprintf( stderr, "Failed to claim interface" EOL );
             return 0;
         }
 
-        while ( 0 == libusb_bulk_transfer( handle, ENDPOINT, cbw, TRANSFER_SIZE, &size, 10 ) )
+	int32_t r;
+	
+        while (TRUE)
         {
-            _sendToClients( size, cbw );
+	  r=libusb_bulk_transfer( handle, ENDPOINT, cbw, TRANSFER_SIZE, &size, 10 );
+	  if ((r<0) && (r!=LIBUSB_ERROR_TIMEOUT))
+	    break;
+	  _sendToClients( size, cbw );
             unsigned char *c = cbw;
 
             while ( size-- )

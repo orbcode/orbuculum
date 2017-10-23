@@ -143,11 +143,15 @@ define prepareSWD
     set $useMan = $arg3
   end
 
+  # Make sure we can get to everything
+  set *0xe0000fb0 = 0xc5acce55
+  set *0xe0041fb0 = 0xc5acce55  
+
   # Enable DEMCR TRCENA
   set *0xE000EDFC=(1<<24)
   
   # Output bits at speed dependent on system clock speed
-  set *0xE0040010 = ($clockspeed/$speed)-1
+  set *0xE0040010 = (($clockspeed/($speed))-1)
 
   if ($useMan==0)
     # Use Async mode pin protocol
@@ -161,13 +165,12 @@ define prepareSWD
     # Use TPIU formatter and flush
     set *0xE0040304 = 0x102
   else
-    set *0xE0040304 = 0x0
+    set *0xE0040304 = 0x100
   end
 
   # Flush all initial configuration
   set *0xe000edfc |= 0x1000000
   set *0xe0001000 = 0
-  set *0xe0000fb0 = 0xc5acce55
   set *0xe0000e80 = 0
 end
 document prepareSWD
