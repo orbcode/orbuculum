@@ -68,7 +68,7 @@
 #define INTERRUPT 0xFFFFFFFD                 /* Special memory address interrupt origin */
 #define CUTOFF      10                       /* Default cutoff at 0.1% */
 #define SERVER_PORT 3443                     /* Server port definition */
-#define MAX_IP_PACKET_LEN (1500)             /* Maximum packet we might receive */
+#define TRANSFER_SIZE (4096)                 /* Maximum packet we might receive */
 #define TOP_UPDATE_INTERVAL (1000LL)         /* Interval between each on screen update */
 
 struct lineInfo
@@ -981,7 +981,7 @@ int main( int argc, char *argv[] )
     int sockfd;
     struct sockaddr_in serv_addr;
     struct hostent *server;
-    uint8_t cbw[MAX_IP_PACKET_LEN];
+    uint8_t cbw[TRANSFER_SIZE];
     uint64_t lastTime;
 
     ssize_t t;
@@ -1035,7 +1035,7 @@ int main( int argc, char *argv[] )
         return -1;
     }
 
-    while ( ( t = read( sockfd, cbw, MAX_IP_PACKET_LEN ) ) > 0 )
+    while ( ( t = read( sockfd, cbw, TRANSFER_SIZE ) ) > 0 )
     {
         uint8_t *c = cbw;
 
