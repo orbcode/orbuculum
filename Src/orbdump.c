@@ -52,7 +52,7 @@
 #include "itmDecoder.h"
 
 #define SERVER_PORT 3443                     /* Server port definition */
-#define MAX_IP_PACKET_LEN (1500)             /* Maximum packet we might receive */
+#define TRANSFER_SIZE (4096)                 /* Maximum packet we might receive */
 #define MAX_STRING_LENGTH (256)              /* Maximum length that will be output from a fifo for a single event */
 
 #define DEFAULT_OUTFILE "/dev/stdout"
@@ -300,7 +300,7 @@ int main( int argc, char *argv[] )
     int sockfd;
     struct sockaddr_in serv_addr;
     struct hostent *server;
-    uint8_t cbw[MAX_IP_PACKET_LEN];
+    uint8_t cbw[TRANSFER_SIZE];
     uint64_t firstTime = 0;
     size_t octetsRxed = 0;
     FILE *opFile;
@@ -366,7 +366,7 @@ int main( int argc, char *argv[] )
     }
 
     /* Start the process of collecting the data */
-    while ( ( readLength = read( sockfd, cbw, MAX_IP_PACKET_LEN ) ) > 0 )
+    while ( ( readLength = read( sockfd, cbw, TRANSFER_SIZE ) ) > 0 )
     {
       if ((options.timelen) && ( ( firstTime != 0 ) && ( ( _timestamp() - firstTime ) > options.timelen ) ))
         {

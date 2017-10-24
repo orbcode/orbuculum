@@ -70,7 +70,7 @@
 #define EOL           "\n\r"
 
 #define SERVER_PORT 3443                     /* Server port definition */
-#define MAX_IP_PACKET_LEN (1500)             /* Maximum packet we might receive */
+#define TRANSFER_SIZE (4096)                 /* Maximum packet we might receive */
 #define TOP_UPDATE_INTERVAL (1000LL)         /* Interval between each on screen update */
 
 /* Interface to/from target */
@@ -138,7 +138,6 @@ struct                                       /* Record for options, either defau
 
 } options =
 {
-    .useTPIU = TRUE,
     .tpiuITMChannel = 1,
     .outfile = NULL,
     .lineDisaggregation = FALSE,
@@ -377,7 +376,7 @@ BOOL _lookup( struct nameEntryHash **n, uint32_t addr, asection *section )
         if ( addr == INTERRUPT )
         {
             ( *n ) = ( struct nameEntryHash * )malloc( sizeof( struct nameEntryHash ) );
-            ( *n )->filename = "";
+            ( *n )->filename = "None";
             ( *n )->function = "INTERRUPT";
             ( *n )->addr = addr;
             ( *n )->index = _r.nameCount++;
@@ -593,7 +592,7 @@ void _outputProfile( void )
 {
     _r.c = fopen( options.profile, "w" );
     fprintf( _r.c, "# callgrind format\n" );
-    fprintf( _r.c, "positions: line instr\nevent: uS : Real Time in uS\nevents: uS\n" );
+    fprintf( _r.c, "positions: line instr\nevent: Cyc : Processor Clock Cycles\nevents: Cyc\n" );
     /* Samples are in time order, so we can determine the extent of time.... */
     fprintf( _r.c, "summary: %ld\n", _r.calls[_r.cdCount - 1].tstamp - _r.calls[0].tstamp );
     fprintf( _r.c, "ob=%s\n", options.elffile );
@@ -960,7 +959,7 @@ int main( int argc, char *argv[] )
     int sockfd;
     struct sockaddr_in serv_addr;
     struct hostent *server;
-    uint8_t cbw[MAX_IP_PACKET_LEN];
+    uint8_t cbw[TRANSFER_SIZE];
     uint64_t lastTime;
 
     ssize_t t;
@@ -1014,7 +1013,7 @@ int main( int argc, char *argv[] )
         return -1;
     }
 
-    while ( ( t = read( sockfd, cbw, MAX_IP_PACKET_LEN ) ) > 0 )
+    while ( ( t = read( sockfd, cbw, TRANSFER_SIZE ) ) > 0 )
     {
         uint8_t *c = cbw;
 
@@ -1029,7 +1028,7 @@ int main( int argc, char *argv[] )
 
             if ( options.dotfile )
             {
-                //      _outputDot();
+	      //_outputDot();
             }
 
             if ( ( options.profile ) && ( _r.cdCount ) )

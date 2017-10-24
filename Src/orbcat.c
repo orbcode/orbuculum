@@ -18,6 +18,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <strings.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -55,7 +56,7 @@
 
 #define EOL           "\n\r"
 
-#define TRANSFER_SIZE (64)
+#define TRANSFER_SIZE (4096)
 #define NUM_CHANNELS  32
 #define HW_CHANNEL    (NUM_CHANNELS)      /* Make the hardware fifo on the end of the software ones */
 
@@ -79,9 +80,6 @@ struct
     char *server;
 
 } options = {.tpiuITMChannel = 1, .port = SERVER_PORT, .server = "localhost"};
-
-
-#define MAX_IP_PACKET_LEN (1500)
 
 struct
 {
@@ -572,6 +570,10 @@ int _processOptions( int argc, char *argv[] )
         {
             fprintf( stdout, "Using TPIU: TRUE (ITM on channel %d)" EOL, options.tpiuITMChannel );
         }
+	else
+	  {
+            fprintf( stdout, "Using TPIU: FALSE" EOL);
+	  }
 
         fprintf( stdout, "Channels  :" EOL );
 
