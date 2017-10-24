@@ -570,10 +570,10 @@ int _processOptions( int argc, char *argv[] )
         {
             fprintf( stdout, "Using TPIU: TRUE (ITM on channel %d)" EOL, options.tpiuITMChannel );
         }
-	else
-	  {
-            fprintf( stdout, "Using TPIU: FALSE" EOL);
-	  }
+        else
+        {
+            fprintf( stdout, "Using TPIU: FALSE" EOL );
+        }
 
         fprintf( stdout, "Channels  :" EOL );
 

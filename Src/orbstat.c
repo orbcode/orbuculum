@@ -617,6 +617,167 @@ void _outputProfile( void )
     fclose( _r.c );
 }
 // ====================================================================================================
+void _outputDot( void )
+
+/* Output call graph to dot file */
+
+{
+    FILE *c;
+    struct nameEntryHash *f = NULL, *t = NULL;
+
+    struct callVector
+    {
+        struct nameEntryHash *fromName;
+        struct nameEntryHash *toName;
+        uint32_t count;
+    };
+
+    struct callVector *call = NULL;
+    uint32_t callCount = 0;
+
+
+    int _addr_sort_dst_fn( const void *a, const void *b )
+
+    {
+        int32_t c = ( ( ( struct edge * )a )->dst ) - ( ( ( struct edge * )b )->dst );
+
+        if ( c )
+        {
+            return c;
+        }
+
+        return ( ( ( struct edge * )a )->src ) - ( ( ( struct edge * )b )->src );
+    }
+
+
+    int _calls_sort_src_fn( const void *a, const void *b )
+
+    {
+        int32_t c = ( ( ( struct callVector * )a )->fromName ) - ( ( ( struct callVector * )b )->fromName );
+
+        if ( c )
+        {
+            return c;
+        }
+
+        return ( ( ( struct callVector * )a )->toName ) - ( ( ( struct callVector * )b )->toName );
+    }
+
+    int _calls_sort_dst_fn( const void *a, const void *b )
+
+    {
+        int32_t c = ( ( ( struct callVector * )a )->toName ) - ( ( ( struct callVector * )b )->toName );
+
+        if ( c )
+        {
+            return c;
+        }
+
+        return ( ( ( struct callVector * )a )->fromName ) - ( ( ( struct callVector * )b )->fromName );
+    }
+
+    if ( !options.dotfile )
+    {
+        return;
+    }
+
+    /* Sort according to addresses visited. */
+    qsort( _r.calls, _r.cdCount, sizeof( struct edge ), _addr_sort_dst_fn );
+
+    /* Put in all the names of functions. There may be multiple addresses that match to a function, so crush them up */
+    _lookup( &f, _r.calls[0].src, _r.sect );
+    _lookup( &t, _r.calls[0].dst, _r.sect );
+
+    for ( uint32_t i = 0; i < _r.cdCount; i++ )
+    {
+        call = ( struct callVector * )realloc( call, sizeof( struct callVector ) * ( callCount + 1 ) );
+        call[callCount].fromName = f;
+        call[callCount].toName = t;
+        call[callCount].count = 0;
+
+        do
+        {
+            call[callCount].count++;
+            _lookup( &f, _r.calls[i].src, _r.sect );
+            _lookup( &t, _r.calls[i].dst, _r.sect );
+            i++;
+        }
+        while ( ( !strcmp( call[callCount].fromName->function, f->function ) ) && ( !strcmp( call[callCount].toName->function, t->function ) ) && ( i < _r.cdCount ) );
+        callCount++;
+    }
+
+    c = fopen( options.dotfile, "w" );
+    fprintf( c, "digraph calls\n{\n  overlap=false; splines=true; size=\"7.75,10.25\"; orientation=portrait; sep=0.1; nodesep=0.1;\n" );
+
+    /* firstly write out the nodes in each subgraph - dest side clustered */
+    qsort( call, callCount, sizeof( struct callVector ), _calls_sort_dst_fn );
+
+    for ( uint32_t x = 1; x < callCount; x++ )
+    {
+        fprintf( c, "  subgraph \"cluster_%s\"\n  {\n    label=\"%s\";\n    bgcolor=lightgrey;\n", call[x - 1].toName->filename, call[x - 1].toName->filename );
+
+        while ( x < callCount )
+        {
+            /* Now output each function in the subgraph */
+            fprintf( c, "    %s [style=filled, fillcolor=white];\n", call[x - 1].toName->function );
+
+            /* Spin forwards until the function name _or_ filename changes */
+            while ( ( x < callCount ) && ( call[x - 1].toName == call[x].toName ) )
+            {
+                x++;
+            }
+
+            if ( ( x >= callCount ) || ( strcmp( call[x - 1].toName->filename, call[x].toName->filename ) ) )
+            {
+                break;
+            }
+
+            x++;
+        }
+
+        fprintf( c, "  }\n\n" );
+    }
+
+    /* now write out the nodes in each subgraph - source side clustered */
+    qsort( call, callCount, sizeof( struct callVector ), _calls_sort_src_fn );
+
+    for ( uint32_t x = 1; x < callCount; x++ )
+    {
+        fprintf( c, "  subgraph \"cluster_%s\"\n  {\n    label=\"%s\";\n    bgcolor=lightgrey;\n", call[x - 1].fromName->filename, call[x - 1].fromName->filename );
+
+        while ( x < callCount )
+        {
+            /* Now output each function in the subgraph */
+            fprintf( c, "    %s [style=filled, fillcolor=white];\n", call[x - 1].fromName->function );
+
+            /* Spin forwards until the function name _or_ filename changes */
+            while ( ( x < callCount ) && ( call[x - 1].fromName == call[x].fromName ) )
+            {
+                x++;
+            }
+
+            if ( ( x >= callCount ) || ( strcmp( call[x - 1].fromName->filename, call[x].fromName->filename ) ) )
+            {
+                break;
+            }
+
+            x++;
+        }
+
+        fprintf( c, "  }\n\n" );
+    }
+
+    /* Now go through and label the arrows... */
+    for ( uint32_t x = 0; x < callCount; x++ )
+    {
+        fprintf( c, "    %s -> ", call[x].fromName->function );
+        fprintf( c, "%s [label=%d , weight=0.1;];\n", call[x].toName->function, call[x].count );
+    }
+
+    fprintf( c, "}\n" );
+    fclose( c );
+}
+// ====================================================================================================
 void _handlePCSample( struct ITMDecoder *i, struct ITMPacket *p )
 
 {
@@ -661,61 +822,49 @@ void _itmPumpProcess( char c )
         // ------------------------------------
         case ITM_EV_NONE:
             break;
-
         // ------------------------------------
         case ITM_EV_UNSYNCED:
             if ( options.verbose )
             {
                 fprintf( stdout, "ITM Lost Sync (%d)" EOL, ITMDecoderGetStats( &_r.i )->lostSyncCount );
             }
-
             break;
-
         // ------------------------------------
         case ITM_EV_SYNCED:
             if ( options.verbose )
             {
                 fprintf( stdout, "ITM In Sync (%d)" EOL, ITMDecoderGetStats( &_r.i )->syncCount );
             }
-
             break;
-
         // ------------------------------------
         case ITM_EV_OVERFLOW:
             if ( options.verbose )
             {
                 fprintf( stdout, "ITM Overflow (%d)" EOL, ITMDecoderGetStats( &_r.i )->overflow );
             }
-
             break;
-
         // ------------------------------------
         case ITM_EV_ERROR:
             if ( options.verbose )
             {
                 fprintf( stdout, "ITM Error" EOL );
             }
-
             break;
-
         // ------------------------------------
         case ITM_EV_TS_PACKET_RXED:
             break;
-
         // ------------------------------------
         case ITM_EV_SW_PACKET_RXED:
             _handleSW( &_r.i );
             break;
-
         // ------------------------------------
         case ITM_EV_HW_PACKET_RXED:
             _handleHW( &_r.i );
             break;
-
         // ------------------------------------
         case ITM_EV_XTN_PACKET_RXED:
             break;
-            // ------------------------------------
+        // ------------------------------------
     }
 }
 // ====================================================================================================
@@ -1026,14 +1175,17 @@ int main( int argc, char *argv[] )
         {
             lastTime = _timestamp();
 
-            if ( options.dotfile )
+            if (  _r.cdCount )
             {
-	      //_outputDot();
-            }
+                if ( options.dotfile )
+                {
+                    _outputDot();
+                }
 
-            if ( ( options.profile ) && ( _r.cdCount ) )
-            {
-                _outputProfile();
+                if ( options.profile )
+                {
+                    _outputProfile();
+                }
             }
 
             fprintf( stdout, "%d records processed" EOL, _r.cdCount );

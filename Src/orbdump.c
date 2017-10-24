@@ -279,10 +279,16 @@ int _processOptions( int argc, char *argv[] )
         fprintf( stdout, "Verbose   : TRUE" EOL );
         fprintf( stdout, "Server    : %s:%d" EOL, options.server, options.port );
         fprintf( stdout, "ForceSync : %s" EOL, options.forceITMSync ? "TRUE" : "FALSE" );
-	if (options.timelen)
-	  fprintf( stdout, "Rec Length: %dmS" EOL, options.timelen );
-	else
-	  fprintf( stdout, "Rec Length: Unlimited" EOL);
+
+        if ( options.timelen )
+        {
+            fprintf( stdout, "Rec Length: %dmS" EOL, options.timelen );
+        }
+        else
+        {
+            fprintf( stdout, "Rec Length: Unlimited" EOL );
+        }
+
         fprintf( stdout, "Sync Write: %s" EOL, options.writeSync ? "TRUE" : "FALSE" );
 
         if ( options.useTPIU )
@@ -368,7 +374,7 @@ int main( int argc, char *argv[] )
     /* Start the process of collecting the data */
     while ( ( readLength = read( sockfd, cbw, TRANSFER_SIZE ) ) > 0 )
     {
-      if ((options.timelen) && ( ( firstTime != 0 ) && ( ( _timestamp() - firstTime ) > options.timelen ) ))
+        if ( ( options.timelen ) && ( ( firstTime != 0 ) && ( ( _timestamp() - firstTime ) > options.timelen ) ) )
         {
             /* This packet arrived at the end of the window...finish the write process */
             break;
