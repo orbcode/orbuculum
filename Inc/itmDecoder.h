@@ -123,6 +123,6 @@ struct ITMDecoderStats *ITMDecoderGetStats( struct ITMDecoder *i );
 BOOL ITMGetPacket( struct ITMDecoder *i, struct ITMPacket *p );
 enum ITMPumpEvent ITMPump( struct ITMDecoder *i, uint8_t c );
 
-void ITMDecoderInit( struct ITMDecoder *i );
+void ITMDecoderInit( struct ITMDecoder *i, BOOL startSynced );
 // ====================================================================================================
 #endif

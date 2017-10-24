@@ -39,15 +39,15 @@
 // Define this to get transitions printed out
 //#define PRINT_TRANSITIONS
 // ====================================================================================================
-void ITMDecoderInit( struct ITMDecoder *i )
+void ITMDecoderInit( struct ITMDecoder *i, BOOL startSynced )
 
 /* Reset a ITMDecoder instance */
 
 {
     i->syncStat = SYNCMASK;
-    i->p = ITM_UNSYNCED;
     i->currentCount = 0;
     i->pageRegister = DEFAULT_PAGE_REGISTER;
+    ITMDecoderForceSync( i, startSynced );
     ITMDecoderZeroStats( i );
 }
 // ====================================================================================================

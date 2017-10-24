@@ -62,6 +62,7 @@
 
 #define SERVER_PORT 3443                      /* Server port definition */
 #define SEGGER_HOST "localhost"               /* Address to connect to SEGGER */
+#define SEGGER_PORT (2332)
 
 /* Descriptor information for BMP */
 #define VID       (0x1d50)
@@ -92,6 +93,7 @@ struct
     BOOL verbose;
     BOOL useTPIU;
     BOOL segger;
+    BOOL forceITMSync;
 #ifdef INCLUDE_FPGA_SUPPORT
     BOOL orbtrace;
 #endif
@@ -950,16 +952,16 @@ void intHandler( int dummy )
 void _printHelp( char *progName )
 
 {
-    fprintf( stdout, "Useage: %s <dhnv> <b basedir> <p port> <s speed>" EOL, progName );
-    fprintf( stdout, "        a: Set address for SEGGER JLink connection (default %s)" EOL, options.seggerHost );
+    fprintf( stdout, "Useage: %s <hntv> <a name:number> <b basedir> <f filename>  <i channel> <p port> <s speed>" EOL, progName );
+    fprintf( stdout, "        a: Set address for SEGGER JLink connection (default none:%d)" EOL, SEGGER_PORT );
     fprintf( stdout, "        b: <basedir> for channels" EOL );
     fprintf( stdout, "        c: <Number>,<Name>,<Format> of channel to populate (repeat per channel)" EOL );
-    fprintf( stdout, "        g: Connect using SEGGER JLink on specified port (normally 2332)" EOL );
-    fprintf( stdout, "        h: This help" EOL );
     fprintf( stdout, "        f: <filename> Take input from specified file" EOL );
+    fprintf( stdout, "        h: This help" EOL );
     fprintf( stdout, "        i: <channel> Set ITM Channel in TPIU decode (defaults to 1)" EOL );
+    fprintf( stdout, "        n: No sync requirement for ITM (i.e. ITM does not need to issue syncs)" EOL );
 #ifdef INCLUDE_FPGA_SUPPORT
-    fprintf( stdout, "        o: Use orbuculum custom interface" EOL );
+    fprintf( stdout, "        o: Use orbuculum custom interface (Forces TPIU on)" EOL );
 #endif
     fprintf( stdout, "        p: <serialPort> to use" EOL );
     fprintf( stdout, "        s: <serialSpeed> to use" EOL );
@@ -976,58 +978,86 @@ int _processOptions( int argc, char *argv[] )
     char *chanIndex;
 #define DELIMITER ','
 
-    while ( ( c = getopt ( argc, argv, "a:vg:ts:i:p:of:hc:b:" ) ) != -1 )
+    while ( ( c = getopt ( argc, argv, "a:b:c:f:hi:nop:s:tv" ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
-            /* Config Information */
-            case 'v':
-                options.verbose = 1;
-                break;
-
-            case 'g':
-                options.seggerPort = atoi( optarg );
-                break;
-
             case 'a':
                 options.seggerHost = optarg;
+
+                // See if we have an optional port number too
+                char *a = optarg;
+
+                while ( ( *a ) && ( *a != ':' ) )
+                {
+                    a++;
+                }
+
+                if ( *a == ':' )
+                {
+                    options.seggerPort = atoi( a++ );
+                }
+
+                if ( !options.seggerPort )
+                {
+                    options.seggerPort = SEGGER_PORT;
+                }
+
                 break;
 
-#ifdef INCLUDE_FPGA_SUPPORT
-
-            case 'o':
-                // Generally you need TPIU for orbtrace, but allow it to be toggled
-                options.useTPIU = !options.useTPIU;
-                options.orbtrace = TRUE;
-                break;
-#endif
-
-            case 't':
-                // Make this a toggle option so it can be switched off if it's on
-                options.useTPIU = !options.useTPIU;
+            // ------------------------------------
+            case 'b':
+                options.chanPath = optarg;
                 break;
 
+            // ------------------------------------
+            case 'f':
+                options.file = optarg;
+                break;
+
+            // ------------------------------------
+            case 'h':
+                _printHelp( argv[0] );
+                return FALSE;
+
+            // ------------------------------------
             case 'i':
                 options.tpiuITMChannel = atoi( optarg );
                 break;
 
             // ------------------------------------
-            /* Source information */
+            case 'n':
+                options.forceITMSync = TRUE;
+                break;
+                // ------------------------------------
+#ifdef INCLUDE_FPGA_SUPPORT
+
+            case 'o':
+                // Generally you need TPIU for orbtrace
+                options.useTPIU = TRUE;
+                options.orbtrace = TRUE;
+                break;
+#endif
+
+            // ------------------------------------
             case 'p':
                 options.port = optarg;
                 break;
 
-            case 'f':
-                options.file = optarg;
-                break;
-
+            // ------------------------------------
             case 's':
                 options.speed = atoi( optarg );
                 break;
 
-            case 'h':
-                _printHelp( argv[0] );
-                return FALSE;
+            // ------------------------------------
+            case 't':
+                options.useTPIU = TRUE;
+                break;
+
+            // ------------------------------------
+            case 'v':
+                options.verbose = 1;
+                break;
 
             // ------------------------------------
             /* Individual channel setup */
@@ -1072,9 +1102,7 @@ int _processOptions( int argc, char *argv[] )
                 break;
 
             // ------------------------------------
-            case 'b':
-                options.chanPath = optarg;
-                break;
+
 
             case '?':
                 if ( optopt == 'b' )
@@ -1107,49 +1135,50 @@ int _processOptions( int argc, char *argv[] )
     {
         fprintf( stdout, "Orbuculum V" VERSION " (Git %08X %s, Built " BUILD_DATE ")" EOL, GIT_HASH, ( GIT_DIRTY ? "Dirty" : "Clean" ) );
 
-        fprintf( stdout, "Verbose   : TRUE" EOL );
-        fprintf( stdout, "BasePath  : %s" EOL, options.chanPath );
+        fprintf( stdout, "Verbose    : TRUE" EOL );
+        fprintf( stdout, "BasePath   : %s" EOL, options.chanPath );
+        fprintf( stdout, "ForceSync  : %s" EOL, options.forceITMSync ? "TRUE" : "FALSE" );
 
         if ( options.port )
         {
-            fprintf( stdout, "Serial Port: %s" EOL "Serial Speed: %d" EOL, options.port, options.speed );
+            fprintf( stdout, "Serial Port : %s" EOL "Serial Speed: %d" EOL, options.port, options.speed );
         }
 
         if ( options.seggerPort )
         {
-            fprintf( stdout, "SEGGER H/P: %s:%d" EOL, options.seggerHost, options.seggerPort );
+            fprintf( stdout, "SEGGER H&P : %s:%d" EOL, options.seggerHost, options.seggerPort );
         }
 
 #ifdef INCLUDE_FPGA_SUPPORT
 
         if ( options.orbtrace )
         {
-            fprintf( stdout, "Orbtrace: TRUE" EOL );
+            fprintf( stdout, "Orbtrace : TRUE" EOL );
         }
 
 #endif
 
         if ( options.useTPIU )
         {
-            fprintf( stdout, "Using TPIU: TRUE (ITM on channel %d)" EOL, options.tpiuITMChannel );
+            fprintf( stdout, "Using TPIU : TRUE (ITM on channel %d)" EOL, options.tpiuITMChannel );
         }
 
         if ( options.file )
         {
-            fprintf( stdout, "Input File: %s" EOL, options.file );
+            fprintf( stdout, "Input File : %s" EOL, options.file );
         }
 
-        fprintf( stdout, "Channels  :" EOL );
+        fprintf( stdout, "Channels   :" EOL );
 
         for ( int g = 0; g < NUM_CHANNELS; g++ )
         {
             if ( options.channel[g].chanName )
             {
-                fprintf( stdout, "        %02d [%s] [%s]" EOL, g, GenericsEscape( options.channel[g].presFormat ), options.channel[g].chanName );
+                fprintf( stdout, "         %02d [%s] [%s]" EOL, g, GenericsEscape( options.channel[g].presFormat ), options.channel[g].chanName );
             }
         }
 
-        fprintf( stdout, "        HW [Predefined] [" HWFIFO_NAME "]" EOL );
+        fprintf( stdout, "         HW [Predefined] [" HWFIFO_NAME "]" EOL );
     }
 
     if ( ( options.file ) && ( ( options.port ) || ( options.seggerPort ) ) )
@@ -1196,20 +1225,24 @@ int usbFeeder( void )
             continue;
         }
 
-        if (libusb_claim_interface ( handle, INTERFACE ) < 0 )
+        if ( libusb_claim_interface ( handle, INTERFACE ) < 0 )
         {
             fprintf( stderr, "Failed to claim interface" EOL );
             return 0;
         }
 
-	int32_t r;
-	
-        while (TRUE)
+        int32_t r;
+
+        while ( TRUE )
         {
-	  r=libusb_bulk_transfer( handle, ENDPOINT, cbw, TRANSFER_SIZE, &size, 10 );
-	  if ((r<0) && (r!=LIBUSB_ERROR_TIMEOUT))
-	    break;
-	  _sendToClients( size, cbw );
+            r = libusb_bulk_transfer( handle, ENDPOINT, cbw, TRANSFER_SIZE, &size, 10 );
+
+            if ( ( r < 0 ) && ( r != LIBUSB_ERROR_TIMEOUT ) )
+            {
+                break;
+            }
+
+            _sendToClients( size, cbw );
             unsigned char *c = cbw;
 
             while ( size-- )
@@ -1483,17 +1516,17 @@ int fileFeeder( void )
         fprintf( stdout, "Reading from file" EOL );
     }
 
-    while ( ( t = read( f, cbw, TRANSFER_SIZE ) ) >=0 )
+    while ( ( t = read( f, cbw, TRANSFER_SIZE ) ) >= 0 )
     {
 
-      if (!t)
-	{
-	  // Just spin for a while to avoid clogging the CPU
-	  usleep(100000);
-	  continue;
-	}
-      
-      _sendToClients( t, cbw );
+        if ( !t )
+        {
+            // Just spin for a while to avoid clogging the CPU
+            usleep( 100000 );
+            continue;
+        }
+
+        _sendToClients( t, cbw );
         unsigned char *c = cbw;
 
         while ( t-- )
@@ -1523,7 +1556,7 @@ int main( int argc, char *argv[] )
 
     /* Reset the TPIU handler before we start */
     TPIUDecoderInit( &_r.t );
-    ITMDecoderInit( &_r.i );
+    ITMDecoderInit( &_r.i, options.forceITMSync );
 
     /* This ensures the atexit gets called */
     signal( SIGINT, intHandler );

@@ -67,6 +67,7 @@
 #define INTERRUPT    0xFFFFFFF8              /* Special memory address - interrupt origin */
 #define NOT_FOUND    0xFFFFFFFF              /* Special memory address - not found */
 
+#define EOL           "\n\r"
 
 #define SERVER_PORT 3443                     /* Server port definition */
 #define MAX_IP_PACKET_LEN (1500)             /* Maximum packet we might receive */
@@ -117,6 +118,7 @@ struct                                       /* Record for options, either defau
     BOOL verbose;                            /* Talk more.... */
     BOOL useTPIU;                            /* Are we decoding via the TPIU? */
     uint32_t tpiuITMChannel;                 /* What channel? */
+    BOOL forceITMSync;                       /* Do we assume ITM starts synced? */
 
     char *deleteMaterial;                    /* Material to strip off front of filenames for target */
 
@@ -203,7 +205,7 @@ BOOL _loadSymbols( void )
 
     if ( !_r.abfd )
     {
-        fprintf( stderr, "Couldn't open ELF file\n" );
+        fprintf( stderr, "Couldn't open ELF file" EOL );
         return FALSE;
     }
 
@@ -211,19 +213,19 @@ BOOL _loadSymbols( void )
 
     if ( bfd_check_format( _r.abfd, bfd_archive ) )
     {
-        fprintf( stderr, "Cannot get addresses from archive %s\n", options.elffile );
+        fprintf( stderr, "Cannot get addresses from archive %s" EOL, options.elffile );
         return FALSE;
     }
 
     if ( ! bfd_check_format_matches ( _r.abfd, bfd_object, &matching ) )
     {
-        fprintf( stderr, "Ambigious format for file\n" );
+        fprintf( stderr, "Ambigious format for file" EOL );
         return FALSE;
     }
 
     if ( ( bfd_get_file_flags ( _r.abfd ) & HAS_SYMS ) == 0 )
     {
-        printf( "No symbols found\n" );
+        fprintf( stderr, "No symbols found" EOL );
         return FALSE;
     }
 
@@ -665,7 +667,7 @@ void _itmPumpProcess( char c )
         case ITM_EV_UNSYNCED:
             if ( options.verbose )
             {
-                fprintf( stdout, "ITM Lost Sync (%d)\n", ITMDecoderGetStats( &_r.i )->lostSyncCount );
+                fprintf( stdout, "ITM Lost Sync (%d)" EOL, ITMDecoderGetStats( &_r.i )->lostSyncCount );
             }
 
             break;
@@ -674,7 +676,7 @@ void _itmPumpProcess( char c )
         case ITM_EV_SYNCED:
             if ( options.verbose )
             {
-                fprintf( stdout, "ITM In Sync (%d)\n", ITMDecoderGetStats( &_r.i )->syncCount );
+                fprintf( stdout, "ITM In Sync (%d)" EOL, ITMDecoderGetStats( &_r.i )->syncCount );
             }
 
             break;
@@ -683,7 +685,7 @@ void _itmPumpProcess( char c )
         case ITM_EV_OVERFLOW:
             if ( options.verbose )
             {
-                fprintf( stdout, "ITM Overflow (%d)\n", ITMDecoderGetStats( &_r.i )->overflow );
+                fprintf( stdout, "ITM Overflow (%d)" EOL, ITMDecoderGetStats( &_r.i )->overflow );
             }
 
             break;
@@ -692,7 +694,7 @@ void _itmPumpProcess( char c )
         case ITM_EV_ERROR:
             if ( options.verbose )
             {
-                fprintf( stdout, "ITM Error\n" );
+                fprintf( stdout, "ITM Error" EOL );
             }
 
             break;
@@ -737,9 +739,10 @@ void _protocolPump( uint8_t c )
             case TPIU_EV_NEWSYNC:
                 if ( options.verbose )
                 {
-                    printf( "TPIU In Sync (%d)\n", TPIUDecoderGetStats( &_r.t )->syncCount );
+                    fprintf( stdout, "TPIU In Sync (%d)" EOL, TPIUDecoderGetStats( &_r.t )->syncCount );
                 }
-	case TPIU_EV_SYNCED:
+
+            case TPIU_EV_SYNCED:
                 ITMDecoderForceSync( &_r.i, TRUE );
                 break;
 
@@ -750,7 +753,7 @@ void _protocolPump( uint8_t c )
 
             // ------------------------------------
             case TPIU_EV_UNSYNCED:
-                printf( "TPIU Lost Sync (%d)\n", TPIUDecoderGetStats( &_r.t )->lostSync );
+                fprintf( stdout, "TPIU Lost Sync (%d)" EOL, TPIUDecoderGetStats( &_r.t )->lostSync );
                 ITMDecoderForceSync( &_r.i, FALSE );
                 break;
 
@@ -758,7 +761,7 @@ void _protocolPump( uint8_t c )
             case TPIU_EV_RXEDPACKET:
                 if ( !TPIUGetPacket( &_r.t, &_r.p ) )
                 {
-                    fprintf( stderr, "TPIUGetPacket fell over\n" );
+                    fprintf( stderr, "TPIUGetPacket fell over" EOL );
                 }
 
                 for ( uint32_t g = 0; g < _r.p.len; g++ )
@@ -773,7 +776,7 @@ void _protocolPump( uint8_t c )
                     {
                         if ( options.verbose )
                         {
-                            printf( "Unknown TPIU channel %02x\n", _r.p.packet[g].s );
+                            fprintf( stdout, "Unknown TPIU channel %02x" EOL, _r.p.packet[g].s );
                         }
                     }
                 }
@@ -782,7 +785,7 @@ void _protocolPump( uint8_t c )
 
             // ------------------------------------
             case TPIU_EV_ERROR:
-                fprintf( stderr, "****ERROR****\n" );
+                fprintf( stderr, "****ERROR****" EOL );
                 break;
                 // ------------------------------------
         }
@@ -797,21 +800,22 @@ void _protocolPump( uint8_t c )
 void _printHelp( char *progName )
 
 {
-    printf( "Useage: %s <htv> <-e ElfFile> <-m MaxHistory> <-o filename> -r <routines> <-i channel> <-p port> <-s server>\n", progName );
-    printf( "        d: <DeleteMaterial> to take off front of filenames\n" );
-    printf( "        e: <ElfFile> to use for symbols\n" );
-    printf( "        h: This help\n" );
-    printf( "        i: <channel> Set ITM Channel in TPIU decode (defaults to 1)\n" );
-    printf( "        l: Aggregate per line rather than per function\n" );
-    printf( "        m: <MaxHistory> to record in history file (default %d intervals)\n", options.maxHistory );
-    printf( "        o: <filename> to be used for output history file\n" );
-    printf( "        p: <Port> to use\n" );
-    printf( "        r: <routines> to record in history file (default %d routines)\n", options.maxRoutines );
-    printf( "        s: <Server> to use\n" );
-    printf( "        t: Use TPIU decoder\n" );
-    printf( "        v: Verbose mode (this will intermingle state info with the output flow)\n" );
-    printf( "        y: <Filename> dotty filename for structured callgraph output\n" );
-    printf( "        z: <Filename> profile filename for kcachegrind output\n" );
+    fprintf( stdout, "Usage: %s <htv> <-e ElfFile> <-m MaxHistory> <-o filename> -r <routines> <-i channel> <-p port> <-s server>" EOL, progName );
+    fprintf( stdout, "       d: <DeleteMaterial> to take off front of filenames" EOL );
+    fprintf( stdout, "       e: <ElfFile> to use for symbols" EOL );
+    fprintf( stdout, "       h: This help" EOL );
+    fprintf( stdout, "       i: <channel> Set ITM Channel in TPIU decode (defaults to 1)" EOL );
+    fprintf( stdout, "       l: Aggregate per line rather than per function" EOL );
+    fprintf( stdout, "       m: <MaxHistory> to record in history file (default %d intervals)" EOL, options.maxHistory );
+    fprintf( stdout, "       n: No sync requirement for ITM (i.e. ITM does not need to issue syncs)" EOL );
+    fprintf( stdout, "       o: <filename> to be used for output history file" EOL );
+    fprintf( stdout, "       p: <Port> to use" EOL );
+    fprintf( stdout, "       r: <routines> to record in history file (default %d routines)" EOL, options.maxRoutines );
+    fprintf( stdout, "       s: <Server> to use" EOL );
+    fprintf( stdout, "       t: Use TPIU decoder" EOL );
+    fprintf( stdout, "       v: Verbose mode (this will intermingle state info with the output flow)" EOL );
+    fprintf( stdout, "       y: <Filename> dotty filename for structured callgraph output" EOL );
+    fprintf( stdout, "       z: <Filename> profile filename for kcachegrind output" EOL );
 }
 // ====================================================================================================
 int _processOptions( int argc, char *argv[] )
@@ -819,109 +823,131 @@ int _processOptions( int argc, char *argv[] )
 {
     int c;
 
-    while ( ( c = getopt ( argc, argv, "a:d:e:hti:lm:o:p:r:s:vz:" ) ) != -1 )
+    while ( ( c = getopt ( argc, argv, "d:e:hi:lm:no:p:r:s:tvy:z:" ) ) != -1 )
+
         switch ( c )
         {
-            /* Config Information */
-            case 'z':
-                options.profile = optarg;
-                break;
-
-            case 'e':
-                options.elffile = optarg;
-                break;
-
-            case 'y':
-                options.dotfile = optarg;
-                break;
-
+            // ------------------------------------
             case 'd':
                 options.deleteMaterial = optarg;
                 break;
 
-            case 'l':
-                options.lineDisaggregation = TRUE;
+            // ------------------------------------
+            case 'e':
+                options.elffile = optarg;
                 break;
 
-            case 'r':
-                options.maxRoutines = atoi( optarg );
-                break;
-
-            case 'm':
-                options.maxHistory = atoi( optarg );
-                break;
-
-            case 'o':
-                options.outfile = optarg;
-                break;
-
-            case 'v':
-                options.verbose = 1;
-                break;
-
-            case 't':
-                options.useTPIU = TRUE;
-                break;
-
-            case 'i':
-                options.tpiuITMChannel = atoi( optarg );
-                break;
-
-            /* Source information */
-            case 'p':
-                options.port = atoi( optarg );
-                break;
-
-            case 's':
-                options.server = optarg;
-                break;
-
+            // ------------------------------------
             case 'h':
                 _printHelp( argv[0] );
                 return FALSE;
 
+            // ------------------------------------
+            case 'i':
+                options.tpiuITMChannel = atoi( optarg );
+                break;
+
+            // ------------------------------------
+            case 'l':
+                options.lineDisaggregation = TRUE;
+                break;
+
+            // ------------------------------------
+            case 'm':
+                options.maxHistory = atoi( optarg );
+                break;
+
+            // ------------------------------------
+            case 'n':
+                options.forceITMSync = TRUE;
+                break;
+
+            // ------------------------------------
+            case 'o':
+                options.outfile = optarg;
+                break;
+
+            // ------------------------------------
+            case 'p':
+                options.port = atoi( optarg );
+                break;
+
+            // ------------------------------------
+            case 'r':
+                options.maxRoutines = atoi( optarg );
+                break;
+
+            // ------------------------------------
+            case 's':
+                options.server = optarg;
+                break;
+
+            // ------------------------------------
+            case 't':
+                options.useTPIU = TRUE;
+                break;
+
+            // ------------------------------------
+            case 'v':
+                options.verbose = TRUE;
+                break;
+
+            // ------------------------------------
+            case 'y':
+                options.dotfile = optarg;
+                break;
+
+            // ------------------------------------
+            case 'z':
+                options.profile = optarg;
+                break;
+
+            // ------------------------------------
             case '?':
                 if ( optopt == 'b' )
                 {
-                    fprintf ( stderr, "Option '%c' requires an argument.\n", optopt );
+                    fprintf ( stderr, "Option '%c' requires an argument." EOL, optopt );
                 }
                 else if ( !isprint ( optopt ) )
                 {
-                    fprintf ( stderr, "Unknown option character `\\x%x'.\n", optopt );
+                    fprintf ( stderr, "Unknown option character `\\x%x'." EOL, optopt );
                 }
 
                 return FALSE;
 
+            // ------------------------------------
             default:
-                fprintf( stderr, "Unknown option %c\n", optopt );
+                fprintf( stderr, "Unknown option %c" EOL, optopt );
                 return FALSE;
+                // ------------------------------------
         }
 
     if ( ( options.useTPIU ) && ( !options.tpiuITMChannel ) )
     {
-        fprintf( stderr, "TPIU set for use but no channel set for ITM output\n" );
+        fprintf( stderr, "TPIU set for use but no channel set for ITM output" EOL );
         return FALSE;
     }
 
     if ( !options.elffile )
     {
-        fprintf( stderr, "Elf File not specified\n" );
+        fprintf( stderr, "Elf File not specified" EOL );
         exit( -2 );
     }
 
     if ( options.verbose )
     {
-        fprintf( stdout, "orbtop V" VERSION " (Git %08X %s, Built " BUILD_DATE ")\n", GIT_HASH, ( GIT_DIRTY ? "Dirty" : "Clean" ) );
+        fprintf( stdout, "orbtop V" VERSION " (Git %08X %s, Built " BUILD_DATE ")" EOL, GIT_HASH, ( GIT_DIRTY ? "Dirty" : "Clean" ) );
 
-        fprintf( stdout, "Verbose     : TRUE\n" );
-        fprintf( stdout, "Server      : %s:%d\n", options.server, options.port );
-        fprintf( stdout, "Delete Mat  : %s\n", options.deleteMaterial ? options.deleteMaterial : "None" );
-        fprintf( stdout, "Elf File    : %s\n", options.elffile );
-        fprintf( stdout, "DOT file    : %s\n", options.dotfile ? options.dotfile : "None" );
+        fprintf( stdout, "Verbose     : TRUE" EOL );
+        fprintf( stdout, "Server      : %s:%d" EOL, options.server, options.port );
+        fprintf( stdout, "Delete Mat  : %s" EOL, options.deleteMaterial ? options.deleteMaterial : "None" );
+        fprintf( stdout, "Elf File    : %s" EOL, options.elffile );
+        fprintf( stdout, "DOT file    : %s" EOL, options.dotfile ? options.dotfile : "None" );
+        fprintf( stdout, "ForceSync   : %s" EOL, options.forceITMSync ? "TRUE" : "FALSE" );
 
         if ( options.useTPIU )
         {
-            fprintf( stdout, "Using TPIU  : TRUE (ITM on channel %d)\n", options.tpiuITMChannel );
+            fprintf( stdout, "Using TPIU  : TRUE (ITM on channel %d)" EOL, options.tpiuITMChannel );
         }
     }
 
@@ -955,7 +981,7 @@ int main( int argc, char *argv[] )
 
     /* Reset the TPIU handler before we start */
     TPIUDecoderInit( &_r.t );
-    ITMDecoderInit( &_r.i );
+    ITMDecoderInit( &_r.i, options.forceITMSync );
 
     sockfd = socket( AF_INET, SOCK_STREAM, 0 );
     setsockopt( sockfd, SOL_SOCKET, SO_REUSEPORT, &flag, sizeof( flag ) );
@@ -1011,7 +1037,7 @@ int main( int argc, char *argv[] )
                 _outputProfile();
             }
 
-            fprintf( stdout, "%d records processed\n", _r.cdCount );
+            fprintf( stdout, "%d records processed" EOL, _r.cdCount );
             /* Now free up this seconds data */
             free( _r.calls );
             _r.calls = NULL;
@@ -1021,14 +1047,14 @@ int main( int argc, char *argv[] )
         /* Check to make sure there's not an unexpected TPIU in here */
         if ( ITMDecoderGetStats( &_r.i )->tpiuSyncCount )
         {
-            fprintf( stderr, "Got a TPIU sync while decoding ITM...did you miss a -t option?\n" );
+            fprintf( stderr, "Got a TPIU sync while decoding ITM...did you miss a -t option?" EOL );
             break;
         }
     }
 
     if ( ( options.verbose ) && ( !ITMDecoderGetStats( &_r.i )->tpiuSyncCount ) )
     {
-        fprintf( stderr, "Read failed\n" );
+        fprintf( stderr, "Read failed" EOL );
     }
 
     close( sockfd );

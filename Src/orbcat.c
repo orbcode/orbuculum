@@ -53,6 +53,7 @@
 
 #define SERVER_PORT 3443                  /* Server port definition */
 
+#define EOL           "\n\r"
 
 #define TRANSFER_SIZE (64)
 #define NUM_CHANNELS  32
@@ -67,7 +68,7 @@ struct
     BOOL verbose;
     BOOL useTPIU;
     uint32_t tpiuITMChannel;
-
+    BOOL forceITMSync;
     uint32_t hwOutputs;
 
     /* Sink information */
@@ -112,7 +113,7 @@ void _handleException( struct ITMDecoder *i, struct ITMPacket *p )
                              "UNKNOWN_8", "UNKNOWN_9", "UNKNOWN_10", "SVCall", "Debug Monitor", "UNKNOWN_13", "PendSV", "SysTick"
                             };
     const char *exEvent[] = {"Enter", "Exit", "Resume"};
-    fprintf( stdout, "%d,%s,%s\n", HWEVENT_EXCEPTION, exEvent[eventType], exNames[exceptionNumber] );
+    fprintf( stdout, "%d,%s,%s" EOL, HWEVENT_EXCEPTION, exEvent[eventType], exNames[exceptionNumber] );
 }
 // ====================================================================================================
 void _handleDWTEvent( struct ITMDecoder *i, struct ITMPacket *p )
@@ -130,7 +131,7 @@ void _handleDWTEvent( struct ITMDecoder *i, struct ITMPacket *p )
     {
         if ( event & ( 1 << i ) )
         {
-            fprintf( stdout, "%d,%s\n", HWEVENT_DWT, evName[event] );
+            fprintf( stdout, "%d,%s" EOL, HWEVENT_DWT, evName[event] );
         }
     }
 }
@@ -144,7 +145,7 @@ void _handlePCSample( struct ITMDecoder *i, struct ITMPacket *p )
     }
 
     uint32_t pc = ( p->d[3] << 24 ) | ( p->d[2] << 16 ) | ( p->d[1] << 8 ) | ( p->d[0] );
-    fprintf( stdout, "%d,0x%08x\n", HWEVENT_PCSample, pc );
+    fprintf( stdout, "%d,0x%08x" EOL, HWEVENT_PCSample, pc );
 }
 // ====================================================================================================
 void _handleDataRWWP( struct ITMDecoder *i, struct ITMPacket *p )
@@ -174,7 +175,7 @@ void _handleDataRWWP( struct ITMDecoder *i, struct ITMPacket *p )
             break;
     }
 
-    fprintf( stdout, "%d,%d,%s,0x%x\n", HWEVENT_RWWT, comp, isWrite ? "Write" : "Read", data );
+    fprintf( stdout, "%d,%d,%s,0x%x" EOL, HWEVENT_RWWT, comp, isWrite ? "Write" : "Read", data );
 }
 // ====================================================================================================
 void _handleDataAccessWP( struct ITMDecoder *i, struct ITMPacket *p )
@@ -188,7 +189,7 @@ void _handleDataAccessWP( struct ITMDecoder *i, struct ITMPacket *p )
     uint32_t comp = ( p->d[0] & 0x30 ) >> 4;
     uint32_t data = ( p->d[1] ) | ( ( p->d[2] ) << 8 ) | ( ( p->d[3] ) << 16 ) | ( ( p->d[4] ) << 24 );
 
-    fprintf( stdout, "%d,%d,0x%08x\n", HWEVENT_AWP, comp, data );
+    fprintf( stdout, "%d,%d,0x%08x" EOL, HWEVENT_AWP, comp, data );
 }
 // ====================================================================================================
 void _handleDataOffsetWP( struct ITMDecoder *i, struct ITMPacket *p )
@@ -202,7 +203,7 @@ void _handleDataOffsetWP( struct ITMDecoder *i, struct ITMPacket *p )
     uint32_t comp = ( p->d[0] & 0x30 ) >> 4;
     uint32_t offset = ( p->d[1] ) | ( ( p->d[2] ) << 8 );
 
-    fprintf( stdout, "%d,%d,0x%04x\n", HWEVENT_OFS, comp, offset );
+    fprintf( stdout, "%d,%d,0x%04x" EOL, HWEVENT_OFS, comp, offset );
 }
 // ====================================================================================================
 void _handleSW( struct ITMDecoder *i )
@@ -271,11 +272,11 @@ void _handleXTN( struct ITMDecoder *i )
 
     if ( ITMGetPacket( i, &p ) )
     {
-        printf( "XTN len=%d (%02x)\n", p.len, p.d[0] );
+        fprintf( stdout, "XTN len=%d (%02x)" EOL, p.len, p.d[0] );
     }
     else
     {
-        printf( "GET FAILED\n" );
+        fprintf( stdout, "XTN GET FAILED" EOL );
     }
 }
 // ====================================================================================================
@@ -322,7 +323,7 @@ void _handleTS( struct ITMDecoder *i )
         i->timeStamp += stamp;
     }
 
-    fprintf( stdout, "%d,%d,%" PRIu64 "\n", HWEVENT_TS, i->timeStatus, i->timeStamp );
+    fprintf( stdout, "%d,%d,%" PRIu64 EOL, HWEVENT_TS, i->timeStatus, i->timeStamp );
 }
 // ====================================================================================================
 void _itmPumpProcess( char c )
@@ -336,7 +337,7 @@ void _itmPumpProcess( char c )
         case ITM_EV_UNSYNCED:
             if ( options.verbose )
             {
-                fprintf( stdout, "ITM Unsynced\n" );
+                fprintf( stdout, "ITM Unsynced" EOL );
             }
 
             break;
@@ -344,7 +345,7 @@ void _itmPumpProcess( char c )
         case ITM_EV_SYNCED:
             if ( options.verbose )
             {
-                fprintf( stdout, "ITM Synced\n" );
+                fprintf( stdout, "ITM Synced" EOL );
             }
 
             break;
@@ -352,7 +353,7 @@ void _itmPumpProcess( char c )
         case ITM_EV_OVERFLOW:
             if ( options.verbose )
             {
-                fprintf( stdout, "ITM Overflow\n" );
+                fprintf( stdout, "ITM Overflow" EOL );
             }
 
             break;
@@ -360,7 +361,7 @@ void _itmPumpProcess( char c )
         case ITM_EV_ERROR:
             if ( options.verbose )
             {
-                fprintf( stdout, "ITM Error\n" );
+                fprintf( stdout, "ITM Error" EOL );
             }
 
             break;
@@ -397,7 +398,7 @@ void _protocolPump( uint8_t c )
         switch ( TPIUPump( &_r.t, c ) )
         {
             case TPIU_EV_NEWSYNC:
-	    case TPIU_EV_SYNCED:
+            case TPIU_EV_SYNCED:
                 ITMDecoderForceSync( &_r.i, TRUE );
                 break;
 
@@ -412,7 +413,7 @@ void _protocolPump( uint8_t c )
             case TPIU_EV_RXEDPACKET:
                 if ( !TPIUGetPacket( &_r.t, &_r.p ) )
                 {
-                    fprintf( stderr, "TPIUGetPacket fell over\n" );
+                    fprintf( stderr, "TPIUGetPacket fell over" EOL );
                 }
 
                 for ( uint32_t g = 0; g < _r.p.len; g++ )
@@ -427,7 +428,7 @@ void _protocolPump( uint8_t c )
                     {
                         if ( options.verbose )
                         {
-                            printf( "Unknown TPIU channel %02x\n", _r.p.packet[g].s );
+                            printf( "Unknown TPIU channel %02x" EOL, _r.p.packet[g].s );
                         }
                     }
                 }
@@ -435,7 +436,7 @@ void _protocolPump( uint8_t c )
                 break;
 
             case TPIU_EV_ERROR:
-                fprintf( stderr, "****ERROR****\n" );
+                fprintf( stderr, "****ERROR****" EOL );
                 break;
         }
     }
@@ -448,14 +449,15 @@ void _protocolPump( uint8_t c )
 void _printHelp( char *progName )
 
 {
-    printf( "Useage: %s <htv> <-i channel> <-p port> <-s server>\n", progName );
-    printf( "        c: <Number>,<Format> of channel to add into output stream (repeat per channel)\n" );
-    printf( "        h: This help\n" );
-    printf( "        i: <channel> Set ITM Channel in TPIU decode (defaults to 1)\n" );
-    printf( "        p: <Port> to use\n" );
-    printf( "        s: <Server> to use\n" );
-    printf( "        t: Use TPIU decoder\n" );
-    printf( "        v: Verbose mode (this will intermingle state info with the output flow)\n" );
+    fprintf( stdout, "Usage: %s <htv> <-i channel> <-p port> <-s server>" EOL, progName );
+    fprintf( stdout, "       c: <Number>,<Format> of channel to add into output stream (repeat per channel)" EOL );
+    fprintf( stdout, "       h: This help" EOL );
+    fprintf( stdout, "       i: <channel> Set ITM Channel in TPIU decode (defaults to 1)" EOL );
+    fprintf( stdout, "       n: No sync requirement for ITM (i.e. ITM does not need to issue syncs)" EOL );
+    fprintf( stdout, "       p: <Port> to use" EOL );
+    fprintf( stdout, "       s: <Server> to use" EOL );
+    fprintf( stdout, "       t: Use TPIU decoder" EOL );
+    fprintf( stdout, "       v: Verbose mode (this will intermingle state info with the output flow)" EOL );
 }
 // ====================================================================================================
 int _processOptions( int argc, char *argv[] )
@@ -467,35 +469,45 @@ int _processOptions( int argc, char *argv[] )
     char *chanIndex;
 #define DELIMITER ','
 
-    while ( ( c = getopt ( argc, argv, "c:hti:p:s:v" ) ) != -1 )
+    while ( ( c = getopt ( argc, argv, "c:hi:np:s:tv" ) ) != -1 )
         switch ( c )
         {
-            /* Config Information */
-            case 'v':
-                options.verbose = 1;
-                break;
-
-            case 't':
-                options.useTPIU = TRUE;
-                break;
-
-            case 'i':
-                options.tpiuITMChannel = atoi( optarg );
-                break;
-
-            /* Source information */
-            case 'p':
-                options.port = atoi( optarg );
-                break;
-
-            case 's':
-                options.server = optarg;
-                break;
-
+            // ------------------------------------
             case 'h':
                 _printHelp( argv[0] );
                 return FALSE;
 
+            // ------------------------------------
+            case 'i':
+                options.tpiuITMChannel = atoi( optarg );
+                break;
+
+            // ------------------------------------
+            case 'n':
+                options.forceITMSync = TRUE;
+                break;
+
+            // ------------------------------------
+            case 'p':
+                options.port = atoi( optarg );
+                break;
+
+            // ------------------------------------
+            case 's':
+                options.server = optarg;
+                break;
+
+            // ------------------------------------
+            case 't':
+                options.useTPIU = TRUE;
+                break;
+
+            // ------------------------------------
+            case 'v':
+                options.verbose = 1;
+                break;
+
+            // ------------------------------------
             /* Individual channel setup */
             case 'c':
                 chanIndex = chanConfig = strdup( optarg );
@@ -503,7 +515,7 @@ int _processOptions( int argc, char *argv[] )
 
                 if ( chan >= NUM_CHANNELS )
                 {
-                    fprintf( stderr, "Channel index out of range\n" );
+                    fprintf( stderr, "Channel index out of range" EOL );
                     return FALSE;
                 }
 
@@ -515,7 +527,7 @@ int _processOptions( int argc, char *argv[] )
 
                 if ( !*chanIndex )
                 {
-                    fprintf( stderr, "No output format for channel %d\n", chan );
+                    fprintf( stderr, "No output format for channel %d" EOL, chan );
                     return FALSE;
                 }
 
@@ -523,47 +535,51 @@ int _processOptions( int argc, char *argv[] )
                 options.presFormat[chan] = strdup( GenericsUnescape( chanIndex ) );
                 break;
 
+            // ------------------------------------
             case '?':
                 if ( optopt == 'b' )
                 {
-                    fprintf ( stderr, "Option '%c' requires an argument.\n", optopt );
+                    fprintf ( stderr, "Option '%c' requires an argument." EOL, optopt );
                 }
                 else if ( !isprint ( optopt ) )
                 {
-                    fprintf ( stderr, "Unknown option character `\\x%x'.\n", optopt );
+                    fprintf ( stderr, "Unknown option character `\\x%x'." EOL, optopt );
                 }
 
                 return FALSE;
 
+            // ------------------------------------
             default:
                 return FALSE;
+                // ------------------------------------
         }
 
     if ( ( options.useTPIU ) && ( !options.tpiuITMChannel ) )
     {
-        fprintf( stderr, "TPIU set for use but no channel set for ITM output\n" );
+        fprintf( stderr, "TPIU set for use but no channel set for ITM output" EOL );
         return FALSE;
     }
 
     if ( options.verbose )
     {
-        fprintf( stdout, "orbcat V" VERSION " (Git %08X %s, Built " BUILD_DATE ")\n", GIT_HASH, ( GIT_DIRTY ? "Dirty" : "Clean" ) );
+        fprintf( stdout, "orbcat V" VERSION " (Git %08X %s, Built " BUILD_DATE EOL, GIT_HASH, ( GIT_DIRTY ? "Dirty" : "Clean" ) );
 
-        fprintf( stdout, "Verbose   : TRUE\n" );
-        fprintf( stdout, "Server    : %s:%d", options.server, options.port );
+        fprintf( stdout, "Verbose   : TRUE" EOL );
+        fprintf( stdout, "Server    : %s:%d" EOL, options.server, options.port );
+        fprintf( stdout, "ForceSync : %s" EOL, options.forceITMSync ? "TRUE" : "FALSE" );
 
         if ( options.useTPIU )
         {
-            fprintf( stdout, "Using TPIU: TRUE (ITM on channel %d)\n", options.tpiuITMChannel );
+            fprintf( stdout, "Using TPIU: TRUE (ITM on channel %d)" EOL, options.tpiuITMChannel );
         }
 
-        fprintf( stdout, "Channels  :\n" );
+        fprintf( stdout, "Channels  :" EOL );
 
         for ( int g = 0; g < NUM_CHANNELS; g++ )
         {
             if ( options.presFormat[g] )
             {
-                fprintf( stdout, "        %02d [%s]\n", g, GenericsEscape( options.presFormat[g] ) );
+                fprintf( stdout, "        %02d [%s]" EOL, g, GenericsEscape( options.presFormat[g] ) );
             }
         }
     }
@@ -588,14 +604,14 @@ int main( int argc, char *argv[] )
 
     /* Reset the TPIU handler before we start */
     TPIUDecoderInit( &_r.t );
-    ITMDecoderInit( &_r.i );
+    ITMDecoderInit( &_r.i, options.forceITMSync );
 
     sockfd = socket( AF_INET, SOCK_STREAM, 0 );
     setsockopt( sockfd, SOL_SOCKET, SO_REUSEPORT, &flag, sizeof( flag ) );
 
     if ( sockfd < 0 )
     {
-        fprintf( stderr, "Error creating socket\n" );
+        fprintf( stderr, "Error creating socket" EOL );
         return -1;
     }
 
@@ -605,7 +621,7 @@ int main( int argc, char *argv[] )
 
     if ( !server )
     {
-        fprintf( stderr, "Cannot find host\n" );
+        fprintf( stderr, "Cannot find host" EOL );
         return -1;
     }
 
@@ -617,7 +633,7 @@ int main( int argc, char *argv[] )
 
     if ( connect( sockfd, ( struct sockaddr * ) &serv_addr, sizeof( serv_addr ) ) < 0 )
     {
-        fprintf( stderr, "Could not connect\n" );
+        fprintf( stderr, "Could not connect" EOL );
         return -1;
     }
 
@@ -629,12 +645,13 @@ int main( int argc, char *argv[] )
         {
             _protocolPump( *c++ );
         }
-	fflush(stdout);
+
+        fflush( stdout );
     }
 
     if ( options.verbose )
     {
-        fprintf( stderr, "Read failed\n" );
+        fprintf( stderr, "Read failed" EOL );
     }
 
     close( sockfd );

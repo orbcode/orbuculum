@@ -57,6 +57,7 @@
 
 #define DEFAULT_OUTFILE "/dev/stdout"
 #define DEFAULT_TIMELEN 10000
+#define EOL           "\n\r"
 
 /* ---------- CONFIGURATION ----------------- */
 
@@ -65,6 +66,7 @@ struct                                      /* Record for options, either defaul
     /* Config information */
     BOOL verbose;
     BOOL useTPIU;
+    BOOL forceITMSync;
     uint32_t tpiuITMChannel;
 
     /* File to output dump to */
@@ -81,7 +83,7 @@ struct                                      /* Record for options, either defaul
     char *server;
 } options =
 {
-    .useTPIU = TRUE,
+    .useTPIU = FALSE,
     .tpiuITMChannel = 1,
     .outfile = DEFAULT_OUTFILE,
     .timelen = DEFAULT_TIMELEN,
@@ -132,7 +134,7 @@ void _protocolPump( uint8_t c )
         {
             // ------------------------------------
             case TPIU_EV_NEWSYNC:
-	    case TPIU_EV_SYNCED:
+            case TPIU_EV_SYNCED:
                 ITMDecoderForceSync( &_r.i, TRUE );
                 break;
 
@@ -150,7 +152,7 @@ void _protocolPump( uint8_t c )
             case TPIU_EV_RXEDPACKET:
                 if ( !TPIUGetPacket( &_r.t, &_r.p ) )
                 {
-                    fprintf( stderr, "TPIUGetPacket fell over\n" );
+                    fprintf( stderr, "TPIUGetPacket fell over" EOL );
                 }
 
                 for ( uint32_t g = 0; g < _r.p.len; g++ )
@@ -165,7 +167,7 @@ void _protocolPump( uint8_t c )
                     {
                         if ( options.verbose )
                         {
-                            printf( "Unknown TPIU channel %02x\n", _r.p.packet[g].s );
+                            fprintf( stderr, "Unknown TPIU channel %02x" EOL, _r.p.packet[g].s );
                         }
                     }
                 }
@@ -174,7 +176,7 @@ void _protocolPump( uint8_t c )
 
             // ------------------------------------
             case TPIU_EV_ERROR:
-                fprintf( stderr, "****ERROR****\n" );
+                fprintf( stderr, "****ERROR****" EOL );
                 break;
                 // ------------------------------------
         }
@@ -189,16 +191,17 @@ void _protocolPump( uint8_t c )
 void _printHelp( char *progName )
 
 {
-    printf( "Useage: %s <htv> <-i channel> <-p port> <-s server>\n", progName );
-    printf( "        h: This help\n" );
-    printf( "        i: <channel> Set ITM Channel in TPIU decode (defaults to 1)\n" );
-    printf( "        l: <timelen> Length of time in ms to record from point of acheiving sync (defaults to %dmS)\n", options.timelen );
-    printf( "        o: <filename> to be used for dump file (defaults to %s)\n", options.outfile );
-    printf( "        p: <Port> to use\n" );
-    printf( "        s: <Server> to use\n" );
-    printf( "        t: Use TPIU decoder\n" );
-    printf( "        v: Verbose mode (this will intermingle SWO info with the output flow when using stdout)\n" );
-    printf( "        w: Write syncronously to the output file after every packet\n" );
+    fprintf( stdout, "Usage: %s <htv> <-i channel> <-p port> <-s server>" EOL, progName );
+    fprintf( stdout, "        h: This help" EOL );
+    fprintf( stdout, "        i: <channel> Set ITM Channel in TPIU decode (defaults to 1)" EOL );
+    fprintf( stdout, "        l: <timelen> Length of time in ms to record from point of acheiving sync (defaults to %dmS)" EOL, options.timelen );
+    fprintf( stdout, "        n: No sync requirement for ITM (i.e. ITM does not need to issue syncs)" EOL );
+    fprintf( stdout, "        o: <filename> to be used for dump file (defaults to %s)" EOL, options.outfile );
+    fprintf( stdout, "        p: <Port> to use" EOL );
+    fprintf( stdout, "        s: <Server> to use" EOL );
+    fprintf( stdout, "        t: Use TPIU decoder" EOL );
+    fprintf( stdout, "        v: Verbose mode (this will intermingle SWO info with the output flow when using stdout)" EOL );
+    fprintf( stdout, "        w: Write syncronously to the output file after every packet" EOL );
 }
 // ====================================================================================================
 int _processOptions( int argc, char *argv[] )
@@ -249,38 +252,42 @@ int _processOptions( int argc, char *argv[] )
             case '?':
                 if ( optopt == 'b' )
                 {
-                    fprintf ( stderr, "Option '%c' requires an argument.\n", optopt );
+                    fprintf ( stderr, "Option '%c' requires an argument." EOL, optopt );
                 }
                 else if ( !isprint ( optopt ) )
                 {
-                    fprintf ( stderr, "Unknown option character `\\x%x'.\n", optopt );
+                    fprintf ( stderr, "Unknown option character `\\x%x'." EOL, optopt );
                 }
 
                 return FALSE;
 
             default:
-                fprintf( stderr, "Unknown option %c\n", optopt );
+                fprintf( stderr, "Unknown option %c" EOL, optopt );
                 return FALSE;
         }
 
     if ( ( options.useTPIU ) && ( !options.tpiuITMChannel ) )
     {
-        fprintf( stderr, "TPIU set for use but no channel set for ITM output\n" );
+        fprintf( stderr, "TPIU set for use but no channel set for ITM output" EOL );
         return FALSE;
     }
 
     if ( options.verbose )
     {
-        fprintf( stdout, "orbdump V" VERSION " (Git %08X %s, Built " BUILD_DATE ")\n", GIT_HASH, ( GIT_DIRTY ? "Dirty" : "Clean" ) );
+        fprintf( stdout, "orbdump V" VERSION " (Git %08X %s, Built " BUILD_DATE ")" EOL, GIT_HASH, ( GIT_DIRTY ? "Dirty" : "Clean" ) );
 
-        fprintf( stdout, "Verbose   : TRUE\n" );
-        fprintf( stdout, "Server    : %s:%d\n", options.server, options.port );
-        fprintf( stdout, "Rec Length: %dmS\n", options.timelen );
-        fprintf( stdout, "Sync Write: %s\n", options.writeSync ? "TRUE" : "FALSE" );
+        fprintf( stdout, "Verbose   : TRUE" EOL );
+        fprintf( stdout, "Server    : %s:%d" EOL, options.server, options.port );
+        fprintf( stdout, "ForceSync : %s" EOL, options.forceITMSync ? "TRUE" : "FALSE" );
+	if (options.timelen)
+	  fprintf( stdout, "Rec Length: %dmS" EOL, options.timelen );
+	else
+	  fprintf( stdout, "Rec Length: Unlimited" EOL);
+        fprintf( stdout, "Sync Write: %s" EOL, options.writeSync ? "TRUE" : "FALSE" );
 
         if ( options.useTPIU )
         {
-            fprintf( stdout, "Using TPIU: TRUE (ITM on channel %d)\n", options.tpiuITMChannel );
+            fprintf( stdout, "Using TPIU: TRUE (ITM on channel %d)" EOL, options.tpiuITMChannel );
         }
     }
 
@@ -310,14 +317,14 @@ int main( int argc, char *argv[] )
 
     /* Reset the TPIU handler before we start */
     TPIUDecoderInit( &_r.t );
-    ITMDecoderInit( &_r.i );
+    ITMDecoderInit( &_r.i, options.forceITMSync );
 
     sockfd = socket( AF_INET, SOCK_STREAM, 0 );
     setsockopt( sockfd, SOL_SOCKET, SO_REUSEPORT, &flag, sizeof( flag ) );
 
     if ( sockfd < 0 )
     {
-        fprintf( stderr, "Error creating socket\n" );
+        fprintf( stderr, "Error creating socket" EOL );
         return -1;
     }
 
@@ -328,7 +335,7 @@ int main( int argc, char *argv[] )
 
     if ( !server )
     {
-        fprintf( stderr, "Cannot find host\n" );
+        fprintf( stderr, "Cannot find host" EOL );
         return -1;
     }
 
@@ -340,7 +347,7 @@ int main( int argc, char *argv[] )
 
     if ( connect( sockfd, ( struct sockaddr * ) &serv_addr, sizeof( serv_addr ) ) < 0 )
     {
-        fprintf( stderr, "Could not connect\n" );
+        fprintf( stderr, "Could not connect" EOL );
         return -1;
     }
 
@@ -349,19 +356,19 @@ int main( int argc, char *argv[] )
 
     if ( !opFile )
     {
-        fprintf( stderr, "Could not open output file for writing\n" );
+        fprintf( stderr, "Could not open output file for writing" EOL );
         return -2;
     }
 
     if ( options.verbose )
     {
-        fprintf( stdout, "Waiting for sync\n" );
+        fprintf( stdout, "Waiting for sync" EOL );
     }
 
     /* Start the process of collecting the data */
     while ( ( readLength = read( sockfd, cbw, MAX_IP_PACKET_LEN ) ) > 0 )
     {
-        if ( ( firstTime != 0 ) && ( ( _timestamp() - firstTime ) > options.timelen ) )
+      if ((options.timelen) && ( ( firstTime != 0 ) && ( ( _timestamp() - firstTime ) > options.timelen ) ))
         {
             /* This packet arrived at the end of the window...finish the write process */
             break;
@@ -379,7 +386,7 @@ int main( int argc, char *argv[] )
         /* Check to make sure there's not an unexpected TPIU in here */
         if ( ITMDecoderGetStats( &_r.i )->tpiuSyncCount )
         {
-            fprintf( stderr, "Got a TPIU sync while decoding ITM...did you miss a -t option?\n" );
+            fprintf( stderr, "Got a TPIU sync while decoding ITM...did you miss a -t option?" EOL );
             break;
         }
 
@@ -397,7 +404,7 @@ int main( int argc, char *argv[] )
 
             if ( options.verbose )
             {
-                fprintf( stdout, "Started recording\n" );
+                fprintf( stdout, "Started recording" EOL );
             }
         }
 
@@ -405,7 +412,7 @@ int main( int argc, char *argv[] )
 
         if ( !ITMDecoderIsSynced( &_r.i ) )
         {
-            fprintf( stderr, "Warning:Sync lost while writing output\n" );
+            fprintf( stderr, "Warning:Sync lost while writing output" EOL );
         }
 
         if ( options.writeSync )
@@ -419,13 +426,13 @@ int main( int argc, char *argv[] )
 
     if ( readLength <= 0 )
     {
-        fprintf( stderr, "Network Read failed\n" );
+        fprintf( stderr, "Network Read failed" EOL );
         return -2;
     }
 
     if ( options.verbose )
     {
-        fprintf( stdout, "Wrote %ld bytes of data\n", octetsRxed );
+        fprintf( stdout, "Wrote %ld bytes of data" EOL, octetsRxed );
     }
 
     return 0;
