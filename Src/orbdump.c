@@ -195,7 +195,7 @@ void _printHelp( char *progName )
     fprintf( stdout, "        h: This help" EOL );
     fprintf( stdout, "        i: <channel> Set ITM Channel in TPIU decode (defaults to 1)" EOL );
     fprintf( stdout, "        l: <timelen> Length of time in ms to record from point of acheiving sync (defaults to %dmS)" EOL, options.timelen );
-    fprintf( stdout, "        n: No sync requirement for ITM (i.e. ITM does not need to issue syncs)" EOL );
+    fprintf( stdout, "        n: No sync requirement for ITM (i.e. ITM does not need to issue syncs, needed for SEGGER)" EOL );
     fprintf( stdout, "        o: <filename> to be used for dump file (defaults to %s)" EOL, options.outfile );
     fprintf( stdout, "        p: <Port> to use" EOL );
     fprintf( stdout, "        s: <Server> to use" EOL );

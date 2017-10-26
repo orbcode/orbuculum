@@ -953,7 +953,7 @@ void _printHelp( char *progName )
 
 {
     fprintf( stdout, "Useage: %s <hntv> <a name:number> <b basedir> <f filename>  <i channel> <p port> <s speed>" EOL, progName );
-    fprintf( stdout, "        a: Set address for SEGGER JLink connection (default none:%d)" EOL, SEGGER_PORT );
+    fprintf( stdout, "        a: Set address for SEGGER JLink connection, implies -n (default none:%d)" EOL, SEGGER_PORT );
     fprintf( stdout, "        b: <basedir> for channels" EOL );
     fprintf( stdout, "        c: <Number>,<Name>,<Format> of channel to populate (repeat per channel)" EOL );
     fprintf( stdout, "        f: <filename> Take input from specified file" EOL );
@@ -961,7 +961,7 @@ void _printHelp( char *progName )
     fprintf( stdout, "        i: <channel> Set ITM Channel in TPIU decode (defaults to 1)" EOL );
     fprintf( stdout, "        n: No sync requirement for ITM (i.e. ITM does not need to issue syncs)" EOL );
 #ifdef INCLUDE_FPGA_SUPPORT
-    fprintf( stdout, "        o: Use orbuculum custom interface (Forces TPIU on)" EOL );
+    fprintf( stdout, "        o: Use orbuculum custom interface, implies -t" EOL );
 #endif
     fprintf( stdout, "        p: <serialPort> to use" EOL );
     fprintf( stdout, "        s: <serialSpeed> to use" EOL );
@@ -983,6 +983,7 @@ int _processOptions( int argc, char *argv[] )
         {
             // ------------------------------------
             case 'a':
+                options.forceITMSync = TRUE;
                 options.seggerHost = optarg;
 
                 // See if we have an optional port number too
@@ -1204,6 +1205,7 @@ int usbFeeder( void )
     libusb_device_handle *handle;
     libusb_device *dev;
     int size;
+    int32_t err;
 
     while ( 1 )
     {
@@ -1225,9 +1227,9 @@ int usbFeeder( void )
             continue;
         }
 
-        if ( libusb_claim_interface ( handle, INTERFACE ) < 0 )
+        if ( (err=libusb_claim_interface ( handle, INTERFACE )) < 0 )
         {
-            fprintf( stderr, "Failed to claim interface" EOL );
+	  fprintf( stderr, "Failed to claim interface (%d)" EOL,err );
             return 0;
         }
 

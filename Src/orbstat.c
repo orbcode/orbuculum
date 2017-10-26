@@ -126,12 +126,6 @@ struct                                       /* Record for options, either defau
 
     char *dotfile;                           /* File to output dot information */
     char *profile;                           /* File to output profile information */
-    char *outfile;                           /* File to output historic information */
-
-    uint32_t maxRoutines;                    /* Historic information to emit */
-    uint32_t maxHistory;
-
-    BOOL lineDisaggregation;                 /* Aggregate per line or per function? */
 
     int port;                                /* Source information for where to connect to */
     char *server;
@@ -139,10 +133,6 @@ struct                                       /* Record for options, either defau
 } options =
 {
     .tpiuITMChannel = 1,
-    .outfile = NULL,
-    .lineDisaggregation = FALSE,
-    .maxRoutines = 8,
-    .maxHistory = 30,
     .port = SERVER_PORT,
     .server = "localhost"
 };
@@ -948,20 +938,17 @@ void _protocolPump( uint8_t c )
 void _printHelp( char *progName )
 
 {
-    fprintf( stdout, "Usage: %s <htv> <-e ElfFile> <-m MaxHistory> <-o filename> -r <routines> <-i channel> <-p port> <-s server>" EOL, progName );
+    fprintf( stdout, "Usage: %s <htv> <-e ElfFile> <-m MaxHistory> -r <routines> <-i channel> <-p port> <-s server>" EOL, progName );
     fprintf( stdout, "       d: <DeleteMaterial> to take off front of filenames" EOL );
     fprintf( stdout, "       e: <ElfFile> to use for symbols" EOL );
     fprintf( stdout, "       h: This help" EOL );
     fprintf( stdout, "       i: <channel> Set ITM Channel in TPIU decode (defaults to 1)" EOL );
     fprintf( stdout, "       l: Aggregate per line rather than per function" EOL );
-    fprintf( stdout, "       m: <MaxHistory> to record in history file (default %d intervals)" EOL, options.maxHistory );
-    fprintf( stdout, "       n: No sync requirement for ITM (i.e. ITM does not need to issue syncs)" EOL );
-    fprintf( stdout, "       o: <filename> to be used for output history file" EOL );
+    fprintf( stdout, "       n: No sync requirement for ITM (i.e. ITM does not need to issue syncs, needed for SEGGER)" EOL );
     fprintf( stdout, "       p: <Port> to use" EOL );
-    fprintf( stdout, "       r: <routines> to record in history file (default %d routines)" EOL, options.maxRoutines );
     fprintf( stdout, "       s: <Server> to use" EOL );
     fprintf( stdout, "       t: Use TPIU decoder" EOL );
-    fprintf( stdout, "       v: Verbose mode (this will intermingle state info with the output flow)" EOL );
+    fprintf( stdout, "       v: Verbose mode" EOL );
     fprintf( stdout, "       y: <Filename> dotty filename for structured callgraph output" EOL );
     fprintf( stdout, "       z: <Filename> profile filename for kcachegrind output" EOL );
 }
@@ -971,7 +958,7 @@ int _processOptions( int argc, char *argv[] )
 {
     int c;
 
-    while ( ( c = getopt ( argc, argv, "d:e:hi:lm:no:p:r:s:tvy:z:" ) ) != -1 )
+    while ( ( c = getopt ( argc, argv, "d:e:hi:lnp:s:tvy:z:" ) ) != -1 )
 
         switch ( c )
         {
@@ -996,33 +983,13 @@ int _processOptions( int argc, char *argv[] )
                 break;
 
             // ------------------------------------
-            case 'l':
-                options.lineDisaggregation = TRUE;
-                break;
-
-            // ------------------------------------
-            case 'm':
-                options.maxHistory = atoi( optarg );
-                break;
-
-            // ------------------------------------
             case 'n':
                 options.forceITMSync = TRUE;
                 break;
 
             // ------------------------------------
-            case 'o':
-                options.outfile = optarg;
-                break;
-
-            // ------------------------------------
             case 'p':
                 options.port = atoi( optarg );
-                break;
-
-            // ------------------------------------
-            case 'r':
-                options.maxRoutines = atoi( optarg );
                 break;
 
             // ------------------------------------

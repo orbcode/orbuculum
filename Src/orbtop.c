@@ -840,7 +840,7 @@ void _printHelp( char *progName )
     fprintf( stdout, "        i: <channel> Set ITM Channel in TPIU decode (defaults to 1)" EOL );
     fprintf( stdout, "        l: Aggregate per line rather than per function" EOL );
     fprintf( stdout, "        m: <MaxHistory> to record in history file (default %d intervals)" EOL, options.maxHistory );
-    fprintf( stdout, "        n: No sync requirement for ITM (i.e. ITM does not need to issue syncs)" EOL );
+    fprintf( stdout, "        n: No sync requirement for ITM (i.e. ITM does not need to issue syncs, needed for SEGGER)" EOL );
     fprintf( stdout, "        o: <filename> to be used for output history file" EOL );
     fprintf( stdout, "        p: <Port> to use" EOL );
     fprintf( stdout, "        r: <routines> to record in history file (default %d routines)" EOL, options.maxRoutines );

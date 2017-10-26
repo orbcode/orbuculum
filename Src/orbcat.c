@@ -451,7 +451,7 @@ void _printHelp( char *progName )
     fprintf( stdout, "       c: <Number>,<Format> of channel to add into output stream (repeat per channel)" EOL );
     fprintf( stdout, "       h: This help" EOL );
     fprintf( stdout, "       i: <channel> Set ITM Channel in TPIU decode (defaults to 1)" EOL );
-    fprintf( stdout, "       n: No sync requirement for ITM (i.e. ITM does not need to issue syncs)" EOL );
+    fprintf( stdout, "       n: No sync requirement for ITM (i.e. ITM does not need to issue syncs, needed for SEGGER)" EOL );
     fprintf( stdout, "       p: <Port> to use" EOL );
     fprintf( stdout, "       s: <Server> to use" EOL );
     fprintf( stdout, "       t: Use TPIU decoder" EOL );
