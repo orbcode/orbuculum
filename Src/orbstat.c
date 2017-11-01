@@ -62,7 +62,8 @@
 #include "itmDecoder.h"
 
 #define TEXT_SEGMENT ".text"
-#define TRACE_CHANNEL  1                     /* Channel that we expect trace data to arrive on */
+#define DEFAULT_TRACE_CHANNEL  30             /* Channel that we expect trace data to arrive on */
+#define DEFAULT_FILE_CHANNEL   29            /* Channel that we expect file data to arrive on */
 
 #define INTERRUPT    0xFFFFFFF8              /* Special memory address - interrupt origin */
 #define NOT_FOUND    0xFFFFFFFF              /* Special memory address - not found */
@@ -127,14 +128,18 @@ struct                                       /* Record for options, either defau
     char *dotfile;                           /* File to output dot information */
     char *profile;                           /* File to output profile information */
 
-    int port;                                /* Source information for where to connect to */
+  int traceChannel;                        /* ITM Channel used for trace */
+  int fileChannel;                         /* ITM Channel used for file output */
+  int port;                                /* Source information for where to connect to */
     char *server;
 
 } options =
 {
     .tpiuITMChannel = 1,
     .port = SERVER_PORT,
-    .server = "localhost"
+    .server = "localhost",
+    .traceChannel = DEFAULT_TRACE_CHANNEL,
+    .fileChannel = DEFAULT_FILE_CHANNEL
 };
 
 /* ----------- LIVE STATE ----------------- */
@@ -255,7 +260,7 @@ void _handleSW( struct ITMDecoder *i )
 
     if ( ITMGetPacket( i, &p ) )
     {
-        if ( p.srcAddr == TRACE_CHANNEL )
+        if ( p.srcAddr == options.traceChannel )
         {
             d = ( p.d[3] << 24 ) | ( p.d[2] << 16 ) | ( p.d[1] << 8 ) | p.d[0];
 
@@ -941,6 +946,8 @@ void _printHelp( char *progName )
     fprintf( stdout, "Usage: %s <htv> <-e ElfFile> <-m MaxHistory> -r <routines> <-i channel> <-p port> <-s server>" EOL, progName );
     fprintf( stdout, "       d: <DeleteMaterial> to take off front of filenames" EOL );
     fprintf( stdout, "       e: <ElfFile> to use for symbols" EOL );
+    fprintf( stdout, "       f: <FileChannel> for file writing (default %d)" EOL, options.fileChannel );
+    fprintf( stdout, "       g: <TraceChannel> for trace output (default %d)" EOL, options.traceChannel );
     fprintf( stdout, "       h: This help" EOL );
     fprintf( stdout, "       i: <channel> Set ITM Channel in TPIU decode (defaults to 1)" EOL );
     fprintf( stdout, "       l: Aggregate per line rather than per function" EOL );
@@ -958,7 +965,7 @@ int _processOptions( int argc, char *argv[] )
 {
     int c;
 
-    while ( ( c = getopt ( argc, argv, "d:e:hi:lnp:s:tvy:z:" ) ) != -1 )
+    while ( ( c = getopt ( argc, argv, "d:e:f:g:hi:lnp:s:tvy:z:" ) ) != -1 )
 
         switch ( c )
         {
@@ -973,9 +980,14 @@ int _processOptions( int argc, char *argv[] )
                 break;
 
             // ------------------------------------
-            case 'h':
-                _printHelp( argv[0] );
-                return FALSE;
+            case 'f':
+	      options.fileChannel = atoi( optarg );
+                break;
+
+            // ------------------------------------
+            case 'g':
+	      options.traceChannel = atoi( optarg );
+	      break;
 
             // ------------------------------------
             case 'i':
@@ -1053,13 +1065,12 @@ int _processOptions( int argc, char *argv[] )
     {
         fprintf( stdout, "orbtop V" VERSION " (Git %08X %s, Built " BUILD_DATE ")" EOL, GIT_HASH, ( GIT_DIRTY ? "Dirty" : "Clean" ) );
 
-        fprintf( stdout, "Verbose     : TRUE" EOL );
-        fprintf( stdout, "Server      : %s:%d" EOL, options.server, options.port );
-        fprintf( stdout, "Delete Mat  : %s" EOL, options.deleteMaterial ? options.deleteMaterial : "None" );
-        fprintf( stdout, "Elf File    : %s" EOL, options.elffile );
-        fprintf( stdout, "DOT file    : %s" EOL, options.dotfile ? options.dotfile : "None" );
-        fprintf( stdout, "ForceSync   : %s" EOL, options.forceITMSync ? "TRUE" : "FALSE" );
-
+        fprintf( stdout, "Server        : %s:%d" EOL, options.server, options.port );
+        fprintf( stdout, "Delete Mat    : %s" EOL, options.deleteMaterial ? options.deleteMaterial : "None" );
+        fprintf( stdout, "Elf File      : %s" EOL, options.elffile );
+        fprintf( stdout, "DOT file      : %s" EOL, options.dotfile ? options.dotfile : "None" );
+        fprintf( stdout, "ForceSync     : %s" EOL, options.forceITMSync ? "TRUE" : "FALSE" );
+        fprintf( stdout, "Trace/File Ch : %d/%d" EOL, options.traceChannel, options.fileChannel );  
         if ( options.useTPIU )
         {
             fprintf( stdout, "Using TPIU  : TRUE (ITM on channel %d)" EOL, options.tpiuITMChannel );
