@@ -45,7 +45,7 @@ CFILES =
 SFILES =
 OLOC = ofiles
 INCLUDE_PATHS = -I/usr/local/include/libusb-1.0 
-LDLIBS = -L/usr/local/lib -lusb-1.0 -lelf -lbfd -liberty
+LDLIBS = -L/usr/local/lib -lusb-1.0 -lelf -lbfd -lz -dl -liberty
 
 #ifdef LINUX
 LDLIBS += -lpthread
