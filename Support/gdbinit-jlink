@@ -7,19 +7,10 @@ set mem inaccessible-by-default off
 set print pretty
 load
 
-monitor reset
+monitor reset halt
 
-# Configure STM32F1 SWD pin
-enableSTM32F1SWD
-
-# Turn on SWO through JLink
-monitor SWO EnableTarget 0 0 1 0
-monitor SWO start 0 2250000
-
-# 2.25Mbps, use TPIU, don't use Manchester encoding
-# SystemCoreClock is the current speed of the clock which the
-# divisors are based on...hence the reason it's needed
-prepareSWD SystemCoreClock 2250000 1 0
+# Turn on SWO through JLink ... it will do everything needed per chip
+monitor SWO EnableTarget 168000000 0 0xFF 0
 
 dwtSamplePC 1
 dwtSyncTAP 3
