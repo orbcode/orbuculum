@@ -855,7 +855,7 @@ int _processOptions( int argc, char *argv[] )
 {
     int c;
 
-    while ( ( c = getopt ( argc, argv, "d:e:hi:lmn:o:p:r:s:v" ) ) != -1 )
+    while ( ( c = getopt ( argc, argv, "d:e:hi:lmno:p:r:s:v" ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
