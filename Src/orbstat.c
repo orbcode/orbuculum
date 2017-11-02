@@ -990,6 +990,11 @@ int _processOptions( int argc, char *argv[] )
 	      break;
 
             // ------------------------------------
+            case 'h':
+	      _printHelp(argv[0]);
+	      exit(0);
+
+            // ------------------------------------
             case 'i':
                 options.tpiuITMChannel = atoi( optarg );
                 break;
