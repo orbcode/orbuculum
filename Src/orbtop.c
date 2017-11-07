@@ -112,6 +112,7 @@ struct                                       /* Record for options, either defau
 
 } options =
 {
+    .forceITMSync = true,
     .useTPIU = false,
     .tpiuITMChannel = 1,
     .outfile = NULL,
@@ -160,39 +161,13 @@ struct
 void _handleException( struct ITMDecoder *i, struct ITMPacket *p )
 
 {
-    if ( !( options.hwOutputs & ( 1 << HWEVENT_EXCEPTION ) ) )
-    {
-        return;
-    }
 
-    uint32_t exceptionNumber = ( ( p->d[1] & 0x01 ) << 8 ) | p->d[0];
-    uint32_t eventType = p->d[1] >> 4;
-
-    const char *exNames[] = {"Thread", "Reset", "NMI", "HardFault", "MemManage", "BusFault", "UsageFault", "UNKNOWN_7",
-                             "UNKNOWN_8", "UNKNOWN_9", "UNKNOWN_10", "SVCall", "Debug Monitor", "UNKNOWN_13", "PendSV", "SysTick"
-                            };
-    const char *exEvent[] = {"Unknown", "Enter", "Exit", "Resume"};
-    fprintf( stdout, "%d,%s,%s" EOL, HWEVENT_EXCEPTION, exEvent[eventType], exNames[exceptionNumber] );
 }
 // ====================================================================================================
 void _handleDWTEvent( struct ITMDecoder *i, struct ITMPacket *p )
 
 {
-    if ( !( options.hwOutputs & ( 1 << HWEVENT_DWT ) ) )
-    {
-        return;
-    }
 
-    uint32_t event = p->d[1] & 0x2F;
-    const char *evName[] = {"CPI", "Exc", "Sleep", "LSU", "Fold", "Cyc"};
-
-    for ( uint32_t i = 0; i < 6; i++ )
-    {
-        if ( event & ( 1 << i ) )
-        {
-            fprintf( stdout, "%d,%s" EOL, HWEVENT_DWT, evName[event] );
-        }
-    }
 }
 // ====================================================================================================
 void _handleSW( struct ITMDecoder *i )
@@ -317,40 +292,43 @@ void outputTop( void )
 
     fprintf( stdout, "\033[2J\033[;H" );
 
-    for ( uint32_t n = 0; n < reportLines; n++ )
+    if ( total )
     {
-        percentage = ( report[n].count * 10000 ) / total;
-        samples += report[n].count;
-
-        if ( report[n].count )
+        for ( uint32_t n = 0; n < reportLines; n++ )
         {
-            if ( ( percentage >= CUTOFF ) && ( ( !options.cutscreen ) || ( n < options.cutscreen ) ) )
+            percentage = ( report[n].count * 10000 ) / total;
+            samples += report[n].count;
+
+            if ( report[n].count )
             {
-                fprintf( stdout, "%3d.%02d%% %8ld ", percentage / 100, percentage % 100, report[n].count );
-
-                dispSamples += report[n].count;
-
-                if ( ( options.lineDisaggregation ) && ( report[n].n->line ) )
+                if ( ( percentage >= CUTOFF ) && ( ( !options.cutscreen ) || ( n < options.cutscreen ) ) )
                 {
-                    fprintf( stdout, "%s::%d" EOL, report[n].n->function, report[n].n->line );
+                    fprintf( stdout, "%3d.%02d%% %8ld ", percentage / 100, percentage % 100, report[n].count );
+
+                    dispSamples += report[n].count;
+
+                    if ( ( options.lineDisaggregation ) && ( report[n].n->line ) )
+                    {
+                        fprintf( stdout, "%s::%d" EOL, report[n].n->function, report[n].n->line );
+                    }
+                    else
+                    {
+                        fprintf( stdout, "%s" EOL, report[n].n->function );
+                    }
+
+                    totPercent += percentage;
                 }
-                else
-                {
-                    fprintf( stdout, "%s" EOL, report[n].n->function );
-                }
 
-                totPercent += percentage;
-            }
-
-            if ( ( p )  && ( n < options.maxRoutines ) )
-            {
-                if ( !options.lineDisaggregation )
+                if ( ( p )  && ( n < options.maxRoutines ) )
                 {
-                    fprintf( p, "%s,%3d.%02d" EOL, report[n].n->function, percentage / 100, percentage % 100 );
-                }
-                else
-                {
-                    fprintf( p, "%s::%d,%3d.%02d" EOL, report[n].n->function, report[n].n->line, percentage / 100, percentage % 100 );
+                    if ( !options.lineDisaggregation )
+                    {
+                        fprintf( p, "%s,%3d.%02d" EOL, report[n].n->function, percentage / 100, percentage % 100 );
+                    }
+                    else
+                    {
+                        fprintf( p, "%s::%d,%3d.%02d" EOL, report[n].n->function, report[n].n->line, percentage / 100, percentage % 100 );
+                    }
                 }
             }
         }
@@ -611,7 +589,7 @@ void _printHelp( char *progName )
     fprintf( stdout, "        i: <channel> Set ITM Channel in TPIU decode (defaults to 1)" EOL );
     fprintf( stdout, "        l: Aggregate per line rather than per function" EOL );
     fprintf( stdout, "        m: <MaxHistory> to record in history file (default %d intervals)" EOL, options.maxHistory );
-    fprintf( stdout, "        n: No sync requirement for ITM (i.e. ITM does not need to issue syncs, needed for SEGGER)" EOL );
+    fprintf( stdout, "        n: Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
     fprintf( stdout, "        o: <filename> to be used for output history file" EOL );
     fprintf( stdout, "        r: <routines> to record in history file (default %d routines)" EOL, options.maxRoutines );
     fprintf( stdout, "        s: <Server>:<Port> to use" EOL );
@@ -660,7 +638,7 @@ int _processOptions( int argc, char *argv[] )
 
             // ------------------------------------
             case 'n':
-                options.forceITMSync = true;
+                options.forceITMSync = false;
                 break;
 
             // ------------------------------------
@@ -685,27 +663,27 @@ int _processOptions( int argc, char *argv[] )
 
             // ------------------------------------
             case 's':
-	      fflush(stderr);
-	      options.server = optarg;
-	      
-	      // See if we have an optional port number too
-	      char *a = optarg;
+                options.server = optarg;
 
-	      while ( ( *a ) && ( *a != ':' ) )
+                // See if we have an optional port number too
+                char *a = optarg;
+
+                while ( ( *a ) && ( *a != ':' ) )
                 {
-		  a++;
+                    a++;
                 }
 
                 if ( *a == ':' )
                 {
-		  *a=0;
-		  options.port = atoi( ++a );
+                    *a = 0;
+                    options.port = atoi( ++a );
                 }
 
                 if ( !options.port )
                 {
                     options.port = SERVER_PORT;
                 }
+
                 break;
 
             // ------------------------------------

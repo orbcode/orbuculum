@@ -60,15 +60,11 @@
 #include "generics.h"
 #include "tpiuDecoder.h"
 #include "itmDecoder.h"
+#include "symbols.h"
 
 #define TEXT_SEGMENT ".text"
-#define DEFAULT_TRACE_CHANNEL  30             /* Channel that we expect trace data to arrive on */
+#define DEFAULT_TRACE_CHANNEL  30            /* Channel that we expect trace data to arrive on */
 #define DEFAULT_FILE_CHANNEL   29            /* Channel that we expect file data to arrive on */
-
-#define INTERRUPT    0xFFFFFFF8              /* Special memory address - interrupt origin */
-#define NOT_FOUND    0xFFFFFFFF              /* Special memory address - not found */
-
-#define EOL           "\n\r"
 
 #define SERVER_PORT 3443                     /* Server port definition */
 #define TRANSFER_SIZE (4096)                 /* Maximum packet we might receive */
@@ -82,13 +78,9 @@
 /* An entry in the names table */
 struct nameEntryHash
 {
-    const char *filename;
-    const char *function;
-    uint32_t index;
-    uint32_t line;
-    uint32_t addr;
+    struct nameEntry *n;
     bool seen;
-
+    uint32_t index;
     UT_hash_handle hh;
 };
 
@@ -128,13 +120,14 @@ struct                                       /* Record for options, either defau
     char *dotfile;                           /* File to output dot information */
     char *profile;                           /* File to output profile information */
 
-  int traceChannel;                        /* ITM Channel used for trace */
-  int fileChannel;                         /* ITM Channel used for file output */
-  int port;                                /* Source information for where to connect to */
+    int traceChannel;                        /* ITM Channel used for trace */
+    int fileChannel;                         /* ITM Channel used for file output */
+    int port;                                /* Source information for where to connect to */
     char *server;
 
 } options =
 {
+    .forceITMSync = true,
     .tpiuITMChannel = 1,
     .port = SERVER_PORT,
     .server = "localhost",
@@ -150,12 +143,6 @@ struct
     struct TPIUDecoder t;
     struct TPIUPacket p;
 
-    /* Symbol table related info */
-    asymbol **syms;                         /* Symbol table */
-    uint32_t symcount;                      /* Number of symbols */
-    bfd *abfd;                              /* BFD handle to file */
-    asection *sect;                         /* Address data for the program section */
-
     /* Calls related info */
     enum CDState CDState;                   /* State of the call data machine */
     struct edge callsConstruct;             /* Call data entry under construction */
@@ -166,6 +153,7 @@ struct
     uint32_t psn;                           /* Current position in assessment of data */
     uint32_t cdCount;                       /* Call data count */
 
+    struct SymbolSet *s;                    /* Symbols read from elf */
     FILE *c;                                /* Writable file */
 
     /* Turn addresses into files and routines tags */
@@ -184,67 +172,8 @@ struct
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
-bool _loadSymbols( void )
 
-/* Load symbols from bfd library compatible file */
 
-{
-    uint32_t storage;
-    bool dynamic = false;
-    char **matching;
-
-    bfd_init();
-
-    _r.abfd = bfd_openr( options.elffile, NULL );
-
-    if ( !_r.abfd )
-    {
-        fprintf( stderr, "Couldn't open ELF file" EOL );
-        return false;
-    }
-
-    _r.abfd->flags |= BFD_DECOMPRESS;
-
-    if ( bfd_check_format( _r.abfd, bfd_archive ) )
-    {
-        fprintf( stderr, "Cannot get addresses from archive %s" EOL, options.elffile );
-        return false;
-    }
-
-    if ( ! bfd_check_format_matches ( _r.abfd, bfd_object, &matching ) )
-    {
-        fprintf( stderr, "Ambigious format for file" EOL );
-        return false;
-    }
-
-    if ( ( bfd_get_file_flags ( _r.abfd ) & HAS_SYMS ) == 0 )
-    {
-        fprintf( stderr, "No symbols found" EOL );
-        return false;
-    }
-
-    storage = bfd_get_symtab_upper_bound ( _r.abfd ); /* This is returned in bytes */
-
-    if ( storage == 0 )
-    {
-        storage = bfd_get_dynamic_symtab_upper_bound ( _r.abfd );
-        dynamic = true;
-    }
-
-    _r.syms = ( asymbol ** )malloc( storage );
-
-    if ( dynamic )
-    {
-        _r.symcount = bfd_canonicalize_dynamic_symtab ( _r.abfd, _r.syms );
-    }
-    else
-    {
-        _r.symcount = bfd_canonicalize_symtab ( _r.abfd, _r.syms );
-    }
-
-    _r.sect = bfd_get_section_by_name( _r.abfd, TEXT_SEGMENT );
-    return true;
-}
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
@@ -315,94 +244,32 @@ void _handleSW( struct ITMDecoder *i )
     }
 }
 // ====================================================================================================
-bool _lookup( struct nameEntryHash **n, uint32_t addr, asection *section )
+void _lookup( struct nameEntryHash **h, uint32_t addr )
 
 /* Lookup function for address to line, and hence to function, and cache in case we need it later */
 
 {
-    const char *function = NULL;
-    const char *filename = NULL;
+    struct nameEntry *np;
 
-    uint32_t line;
-    bool found = false;
+    HASH_FIND_INT( _r.name, &addr, *h );
 
-    HASH_FIND_INT( _r.name, &addr, *n );
-
-    if ( *n )
+    if ( !( *h ) )
     {
-        found = true;
+        struct nameEntry ne;
+
+        /* Find a matching name record if there is one */
+        SymbolLookup( _r.s, addr, &ne, options.deleteMaterial );
+
+        /* Was found, so create new hash entry for this */
+        np = ( struct nameEntry * )malloc( sizeof( struct nameEntry ) );
+        *h = ( struct nameEntryHash * )malloc( sizeof( struct nameEntryHash ) );
+        memcpy( np, &ne, sizeof( struct nameEntry ) );
+        ( *h )->n = np;
+        ( *h )->index = _r.nameCount++;
+        ( *h )->seen = false;
+
+        HASH_ADD_INT( _r.name, n->addr, *h );
     }
-    else
-    {
-        uint32_t workingAddr = addr - bfd_get_section_vma( _r.abfd, section );
-
-        if ( workingAddr <= bfd_section_size( _r.abfd, section ) )
-        {
-            if ( bfd_find_nearest_line( _r.abfd, section, _r.syms, workingAddr, &filename, &function, &line ) )
-            {
-
-                /* Remove any frontmatter off filename string that matches */
-                if ( options.deleteMaterial )
-                {
-                    char *m = options.deleteMaterial;
-
-                    while ( ( *m ) && ( *filename ) && ( *filename == *m ) )
-                    {
-                        m++;
-                        filename++;
-                    }
-                }
-
-                /* Was found, so create new hash entry for this */
-                ( *n ) = ( struct nameEntryHash * )malloc( sizeof( struct nameEntryHash ) );
-                ( *n )->filename = filename;
-                ( *n )->function = function;
-                ( *n )->addr = addr;
-                ( *n )->index = _r.nameCount++;
-                ( *n )->line = line;
-                HASH_ADD_INT( _r.name, addr, ( *n ) );
-                found = true;
-            }
-        }
-    }
-
-    if ( !found )
-    {
-        if ( addr == INTERRUPT )
-        {
-            ( *n ) = ( struct nameEntryHash * )malloc( sizeof( struct nameEntryHash ) );
-            ( *n )->filename = "None";
-            ( *n )->function = "INTERRUPT";
-            ( *n )->addr = addr;
-            ( *n )->index = _r.nameCount++;
-            ( *n )->line = 0;
-            HASH_ADD_INT( _r.name, addr, ( *n ) );
-        }
-        else
-        {
-            uint32_t foundTag = NOT_FOUND;
-            /* Create the not found entry if it's not already present */
-            HASH_FIND_INT( _r.name, &foundTag, ( *n ) );
-
-            if ( !( *n ) )
-            {
-                ( *n ) = ( struct nameEntryHash * )malloc( sizeof( struct nameEntryHash ) );
-                ( *n )->filename = "Unknown";
-                ( *n )->function = "Unknown";
-                ( *n )->addr = foundTag;
-                ( *n )->index = _r.nameCount++;
-                ( *n )->line = 0;
-                HASH_ADD_INT( _r.name, addr, ( *n ) );
-            }
-            else
-            {
-                found = true;
-            }
-        }
-    }
-
-    /* However we got here, we can refer the requested line entry to a valid name tag */
-    return found;
 }
 // ====================================================================================================
 uint64_t _timestamp( void )
@@ -476,12 +343,12 @@ void _dumpProfile( void )
             myCost += _r.sub[i++].myCost;
         }
 
-        _lookup( &t, _r.sub[i].dst, _r.sect );
+        _lookup( &t, _r.sub[i].dst );
 
         if ( !t->seen )
         {
             /* Haven't seen it before, so announce it */
-            fprintf( _r.c, "fl=(%d) %s\nfn=(%d) %s\n0x%08x %d %ld\n", t->index, t->filename, t->index, t->function, t->addr, t->line, myCost );
+            fprintf( _r.c, "fl=(%d) %s\nfn=(%d) %s\n0x%08x %d %ld\n", t->index, t->n->filename, t->index, t->n->function, t->n->addr, t->n->line, myCost );
             t->seen = true;
         }
     }
@@ -505,21 +372,21 @@ void _dumpProfile( void )
             totalCalls++;
         }
 
-        _lookup( &t, _r.sub[i].dst, _r.sect );
+        _lookup( &t, _r.sub[i].dst );
 
         if ( !t->seen )
         {
             /* This is a previously unseen dest, announce it */
-            fprintf( _r.c, "fl=(%d) %s\nfn=(%d) %s\n0x%08x %d %ld\n", t->index, t->filename, t->index, t->function, t->addr, t->line, myCost );
+            fprintf( _r.c, "fl=(%d) %s\nfn=(%d) %s\n0x%08x %d %ld\n", t->index, t->n->filename, t->index, t->n->function, t->n->addr, t->n->line, myCost );
             t->seen = true;
         }
 
-        _lookup( &f, _r.sub[i].src, _r.sect );
+        _lookup( &f, _r.sub[i].src );
 
         if ( !f->seen )
         {
             /* Add this in, but cost of the caller is not visible here...we need to put 1 else no code is visible */
-            fprintf( _r.c, "fl=(%d) %s\nfn=(%d) %s\n0x%08x %d 1\n", f->index, f->filename, f->index, f->function, f->addr, f->line );
+            fprintf( _r.c, "fl=(%d) %s\nfn=(%d) %s\n0x%08x %d 1\n", f->index, f->n->filename, f->index, f->n->function, f->n->addr, f->n->line );
             f->seen = true;
         }
         else
@@ -528,8 +395,8 @@ void _dumpProfile( void )
         }
 
         /* Now publish the call destination. By definition is is known, so can be shortformed */
-        fprintf( _r.c, "cfi=(%d)\ncfn=(%d)\ncalls=%d 0x%08x %d\n", t->index, t->index, totalCalls, _r.sub[i].dst, t->line );
-        fprintf( _r.c, "0x%08x %d %ld\n", _r.sub[i].src, f->line, totalCost );
+        fprintf( _r.c, "cfi=(%d)\ncfn=(%d)\ncalls=%d 0x%08x %d\n", t->index, t->index, totalCalls, _r.sub[i].dst, t->n->line );
+        fprintf( _r.c, "0x%08x %d %ld\n", _r.sub[i].src, f->n->line, totalCost );
     }
 }
 // ====================================================================================================
@@ -680,8 +547,8 @@ void _outputDot( void )
     qsort( _r.calls, _r.cdCount, sizeof( struct edge ), _addr_sort_dst_fn );
 
     /* Put in all the names of functions. There may be multiple addresses that match to a function, so crush them up */
-    _lookup( &f, _r.calls[0].src, _r.sect );
-    _lookup( &t, _r.calls[0].dst, _r.sect );
+    _lookup( &f, _r.calls[0].src );
+    _lookup( &t, _r.calls[0].dst );
 
     for ( uint32_t i = 0; i < _r.cdCount; i++ )
     {
@@ -693,11 +560,12 @@ void _outputDot( void )
         do
         {
             call[callCount].count++;
-            _lookup( &f, _r.calls[i].src, _r.sect );
-            _lookup( &t, _r.calls[i].dst, _r.sect );
+            _lookup( &f, _r.calls[i].src );
+            _lookup( &t, _r.calls[i].dst );
             i++;
         }
-        while ( ( !strcmp( call[callCount].fromName->function, f->function ) ) && ( !strcmp( call[callCount].toName->function, t->function ) ) && ( i < _r.cdCount ) );
+        while ( ( !strcmp( call[callCount].fromName->n->function, f->n->function ) ) && ( !strcmp( call[callCount].toName->n->function, t->n->function ) ) && ( i < _r.cdCount ) );
+
         callCount++;
     }
 
@@ -709,12 +577,12 @@ void _outputDot( void )
 
     for ( uint32_t x = 1; x < callCount; x++ )
     {
-        fprintf( c, "  subgraph \"cluster_%s\"\n  {\n    label=\"%s\";\n    bgcolor=lightgrey;\n", call[x - 1].toName->filename, call[x - 1].toName->filename );
+        fprintf( c, "  subgraph \"cluster_%s\"\n  {\n    label=\"%s\";\n    bgcolor=lightgrey;\n", call[x - 1].toName->n->filename, call[x - 1].toName->n->filename );
 
         while ( x < callCount )
         {
             /* Now output each function in the subgraph */
-            fprintf( c, "    %s [style=filled, fillcolor=white];\n", call[x - 1].toName->function );
+            fprintf( c, "    %s [style=filled, fillcolor=white];\n", call[x - 1].toName->n->function );
 
             /* Spin forwards until the function name _or_ filename changes */
             while ( ( x < callCount ) && ( call[x - 1].toName == call[x].toName ) )
@@ -722,7 +590,7 @@ void _outputDot( void )
                 x++;
             }
 
-            if ( ( x >= callCount ) || ( strcmp( call[x - 1].toName->filename, call[x].toName->filename ) ) )
+            if ( ( x >= callCount ) || ( strcmp( call[x - 1].toName->n->filename, call[x].toName->n->filename ) ) )
             {
                 break;
             }
@@ -738,12 +606,12 @@ void _outputDot( void )
 
     for ( uint32_t x = 1; x < callCount; x++ )
     {
-        fprintf( c, "  subgraph \"cluster_%s\"\n  {\n    label=\"%s\";\n    bgcolor=lightgrey;\n", call[x - 1].fromName->filename, call[x - 1].fromName->filename );
+        fprintf( c, "  subgraph \"cluster_%s\"\n  {\n    label=\"%s\";\n    bgcolor=lightgrey;\n", call[x - 1].fromName->n->filename, call[x - 1].fromName->n->filename );
 
         while ( x < callCount )
         {
             /* Now output each function in the subgraph */
-            fprintf( c, "    %s [style=filled, fillcolor=white];\n", call[x - 1].fromName->function );
+            fprintf( c, "    %s [style=filled, fillcolor=white];\n", call[x - 1].fromName->n->function );
 
             /* Spin forwards until the function name _or_ filename changes */
             while ( ( x < callCount ) && ( call[x - 1].fromName == call[x].fromName ) )
@@ -751,7 +619,7 @@ void _outputDot( void )
                 x++;
             }
 
-            if ( ( x >= callCount ) || ( strcmp( call[x - 1].fromName->filename, call[x].fromName->filename ) ) )
+            if ( ( x >= callCount ) || ( strcmp( call[x - 1].fromName->n->filename, call[x].fromName->n->filename ) ) )
             {
                 break;
             }
@@ -765,8 +633,8 @@ void _outputDot( void )
     /* Now go through and label the arrows... */
     for ( uint32_t x = 0; x < callCount; x++ )
     {
-        fprintf( c, "    %s -> ", call[x].fromName->function );
-        fprintf( c, "%s [label=%d , weight=0.1;];\n", call[x].toName->function, call[x].count );
+        fprintf( c, "    %s -> ", call[x].fromName->n->function );
+        fprintf( c, "%s [label=%d , weight=0.1;];\n", call[x].toName->n->function, call[x].count );
     }
 
     fprintf( c, "}\n" );
@@ -817,49 +685,61 @@ void _itmPumpProcess( char c )
         // ------------------------------------
         case ITM_EV_NONE:
             break;
+
         // ------------------------------------
         case ITM_EV_UNSYNCED:
             if ( options.verbose )
             {
                 fprintf( stdout, "ITM Lost Sync (%d)" EOL, ITMDecoderGetStats( &_r.i )->lostSyncCount );
             }
+
             break;
+
         // ------------------------------------
         case ITM_EV_SYNCED:
             if ( options.verbose )
             {
                 fprintf( stdout, "ITM In Sync (%d)" EOL, ITMDecoderGetStats( &_r.i )->syncCount );
             }
+
             break;
+
         // ------------------------------------
         case ITM_EV_OVERFLOW:
             if ( options.verbose )
             {
                 fprintf( stdout, "ITM Overflow (%d)" EOL, ITMDecoderGetStats( &_r.i )->overflow );
             }
+
             break;
+
         // ------------------------------------
         case ITM_EV_ERROR:
             if ( options.verbose )
             {
                 fprintf( stdout, "ITM Error" EOL );
             }
+
             break;
+
         // ------------------------------------
         case ITM_EV_TS_PACKET_RXED:
             break;
+
         // ------------------------------------
         case ITM_EV_SW_PACKET_RXED:
             _handleSW( &_r.i );
             break;
+
         // ------------------------------------
         case ITM_EV_HW_PACKET_RXED:
             _handleHW( &_r.i );
             break;
+
         // ------------------------------------
         case ITM_EV_XTN_PACKET_RXED:
             break;
-        // ------------------------------------
+            // ------------------------------------
     }
 }
 // ====================================================================================================
@@ -951,9 +831,8 @@ void _printHelp( char *progName )
     fprintf( stdout, "       h: This help" EOL );
     fprintf( stdout, "       i: <channel> Set ITM Channel in TPIU decode (defaults to 1)" EOL );
     fprintf( stdout, "       l: Aggregate per line rather than per function" EOL );
-    fprintf( stdout, "       n: No sync requirement for ITM (i.e. ITM does not need to issue syncs, needed for SEGGER)" EOL );
-    fprintf( stdout, "       p: <Port> to use" EOL );
-    fprintf( stdout, "       s: <Server> to use" EOL );
+    fprintf( stdout, "       n: Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
+    fprintf( stdout, "       s: <Server>:<Port> to use" EOL );
     fprintf( stdout, "       t: Use TPIU decoder" EOL );
     fprintf( stdout, "       v: Verbose mode" EOL );
     fprintf( stdout, "       y: <Filename> dotty filename for structured callgraph output" EOL );
@@ -981,18 +860,18 @@ int _processOptions( int argc, char *argv[] )
 
             // ------------------------------------
             case 'f':
-	      options.fileChannel = atoi( optarg );
+                options.fileChannel = atoi( optarg );
                 break;
 
             // ------------------------------------
             case 'g':
-	      options.traceChannel = atoi( optarg );
-	      break;
+                options.traceChannel = atoi( optarg );
+                break;
 
             // ------------------------------------
             case 'h':
-	      _printHelp(argv[0]);
-	      exit(0);
+                _printHelp( argv[0] );
+                exit( 0 );
 
             // ------------------------------------
             case 'i':
@@ -1001,17 +880,32 @@ int _processOptions( int argc, char *argv[] )
 
             // ------------------------------------
             case 'n':
-                options.forceITMSync = true;
-                break;
-
-            // ------------------------------------
-            case 'p':
-                options.port = atoi( optarg );
+                options.forceITMSync = false;
                 break;
 
             // ------------------------------------
             case 's':
                 options.server = optarg;
+
+                // See if we have an optional port number too
+                char *a = optarg;
+
+                while ( ( *a ) && ( *a != ':' ) )
+                {
+                    a++;
+                }
+
+                if ( *a == ':' )
+                {
+                    *a = 0;
+                    options.port = atoi( ++a );
+                }
+
+                if ( !options.port )
+                {
+                    options.port = SERVER_PORT;
+                }
+
                 break;
 
             // ------------------------------------
@@ -1075,7 +969,8 @@ int _processOptions( int argc, char *argv[] )
         fprintf( stdout, "Elf File      : %s" EOL, options.elffile );
         fprintf( stdout, "DOT file      : %s" EOL, options.dotfile ? options.dotfile : "None" );
         fprintf( stdout, "ForceSync     : %s" EOL, options.forceITMSync ? "true" : "false" );
-        fprintf( stdout, "Trace/File Ch : %d/%d" EOL, options.traceChannel, options.fileChannel );  
+        fprintf( stdout, "Trace/File Ch : %d/%d" EOL, options.traceChannel, options.fileChannel );
+
         if ( options.useTPIU )
         {
             fprintf( stdout, "Using TPIU  : true (ITM on channel %d)" EOL, options.tpiuITMChannel );
@@ -1105,7 +1000,10 @@ int main( int argc, char *argv[] )
         exit( -1 );
     }
 
-    if ( !_loadSymbols() )
+    /* Get the symbols from file */
+    _r.s = SymbolSetCreate( options.elffile );
+
+    if ( !_r.s )
     {
         exit( -3 );
     }

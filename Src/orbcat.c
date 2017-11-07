@@ -78,7 +78,7 @@ struct
     int port;
     char *server;
 
-} options = {.tpiuITMChannel = 1, .port = SERVER_PORT, .server = "localhost"};
+} options = {.forceITMSync = true, .tpiuITMChannel = 1, .port = SERVER_PORT, .server = "localhost"};
 
 struct
 {
@@ -450,7 +450,7 @@ void _printHelp( char *progName )
     fprintf( stdout, "       c: <Number>,<Format> of channel to add into output stream (repeat per channel)" EOL );
     fprintf( stdout, "       h: This help" EOL );
     fprintf( stdout, "       i: <channel> Set ITM Channel in TPIU decode (defaults to 1)" EOL );
-    fprintf( stdout, "       n: No sync requirement for ITM (i.e. ITM does not need to issue syncs, needed for SEGGER)" EOL );
+    fprintf( stdout, "       n: Enforce sync requirement for ITM (i.e. ITM needsd to issue syncs)" EOL );
     fprintf( stdout, "       s: <Server>:<Port> to use" EOL );
     fprintf( stdout, "       t: Use TPIU decoder" EOL );
     fprintf( stdout, "       v: Verbose mode (this will intermingle state info with the output flow)" EOL );
@@ -480,31 +480,32 @@ int _processOptions( int argc, char *argv[] )
 
             // ------------------------------------
             case 'n':
-                options.forceITMSync = true;
+                options.forceITMSync = false;
                 break;
 
             // ------------------------------------
             case 's':
-	      options.server = optarg;
-	      
-	      // See if we have an optional port number too
-	      char *a = optarg;
+                options.server = optarg;
 
-	      while ( ( *a ) && ( *a != ':' ) )
+                // See if we have an optional port number too
+                char *a = optarg;
+
+                while ( ( *a ) && ( *a != ':' ) )
                 {
-		  a++;
+                    a++;
                 }
 
                 if ( *a == ':' )
                 {
-		  *a=0;
-		  options.port = atoi( ++a );
+                    *a = 0;
+                    options.port = atoi( ++a );
                 }
 
                 if ( !options.port )
                 {
                     options.port = SERVER_PORT;
                 }
+
                 break;
 
             // ------------------------------------

@@ -83,6 +83,7 @@ struct                                      /* Record for options, either defaul
     char *server;
 } options =
 {
+    .forceITMSync = true,
     .useTPIU = false,
     .tpiuITMChannel = 1,
     .outfile = DEFAULT_OUTFILE,
@@ -195,7 +196,7 @@ void _printHelp( char *progName )
     fprintf( stdout, "        h: This help" EOL );
     fprintf( stdout, "        i: <channel> Set ITM Channel in TPIU decode (defaults to 1)" EOL );
     fprintf( stdout, "        l: <timelen> Length of time in ms to record from point of acheiving sync (defaults to %dmS)" EOL, options.timelen );
-    fprintf( stdout, "        n: No sync requirement for ITM (i.e. ITM does not need to issue syncs, needed for SEGGER)" EOL );
+    fprintf( stdout, "        n: Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
     fprintf( stdout, "        o: <filename> to be used for dump file (defaults to %s)" EOL, options.outfile );
     fprintf( stdout, "        p: <Port> to use" EOL );
     fprintf( stdout, "        s: <Server> to use" EOL );
@@ -209,7 +210,7 @@ int _processOptions( int argc, char *argv[] )
 {
     int c;
 
-    while ( ( c = getopt ( argc, argv, "hti:l:o:p:s:vw" ) ) != -1 )
+    while ( ( c = getopt ( argc, argv, "hti:l:no:p:s:vw" ) ) != -1 )
         switch ( c )
         {
             case 'o':
@@ -218,6 +219,10 @@ int _processOptions( int argc, char *argv[] )
 
             case 'l':
                 options.timelen = atoi( optarg );
+                break;
+
+            case 'n':
+                options.forceITMSync = false;
                 break;
 
             case 'w':

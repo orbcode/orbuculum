@@ -9,15 +9,18 @@ You can find information about using this suite on the Embedded Rambling
 blog at http://shadetail.com/.
 
 *This program is in heavy development. Check back frequently for new versions 
-with additional functionality. The current status (23rd Oct) is that 
-parallel trace hardware using a iCE40HX-8K breakout board and the icestorm tools
-has just been integrated. A side effect of that is that
-ft2232 drivers have been integrated into orbuculum which will give you up to 12Mbps SWO
-sampling. The software runs on both Linux and OSX.
+with additional functionality. The current status (7th Nov) is that the
+code location lookup functionality in orbtop and orbstat has been reworked
+and seperated out into a standalone component leading to performance and
+resilience improvements. The code is increasingly in daily use and small issues
+are patched as they are found. The parallel trace hardware using a iCE40HX-8K breakout board and the icestorm tools is stable and hardware is in development.*
 
-I would not say the whole suite is throughly tested yet...that will
-come when full functionality has been completed. For now the 'happy
-flows' are working OK but the stuff might not look too pretty.
+The software runs on both Linux and OSX.
+
+I would not say the whole suite is throughly tested yet...there again,
+I'm not likely to say that for a few years.  it _is_ working OK on
+regular workloads. There may be some rough edges to be discovered.
+
 
 What is it?
 ===========

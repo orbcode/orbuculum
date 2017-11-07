@@ -112,6 +112,7 @@ struct
     int speed;
 } options =
 {
+    .forceITMSync = true,
     .chanPath = "",
     .speed = 115200,
     .useTPIU = false,
@@ -959,7 +960,7 @@ void _printHelp( char *progName )
     fprintf( stdout, "        f: <filename> Take input from specified file" EOL );
     fprintf( stdout, "        h: This help" EOL );
     fprintf( stdout, "        i: <channel> Set ITM Channel in TPIU decode (defaults to 1)" EOL );
-    fprintf( stdout, "        n: No sync requirement for ITM (i.e. ITM does not need to issue syncs)" EOL );
+    fprintf( stdout, "        n: Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
 #ifdef INCLUDE_FPGA_SUPPORT
     fprintf( stdout, "        o: Use orbuculum custom interface, implies -t" EOL );
 #endif
@@ -996,7 +997,7 @@ int _processOptions( int argc, char *argv[] )
 
                 if ( *a == ':' )
                 {
-		  *a=0;
+                    *a = 0;
                     options.seggerPort = atoi( ++a );
                 }
 
@@ -1029,7 +1030,7 @@ int _processOptions( int argc, char *argv[] )
 
             // ------------------------------------
             case 'n':
-                options.forceITMSync = true;
+                options.forceITMSync = false;
                 break;
                 // ------------------------------------
 #ifdef INCLUDE_FPGA_SUPPORT

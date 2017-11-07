@@ -1,0 +1,7 @@
+#!/bin/sh
+# Mangle the output of objdump to remove things that kcachegrind
+# doesn't understand (and hence crashes). To use, invoke kcachegrind with;
+#
+# OBJDUMP=<this file> kcachegrind .....
+#
+~/bin/armgcc/bin/arm-none-eabi-objdump $@ | sed '/is out of bounds./d'
