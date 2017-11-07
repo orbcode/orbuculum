@@ -26,6 +26,7 @@
  */
 
 #include <stdlib.h>
+#include <stdbool.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <ctype.h>
@@ -55,71 +56,43 @@
 #include <netinet/in.h>
 #include <netdb.h>
 
+#include "generics.h"
 #include "uthash.h"
 #include "git_version_info.h"
 #include "generics.h"
 #include "tpiuDecoder.h"
 #include "itmDecoder.h"
+#include "symbols.h"
 
-#define EOL           "\n\r"
-
-#define TEXT_SEGMENT ".text"
-#define TRACE_CHANNEL  1                     /* Channel that we expect trace data to arrive on */
-#define INTERRUPT 0xFFFFFFFD                 /* Special memory address interrupt origin */
-#define CUTOFF      10                       /* Default cutoff at 0.1% */
-#define SERVER_PORT 3443                     /* Server port definition */
-#define TRANSFER_SIZE (4096)                 /* Maximum packet we might receive */
+#define CUTOFF              (10)             /* Default cutoff at 0.1% */
+#define SERVER_PORT         (3443)           /* Server port definition */
+#define TRANSFER_SIZE       (4096)           /* Maximum packet we might receive */
 #define TOP_UPDATE_INTERVAL (1000LL)         /* Interval between each on screen update */
 
-struct lineInfo
-{
-    uint32_t addr;
-    char *filename;
-    char *function;
-    uint32_t line;
-};
 
 struct visitedAddr                           /* Structure for Hashmap of visited/observed addresses */
 {
-    uint32_t addr;
-    uint32_t visits;
+    uint64_t visits;
+    struct nameEntry *n;
+
     UT_hash_handle hh;
-};
-
-/* Call data */
-struct callData
-{
-    uint32_t src;
-    uint32_t dst;
-    uint32_t count;
-};
-
-struct edge
-{
-    struct lineInfo srcl;
-    struct lineInfo dstl;
-    uint32_t count;
 };
 
 struct reportLine
 
 {
-    const char *filename;
-    const char *function;
-    uint32_t addr;
-    uint32_t line;
     uint64_t count;
+    struct nameEntry *n;
 };
 
-enum CDState { CD_waitcount, CD_waitsrc, CD_waitdst };
 
 /* ---------- CONFIGURATION ----------------- */
 struct                                       /* Record for options, either defaults or from command line */
 {
-    BOOL verbose;                            /* Talk more.... */
-    BOOL useTPIU;                            /* Are we decoding via the TPIU? */
+    bool verbose;                            /* Talk more.... */
+    bool useTPIU;                            /* Are we decoding via the TPIU? */
     uint32_t tpiuITMChannel;                 /* What channel? */
-    BOOL forceITMSync;                       /* Must ITM start synced? */
+    bool forceITMSync;                       /* Must ITM start synced? */
 
     uint32_t hwOutputs;                      /* What hardware outputs are enabled */
 
@@ -127,22 +100,22 @@ struct                                       /* Record for options, either defau
 
     char *elffile;                           /* Target program config */
 
-    char *profile;                           /* File to output profile information */
     char *outfile;                           /* File to output historic information */
 
+    uint32_t cutscreen;                      /* Cut screen output after specified number of lines */
     uint32_t maxRoutines;                    /* Historic information to emit */
     uint32_t maxHistory;
-    BOOL lineDisaggregation;                 /* Aggregate per line or per function? */
+    bool lineDisaggregation;                 /* Aggregate per line or per function? */
 
     int port;                                /* Source information */
     char *server;
 
 } options =
 {
-    .useTPIU = FALSE,
+    .useTPIU = false,
     .tpiuITMChannel = 1,
     .outfile = NULL,
-    .lineDisaggregation = FALSE,
+    .lineDisaggregation = false,
     .maxRoutines = 8,
     .maxHistory = 30,
     .port = SERVER_PORT,
@@ -157,18 +130,14 @@ struct
     struct TPIUDecoder t;
     struct TPIUPacket p;
 
-    asymbol **syms;                         /* Symbol table */
-    uint32_t symcount;                      /* Number of symbols */
-    bfd *abfd;                              /* BFD handle to file */
-    asection *sect;                         /* Address data for the program section */
+    struct SymbolSet *s;                    /* Symbols read from elf */
+    struct nameEntry *n;                    /* Current table of recognised names */
 
-    struct visitedAddr *addresses;          /* Addresses we received in the SWV */
+    struct visitedAddr *addresses;         /* Addresses we received in the SWV */
+
+    uint32_t interrupts;
     uint32_t sleeps;
-
-    enum CDState CDState;                   /* State of the call data machine */
-    struct callData callsConstruct;         /* Call data entry under construction */
-    struct callData *calls;                 /* Call data table */
-    uint32_t cdCount;                       /* Call data count */
+    uint32_t notFound;
 } _r;
 
 // ====================================================================================================
@@ -178,65 +147,9 @@ struct
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
-BOOL _loadSymbols( void )
 
-{
-    uint32_t storage;
-    BOOL dynamic = FALSE;
-    char **matching;
 
-    bfd_init();
 
-    _r.abfd = bfd_openr( options.elffile, NULL );
-
-    if ( !_r.abfd )
-    {
-        fprintf( stderr, "Couldn't open ELF file" EOL );
-        return FALSE;
-    }
-
-    _r.abfd->flags |= BFD_DECOMPRESS;
-
-    if ( bfd_check_format( _r.abfd, bfd_archive ) )
-    {
-        fprintf( stderr, "Cannot get addresses from archive %s" EOL, options.elffile );
-        return FALSE;
-    }
-
-    if ( ! bfd_check_format_matches ( _r.abfd, bfd_object, &matching ) )
-    {
-        fprintf( stderr, "Ambigious format for file" EOL );
-        return FALSE;
-    }
-
-    if ( ( bfd_get_file_flags ( _r.abfd ) & HAS_SYMS ) == 0 )
-    {
-        fprintf( stderr, "No symbols found" EOL );
-        return FALSE;
-    }
-
-    storage = bfd_get_symtab_upper_bound ( _r.abfd ); /* This is returned in bytes */
-
-    if ( storage == 0 )
-    {
-        storage = bfd_get_dynamic_symtab_upper_bound ( _r.abfd );
-        dynamic = TRUE;
-    }
-
-    _r.syms = ( asymbol ** )malloc( storage );
-
-    if ( dynamic )
-    {
-        _r.symcount = bfd_canonicalize_dynamic_symtab ( _r.abfd, _r.syms );
-    }
-    else
-    {
-        _r.symcount = bfd_canonicalize_symtab ( _r.abfd, _r.syms );
-    }
-
-    _r.sect = bfd_get_section_by_name( _r.abfd, TEXT_SEGMENT );
-    return TRUE;
-}
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
@@ -285,101 +198,7 @@ void _handleDWTEvent( struct ITMDecoder *i, struct ITMPacket *p )
 void _handleSW( struct ITMDecoder *i )
 
 {
-    struct ITMPacket p;
-    uint32_t d;
 
-    if ( ITMGetPacket( i, &p ) )
-    {
-        if ( p.srcAddr == TRACE_CHANNEL )
-        {
-            d = ( p.d[3] << 24 ) | ( p.d[2] << 16 ) | ( p.d[1] << 8 ) | p.d[0];
-
-            switch ( _r.CDState )
-            {
-                // --------------------
-                case CD_waitcount:
-                    if ( ( d & 0xFFFF0000 ) == 0x40000000 )
-                    {
-                        _r.callsConstruct.count = d & 0xFFFF;
-                        _r.CDState = CD_waitsrc;
-                    }
-
-                    break;
-
-                // --------------------
-                case CD_waitsrc:
-                    _r.callsConstruct.src = d;
-                    _r.CDState = CD_waitdst;
-                    break;
-
-                // --------------------
-                case CD_waitdst:
-                    _r.callsConstruct.dst = d;
-                    _r.CDState = CD_waitcount;
-
-                    /* Now store this for later processing */
-                    _r.calls = ( struct callData * )realloc( _r.calls, sizeof( struct callData ) * ( _r.cdCount + 1 ) );
-                    memcpy( &_r.calls[_r.cdCount], &_r.callsConstruct, sizeof( struct callData ) );
-                    _r.cdCount++;
-                    break;
-                    // --------------------
-            }
-        }
-    }
-}
-// ====================================================================================================
-BOOL _lookup( struct lineInfo *l, uint32_t addr, asection *section )
-
-/* Lookup function for address to line, and hence to function */
-
-{
-    /* Dummy line for case that lookup returns no data */
-    static struct lineInfo dummyLine = {.filename = "Unknown", .function = "Unknown", .line = 0};
-
-    if ( addr == INTERRUPT )
-    {
-        l->filename = "None";
-        l->function = "INTERRUPT";
-        l->line = 0;
-        return TRUE;
-    }
-    else
-    {
-        addr -= bfd_get_section_vma( _r.abfd, section );
-
-        if ( addr > bfd_section_size( _r.abfd, section ) )
-        {
-            memcpy( l, &dummyLine, sizeof( struct lineInfo ) );
-            return FALSE;
-        }
-
-        if ( !bfd_find_nearest_line( _r.abfd, section, _r.syms, addr, ( const char ** )&l->filename, ( const char ** )&l->function, &l->line ) )
-        {
-            memcpy( l, &dummyLine, sizeof( struct lineInfo ) );
-            return FALSE;
-        }
-    }
-
-    /* Deal with case that filename wasn't recorded */
-    if ( !l->filename )
-    {
-        l->filename = "Unknown";
-    }
-
-    /* Remove any frontmatter off filename string that matches */
-    if ( options.deleteMaterial )
-    {
-        char *m = options.deleteMaterial;
-
-        while ( ( *m ) && ( *l->filename ) && ( *l->filename == *m ) )
-        {
-            m++;
-            l->filename++;
-        }
-    }
-
-    l->addr = addr;
-    return TRUE;
 }
 // ====================================================================================================
 uint64_t _timestamp( void )
@@ -394,12 +213,12 @@ uint64_t _timestamp( void )
 int _addresses_sort_fn( void *a, void *b )
 
 {
-    if ( ( ( ( struct visitedAddr * )a )->addr ) < ( ( ( struct visitedAddr * )b )->addr ) )
+    if ( ( ( ( struct visitedAddr * )a )->n->addr ) < ( ( ( struct visitedAddr * )b )->n->addr ) )
     {
         return -1;
     }
 
-    if ( ( ( ( struct visitedAddr * )a )->addr ) > ( ( ( struct visitedAddr * )b )->addr ) )
+    if ( ( ( ( struct visitedAddr * )a )->n->addr ) > ( ( ( struct visitedAddr * )b )->n->addr ) )
     {
         return 1;
     }
@@ -413,116 +232,46 @@ int _report_sort_fn( const void *a, const void *b )
     return ( ( struct reportLine * )b )->count - ( ( struct reportLine * )a )->count;
 }
 // ====================================================================================================
-int _calls_sort_src_fn( const void *a, const void *b )
-
-{
-    struct edge *ae = ( struct edge * )a;
-    struct edge *be = ( struct edge * )b;
-    int r;
-
-    r = strcmp( ae->srcl.filename, be->srcl.filename );
-
-    if ( r )
-    {
-        return r;
-    }
-
-    r = strcmp( ae->srcl.function, be->srcl.function );
-
-    if ( r )
-    {
-        return r;
-    }
-
-    r = strcmp( ae->dstl.filename, be->dstl.filename );
-
-    if ( r )
-    {
-        return r;
-    }
-
-    return strcmp( ae->dstl.function, be->dstl.function );
-}
-// ====================================================================================================
-int _calls_sort_dst_fn( const void *a, const void *b )
-
-{
-    struct edge *ae = ( struct edge * )a;
-    struct edge *be = ( struct edge * )b;
-    int r;
-
-    r = strcmp( ae->dstl.filename, be->dstl.filename );
-
-    if ( r )
-    {
-        return r;
-    }
-
-    r = strcmp( ae->dstl.function, be->dstl.function );
-
-    if ( r )
-    {
-        return r;
-    }
-
-    r = strcmp( ae->srcl.filename, be->srcl.filename );
-
-    if ( r )
-    {
-        return r;
-    }
-
-    return strcmp( ae->srcl.function, be->srcl.function );
-}
-// ====================================================================================================
 void outputTop( void )
 
 /* Produce the output */
 
 {
-    struct reportLine *report = NULL;
+    struct nameEntry *n;
+    struct visitedAddr *a;
+
+
     uint32_t reportLines = 0;
-    struct lineInfo l;
+    struct reportLine *report = NULL;
 
     uint32_t total = 0;
-    uint32_t unknown = 0;
     uint64_t samples = 0;
+    uint64_t dispSamples = 0;
     uint32_t percentage;
     uint32_t totPercent = 0;
 
     FILE *p = NULL;
 
-    /* Put the address into order */
+    /* Put the address into order of the file and function names */
     HASH_SORT( _r.addresses, _addresses_sort_fn );
 
     /* Now merge them together */
-    for ( struct visitedAddr *a = _r.addresses; a != NULL; a = a->hh.next )
+    for ( a = _r.addresses; a != NULL; a = a->hh.next )
     {
         if ( !a->visits )
         {
             continue;
         }
 
-        if ( !_lookup( &l, a->addr, _r.sect ) )
-        {
-            fprintf( stdout, "%x" EOL, a->addr );
-            unknown += a->visits;
-            a->visits = 0;
-            continue;
-        }
-
         if ( ( reportLines == 0 ) ||
-                ( strcmp( report[reportLines - 1].filename, l.filename ) ) ||
-                ( strcmp( report[reportLines - 1].function, l.function ) ) ||
-                ( ( report[reportLines - 1].line != l.line ) && ( options.lineDisaggregation ) ) )
+                ( strcmp( report[reportLines - 1].n->filename, a->n->filename ) ) ||
+                ( strcmp( report[reportLines - 1].n->function, a->n->function ) ) ||
+                ( ( report[reportLines - 1].n->line != a->n->line ) && ( options.lineDisaggregation ) ) )
         {
             /* Make room for a report line */
             reportLines++;
             report = ( struct reportLine * )realloc( report, sizeof( struct reportLine ) * ( reportLines ) );
-            report[reportLines - 1].addr = l.addr;
-            report[reportLines - 1].filename = l.filename;
-            report[reportLines - 1].function = l.function;
-            report[reportLines - 1].line = l.line;
+            report[reportLines - 1].n = a->n;
             report[reportLines - 1].count = 0;
         }
 
@@ -531,29 +280,32 @@ void outputTop( void )
         a->visits = 0;
     }
 
-    /* Add entries for Sleeping and unknown, if there are any of either */
-    if ( _r.sleeps )
+
+    /* Now fold in any sleeping entries */
+    report = ( struct reportLine * )realloc( report, sizeof( struct reportLine ) * ( reportLines + 1 ) );
+
+    uint32_t addr = SLEEPING;
+    HASH_FIND_INT( _r.addresses, &addr, a );
+
+    if ( a )
     {
-        report = ( struct reportLine * )realloc( report, sizeof( struct reportLine ) * ( reportLines + 1 ) );
-        report[reportLines].filename = "";
-        report[reportLines].function = "** SLEEPING **";
-        report[reportLines].line = 0;
-        report[reportLines].count = _r.sleeps;
-        reportLines++;
-        total += _r.sleeps;
-        _r.sleeps = 0;
+        n = a->n;
+    }
+    else
+    {
+        n = ( struct nameEntry * )malloc( sizeof( struct nameEntry ) );
     }
 
-    if ( unknown )
-    {
-        report = ( struct reportLine * )realloc( report, sizeof( struct reportLine ) * ( reportLines + 1 ) );
-        report[reportLines].filename = "";
-        report[reportLines].function = "** Unknown **";
-        report[reportLines].line = 0;
-        report[reportLines].count = unknown;
-        reportLines++;
-        total += unknown;
-    }
+    n->filename = "";
+    n->function = "** SLEEPING **";
+    n->addr = 0;
+    n->line = 0;
+
+    report[reportLines].n = n;
+    report[reportLines].count = _r.sleeps;
+    reportLines++;
+    total += _r.sleeps;
+    _r.sleeps = 0;
 
     /* Now put the whole thing into order of number of samples */
     qsort( report, reportLines, sizeof( struct reportLine ), _report_sort_fn );
@@ -572,17 +324,19 @@ void outputTop( void )
 
         if ( report[n].count )
         {
-            if ( percentage >= CUTOFF )
+            if ( ( percentage >= CUTOFF ) && ( ( !options.cutscreen ) || ( n < options.cutscreen ) ) )
             {
                 fprintf( stdout, "%3d.%02d%% %8ld ", percentage / 100, percentage % 100, report[n].count );
 
-                if ( options.lineDisaggregation )
+                dispSamples += report[n].count;
+
+                if ( ( options.lineDisaggregation ) && ( report[n].n->line ) )
                 {
-                    fprintf( stdout, "%s::%d" EOL, report[n].function, report[n].line );
+                    fprintf( stdout, "%s::%d" EOL, report[n].n->function, report[n].n->line );
                 }
                 else
                 {
-                    fprintf( stdout, "%s" EOL, report[n].function );
+                    fprintf( stdout, "%s" EOL, report[n].n->function );
                 }
 
                 totPercent += percentage;
@@ -592,18 +346,26 @@ void outputTop( void )
             {
                 if ( !options.lineDisaggregation )
                 {
-                    fprintf( p, "%s,%3d.%02d" EOL, report[n].function, percentage / 100, percentage % 100 );
+                    fprintf( p, "%s,%3d.%02d" EOL, report[n].n->function, percentage / 100, percentage % 100 );
                 }
                 else
                 {
-                    fprintf( p, "%s::%d,%3d.%02d" EOL, report[n].function, report[n].line, percentage / 100, percentage % 100 );
+                    fprintf( p, "%s::%d,%3d.%02d" EOL, report[n].n->function, report[n].n->line, percentage / 100, percentage % 100 );
                 }
             }
         }
     }
 
     fprintf( stdout, "-----------------" EOL );
-    fprintf( stdout, "%3d.%02d%% %8ld Samples" EOL, totPercent / 100, totPercent % 100, samples );
+
+    if ( samples == dispSamples )
+    {
+        fprintf( stdout, "%3d.%02d%% %8ld Samples" EOL, totPercent / 100, totPercent % 100, samples );
+    }
+    else
+    {
+        fprintf( stdout, "%3d.%02d%% %8ld of %ld Samples" EOL, totPercent / 100, totPercent % 100, dispSamples, samples );
+    }
 
     if ( p )
     {
@@ -627,6 +389,7 @@ void outputTop( void )
 void _handlePCSample( struct ITMDecoder *i, struct ITMPacket *p )
 
 {
+    struct visitedAddr *a;
     uint32_t pc;
 
     if ( p->len == 1 )
@@ -638,7 +401,6 @@ void _handlePCSample( struct ITMDecoder *i, struct ITMPacket *p )
     {
         pc = ( p->d[3] << 24 ) | ( p->d[2] << 16 ) | ( p->d[1] << 8 ) | ( p->d[0] );
 
-        struct visitedAddr *a;
         HASH_FIND_INT( _r.addresses, &pc, a );
 
         if ( a )
@@ -647,11 +409,19 @@ void _handlePCSample( struct ITMDecoder *i, struct ITMPacket *p )
         }
         else
         {
-            /* Create a new record for this address */
-            a = ( struct visitedAddr * )malloc( sizeof( struct visitedAddr ) );
+            struct nameEntry n;
+
+            /* Find a matching name record if there is one */
+            SymbolLookup( _r.s, pc, &n, options.deleteMaterial );
+
+            /* This is a new entry - record it */
+
+            a = ( struct visitedAddr * )calloc( 1, sizeof( struct visitedAddr ) );
             a->visits = 1;
-            a->addr = pc;
-            HASH_ADD_INT( _r.addresses, addr, a );
+
+            a->n = ( struct nameEntry * )malloc( sizeof( struct nameEntry ) );
+            memcpy( a->n, &n, sizeof( struct nameEntry ) );
+            HASH_ADD_INT( _r.addresses, n->addr, a );
         }
     }
 }
@@ -776,7 +546,7 @@ void _protocolPump( uint8_t c )
                 }
 
             case TPIU_EV_SYNCED:
-                ITMDecoderForceSync( &_r.i, TRUE );
+                ITMDecoderForceSync( &_r.i, true );
                 break;
 
             // ------------------------------------
@@ -787,7 +557,7 @@ void _protocolPump( uint8_t c )
             // ------------------------------------
             case TPIU_EV_UNSYNCED:
                 printf( "TPIU Lost Sync (%d)" EOL, TPIUDecoderGetStats( &_r.t )->lostSync );
-                ITMDecoderForceSync( &_r.i, FALSE );
+                ITMDecoderForceSync( &_r.i, false );
                 break;
 
             // ------------------------------------
@@ -834,6 +604,7 @@ void _printHelp( char *progName )
 
 {
     fprintf( stdout, "Useage: %s <htv> <-e ElfFile> <-m MaxHistory> <-o filename> -r <routines> <-i channel> <-p port> <-s server>" EOL, progName );
+    fprintf( stdout, "        c: <num> Cut screen output after number of lines" EOL );
     fprintf( stdout, "        d: <DeleteMaterial> to take off front of filenames" EOL );
     fprintf( stdout, "        e: <ElfFile> to use for symbols" EOL );
     fprintf( stdout, "        h: This help" EOL );
@@ -842,9 +613,8 @@ void _printHelp( char *progName )
     fprintf( stdout, "        m: <MaxHistory> to record in history file (default %d intervals)" EOL, options.maxHistory );
     fprintf( stdout, "        n: No sync requirement for ITM (i.e. ITM does not need to issue syncs, needed for SEGGER)" EOL );
     fprintf( stdout, "        o: <filename> to be used for output history file" EOL );
-    fprintf( stdout, "        p: <Port> to use" EOL );
     fprintf( stdout, "        r: <routines> to record in history file (default %d routines)" EOL, options.maxRoutines );
-    fprintf( stdout, "        s: <Server> to use" EOL );
+    fprintf( stdout, "        s: <Server>:<Port> to use" EOL );
     fprintf( stdout, "        t: Use TPIU decoder" EOL );
     fprintf( stdout, "        v: Verbose mode (this will intermingle state info with the output flow)" EOL );
 
@@ -855,9 +625,14 @@ int _processOptions( int argc, char *argv[] )
 {
     int c;
 
-    while ( ( c = getopt ( argc, argv, "d:e:hi:lmno:p:r:s:v" ) ) != -1 )
+    while ( ( c = getopt ( argc, argv, "c:d:e:hi:lm:no:r:s:tv" ) ) != -1 )
         switch ( c )
         {
+            // ------------------------------------
+            case 'c':
+                options.cutscreen = atoi( optarg );
+                break;
+
             // ------------------------------------
             case 'e':
                 options.elffile = optarg;
@@ -870,7 +645,7 @@ int _processOptions( int argc, char *argv[] )
 
             // ------------------------------------
             case 'l':
-                options.lineDisaggregation = TRUE;
+                options.lineDisaggregation = true;
                 break;
 
             // ------------------------------------
@@ -885,7 +660,7 @@ int _processOptions( int argc, char *argv[] )
 
             // ------------------------------------
             case 'n':
-                options.forceITMSync = TRUE;
+                options.forceITMSync = true;
                 break;
 
             // ------------------------------------
@@ -900,7 +675,7 @@ int _processOptions( int argc, char *argv[] )
 
             // ------------------------------------
             case 't':
-                options.useTPIU = TRUE;
+                options.useTPIU = true;
                 break;
 
             // ------------------------------------
@@ -909,20 +684,34 @@ int _processOptions( int argc, char *argv[] )
                 break;
 
             // ------------------------------------
-            /* Source information */
-            case 'p':
-                options.port = atoi( optarg );
-                break;
-
-            // ------------------------------------
             case 's':
-                options.server = optarg;
+	      fflush(stderr);
+	      options.server = optarg;
+	      
+	      // See if we have an optional port number too
+	      char *a = optarg;
+
+	      while ( ( *a ) && ( *a != ':' ) )
+                {
+		  a++;
+                }
+
+                if ( *a == ':' )
+                {
+		  *a=0;
+		  options.port = atoi( ++a );
+                }
+
+                if ( !options.port )
+                {
+                    options.port = SERVER_PORT;
+                }
                 break;
 
             // ------------------------------------
             case 'h':
                 _printHelp( argv[0] );
-                return FALSE;
+                return false;
 
             // ------------------------------------
             case '?':
@@ -935,19 +724,19 @@ int _processOptions( int argc, char *argv[] )
                     fprintf ( stderr, "Unknown option character `\\x%x'." EOL, optopt );
                 }
 
-                return FALSE;
+                return false;
 
             // ------------------------------------
             default:
                 fprintf( stderr, "Unknown option %c" EOL, optopt );
-                return FALSE;
+                return false;
                 // ------------------------------------
         }
 
     if ( ( options.useTPIU ) && ( !options.tpiuITMChannel ) )
     {
         fprintf( stderr, "TPIU set for use but no channel set for ITM output" EOL );
-        return FALSE;
+        return false;
     }
 
     if ( !options.elffile )
@@ -960,19 +749,19 @@ int _processOptions( int argc, char *argv[] )
     {
         fprintf( stdout, "orbtop V" VERSION " (Git %08X %s, Built " BUILD_DATE ")" EOL, GIT_HASH, ( GIT_DIRTY ? "Dirty" : "Clean" ) );
 
-        fprintf( stdout, "Verbose     : TRUE" EOL );
+        fprintf( stdout, "Verbose     : true" EOL );
         fprintf( stdout, "Server      : %s:%d" EOL, options.server, options.port );
         fprintf( stdout, "Delete Mat  : %s" EOL, options.deleteMaterial ? options.deleteMaterial : "None" );
         fprintf( stdout, "Elf File    : %s" EOL, options.elffile );
-        fprintf( stdout, "ForceSync   : %s" EOL, options.forceITMSync ? "TRUE" : "FALSE" );
+        fprintf( stdout, "ForceSync   : %s" EOL, options.forceITMSync ? "true" : "false" );
 
         if ( options.useTPIU )
         {
-            fprintf( stdout, "Using TPIU  : TRUE (ITM on channel %d)" EOL, options.tpiuITMChannel );
+            fprintf( stdout, "Using TPIU  : true (ITM on channel %d)" EOL, options.tpiuITMChannel );
         }
     }
 
-    return TRUE;
+    return true;
 }
 // ====================================================================================================
 int main( int argc, char *argv[] )
@@ -995,7 +784,10 @@ int main( int argc, char *argv[] )
         exit( -1 );
     }
 
-    if ( !_loadSymbols() )
+    /* Get the symbols from file */
+    _r.s = SymbolSetCreate( options.elffile );
+
+    if ( !_r.s )
     {
         exit( -3 );
     }

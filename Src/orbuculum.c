@@ -21,6 +21,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <stdbool.h>
 #include <ctype.h>
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -76,7 +77,6 @@
 
 #define MAX_STRING_LENGTH (100)              /* Maximum length that will be output from a fifo for a single event */
 
-#define EOL           "\n\r"
 /* Information for an individual channel */
 struct Channel
 {
@@ -90,12 +90,12 @@ struct Channel
 struct
 {
     /* Config information */
-    BOOL verbose;
-    BOOL useTPIU;
-    BOOL segger;
-    BOOL forceITMSync;
+    bool verbose;
+    bool useTPIU;
+    bool segger;
+    bool forceITMSync;
 #ifdef INCLUDE_FPGA_SUPPORT
-    BOOL orbtrace;
+    bool orbtrace;
 #endif
     char *seggerHost;
     int32_t seggerPort;
@@ -114,7 +114,7 @@ struct
 {
     .chanPath = "",
     .speed = 115200,
-    .useTPIU = FALSE,
+    .useTPIU = false,
     .tpiuITMChannel = 1,
     .seggerHost = SEGGER_HOST
 };
@@ -273,7 +273,7 @@ static void *_runHWFifo( void *arg )
     return NULL;
 }
 // ====================================================================================================
-static BOOL _makeFifoTasks( void )
+static bool _makeFifoTasks( void )
 
 /* Create each sub-process that will handle a port */
 
@@ -291,7 +291,7 @@ static BOOL _makeFifoTasks( void )
                 /* This is a live software channel fifo */
                 if ( pipe( f ) < 0 )
                 {
-                    return FALSE;
+                    return false;
                 }
 
                 fcntl( f[1], F_SETFL, O_NONBLOCK );
@@ -307,7 +307,7 @@ static BOOL _makeFifoTasks( void )
 
                 if ( pthread_create( &( _r.c[t].thread ), NULL, &_runFifo, params ) )
                 {
-                    return FALSE;
+                    return false;
                 }
             }
         }
@@ -316,7 +316,7 @@ static BOOL _makeFifoTasks( void )
             /* This is the hardware fifo channel */
             if ( pipe( f ) < 0 )
             {
-                return FALSE;
+                return false;
             }
 
             fcntl( f[1], F_SETFL, O_NONBLOCK );
@@ -332,12 +332,12 @@ static BOOL _makeFifoTasks( void )
 
             if ( pthread_create( &( _r.c[t].thread ), NULL, &_runHWFifo, params ) )
             {
-                return FALSE;
+                return false;
             }
         }
     }
 
-    return TRUE;
+    return true;
 }
 // ====================================================================================================
 static void _removeFifoTasks( void )
@@ -467,7 +467,7 @@ static void *_listenTask( void *arg )
     return NULL;
 }
 // ====================================================================================================
-static BOOL _makeServerTask( void )
+static bool _makeServerTask( void )
 
 /* Creating the listening server thread */
 
@@ -482,7 +482,7 @@ static BOOL _makeServerTask( void )
     if ( sockfd < 0 )
     {
         fprintf( stderr, "Error opening socket" EOL );
-        return FALSE;
+        return false;
     }
 
     bzero( ( char * ) &serv_addr, sizeof( serv_addr ) );
@@ -493,17 +493,17 @@ static BOOL _makeServerTask( void )
     if ( bind( sockfd, ( struct sockaddr * ) &serv_addr, sizeof( serv_addr ) ) < 0 )
     {
         fprintf( stderr, "Error on binding" EOL );
-        return FALSE;
+        return false;
     }
 
     /* We have the listening socket - spawn a thread to handle it */
     if ( pthread_create( &( _r.ipThread ), NULL, &_listenTask, &sockfd ) )
     {
         fprintf( stderr, "Failed to create listening thread" EOL );
-        return FALSE;
+        return false;
     }
 
-    return TRUE;
+    return true;
 }
 // ====================================================================================================
 static void _sendToClients( uint32_t len, uint8_t *buffer )
@@ -605,7 +605,7 @@ void _handleDataRWWP( struct ITMDecoder *i, struct ITMPacket *p )
 {
     uint64_t ts = _timestampuS(); /* Stamp as early as possible */
     uint32_t comp = ( p->d[0] & 0x30 ) >> 4;
-    BOOL isWrite = ( ( p->d[0] & 0x08 ) != 0 );
+    bool isWrite = ( ( p->d[0] & 0x08 ) != 0 );
     uint32_t data;
     char outputString[MAX_STRING_LENGTH];
     int opLen;
@@ -889,7 +889,7 @@ void _protocolPump( uint8_t c )
             // This fall-through is deliberate
             case TPIU_EV_SYNCED:
 
-                ITMDecoderForceSync( &_r.i, TRUE );
+                ITMDecoderForceSync( &_r.i, true );
                 break;
 
             // ------------------------------------
@@ -900,7 +900,7 @@ void _protocolPump( uint8_t c )
             // ------------------------------------
             case TPIU_EV_UNSYNCED:
                 fprintf( stdout, "TPIU Lost Sync (%d)" EOL, TPIUDecoderGetStats( &_r.t )->lostSync );
-                ITMDecoderForceSync( &_r.i, FALSE );
+                ITMDecoderForceSync( &_r.i, false );
                 break;
 
             // ------------------------------------
@@ -983,7 +983,7 @@ int _processOptions( int argc, char *argv[] )
         {
             // ------------------------------------
             case 'a':
-                options.forceITMSync = TRUE;
+                options.forceITMSync = true;
                 options.seggerHost = optarg;
 
                 // See if we have an optional port number too
@@ -996,7 +996,8 @@ int _processOptions( int argc, char *argv[] )
 
                 if ( *a == ':' )
                 {
-                    options.seggerPort = atoi( a++ );
+		  *a=0;
+                    options.seggerPort = atoi( ++a );
                 }
 
                 if ( !options.seggerPort )
@@ -1019,7 +1020,7 @@ int _processOptions( int argc, char *argv[] )
             // ------------------------------------
             case 'h':
                 _printHelp( argv[0] );
-                return FALSE;
+                return false;
 
             // ------------------------------------
             case 'i':
@@ -1028,15 +1029,15 @@ int _processOptions( int argc, char *argv[] )
 
             // ------------------------------------
             case 'n':
-                options.forceITMSync = TRUE;
+                options.forceITMSync = true;
                 break;
                 // ------------------------------------
 #ifdef INCLUDE_FPGA_SUPPORT
 
             case 'o':
                 // Generally you need TPIU for orbtrace
-                options.useTPIU = TRUE;
-                options.orbtrace = TRUE;
+                options.useTPIU = true;
+                options.orbtrace = true;
                 break;
 #endif
 
@@ -1052,7 +1053,7 @@ int _processOptions( int argc, char *argv[] )
 
             // ------------------------------------
             case 't':
-                options.useTPIU = TRUE;
+                options.useTPIU = true;
                 break;
 
             // ------------------------------------
@@ -1069,7 +1070,7 @@ int _processOptions( int argc, char *argv[] )
                 if ( chan >= NUM_CHANNELS )
                 {
                     fprintf( stderr, "Channel index out of range" EOL );
-                    return FALSE;
+                    return false;
                 }
 
                 /* Scan for start of filename */
@@ -1081,7 +1082,7 @@ int _processOptions( int argc, char *argv[] )
                 if ( !*chanIndex )
                 {
                     fprintf( stderr, "No filename for channel %d" EOL, chan );
-                    return FALSE;
+                    return false;
                 }
 
                 options.channel[chan].chanName = ++chanIndex;
@@ -1095,7 +1096,7 @@ int _processOptions( int argc, char *argv[] )
                 if ( !*chanIndex )
                 {
                     fprintf( stderr, "No output format for channel %d" EOL, chan );
-                    return FALSE;
+                    return false;
                 }
 
                 *chanIndex++ = 0;
@@ -1115,12 +1116,12 @@ int _processOptions( int argc, char *argv[] )
                     fprintf ( stderr, "Unknown option character `\\x%x'." EOL, optopt );
                 }
 
-                return FALSE;
+                return false;
 
             // ------------------------------------
             default:
                 printf( "%c" EOL, c );
-                return FALSE;
+                return false;
                 // ------------------------------------
         }
 
@@ -1128,7 +1129,7 @@ int _processOptions( int argc, char *argv[] )
     if ( ( options.useTPIU ) && ( !options.tpiuITMChannel ) )
     {
         fprintf( stderr, "TPIU set for use but no channel set for ITM output" EOL );
-        return FALSE;
+        return false;
     }
 
     /* ... and dump the config if we're being verbose */
@@ -1136,9 +1137,9 @@ int _processOptions( int argc, char *argv[] )
     {
         fprintf( stdout, "Orbuculum V" VERSION " (Git %08X %s, Built " BUILD_DATE ")" EOL, GIT_HASH, ( GIT_DIRTY ? "Dirty" : "Clean" ) );
 
-        fprintf( stdout, "Verbose    : TRUE" EOL );
+        fprintf( stdout, "Verbose    : true" EOL );
         fprintf( stdout, "BasePath   : %s" EOL, options.chanPath );
-        fprintf( stdout, "ForceSync  : %s" EOL, options.forceITMSync ? "TRUE" : "FALSE" );
+        fprintf( stdout, "ForceSync  : %s" EOL, options.forceITMSync ? "true" : "false" );
 
         if ( options.port )
         {
@@ -1154,14 +1155,14 @@ int _processOptions( int argc, char *argv[] )
 
         if ( options.orbtrace )
         {
-            fprintf( stdout, "Orbtrace : TRUE" EOL );
+            fprintf( stdout, "Orbtrace : true" EOL );
         }
 
 #endif
 
         if ( options.useTPIU )
         {
-            fprintf( stdout, "Using TPIU : TRUE (ITM on channel %d)" EOL, options.tpiuITMChannel );
+            fprintf( stdout, "Using TPIU : true (ITM on channel %d)" EOL, options.tpiuITMChannel );
         }
 
         if ( options.file )
@@ -1185,16 +1186,16 @@ int _processOptions( int argc, char *argv[] )
     if ( ( options.file ) && ( ( options.port ) || ( options.seggerPort ) ) )
     {
         fprintf( stdout, "Cannot specify file and port or Segger at same time" EOL );
-        return FALSE;
+        return false;
     }
 
     if ( ( options.port ) && ( options.seggerPort ) )
     {
         fprintf( stdout, "Cannot specify port and Segger at same time" EOL );
-        return FALSE;
+        return false;
     }
 
-    return TRUE;
+    return true;
 }
 // ====================================================================================================
 int usbFeeder( void )
@@ -1227,15 +1228,15 @@ int usbFeeder( void )
             continue;
         }
 
-        if ( (err=libusb_claim_interface ( handle, INTERFACE )) < 0 )
+        if ( ( err = libusb_claim_interface ( handle, INTERFACE ) ) < 0 )
         {
-	  fprintf( stderr, "Failed to claim interface (%d)" EOL,err );
+            fprintf( stderr, "Failed to claim interface (%d)" EOL, err );
             return 0;
         }
 
         int32_t r;
 
-        while ( TRUE )
+        while ( true )
         {
             r = libusb_bulk_transfer( handle, ENDPOINT, cbw, TRANSFER_SIZE, &size, 10 );
 
@@ -1307,7 +1308,7 @@ int seggerFeeder( void )
         }
 
         TPIUDecoderForceSync( &_r.t, 0 );
-        ITMDecoderForceSync( &_r.i, TRUE );
+        ITMDecoderForceSync( &_r.i, true );
 
         while ( ( t = read( sockfd, cbw, TRANSFER_SIZE ) ) > 0 )
         {
@@ -1449,7 +1450,7 @@ int fpgaFeeder( void )
         ftdi_set_line_property( _r.ftdi, 8, STOP_BIT_1, NONE );
 
         ftdi_read_data_set_chunksize( _r.ftdi, TRANSFER_SIZE );
-        ftdi_setdtr( _r.ftdi, TRUE );
+        ftdi_setdtr( _r.ftdi, true );
 
         while ( ( t = ftdi_read_data( _r.ftdi, cbw, TRANSFER_SIZE ) ) >= 0 )
         {
@@ -1467,7 +1468,7 @@ int fpgaFeeder( void )
             }
         }
 
-        ftdi_setdtr( _r.ftdi, FALSE );
+        ftdi_setdtr( _r.ftdi, false );
 
         if ( options.verbose )
         {
@@ -1491,7 +1492,7 @@ void fpgaFeederClose( void )
     _r.ftdi = ftdi_new();
     ftdi_set_interface( _r.ftdi, FTDI_INTERFACE );
     ftdi_usb_open( _r.ftdi, FTDI_VID, FTDI_PID );
-    ftdi_setdtr_rts( _r.ftdi, FALSE, FALSE );
+    ftdi_setdtr_rts( _r.ftdi, false, false );
     ftdi_usb_close( _r.ftdi );
 }
 #endif
@@ -1543,7 +1544,7 @@ int fileFeeder( void )
     }
 
     close( f );
-    return TRUE;
+    return true;
 }
 // ====================================================================================================
 int main( int argc, char *argv[] )

@@ -20,6 +20,7 @@
 
 #include <strings.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <ctype.h>
@@ -54,8 +55,6 @@
 
 #define SERVER_PORT 3443                  /* Server port definition */
 
-#define EOL           "\n\r"
-
 #define TRANSFER_SIZE (4096)
 #define NUM_CHANNELS  32
 #define HW_CHANNEL    (NUM_CHANNELS)      /* Make the hardware fifo on the end of the software ones */
@@ -66,10 +65,10 @@
 struct
 {
     /* Config information */
-    BOOL verbose;
-    BOOL useTPIU;
+    bool verbose;
+    bool useTPIU;
     uint32_t tpiuITMChannel;
-    BOOL forceITMSync;
+    bool forceITMSync;
     uint32_t hwOutputs;
 
     /* Sink information */
@@ -155,7 +154,7 @@ void _handleDataRWWP( struct ITMDecoder *i, struct ITMPacket *p )
     }
 
     uint32_t comp = ( p->d[0] & 0x30 ) >> 4;
-    BOOL isWrite = ( ( p->d[0] & 0x08 ) != 0 );
+    bool isWrite = ( ( p->d[0] & 0x08 ) != 0 );
     uint32_t data;
 
     switch ( p->len )
@@ -397,7 +396,7 @@ void _protocolPump( uint8_t c )
         {
             case TPIU_EV_NEWSYNC:
             case TPIU_EV_SYNCED:
-                ITMDecoderForceSync( &_r.i, TRUE );
+                ITMDecoderForceSync( &_r.i, true );
                 break;
 
             case TPIU_EV_RXING:
@@ -405,7 +404,7 @@ void _protocolPump( uint8_t c )
                 break;
 
             case TPIU_EV_UNSYNCED:
-                ITMDecoderForceSync( &_r.i, FALSE );
+                ITMDecoderForceSync( &_r.i, false );
                 break;
 
             case TPIU_EV_RXEDPACKET:
@@ -452,8 +451,7 @@ void _printHelp( char *progName )
     fprintf( stdout, "       h: This help" EOL );
     fprintf( stdout, "       i: <channel> Set ITM Channel in TPIU decode (defaults to 1)" EOL );
     fprintf( stdout, "       n: No sync requirement for ITM (i.e. ITM does not need to issue syncs, needed for SEGGER)" EOL );
-    fprintf( stdout, "       p: <Port> to use" EOL );
-    fprintf( stdout, "       s: <Server> to use" EOL );
+    fprintf( stdout, "       s: <Server>:<Port> to use" EOL );
     fprintf( stdout, "       t: Use TPIU decoder" EOL );
     fprintf( stdout, "       v: Verbose mode (this will intermingle state info with the output flow)" EOL );
 }
@@ -467,13 +465,13 @@ int _processOptions( int argc, char *argv[] )
     char *chanIndex;
 #define DELIMITER ','
 
-    while ( ( c = getopt ( argc, argv, "c:hi:np:s:tv" ) ) != -1 )
+    while ( ( c = getopt ( argc, argv, "c:hi:ns:tv" ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
             case 'h':
                 _printHelp( argv[0] );
-                return FALSE;
+                return false;
 
             // ------------------------------------
             case 'i':
@@ -482,22 +480,36 @@ int _processOptions( int argc, char *argv[] )
 
             // ------------------------------------
             case 'n':
-                options.forceITMSync = TRUE;
-                break;
-
-            // ------------------------------------
-            case 'p':
-                options.port = atoi( optarg );
+                options.forceITMSync = true;
                 break;
 
             // ------------------------------------
             case 's':
-                options.server = optarg;
+	      options.server = optarg;
+	      
+	      // See if we have an optional port number too
+	      char *a = optarg;
+
+	      while ( ( *a ) && ( *a != ':' ) )
+                {
+		  a++;
+                }
+
+                if ( *a == ':' )
+                {
+		  *a=0;
+		  options.port = atoi( ++a );
+                }
+
+                if ( !options.port )
+                {
+                    options.port = SERVER_PORT;
+                }
                 break;
 
             // ------------------------------------
             case 't':
-                options.useTPIU = TRUE;
+                options.useTPIU = true;
                 break;
 
             // ------------------------------------
@@ -514,7 +526,7 @@ int _processOptions( int argc, char *argv[] )
                 if ( chan >= NUM_CHANNELS )
                 {
                     fprintf( stderr, "Channel index out of range" EOL );
-                    return FALSE;
+                    return false;
                 }
 
                 /* Scan for format */
@@ -526,7 +538,7 @@ int _processOptions( int argc, char *argv[] )
                 if ( !*chanIndex )
                 {
                     fprintf( stderr, "No output format for channel %d" EOL, chan );
-                    return FALSE;
+                    return false;
                 }
 
                 *chanIndex++ = 0;
@@ -544,35 +556,35 @@ int _processOptions( int argc, char *argv[] )
                     fprintf ( stderr, "Unknown option character `\\x%x'." EOL, optopt );
                 }
 
-                return FALSE;
+                return false;
 
             // ------------------------------------
             default:
-                return FALSE;
+                return false;
                 // ------------------------------------
         }
 
     if ( ( options.useTPIU ) && ( !options.tpiuITMChannel ) )
     {
         fprintf( stderr, "TPIU set for use but no channel set for ITM output" EOL );
-        return FALSE;
+        return false;
     }
 
     if ( options.verbose )
     {
         fprintf( stdout, "orbcat V" VERSION " (Git %08X %s, Built " BUILD_DATE EOL, GIT_HASH, ( GIT_DIRTY ? "Dirty" : "Clean" ) );
 
-        fprintf( stdout, "Verbose   : TRUE" EOL );
+        fprintf( stdout, "Verbose   : true" EOL );
         fprintf( stdout, "Server    : %s:%d" EOL, options.server, options.port );
-        fprintf( stdout, "ForceSync : %s" EOL, options.forceITMSync ? "TRUE" : "FALSE" );
+        fprintf( stdout, "ForceSync : %s" EOL, options.forceITMSync ? "true" : "false" );
 
         if ( options.useTPIU )
         {
-            fprintf( stdout, "Using TPIU: TRUE (ITM on channel %d)" EOL, options.tpiuITMChannel );
+            fprintf( stdout, "Using TPIU: true (ITM on channel %d)" EOL, options.tpiuITMChannel );
         }
         else
         {
-            fprintf( stdout, "Using TPIU: FALSE" EOL );
+            fprintf( stdout, "Using TPIU: false" EOL );
         }
 
         fprintf( stdout, "Channels  :" EOL );
@@ -586,7 +598,7 @@ int _processOptions( int argc, char *argv[] )
         }
     }
 
-    return TRUE;
+    return true;
 }
 // ====================================================================================================
 int main( int argc, char *argv[] )

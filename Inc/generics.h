@@ -20,16 +20,11 @@
 
 #ifndef _GENERICS_
 #define _GENERICS_
+#include <stdbool.h>
 #include <stdint.h>
 #include <limits.h>
 
-#ifndef BOOL
-    #define BOOL  int
-    #ifndef FALSE
-        #define FALSE (0)
-        #define TRUE  (!FALSE)
-    #endif
-#endif
+#define EOL "\n\r"
 
 // ====================================================================================================
 char *GenericsEscape( char *str );

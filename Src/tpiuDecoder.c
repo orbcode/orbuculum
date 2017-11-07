@@ -21,12 +21,11 @@
 #include <stdio.h>
 #include <sys/time.h>
 #include <string.h>
+#include "generics.h"
 #include "tpiuDecoder.h"
 
 #define SYNCPATTERN 0xFFFFFF7F
 #define NO_CHANNEL_CHANGE (0xFF)
-
-#define EOL "\n\r"
 
 // ====================================================================================================
 void TPIUDecoderInit( struct TPIUDecoder *t )
@@ -45,7 +44,7 @@ void TPIUDecoderZeroStats( struct TPIUDecoder *t )
     memset( &t->stats, 0, sizeof( struct TPIUDecoderStats ) );
 }
 // ====================================================================================================
-BOOL TPIUDecoderSynced( struct TPIUDecoder *t )
+bool TPIUDecoderSynced( struct TPIUDecoder *t )
 {
     return t->state != TPIU_UNSYNCED;
 }
@@ -72,7 +71,7 @@ void TPIUDecoderForceSync( struct TPIUDecoder *t, uint8_t offset )
     gettimeofday( &t->lastPacket, NULL );
 }
 // ====================================================================================================
-BOOL TPIUGetPacket( struct TPIUDecoder *t, struct TPIUPacket *p )
+bool TPIUGetPacket( struct TPIUDecoder *t, struct TPIUPacket *p )
 
 /* Copy received packet into transfer buffer, and reset receiver */
 
@@ -82,7 +81,7 @@ BOOL TPIUGetPacket( struct TPIUDecoder *t, struct TPIUPacket *p )
     /* This should have been reset in the call */
     if ( ( t->byteCount ) || ( !p ) )
     {
-        return FALSE;
+        return false;
     }
 
     p->len = 0;
@@ -130,7 +129,7 @@ BOOL TPIUGetPacket( struct TPIUDecoder *t, struct TPIUPacket *p )
         lowbits >>= 1;
     }
 
-    return TRUE;
+    return true;
 }
 // ====================================================================================================
 enum TPIUPumpEvent TPIUPump( struct TPIUDecoder *t, uint8_t d )

@@ -87,7 +87,7 @@ struct nameEntryHash
     uint32_t index;
     uint32_t line;
     uint32_t addr;
-    BOOL seen;
+    bool seen;
 
     UT_hash_handle hh;
 };
@@ -98,7 +98,7 @@ struct edge
     uint32_t src;
     uint32_t dst;
     uint64_t tstamp;
-    BOOL in;
+    bool in;
 };
 
 /* Processed subcalls from routine to routine */
@@ -116,10 +116,10 @@ enum CDState { CD_waitinout, CD_waitsrc, CD_waitdst };
 /* ---------- CONFIGURATION ----------------- */
 struct                                       /* Record for options, either defaults or from command line */
 {
-    BOOL verbose;                            /* Talk more.... */
-    BOOL useTPIU;                            /* Are we decoding via the TPIU? */
+    bool verbose;                            /* Talk more.... */
+    bool useTPIU;                            /* Are we decoding via the TPIU? */
     uint32_t tpiuITMChannel;                 /* What channel? */
-    BOOL forceITMSync;                       /* Do we assume ITM starts synced? */
+    bool forceITMSync;                       /* Do we assume ITM starts synced? */
 
     char *deleteMaterial;                    /* Material to strip off front of filenames for target */
 
@@ -184,13 +184,13 @@ struct
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
-BOOL _loadSymbols( void )
+bool _loadSymbols( void )
 
 /* Load symbols from bfd library compatible file */
 
 {
     uint32_t storage;
-    BOOL dynamic = FALSE;
+    bool dynamic = false;
     char **matching;
 
     bfd_init();
@@ -200,7 +200,7 @@ BOOL _loadSymbols( void )
     if ( !_r.abfd )
     {
         fprintf( stderr, "Couldn't open ELF file" EOL );
-        return FALSE;
+        return false;
     }
 
     _r.abfd->flags |= BFD_DECOMPRESS;
@@ -208,19 +208,19 @@ BOOL _loadSymbols( void )
     if ( bfd_check_format( _r.abfd, bfd_archive ) )
     {
         fprintf( stderr, "Cannot get addresses from archive %s" EOL, options.elffile );
-        return FALSE;
+        return false;
     }
 
     if ( ! bfd_check_format_matches ( _r.abfd, bfd_object, &matching ) )
     {
         fprintf( stderr, "Ambigious format for file" EOL );
-        return FALSE;
+        return false;
     }
 
     if ( ( bfd_get_file_flags ( _r.abfd ) & HAS_SYMS ) == 0 )
     {
         fprintf( stderr, "No symbols found" EOL );
-        return FALSE;
+        return false;
     }
 
     storage = bfd_get_symtab_upper_bound ( _r.abfd ); /* This is returned in bytes */
@@ -228,7 +228,7 @@ BOOL _loadSymbols( void )
     if ( storage == 0 )
     {
         storage = bfd_get_dynamic_symtab_upper_bound ( _r.abfd );
-        dynamic = TRUE;
+        dynamic = true;
     }
 
     _r.syms = ( asymbol ** )malloc( storage );
@@ -243,7 +243,7 @@ BOOL _loadSymbols( void )
     }
 
     _r.sect = bfd_get_section_by_name( _r.abfd, TEXT_SEGMENT );
-    return TRUE;
+    return true;
 }
 // ====================================================================================================
 // ====================================================================================================
@@ -270,13 +270,13 @@ void _handleSW( struct ITMDecoder *i )
                 case CD_waitinout:
                     if ( ( d & COMMS_MASK ) == IN_EVENT )
                     {
-                        _r.callsConstruct.in = TRUE;
+                        _r.callsConstruct.in = true;
                         _r.CDState = CD_waitsrc;
                     }
 
                     if ( ( d & COMMS_MASK ) == OUT_EVENT )
                     {
-                        _r.callsConstruct.in = FALSE;
+                        _r.callsConstruct.in = false;
                         _r.CDState = CD_waitsrc;
                     }
 
@@ -315,7 +315,7 @@ void _handleSW( struct ITMDecoder *i )
     }
 }
 // ====================================================================================================
-BOOL _lookup( struct nameEntryHash **n, uint32_t addr, asection *section )
+bool _lookup( struct nameEntryHash **n, uint32_t addr, asection *section )
 
 /* Lookup function for address to line, and hence to function, and cache in case we need it later */
 
@@ -324,13 +324,13 @@ BOOL _lookup( struct nameEntryHash **n, uint32_t addr, asection *section )
     const char *filename = NULL;
 
     uint32_t line;
-    BOOL found = FALSE;
+    bool found = false;
 
     HASH_FIND_INT( _r.name, &addr, *n );
 
     if ( *n )
     {
-        found = TRUE;
+        found = true;
     }
     else
     {
@@ -361,7 +361,7 @@ BOOL _lookup( struct nameEntryHash **n, uint32_t addr, asection *section )
                 ( *n )->index = _r.nameCount++;
                 ( *n )->line = line;
                 HASH_ADD_INT( _r.name, addr, ( *n ) );
-                found = TRUE;
+                found = true;
             }
         }
     }
@@ -396,7 +396,7 @@ BOOL _lookup( struct nameEntryHash **n, uint32_t addr, asection *section )
             }
             else
             {
-                found = TRUE;
+                found = true;
             }
         }
     }
@@ -460,7 +460,7 @@ void _dumpProfile( void )
     /* Empty the 'seen' field of the name cache */
     HASH_ITER( hh, _r.name, f, t )
     {
-        f->seen = FALSE;
+        f->seen = false;
     }
 
     /* Record any destination routine and the time it's taken */
@@ -482,7 +482,7 @@ void _dumpProfile( void )
         {
             /* Haven't seen it before, so announce it */
             fprintf( _r.c, "fl=(%d) %s\nfn=(%d) %s\n0x%08x %d %ld\n", t->index, t->filename, t->index, t->function, t->addr, t->line, myCost );
-            t->seen = TRUE;
+            t->seen = true;
         }
     }
 
@@ -511,7 +511,7 @@ void _dumpProfile( void )
         {
             /* This is a previously unseen dest, announce it */
             fprintf( _r.c, "fl=(%d) %s\nfn=(%d) %s\n0x%08x %d %ld\n", t->index, t->filename, t->index, t->function, t->addr, t->line, myCost );
-            t->seen = TRUE;
+            t->seen = true;
         }
 
         _lookup( &f, _r.sub[i].src, _r.sect );
@@ -520,7 +520,7 @@ void _dumpProfile( void )
         {
             /* Add this in, but cost of the caller is not visible here...we need to put 1 else no code is visible */
             fprintf( _r.c, "fl=(%d) %s\nfn=(%d) %s\n0x%08x %d 1\n", f->index, f->filename, f->index, f->function, f->addr, f->line );
-            f->seen = TRUE;
+            f->seen = true;
         }
         else
         {
@@ -886,7 +886,7 @@ void _protocolPump( uint8_t c )
                 }
 
             case TPIU_EV_SYNCED:
-                ITMDecoderForceSync( &_r.i, TRUE );
+                ITMDecoderForceSync( &_r.i, true );
                 break;
 
             // ------------------------------------
@@ -897,7 +897,7 @@ void _protocolPump( uint8_t c )
             // ------------------------------------
             case TPIU_EV_UNSYNCED:
                 fprintf( stdout, "TPIU Lost Sync (%d)" EOL, TPIUDecoderGetStats( &_r.t )->lostSync );
-                ITMDecoderForceSync( &_r.i, FALSE );
+                ITMDecoderForceSync( &_r.i, false );
                 break;
 
             // ------------------------------------
@@ -1001,7 +1001,7 @@ int _processOptions( int argc, char *argv[] )
 
             // ------------------------------------
             case 'n':
-                options.forceITMSync = TRUE;
+                options.forceITMSync = true;
                 break;
 
             // ------------------------------------
@@ -1016,12 +1016,12 @@ int _processOptions( int argc, char *argv[] )
 
             // ------------------------------------
             case 't':
-                options.useTPIU = TRUE;
+                options.useTPIU = true;
                 break;
 
             // ------------------------------------
             case 'v':
-                options.verbose = TRUE;
+                options.verbose = true;
                 break;
 
             // ------------------------------------
@@ -1045,19 +1045,19 @@ int _processOptions( int argc, char *argv[] )
                     fprintf ( stderr, "Unknown option character `\\x%x'." EOL, optopt );
                 }
 
-                return FALSE;
+                return false;
 
             // ------------------------------------
             default:
                 fprintf( stderr, "Unknown option %c" EOL, optopt );
-                return FALSE;
+                return false;
                 // ------------------------------------
         }
 
     if ( ( options.useTPIU ) && ( !options.tpiuITMChannel ) )
     {
         fprintf( stderr, "TPIU set for use but no channel set for ITM output" EOL );
-        return FALSE;
+        return false;
     }
 
     if ( !options.elffile )
@@ -1074,15 +1074,15 @@ int _processOptions( int argc, char *argv[] )
         fprintf( stdout, "Delete Mat    : %s" EOL, options.deleteMaterial ? options.deleteMaterial : "None" );
         fprintf( stdout, "Elf File      : %s" EOL, options.elffile );
         fprintf( stdout, "DOT file      : %s" EOL, options.dotfile ? options.dotfile : "None" );
-        fprintf( stdout, "ForceSync     : %s" EOL, options.forceITMSync ? "TRUE" : "FALSE" );
+        fprintf( stdout, "ForceSync     : %s" EOL, options.forceITMSync ? "true" : "false" );
         fprintf( stdout, "Trace/File Ch : %d/%d" EOL, options.traceChannel, options.fileChannel );  
         if ( options.useTPIU )
         {
-            fprintf( stdout, "Using TPIU  : TRUE (ITM on channel %d)" EOL, options.tpiuITMChannel );
+            fprintf( stdout, "Using TPIU  : true (ITM on channel %d)" EOL, options.tpiuITMChannel );
         }
     }
 
-    return TRUE;
+    return true;
 }
 // ====================================================================================================
 int main( int argc, char *argv[] )

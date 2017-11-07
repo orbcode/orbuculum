@@ -45,6 +45,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netdb.h>
+#include "generics.h"
 #include "uthash.h"
 #include "git_version_info.h"
 #include "generics.h"
@@ -57,23 +58,22 @@
 
 #define DEFAULT_OUTFILE "/dev/stdout"
 #define DEFAULT_TIMELEN 10000
-#define EOL           "\n\r"
 
 /* ---------- CONFIGURATION ----------------- */
 
 struct                                      /* Record for options, either defaults or from command line */
 {
     /* Config information */
-    BOOL verbose;
-    BOOL useTPIU;
-    BOOL forceITMSync;
+    bool verbose;
+    bool useTPIU;
+    bool forceITMSync;
     uint32_t tpiuITMChannel;
 
     /* File to output dump to */
     char *outfile;
 
     /* Do we need to write syncronously */
-    BOOL writeSync;
+    bool writeSync;
 
     /* How long to dump */
     uint32_t timelen;
@@ -83,7 +83,7 @@ struct                                      /* Record for options, either defaul
     char *server;
 } options =
 {
-    .useTPIU = FALSE,
+    .useTPIU = false,
     .tpiuITMChannel = 1,
     .outfile = DEFAULT_OUTFILE,
     .timelen = DEFAULT_TIMELEN,
@@ -135,7 +135,7 @@ void _protocolPump( uint8_t c )
             // ------------------------------------
             case TPIU_EV_NEWSYNC:
             case TPIU_EV_SYNCED:
-                ITMDecoderForceSync( &_r.i, TRUE );
+                ITMDecoderForceSync( &_r.i, true );
                 break;
 
             // ------------------------------------
@@ -145,7 +145,7 @@ void _protocolPump( uint8_t c )
 
             // ------------------------------------
             case TPIU_EV_UNSYNCED:
-                ITMDecoderForceSync( &_r.i, FALSE );
+                ITMDecoderForceSync( &_r.i, false );
                 break;
 
             // ------------------------------------
@@ -221,7 +221,7 @@ int _processOptions( int argc, char *argv[] )
                 break;
 
             case 'w':
-                options.writeSync = TRUE;
+                options.writeSync = true;
                 break;
 
             case 'v':
@@ -229,7 +229,7 @@ int _processOptions( int argc, char *argv[] )
                 break;
 
             case 't':
-                options.useTPIU = TRUE;
+                options.useTPIU = true;
                 break;
 
             case 'i':
@@ -247,7 +247,7 @@ int _processOptions( int argc, char *argv[] )
 
             case 'h':
                 _printHelp( argv[0] );
-                return FALSE;
+                return false;
 
             case '?':
                 if ( optopt == 'b' )
@@ -259,26 +259,26 @@ int _processOptions( int argc, char *argv[] )
                     fprintf ( stderr, "Unknown option character `\\x%x'." EOL, optopt );
                 }
 
-                return FALSE;
+                return false;
 
             default:
                 fprintf( stderr, "Unknown option %c" EOL, optopt );
-                return FALSE;
+                return false;
         }
 
     if ( ( options.useTPIU ) && ( !options.tpiuITMChannel ) )
     {
         fprintf( stderr, "TPIU set for use but no channel set for ITM output" EOL );
-        return FALSE;
+        return false;
     }
 
     if ( options.verbose )
     {
         fprintf( stdout, "orbdump V" VERSION " (Git %08X %s, Built " BUILD_DATE ")" EOL, GIT_HASH, ( GIT_DIRTY ? "Dirty" : "Clean" ) );
 
-        fprintf( stdout, "Verbose   : TRUE" EOL );
+        fprintf( stdout, "Verbose   : true" EOL );
         fprintf( stdout, "Server    : %s:%d" EOL, options.server, options.port );
-        fprintf( stdout, "ForceSync : %s" EOL, options.forceITMSync ? "TRUE" : "FALSE" );
+        fprintf( stdout, "ForceSync : %s" EOL, options.forceITMSync ? "true" : "false" );
 
         if ( options.timelen )
         {
@@ -289,15 +289,15 @@ int _processOptions( int argc, char *argv[] )
             fprintf( stdout, "Rec Length: Unlimited" EOL );
         }
 
-        fprintf( stdout, "Sync Write: %s" EOL, options.writeSync ? "TRUE" : "FALSE" );
+        fprintf( stdout, "Sync Write: %s" EOL, options.writeSync ? "true" : "false" );
 
         if ( options.useTPIU )
         {
-            fprintf( stdout, "Using TPIU: TRUE (ITM on channel %d)" EOL, options.tpiuITMChannel );
+            fprintf( stdout, "Using TPIU: true (ITM on channel %d)" EOL, options.tpiuITMChannel );
         }
     }
 
-    return TRUE;
+    return true;
 }
 // ====================================================================================================
 int main( int argc, char *argv[] )
@@ -314,7 +314,7 @@ int main( int argc, char *argv[] )
     ssize_t readLength, t;
     int flag = 1;
 
-    BOOL haveSynced = FALSE;
+    bool haveSynced = false;
 
     if ( !_processOptions( argc, argv ) )
     {
@@ -404,7 +404,7 @@ int main( int argc, char *argv[] )
                 continue;
             }
 
-            haveSynced = TRUE;
+            haveSynced = true;
             /* Fill in the time to start from */
             firstTime = _timestamp();
 

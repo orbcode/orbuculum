@@ -354,6 +354,10 @@ line for orbtop would be;
 
 ...the pointer to the elf file is always needed for orbtop to be able to recover symbols from. 
 
+One useful command line option for orbtop (and indeed, for the majority of the rest of the
+suite) is -s localhost:2332, which will connect directly to a SEGGER J-Link you might have exporting
+its port, with no requirement for the orbuculum multiplexer in the way.
+
 Command line options for orbtop are;
 
  `-e`: Set elf file for recovery of program symbols.
@@ -368,11 +372,9 @@ Command line options for orbtop are;
 
  `-o <filename>`: Set file to be used for output history 
  
- `-p [port]`: to use. Defaults to 3443, the standard orbuculum port.
-
  `-r <routines>`: Number of lines to record in history file 
 
- `-s [server]`: to connect to. Defaults to localhost.
+ `-s [server]:[port]`: to connect to. Defaults to localhost:3443
 
  `-t`: Use TPIU decoder.  This will not sync if TPIU is not configured, so you won't see
      packets in that case.

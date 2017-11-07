@@ -21,13 +21,8 @@
 #ifndef _ITM_DECODER_
 #define _ITM_DECODER_
 
+#include <stdbool.h>
 #include <stdint.h>
-
-#ifndef BOOL
-    #define BOOL  int
-    #define FALSE (0)
-    #define TRUE  (!FALSE)
-#endif
 
 #define ITM_MAX_PACKET  (5)  // This length can only happen for a timestamp
 #define ITM_DATA_PACKET (4)  // This is the maximum length of everything else
@@ -116,13 +111,13 @@ struct ITMDecoder
 };
 
 // ====================================================================================================
-void ITMDecoderForceSync( struct ITMDecoder *i, BOOL isSynced );
+void ITMDecoderForceSync( struct ITMDecoder *i, bool isSynced );
 void ITMDecoderZeroStats( struct ITMDecoder *i );
-BOOL ITMDecoderIsSynced( struct ITMDecoder *i );
+bool ITMDecoderIsSynced( struct ITMDecoder *i );
 struct ITMDecoderStats *ITMDecoderGetStats( struct ITMDecoder *i );
-BOOL ITMGetPacket( struct ITMDecoder *i, struct ITMPacket *p );
+bool ITMGetPacket( struct ITMDecoder *i, struct ITMPacket *p );
 enum ITMPumpEvent ITMPump( struct ITMDecoder *i, uint8_t c );
 
-void ITMDecoderInit( struct ITMDecoder *i, BOOL startSynced );
+void ITMDecoderInit( struct ITMDecoder *i, bool startSynced );
 // ====================================================================================================
 #endif

@@ -26,6 +26,7 @@
 #include <stdio.h>
 #include <sys/time.h>
 #include <string.h>
+#include "generics.h"
 #include "itmDecoder.h"
 #define SYNCMASK              0xFFFFFFFFFFFF
 #define SYNCPATTERN           0x000000000080
@@ -34,12 +35,10 @@
 #define MAX_PACKET            (5)
 #define DEFAULT_PAGE_REGISTER (0x07)
 
-#define EOL "\n\r"
-
 // Define this to get transitions printed out
 //#define PRINT_TRANSITIONS
 // ====================================================================================================
-void ITMDecoderInit( struct ITMDecoder *i, BOOL startSynced )
+void ITMDecoderInit( struct ITMDecoder *i, bool startSynced )
 
 /* Reset a ITMDecoder instance */
 
@@ -57,7 +56,7 @@ void ITMDecoderZeroStats( struct ITMDecoder *i )
     memset( &i->stats, 0, sizeof( struct ITMDecoderStats ) );
 }
 // ====================================================================================================
-BOOL ITMDecoderIsSynced( struct ITMDecoder *i )
+bool ITMDecoderIsSynced( struct ITMDecoder *i )
 
 {
     return i->p != ITM_UNSYNCED;
@@ -68,7 +67,7 @@ struct ITMDecoderStats *ITMDecoderGetStats( struct ITMDecoder *i )
     return &i->stats;
 }
 // ====================================================================================================
-void ITMDecoderForceSync( struct ITMDecoder *i, BOOL isSynced )
+void ITMDecoderForceSync( struct ITMDecoder *i, bool isSynced )
 
 /* Force the decoder into a specific sync state */
 
@@ -92,7 +91,7 @@ void ITMDecoderForceSync( struct ITMDecoder *i, BOOL isSynced )
     }
 }
 // ====================================================================================================
-BOOL ITMGetPacket( struct ITMDecoder *i, struct ITMPacket *p )
+bool ITMGetPacket( struct ITMDecoder *i, struct ITMPacket *p )
 
 /* Copy received packet into transfer buffer, and reset receiver */
 
@@ -100,7 +99,7 @@ BOOL ITMGetPacket( struct ITMDecoder *i, struct ITMPacket *p )
     /* This should have been reset in the call */
     if ( i->p != ITM_IDLE )
     {
-        return FALSE;
+        return false;
     }
 
     p->srcAddr = i->srcAddr;
@@ -109,7 +108,7 @@ BOOL ITMGetPacket( struct ITMDecoder *i, struct ITMPacket *p )
 
     memcpy( p->d, i->rxPacket, p->len );
     memset( &p->d[p->len], 0, ITM_MAX_PACKET - p->len );
-    return TRUE;
+    return true;
 }
 // ====================================================================================================
 #ifdef PRINT_TRANSITIONS

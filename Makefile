@@ -73,9 +73,9 @@ INCLUDE_PATHS += -IInc -I$(OLOC)
 
 ORBUCULUM_CFILES = $(App_DIR)/$(ORBUCULUM).c 
 ORBCAT_CFILES = $(App_DIR)/$(ORBCAT).c 
-ORBTOP_CFILES = $(App_DIR)/$(ORBTOP).c
+ORBTOP_CFILES = $(App_DIR)/$(ORBTOP).c $(App_DIR)/symbols.c 
 ORBDUMP_CFILES = $(App_DIR)/$(ORBDUMP).c
-ORBSTAT_CFILES = $(App_DIR)/$(ORBSTAT).c 
+ORBSTAT_CFILES = $(App_DIR)/$(ORBSTAT).c $(App_DIR)/symbols.c 
 
 ##########################################################################
 # GNU GCC compiler prefix and location
