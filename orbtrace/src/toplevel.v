@@ -62,7 +62,7 @@ module topLevel(
 SB_GB_IO #(.PIN_TYPE(6'b000001)) BtraceClk0
 (
   .PACKAGE_PIN(traceClk),
-  .GLOBAL_BUFFER_OUTPUT(BtraceClk),
+  .GLOBAL_BUFFER_OUTPUT(BtraceClk)
 );
 
 // Trace input pins config   
