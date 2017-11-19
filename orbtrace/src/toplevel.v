@@ -58,12 +58,21 @@ module topLevel(
    wire 		   clk;	
 
    
+`ifdef NO_GB_IO_AVAILABLE
+// standard input pin for trace clock,
+// then route it into an internal global buffer.
+SB_GB BtraceClk0 (
+ .USER_SIGNAL_TO_GLOBAL_BUFFER(traceClk),
+ .GLOBAL_BUFFER_OUTPUT(BtraceClk)
+ );
+`else
 // Buffer for trace input clock
 SB_GB_IO #(.PIN_TYPE(6'b000001)) BtraceClk0
 (
   .PACKAGE_PIN(traceClk),
   .GLOBAL_BUFFER_OUTPUT(BtraceClk)
 );
+`endif
 
 // Trace input pins config   
 SB_IO #(.PULLUP(1)) MtraceIn0
