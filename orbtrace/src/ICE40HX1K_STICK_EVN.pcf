@@ -8,27 +8,27 @@ set_io traceDin[3]	115	# J1 pin 6
 set_io traceClk		116	# J1 pin 7
 
 # UART connection to PC
-set_io uartrx		9
-set_io uarttx		8
-set_io rst		7
-set_io cts		4
+set_io uartrx		9	# RX pin to FTDI
+set_io uarttx		8	# TX pin to FTDI
+set_io rst		3	# DTRn pin to FTDI
+set_io cts		4	# CTSn pin to FTDI
 
 # Oscillator clock for FPGA PLL
-set_io clkIn		21
+set_io clkIn		21	# connected to 12 MHz xtal
 
 # LEDs
-set_io sync_led		95
-set_io rxInd_led	96
-set_io txInd_led	97
-set_io txOvf_led	98
+set_io sync_led		95	# LED D5 (green)
+set_io rxInd_led	96	# LED D4 (red)
+set_io txInd_led	97	# LED D3 (red)
+set_io txOvf_led	98	# LED D2 (red)
 
 # more LEDs (non-standard)
-set_io yellow		99	# LED
-set_io green		119	# J1 pin 10
+set_io yellow		99	# LED D1 (red)
+set_io green		119	# J1 pin 10 -- LED to be connected
 
 # other indicators (currently unused?) J2 pin 1 is 3.3V, pin 2 is GND
-set_io D6		62	# J2 pin 3
-set_io D5		61	# J2 pin 4
-set_io D4		60	# J2 pin 5
-set_io D3		56	# J2 pin 6
+set_io D6		31	# not connected and unused, for compat with ICE40HX8K_B_EVN
+set_io D5		32	# not connected and unused, for compat with ICE40HX8K_B_EVN
+set_io D4		33	# not connected and unused, for compat with ICE40HX8K_B_EVN
+set_io D3		34	# not connected and unused, for compat with ICE40HX8K_B_EVN
 
