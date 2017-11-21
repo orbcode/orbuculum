@@ -954,7 +954,7 @@ void _printHelp( char *progName )
 
 {
     fprintf( stdout, "Useage: %s <hntv> <a name:number> <b basedir> <f filename>  <i channel> <p port> <s speed>" EOL, progName );
-    fprintf( stdout, "        a: Set address for SEGGER JLink connection, implies -n (default none:%d)" EOL, SEGGER_PORT );
+    fprintf( stdout, "        a: <serialSpeed> to use" EOL );
     fprintf( stdout, "        b: <basedir> for channels" EOL );
     fprintf( stdout, "        c: <Number>,<Name>,<Format> of channel to populate (repeat per channel)" EOL );
     fprintf( stdout, "        f: <filename> Take input from specified file" EOL );
@@ -962,10 +962,10 @@ void _printHelp( char *progName )
     fprintf( stdout, "        i: <channel> Set ITM Channel in TPIU decode (defaults to 1)" EOL );
     fprintf( stdout, "        n: Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
 #ifdef INCLUDE_FPGA_SUPPORT
-    fprintf( stdout, "        o: Use orbuculum custom interface, implies -t" EOL );
+    fprintf( stdout, "        o: Use orbuculum custom interface" EOL );
 #endif
     fprintf( stdout, "        p: <serialPort> to use" EOL );
-    fprintf( stdout, "        s: <serialSpeed> to use" EOL );
+    fprintf( stdout, "        s: <address>:<port> Set address for SEGGER JLink connection (default none:%d)" EOL, SEGGER_PORT );
     fprintf( stdout, "        t: Use TPIU decoder" EOL );
     fprintf( stdout, "        v: Verbose mode" EOL );
 }
@@ -984,28 +984,7 @@ int _processOptions( int argc, char *argv[] )
         {
             // ------------------------------------
             case 'a':
-                options.forceITMSync = true;
-                options.seggerHost = optarg;
-
-                // See if we have an optional port number too
-                char *a = optarg;
-
-                while ( ( *a ) && ( *a != ':' ) )
-                {
-                    a++;
-                }
-
-                if ( *a == ':' )
-                {
-                    *a = 0;
-                    options.seggerPort = atoi( ++a );
-                }
-
-                if ( !options.seggerPort )
-                {
-                    options.seggerPort = SEGGER_PORT;
-                }
-
+                options.speed = atoi( optarg );
                 break;
 
             // ------------------------------------
@@ -1049,7 +1028,28 @@ int _processOptions( int argc, char *argv[] )
 
             // ------------------------------------
             case 's':
-                options.speed = atoi( optarg );
+                options.forceITMSync = true;
+                options.seggerHost = optarg;
+
+                // See if we have an optional port number too
+                char *a = optarg;
+
+                while ( ( *a ) && ( *a != ':' ) )
+                {
+                    a++;
+                }
+
+                if ( *a == ':' )
+                {
+                    *a = 0;
+                    options.seggerPort = atoi( ++a );
+                }
+
+                if ( !options.seggerPort )
+                {
+                    options.seggerPort = SEGGER_PORT;
+                }
+
                 break;
 
             // ------------------------------------

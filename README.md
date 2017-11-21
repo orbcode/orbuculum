@@ -9,18 +9,25 @@ You can find information about using this suite on the Embedded Rambling
 blog at http://shadetail.com/.
 
 *This program is in heavy development. Check back frequently for new versions 
-with additional functionality. The current status (7th Nov) is that the
+with additional functionality. The current status (21st Nov) is that the
 code location lookup functionality in orbtop and orbstat has been reworked
 and seperated out into a standalone component leading to performance and
-resilience improvements. The code is increasingly in daily use and small issues
+resilience improvements. A check has been added to both to automatically
+re-load the symbol table if it changes (e.g. because of re-compilation of
+a new version)....I added this because it caught me out more than once. It
+does mean that if a compilation is done of a new version while the old version
+is running on the target the symbols are potentially incorrect, but it saves
+having to re-start orbtop and orbstat every time a new version is built which,
+on balance, was thought to be the lesser evil.*
+
+The code is in daily use now and small issues
 are patched as they are found. The parallel trace hardware using a iCE40HX-8K breakout board and the icestorm tools is stable and hardware is in development.*
 
 The software runs on both Linux and OSX.
 
-I would not say the whole suite is throughly tested yet...there again,
-I'm not likely to say that for a few years.  it _is_ working OK on
-regular workloads. There may be some rough edges to be discovered.
-
+The whole suite is working OK on
+regular workloads. There may be some rough edges to be discovered, so please
+report anything unusual you find.
 
 What is it?
 ===========
@@ -251,38 +258,35 @@ Command Line Options
 
 Specific command line options of note are;
 
- `-a [name]`: Set hostname for JLinkGDB SWO source
+ `-a [serialSpeed]`: Use serial port and set device speed.
 
-`-b [basedir]`: for channels. Note that this is actually just leading text on the channel
+ `-b [basedir]`: for channels. Note that this is actually just leading text on the channel
      name, so if you put xyz/chan then all ITM software channels will end up in a directory
      xyz, prepended with chan.  If xyz doesn't exist, then the channel creation will 
      fail silently.
 
  `-c [Number],[Name],[Format]`: of channel to populate (repeat per channel) using printf formatting.
 
-`-g [Port]`: Specify JLink port to connect to (Normally 2332)
+ `-f [filename]`: Take input from specified file. (CTRL-C to abort from this)
 
-`-h`: Brief help.
-
-`-f [filename]`: Take input from specified file. (CTRL-C to abort from this)
+ `-h`: Brief help.
 
  `-i [channel]`: Set Channel for ITM in TPIU decode (defaults to 1). Note that the TPIU must
      be in use for this to make sense.  If you call the GenericsConfigureTracing
      routine above with the ITM Channel set to 0 then the TPIU will be bypassed.
 
- `-o`: Use the custom (ice40 FPGA) based interface.
+  `-n`: Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)
 
- `-p [serialPort]`: to use. If not specified then the program defaults to Blackmagic probe.
+  `-o`: Use the custom (ice40 FPGA) based interface (if compiled with support)
 
- `-s [serialSpeed]`: to use. Only relevant when using the serial interface.
+  `-p [serialPort]`: to use. If not specified then the program defaults to Blackmagic probe.
 
- `-t`: Use TPIU decoder.  This will not sync if TPIU is not configured, so you won't see
+  `-s [address]:[port]`: Set address for SEGGER JLink connection, (default none:2332)
+
+  `-t`: Use TPIU decoder.  This will not sync if TPIU is not configured, so you won't see
      packets in that case.
 
- `-u`: Use Ultraspeed ftdi interface. This will support operation up to 12Mbps and is currently
-    the best option for SWO decode.
-    
- `-v`: Verbose mode.
+  `-v`: Verbose mode.
 
 
 Using orbuculum with Other info Sources
@@ -330,9 +334,9 @@ options for orbcat are;
      be in use for this to make sense.  If you call the GenericsConfigureTracing
      routine above with the ITM Channel set to 0 then the TPIU will be bypassed.
 
- `-p [port]`: to use. Defaults to 3443, the standard orbuculum port.
+ `-n`: Enforce sync requirement for ITM (i.e. ITM needsd to issue syncs)
 
- `-s [server]`: to connect to. Defaults to localhost.
+ `-s [server]:[port]`: to connect to. Defaults to localhost:3443 to connect to the orbuculum daemon. Use localhost:2332 to connect to an existing Segger J-Link..
 
  `-t`: Use TPIU decoder.  This will not sync if TPIU is not configured, so you won't see
      packets in that case.
@@ -363,7 +367,11 @@ its port, with no requirement for the orbuculum multiplexer in the way.
 
 Command line options for orbtop are;
 
- `-e`: Set elf file for recovery of program symbols.
+ `-c [num]`: Cut screen output after number of lines.
+
+ `-d [DeleteMaterial]`: to take off front of filenames (for pretty printing).
+
+ `-e`: Set elf file for recovery of program symbols. This will be monitored and reloaded if it changes.
 
  `-h`: Brief help.
 
@@ -371,9 +379,13 @@ Command line options for orbtop are;
      be in use for this to make sense.  If you call the GenericsConfigureTracing
      routine above with the ITM Channel set to 0 then the TPIU will be bypassed.
 
- `-m <MaxHistory>`: Number of intervals to record in history file
+ `-l`: Aggregate per line rather than per function
 
- `-o <filename>`: Set file to be used for output history 
+ `-m [MaxHistory]`: Number of intervals to record in history file
+
+ `-n`: Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)
+
+ `-o [filename]`: Set file to be used for output history 
  
  `-r <routines>`: Number of lines to record in history file 
 

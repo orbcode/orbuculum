@@ -26,6 +26,7 @@ struct SymbolSet
 {
     /* Symbol table related info */
     asymbol **syms;                         /* Symbol table */
+  struct stat st;  /* Stat of the file that was accessed for the symbols */
   uint32_t symcount;
     bfd *abfd;                              /* BFD handle to file */
     asection *sect;                         /* Address data for the program section */
@@ -35,6 +36,7 @@ struct SymbolSet
 // ====================================================================================================
 struct SymbolSet *SymbolSetCreate( char *filename );
 void SymbolSetDelete( struct SymbolSet *s );
+bool SymbolSetCheckValidity( struct SymbolSet **s, char *filename );
 bool SymbolLookup( struct SymbolSet *s, uint32_t addr, struct nameEntry *n, char *deleteMaterial ) ;
 // ====================================================================================================
 #endif

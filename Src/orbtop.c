@@ -818,6 +818,24 @@ int main( int argc, char *argv[] )
         {
             lastTime = _timestamp();
             outputTop();
+	    if (!SymbolSetCheckValidity( &_r.s, options.elffile ))
+	      {
+		if (options.verbose)
+		  {
+		    fprintf(stdout,"Reload %s" EOL,options.elffile );
+		  }
+
+		if (!_r.s)
+		  {
+		    /* Its possible the file was in the process of being written, so wait before testing again */
+		    usleep(1000000);
+		    if (!SymbolSetCheckValidity( &_r.s, options.elffile ))
+		      {
+			fprintf( stderr,"Elf file was lost" EOL );
+			return -1;
+		      }
+		  }
+	      }
         }
 
         /* Check to make sure there's not an unexpected TPIU in here */
