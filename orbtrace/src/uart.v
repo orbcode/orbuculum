@@ -30,6 +30,8 @@
 //  			halved required clock cycles to support high baudrates
 //  			with low system clock.
 //
+//  			set baudrate to upper limit of 12M. (limit is FT2232H)
+//
 module uart(
 	input clk, // The master clock for this module
 	input rst, // Synchronous reset.
@@ -46,7 +48,7 @@ module uart(
 );
 
 parameter CLOCKFRQ=48_000_000; // Frequency of the oscillator
-parameter BAUDRATE=4000000; // Required baudrate
+parameter BAUDRATE=12_000_000; // Baudrate to use
 parameter CLOCK_DIVIDE=(CLOCKFRQ/(BAUDRATE*2)); // clock rate / (baud rate * 2)
 
 // States for the receiving state machine.
