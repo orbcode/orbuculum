@@ -404,6 +404,21 @@ void _handlePCSample( struct ITMDecoder *i, struct ITMPacket *p )
     }
 }
 // ====================================================================================================
+void _flushHash(void)
+
+{
+  struct visitedAddr *a;
+  UT_hash_handle hh;
+  
+  for ( a = _r.addresses; a != NULL; a = hh.next )
+    {
+      hh=a->hh;
+      free(a);
+    }
+
+  _r.addresses=NULL;
+}
+// ====================================================================================================
 void _handleHW( struct ITMDecoder *i )
 
 {
@@ -820,6 +835,9 @@ int main( int argc, char *argv[] )
             outputTop();
 	    if (!SymbolSetCheckValidity( &_r.s, options.elffile ))
 	      {
+		/* Make sure old references are invalidated */
+		_flushHash();
+		
 		if (options.verbose)
 		  {
 		    fprintf(stdout,"Reload %s" EOL,options.elffile );
