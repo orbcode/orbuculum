@@ -479,6 +479,55 @@ void _outputProfile( void )
     fclose( _r.c );
 }
 // ====================================================================================================
+
+/* types and compare-functions for qsort in _outputDot() */
+
+struct callVector
+{
+    struct nameEntryHash *fromName;
+    struct nameEntryHash *toName;
+    uint32_t count;
+};
+
+static int _addr_sort_dst_fn( const void *a, const void *b )
+
+{
+    int32_t c = ( ( ( struct edge * )a )->dst ) - ( ( ( struct edge * )b )->dst );
+
+    if ( c )
+    {
+        return c;
+    }
+
+    return ( ( ( struct edge * )a )->src ) - ( ( ( struct edge * )b )->src );
+}
+
+static int _calls_sort_src_fn( const void *a, const void *b )
+
+{
+    int32_t c = ( ( ( struct callVector * )a )->fromName ) - ( ( ( struct callVector * )b )->fromName );
+
+    if ( c )
+    {
+        return c;
+    }
+
+    return ( ( ( struct callVector * )a )->toName ) - ( ( ( struct callVector * )b )->toName );
+}
+
+static int _calls_sort_dst_fn( const void *a, const void *b )
+
+{
+    int32_t c = ( ( ( struct callVector * )a )->toName ) - ( ( ( struct callVector * )b )->toName );
+
+    if ( c )
+    {
+        return c;
+    }
+
+    return ( ( ( struct callVector * )a )->fromName ) - ( ( ( struct callVector * )b )->fromName );
+}
+// ====================================================================================================
 void _outputDot( void )
 
 /* Output call graph to dot file */
@@ -487,56 +536,8 @@ void _outputDot( void )
     FILE *c;
     struct nameEntryHash *f = NULL, *t = NULL;
 
-    struct callVector
-    {
-        struct nameEntryHash *fromName;
-        struct nameEntryHash *toName;
-        uint32_t count;
-    };
-
     struct callVector *call = NULL;
     uint32_t callCount = 0;
-
-
-    int _addr_sort_dst_fn( const void *a, const void *b )
-
-    {
-        int32_t c = ( ( ( struct edge * )a )->dst ) - ( ( ( struct edge * )b )->dst );
-
-        if ( c )
-        {
-            return c;
-        }
-
-        return ( ( ( struct edge * )a )->src ) - ( ( ( struct edge * )b )->src );
-    }
-
-
-    int _calls_sort_src_fn( const void *a, const void *b )
-
-    {
-        int32_t c = ( ( ( struct callVector * )a )->fromName ) - ( ( ( struct callVector * )b )->fromName );
-
-        if ( c )
-        {
-            return c;
-        }
-
-        return ( ( ( struct callVector * )a )->toName ) - ( ( ( struct callVector * )b )->toName );
-    }
-
-    int _calls_sort_dst_fn( const void *a, const void *b )
-
-    {
-        int32_t c = ( ( ( struct callVector * )a )->toName ) - ( ( ( struct callVector * )b )->toName );
-
-        if ( c )
-        {
-            return c;
-        }
-
-        return ( ( ( struct callVector * )a )->fromName ) - ( ( ( struct callVector * )b )->fromName );
-    }
 
     if ( !options.dotfile )
     {
