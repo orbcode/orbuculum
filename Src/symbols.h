@@ -2,7 +2,7 @@
 #define _SYMBOLS_H_
 
 #include <stdbool.h>
-#include <bfd.h>
+#include "bfd_wrapper.h"
 #include "uthash.h"
 
 #define INT_ORIGIN   0xFFFFFFF8              /* Special memory address - interrupt origin */
