@@ -91,6 +91,7 @@ struct                                       /* Record for options, either defau
 {
     bool verbose;                            /* Talk more.... */
     bool useTPIU;                            /* Are we decoding via the TPIU? */
+    bool reportFilenames;                    /* Report filenames for each routine? -- not presented via UI, intended for debug */
     uint32_t tpiuITMChannel;                 /* What channel? */
     bool forceITMSync;                       /* Must ITM start synced? */
 
@@ -201,6 +202,27 @@ int _addresses_sort_fn( void *a, void *b )
     return 0;
 }
 // ====================================================================================================
+int _routines_sort_fn( void *a, void *b )
+
+{
+  int r=strcmp( ( ( struct visitedAddr * )a )->n->filename, (( struct visitedAddr * )b )->n->filename);
+
+  if (r)
+    {
+      return r;
+    }
+
+  
+  r= strcmp( ( ( struct visitedAddr * )a )->n->function, (( struct visitedAddr * )b )->n->function) ;
+
+  if (r)
+    {
+      return r;
+    }
+
+  return ((int)( ( struct visitedAddr * )a )->n->line) - ((int)(( struct visitedAddr * )b )->n->line); 
+}
+// ====================================================================================================
 int _report_sort_fn( const void *a, const void *b )
 
 {
@@ -228,7 +250,7 @@ void outputTop( void )
     FILE *p = NULL;
 
     /* Put the address into order of the file and function names */
-    HASH_SORT( _r.addresses, _addresses_sort_fn );
+    HASH_SORT( _r.addresses, _routines_sort_fn );
 
     /* Now merge them together */
     for ( a = _r.addresses; a != NULL; a = a->hh.next )
@@ -241,7 +263,7 @@ void outputTop( void )
         if ( ( reportLines == 0 ) ||
                 ( strcmp( report[reportLines - 1].n->filename, a->n->filename ) ) ||
                 ( strcmp( report[reportLines - 1].n->function, a->n->function ) ) ||
-                ( ( report[reportLines - 1].n->line != a->n->line ) && ( options.lineDisaggregation ) ) )
+	     ( ( report[reportLines - 1].n->line != a->n->line ) && ( options.lineDisaggregation ) ) )
         {
             /* Make room for a report line */
             reportLines++;
@@ -307,6 +329,11 @@ void outputTop( void )
 
                     dispSamples += report[n].count;
 
+		    if (( options.reportFilenames ) && (report[n].n->filename))
+		      {
+                        fprintf( stdout, "%s::", report[n].n->filename );
+		      }
+		    
                     if ( ( options.lineDisaggregation ) && ( report[n].n->line ) )
                     {
                         fprintf( stdout, "%s::%d" EOL, report[n].n->function, report[n].n->line );
