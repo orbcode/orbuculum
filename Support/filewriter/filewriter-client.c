@@ -5,8 +5,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
-
-#include "config.h"
+#include "stm32f4xx.h"
+#include "filewriter-client.h"
 #include "fileWriterProtocol.h"
 
 static bool isInUse[FW_MAX_FILES];
@@ -85,7 +85,8 @@ uint8_t fwOpenFile(const char *n, bool forAppend)
 /* Open a file for append or rewrite */
 
 {
-    int32_t handle=_getHandle();
+  if (!_initialised) fwInit();
+  int32_t handle=_getHandle();
     if (handle>=0)
 	{
 
@@ -109,12 +110,15 @@ uint32_t fwWrite(const char *ptr, size_t size, uint32_t nmemb, uint32_t h)
 /* Write to an open file */
 
 {
+  nmemb*=size;
+  uint32_t r = nmemb;
+  
     while (nmemb)
 	{
 	    _sendMsg(FW_CMD_WRITE, 0, &nmemb, ptr);
 	    ptr+=FW_MAX_SEND;
 	}
-    return true;
+    return r;
 }
 // ============================================================================================
 uint32_t fwClose(uint32_t h)
@@ -136,6 +140,7 @@ bool fwDeleteFile(const char *ptr)
 /* Delete a file */
 
 {
+  if (!_initialised) fwInit();
     int32_t handle=_getHandle();
     if (handle<0)
 	{
@@ -154,7 +159,7 @@ bool fwDeleteFile(const char *ptr)
 	}
 
     _releaseHandle(handle);
-    return true;
+    return 0;
 }
 // ============================================================================================
 void fwInit(void)

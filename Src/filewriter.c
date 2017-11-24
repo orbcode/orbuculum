@@ -279,7 +279,7 @@ bool filewriterProcess( struct ITMPacket *p )
                 }
                 else
                 {
-                    _report( FW_V_DEBUG, "Wrote on %d bytes descriptor %d" EOL, FW_GET_BYTES( c ), FW_GET_FILEID( c ) );
+                    _report( FW_V_DEBUG, "Wrote %d bytes on descriptor %d" EOL, FW_GET_BYTES( c ), FW_GET_FILEID( c ) );
                     fwrite( &( p->d[1] ), 1, FW_GET_BYTES( c ), _f.file[FW_GET_FILEID( c )].f );
                 }
             }
