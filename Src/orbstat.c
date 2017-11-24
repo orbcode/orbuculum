@@ -272,19 +272,19 @@ void _lookup( struct nameEntryHash **h, uint32_t addr )
     }
 }
 // ====================================================================================================
-void _flushHash(void)
+void _flushHash( void )
 
 {
-  struct nameEntryHash *a;
-  UT_hash_handle hh;
-  
-  for ( a = _r.name; a != NULL; a = hh.next )
+    struct nameEntryHash *a;
+    UT_hash_handle hh;
+
+    for ( a = _r.name; a != NULL; a = hh.next )
     {
-      hh=a->hh;
-      free(a);
+        hh = a->hh;
+        free( a );
     }
 
-  _r.name=NULL;
+    _r.name = NULL;
 }
 // ====================================================================================================
 uint64_t _timestamp( void )
@@ -1091,26 +1091,28 @@ int main( int argc, char *argv[] )
             _r.calls = NULL;
             _r.cdCount = 0;
 
-	    if (!SymbolSetCheckValidity( &_r.s, options.elffile ))
-	      {
-		_flushHash();
-		if (options.verbose)
-		  {
-		    fprintf(stdout,"Reload %s" EOL,options.elffile );
-		  }
+            if ( !SymbolSetCheckValidity( &_r.s, options.elffile ) )
+            {
+                _flushHash();
 
-		if (!_r.s)
-		  {
-		    /* Its possible the file was in the process of being written, so wait before testing again */
-		    usleep(1000000);
-		    if (!SymbolSetCheckValidity( &_r.s, options.elffile ))
-		      {
-			fprintf( stderr,"Elf file was lost" EOL );
-			return -1;
-		      }
-		  }
-	      }
-	}
+                if ( options.verbose )
+                {
+                    fprintf( stdout, "Reload %s" EOL, options.elffile );
+                }
+
+                if ( !_r.s )
+                {
+                    /* Its possible the file was in the process of being written, so wait before testing again */
+                    usleep( 1000000 );
+
+                    if ( !SymbolSetCheckValidity( &_r.s, options.elffile ) )
+                    {
+                        fprintf( stderr, "Elf file was lost" EOL );
+                        return -1;
+                    }
+                }
+            }
+        }
 
         /* Check to make sure there's not an unexpected TPIU in here */
         if ( ITMDecoderGetStats( &_r.i )->tpiuSyncCount )

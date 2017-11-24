@@ -205,22 +205,22 @@ int _addresses_sort_fn( void *a, void *b )
 int _routines_sort_fn( void *a, void *b )
 
 {
-  int r=strcmp( ( ( struct visitedAddr * )a )->n->filename, (( struct visitedAddr * )b )->n->filename);
+    int r = strcmp( ( ( struct visitedAddr * )a )->n->filename, ( ( struct visitedAddr * )b )->n->filename );
 
-  if (r)
+    if ( r )
     {
-      return r;
+        return r;
     }
 
-  
-  r= strcmp( ( ( struct visitedAddr * )a )->n->function, (( struct visitedAddr * )b )->n->function) ;
 
-  if (r)
+    r = strcmp( ( ( struct visitedAddr * )a )->n->function, ( ( struct visitedAddr * )b )->n->function ) ;
+
+    if ( r )
     {
-      return r;
+        return r;
     }
 
-  return ((int)( ( struct visitedAddr * )a )->n->line) - ((int)(( struct visitedAddr * )b )->n->line); 
+    return ( ( int )( ( struct visitedAddr * )a )->n->line ) - ( ( int )( ( struct visitedAddr * )b )->n->line );
 }
 // ====================================================================================================
 int _report_sort_fn( const void *a, const void *b )
@@ -263,7 +263,7 @@ void outputTop( void )
         if ( ( reportLines == 0 ) ||
                 ( strcmp( report[reportLines - 1].n->filename, a->n->filename ) ) ||
                 ( strcmp( report[reportLines - 1].n->function, a->n->function ) ) ||
-	     ( ( report[reportLines - 1].n->line != a->n->line ) && ( options.lineDisaggregation ) ) )
+                ( ( report[reportLines - 1].n->line != a->n->line ) && ( options.lineDisaggregation ) ) )
         {
             /* Make room for a report line */
             reportLines++;
@@ -329,11 +329,11 @@ void outputTop( void )
 
                     dispSamples += report[n].count;
 
-		    if (( options.reportFilenames ) && (report[n].n->filename))
-		      {
+                    if ( ( options.reportFilenames ) && ( report[n].n->filename ) )
+                    {
                         fprintf( stdout, "%s::", report[n].n->filename );
-		      }
-		    
+                    }
+
                     if ( ( options.lineDisaggregation ) && ( report[n].n->line ) )
                     {
                         fprintf( stdout, "%s::%d" EOL, report[n].n->function, report[n].n->line );
@@ -431,19 +431,19 @@ void _handlePCSample( struct ITMDecoder *i, struct ITMPacket *p )
     }
 }
 // ====================================================================================================
-void _flushHash(void)
+void _flushHash( void )
 
 {
-  struct visitedAddr *a;
-  UT_hash_handle hh;
-  
-  for ( a = _r.addresses; a != NULL; a = hh.next )
+    struct visitedAddr *a;
+    UT_hash_handle hh;
+
+    for ( a = _r.addresses; a != NULL; a = hh.next )
     {
-      hh=a->hh;
-      free(a);
+        hh = a->hh;
+        free( a );
     }
 
-  _r.addresses=NULL;
+    _r.addresses = NULL;
 }
 // ====================================================================================================
 void _handleHW( struct ITMDecoder *i )
@@ -860,27 +860,29 @@ int main( int argc, char *argv[] )
         {
             lastTime = _timestamp();
             outputTop();
-	    if (!SymbolSetCheckValidity( &_r.s, options.elffile ))
-	      {
-		/* Make sure old references are invalidated */
-		_flushHash();
-		
-		if (options.verbose)
-		  {
-		    fprintf(stdout,"Reload %s" EOL,options.elffile );
-		  }
 
-		if (!_r.s)
-		  {
-		    /* Its possible the file was in the process of being written, so wait before testing again */
-		    usleep(1000000);
-		    if (!SymbolSetCheckValidity( &_r.s, options.elffile ))
-		      {
-			fprintf( stderr,"Elf file was lost" EOL );
-			return -1;
-		      }
-		  }
-	      }
+            if ( !SymbolSetCheckValidity( &_r.s, options.elffile ) )
+            {
+                /* Make sure old references are invalidated */
+                _flushHash();
+
+                if ( options.verbose )
+                {
+                    fprintf( stdout, "Reload %s" EOL, options.elffile );
+                }
+
+                if ( !_r.s )
+                {
+                    /* Its possible the file was in the process of being written, so wait before testing again */
+                    usleep( 1000000 );
+
+                    if ( !SymbolSetCheckValidity( &_r.s, options.elffile ) )
+                    {
+                        fprintf( stderr, "Elf file was lost" EOL );
+                        return -1;
+                    }
+                }
+            }
         }
 
         /* Check to make sure there's not an unexpected TPIU in here */

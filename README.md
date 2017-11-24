@@ -9,19 +9,15 @@ You can find information about using this suite on the Embedded Rambling
 blog at http://shadetail.com/.
 
 *This program is in heavy development. Check back frequently for new versions 
-with additional functionality. The current status (21st Nov) is that the
-code location lookup functionality in orbtop and orbstat has been reworked
-and seperated out into a standalone component leading to performance and
-resilience improvements. A check has been added to both to automatically
-re-load the symbol table if it changes (e.g. because of re-compilation of
-a new version)....I added this because it caught me out more than once. It
-does mean that if a compilation is done of a new version while the old version
-is running on the target the symbols are potentially incorrect, but it saves
-having to re-start orbtop and orbstat every time a new version is built which,
-on balance, was thought to be the lesser evil.*
+with additional functionality. The current status (24th Nov) is that
+a small filewriter has been added to allow files to be written on the machine
+running the orbuculum session ... this delivers similar functionality to
+SemiHosting and much faster, but less reliable. I needed this to be able to
+do code profiling efficiently.  Client side libraries can be found in the
+Support directory.*
 
 The code is in daily use now and small issues
-are patched as they are found. The parallel trace hardware using a iCE40HX-8K breakout board and the icestorm tools is stable and hardware is in development.*
+are patched as they are found. The parallel trace hardware using a iCE40HX-8K breakout board and the icestorm tools is stable and hardware is in development.
 
 The software runs on both Linux and OSX.
 

@@ -71,7 +71,7 @@ DEBUG_OPTS = -g3 -gdwarf-2 -ggdb
 App_DIR=Src
 INCLUDE_PATHS += -IInc -I$(OLOC)
 
-ORBUCULUM_CFILES = $(App_DIR)/$(ORBUCULUM).c 
+ORBUCULUM_CFILES = $(App_DIR)/$(ORBUCULUM).c $(App_DIR)/filewriter.c
 ORBCAT_CFILES = $(App_DIR)/$(ORBCAT).c 
 ORBTOP_CFILES = $(App_DIR)/$(ORBTOP).c $(App_DIR)/symbols.c 
 ORBDUMP_CFILES = $(App_DIR)/$(ORBDUMP).c

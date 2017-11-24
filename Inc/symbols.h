@@ -22,15 +22,15 @@ struct nameEntry
     uint32_t addr;
 };
 
-struct SymbolSet 
+struct SymbolSet
 {
     /* Symbol table related info */
     asymbol **syms;                         /* Symbol table */
-  struct stat st;  /* Stat of the file that was accessed for the symbols */
-  uint32_t symcount;
+    struct stat st;  /* Stat of the file that was accessed for the symbols */
+    uint32_t symcount;
     bfd *abfd;                              /* BFD handle to file */
     asection *sect;                         /* Address data for the program section */
-  char *elfFile;                           /* File containing structure info */
+    char *elfFile;                           /* File containing structure info */
 };
 
 // ====================================================================================================

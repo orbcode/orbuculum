@@ -53,6 +53,7 @@
 #include "generics.h"
 #include "tpiuDecoder.h"
 #include "itmDecoder.h"
+#include "fileWriter.h"
 
 #ifdef INCLUDE_FPGA_SUPPORT
     #include <libftdi1/ftdi.h>
@@ -94,6 +95,8 @@ struct
     bool useTPIU;
     bool segger;
     bool forceITMSync;
+    char *fwbasedir;
+
 #ifdef INCLUDE_FPGA_SUPPORT
     bool orbtrace;
 #endif
@@ -681,9 +684,17 @@ void _handleSW( struct ITMDecoder *i )
 
     if ( ITMGetPacket( i, &p ) )
     {
-        if ( ( p.srcAddr < NUM_CHANNELS ) && ( _r.c[p.srcAddr].handle ) )
+        /* Filter off filewriter packets and let the filewriter module deal with those */
+        if ( p.srcAddr == FW_CHANNEL )
         {
-            write( _r.c[p.srcAddr].handle, &p, sizeof( struct ITMPacket ) );
+            filewriterProcess( &p );
+        }
+        else
+        {
+            if ( ( p.srcAddr < NUM_CHANNELS ) && ( _r.c[p.srcAddr].handle ) )
+            {
+                write( _r.c[p.srcAddr].handle, &p, sizeof( struct ITMPacket ) );
+            }
         }
     }
 }
@@ -1580,6 +1591,9 @@ int main( int argc, char *argv[] )
     /* Make sure there's an initial timestamp to work with */
 
     _r.lastHWExceptionTS = _timestampuS();
+
+    /* Start the filewriter */
+    filewriterInit( options.fwbasedir, FW_V_WARN );
 
     /* Using the exit construct rather than return ensures the atexit gets called */
 #ifdef INCLUDE_FPGA_SUPPORT

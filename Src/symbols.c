@@ -60,7 +60,7 @@ bool _symbolsLoad( struct SymbolSet *s )
     bfd_init();
 
     /* Get information about the file being used */
-    stat ( s->elfFile,&(s->st) );
+    stat ( s->elfFile, &( s->st ) );
     s->abfd = bfd_openr( s->elfFile, NULL );
 
     if ( !s->abfd )
@@ -196,21 +196,21 @@ void SymbolSetDelete( struct SymbolSet *s )
 bool SymbolSetCheckValidity( struct SymbolSet **s, char *filename )
 
 {
-  struct stat n;
-  stat( filename, &n );
+    struct stat n;
+    stat( filename, &n );
 
-  /* We check filesize, modification time and status change time for any differences */
-  if ((memcmp(&n.st_size,&((*s)->st.st_size),sizeof(off_t))) ||
-      (memcmp(&n.st_mtim,&((*s)->st.st_mtim),sizeof(struct timespec))) ||
-      (memcmp(&n.st_ctim,&((*s)->st.st_ctim),sizeof(struct timespec)))
-      )
+    /* We check filesize, modification time and status change time for any differences */
+    if ( ( memcmp( &n.st_size, &( ( *s )->st.st_size ), sizeof( off_t ) ) ) ||
+            ( memcmp( &n.st_mtim, &( ( *s )->st.st_mtim ), sizeof( struct timespec ) ) ) ||
+            ( memcmp( &n.st_ctim, &( ( *s )->st.st_ctim ), sizeof( struct timespec ) ) )
+       )
     {
-      /* There was a difference, re-create the symbol set */
-      SymbolSetDelete(*s);
-      *s=SymbolSetCreate(filename);
-      return false;
+        /* There was a difference, re-create the symbol set */
+        SymbolSetDelete( *s );
+        *s = SymbolSetCreate( filename );
+        return false;
     }
 
-  return true;
+    return true;
 }
 // ====================================================================================================
