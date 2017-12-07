@@ -9,13 +9,14 @@ help:
 	@echo ""
 	@echo "As target please give either:"
 	@echo ""
-	@echo -e "\tall"
-	@echo -e "\t( -> build all supported platforms)"
+	@echo "    all"
 	@echo ""
+	@echo "to build all supported platforms,"
 	@echo "or one of:"
 	@echo ""
-	@echo -e "\t$(SUPPORTED_HARDWARE)"
-	@echo -e "\t( -> build and flash this platform)"
+	@echo "    $(SUPPORTED_HARDWARE)"
+	@echo ""
+	@echo "to build and flash this specific platform."
 	@echo ""
 
 all:	$(patsubst %,%.bin,$(SUPPORTED_HARDWARE))
