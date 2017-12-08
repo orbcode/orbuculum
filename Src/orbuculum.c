@@ -1593,7 +1593,7 @@ int main( int argc, char *argv[] )
     _r.lastHWExceptionTS = _timestampuS();
 
     /* Start the filewriter */
-    filewriterInit( options.fwbasedir, FW_V_WARN );
+    filewriterInit( options.fwbasedir, FW_V_INFO );
 
     /* Using the exit construct rather than return ensures the atexit gets called */
 #ifdef INCLUDE_FPGA_SUPPORT

@@ -101,7 +101,7 @@ void _processCompleteName( uint32_t n )
 
             if ( _f.file[n].f )
             {
-                _report( FW_V_INFO, "File [%s] opened for append on descriptor %d" EOL, workingName, n );
+                _report( FW_V_INFO, "File [%s] opened for append" EOL, workingName, n );
                 _f.file[n].s = FW_STATE_OPEN;
             }
             else
@@ -119,7 +119,7 @@ void _processCompleteName( uint32_t n )
 
             if ( _f.file[n].f )
             {
-                _report( FW_V_INFO, "File [%s] opened for write on descriptor %d" EOL, workingName, n );
+                _report( FW_V_INFO, "File [%s] opened for write" EOL, workingName, n );
                 _f.file[n].s = FW_STATE_OPEN;
             }
             else
@@ -235,11 +235,11 @@ bool filewriterProcess( struct ITMPacket *p )
             if ( !_f.file[FW_GET_FILEID( c )].f )
             {
                 /* There was no file open, complain */
-                _report( FW_V_INFO, "Attempt to close descriptor %d while not open" EOL, FW_GET_FILEID( c ) );
+                _report( FW_V_DEBUG, "Attempt to close descriptor %d while not open" EOL, FW_GET_FILEID( c ) );
             }
             else
             {
-                _report( FW_V_DEBUG, "Close descriptor %d (%s)" EOL, FW_GET_FILEID( c ), _f.file[FW_GET_FILEID( c )].name );
+                _report( FW_V_INFO, "Close %s" EOL,  _f.file[FW_GET_FILEID( c )].name );
                 fclose( _f.file[FW_GET_FILEID( c )].f );
                 _f.file[FW_GET_FILEID( c )].f = NULL;
                 memset( _f.file[FW_GET_FILEID( c )].name, 0, MAX_FILENAMELEN );

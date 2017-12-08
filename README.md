@@ -149,8 +149,14 @@ also in the Support directory. Generically, it looks like this;
 
     enableSTM32F1SWD                        <*--- turn on SWO output pin on CPU
 
-    prepareSWD SystemCoreClock 2250000 1 0  <*--- Setup SWO timing
+    # ---------- EITHER, IF USING A SERIAL PORT ---------------------
+    prepareSWD SystemCoreClock 2250000 1 0  <*--- Setup SWO timing (Serial port case)
 
+    # ----------ALTERNATIVELY, FOR GENUINE BMP-----------------------
+    monitor traceswo                        <*--- Enable BMP traceswo output
+    prepareSWD ConfigCoreClock 200000 0 1   <*--- Setup SWO timing (BMP case)
+    # ----------END OF ALTERNATIVE-----------------------------------
+    
     dwtSamplePC 1                           <-
     dwtSyncTAP 3                            <-
     dwtPostTAP 1                            <-
@@ -159,7 +165,7 @@ also in the Support directory. Generically, it looks like this;
     dwtCycEna 1                             <---- Configure Data Watch/Trace
 
     ITMId 9                                 <-
-    ITMGSTFreq 3                            <-
+    ITMGTSFreq 3                            <-
     ITMTSPrescale 3                         <-
     ITMTXEna 1                              <-
     ITMSYNCEna 1                            <-
