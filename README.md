@@ -143,14 +143,14 @@ also in the Support directory. Generically, it looks like this;
     set print pretty                        <-
     load                                    <---- Load the program
     
-    monitor traceswo 2250000                <*--- wakeup tracing on the probe
     
     start                                   <---- and get to main
 
     enableSTM32F1SWD                        <*--- turn on SWO output pin on CPU
 
-    # ---------- EITHER, IF USING A SERIAL PORT ---------------------
-    prepareSWD SystemCoreClock 2250000 1 0  <*--- Setup SWO timing (Serial port case)
+    # ---------- EITHER, IF USING A BLUEPILL-------------------------
+    monitor traceswo 2250000                <*--- wakeup tracing on the probe
+    prepareSWD SystemCoreClock 2250000 1 0  <*--- Setup SWO timing (Bluepill case)
 
     # ----------ALTERNATIVELY, FOR GENUINE BMP-----------------------
     monitor traceswo                        <*--- Enable BMP traceswo output
