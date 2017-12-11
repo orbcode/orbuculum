@@ -27,10 +27,8 @@
 #include "fileWriterProtocol.h"
 #include "itmDecoder.h"
 
-enum FWverbLevel {FW_V_ERROR, FW_V_WARN, FW_V_INFO, FW_V_DEBUG};
-
 // ====================================================================================================
 bool filewriterProcess( struct ITMPacket *p );
-bool filewriterInit( char *basedir, enum FWverbLevel );
+bool filewriterInit( char *basedir );
 // ====================================================================================================
 #endif

@@ -26,6 +26,7 @@
 #include <unistd.h>
 
 #include "itmDecoder.h"
+#include "generics.h"
 #include "fileWriter.h"
 
 enum fwState { FW_STATE_CLOSED, FW_STATE_GETNAMEA, FW_STATE_GETNAMEE, FW_STATE_UNLINK, FW_STATE_OPEN };
@@ -45,7 +46,6 @@ static struct
 
     char            *basedir;     /* Where we are going to put everything */
     bool             initialised; /* Have we been initialised? */
-    enum FWverbLevel v;           /* How loud do we want to be? */
 } _f;
 
 // ====================================================================================================
@@ -54,23 +54,6 @@ static struct
 // Internal Routines
 // ====================================================================================================
 // ====================================================================================================
-// ====================================================================================================
-void _report( enum FWverbLevel l, const char *fmt, ... )
-
-/* Debug reporting stream */
-
-{
-    static char op[MAX_STRLEN];
-
-    if ( l <= _f.v )
-    {
-        va_list va;
-        va_start( va, fmt );
-        vsnprintf( op, MAX_STRLEN, fmt, va );
-        va_end( va );
-        fputs( op, stdout );
-    }
-}
 // ====================================================================================================
 void _processCompleteName( uint32_t n )
 
@@ -90,7 +73,7 @@ void _processCompleteName( uint32_t n )
         strncpy( workingName, _f.file[n].name, MAX_CONCAT_FILENAMELEN );
     }
 
-    _report( FW_V_DEBUG, "Complete name to work with is [%s]" EOL, workingName );
+    genericsReport( V_DEBUG, "Complete name to work with is [%s]" EOL, workingName );
 
     /* OK, now decide what to do... */
     switch ( _f.file[n].s )
@@ -101,12 +84,12 @@ void _processCompleteName( uint32_t n )
 
             if ( _f.file[n].f )
             {
-                _report( FW_V_INFO, "File [%s] opened for append" EOL, workingName, n );
+                genericsReport( V_INFO, "File [%s] opened for append" EOL, workingName, n );
                 _f.file[n].s = FW_STATE_OPEN;
             }
             else
             {
-                _report( FW_V_WARN, "Failed to open [%s] for append" EOL, workingName );
+                genericsReport( V_WARN, "Failed to open [%s] for append" EOL, workingName );
                 memset( _f.file[n].name, 0, MAX_FILENAMELEN );
                 _f.file[n].s = FW_STATE_CLOSED;
             }
@@ -119,12 +102,12 @@ void _processCompleteName( uint32_t n )
 
             if ( _f.file[n].f )
             {
-                _report( FW_V_INFO, "File [%s] opened for write" EOL, workingName, n );
+                genericsReport( V_INFO, "File [%s] opened for write" EOL, workingName, n );
                 _f.file[n].s = FW_STATE_OPEN;
             }
             else
             {
-                _report( FW_V_WARN, "Failed to open [%s] for write" EOL, workingName );
+                genericsReport( V_WARN, "Failed to open [%s] for write" EOL, workingName );
                 memset( _f.file[n].name, 0, MAX_FILENAMELEN );
                 _f.file[n].s = FW_STATE_CLOSED;
             }
@@ -135,11 +118,11 @@ void _processCompleteName( uint32_t n )
         case FW_STATE_UNLINK:     // this is a file delete operation
             if ( !unlink( workingName ) )
             {
-                _report( FW_V_INFO, "Removed file [%s]" EOL, workingName );
+                genericsReport( V_INFO, "Removed file [%s]" EOL, workingName );
             }
             else
             {
-                _report( FW_V_WARN, "Failed to remove file [%s]" EOL, workingName );
+                genericsReport( V_WARN, "Failed to remove file [%s]" EOL, workingName );
             }
 
             memset( _f.file[n].name, 0, MAX_FILENAMELEN );
@@ -148,7 +131,7 @@ void _processCompleteName( uint32_t n )
 
         // -----------------------
         default:
-            _report( FW_V_WARN, "Unexpected state %d while getting filename" EOL, _f.file[n].s );
+            genericsReport( V_WARN, "Unexpected state %d while getting filename" EOL, _f.file[n].s );
             break;
             // -----------------------
     }
@@ -170,14 +153,14 @@ void _handleNameBytes( uint32_t n, uint8_t h, uint8_t *d )
             }
             else
             {
-                _report( FW_V_WARN, "Attempt to write an overlong filename [%s]" EOL, _f.file[n].name );
+                genericsReport( V_WARN, "Attempt to write an overlong filename [%s]" EOL, _f.file[n].name );
             }
 
             d++;
         }
         else
         {
-            _report( FW_V_DEBUG, "Got complete name [%s]" EOL, _f.file[n].name );
+            genericsReport( V_DEBUG, "Got complete name [%s]" EOL, _f.file[n].name );
             _processCompleteName( n );
             break;
         }
@@ -202,12 +185,12 @@ bool filewriterProcess( struct ITMPacket *p )
         // -----------------------
         case FW_CMD_OPENA:     // Open file for appending write
         case FW_CMD_OPENE:     // Open file for empty write (i.e. flush and write)
-            _report( FW_V_DEBUG, "Attempt to open or create file" EOL );
+            genericsReport( V_DEBUG, "Attempt to open or create file" EOL );
 
             if ( _f.file[FW_GET_FILEID( c )].f )
             {
                 /* There was a file open, close it */
-                _report( FW_V_WARN, "Attempt to write to descriptor %d while open writing %s" EOL, FW_GET_FILEID( c ),
+                genericsReport( V_WARN, "Attempt to write to descriptor %d while open writing %s" EOL, FW_GET_FILEID( c ),
                          _f.file[FW_GET_FILEID( c )].name );
                 fclose( _f.file[FW_GET_FILEID( c )].f );
                 _f.file[FW_GET_FILEID( c )].f = NULL;
@@ -235,11 +218,11 @@ bool filewriterProcess( struct ITMPacket *p )
             if ( !_f.file[FW_GET_FILEID( c )].f )
             {
                 /* There was no file open, complain */
-                _report( FW_V_DEBUG, "Attempt to close descriptor %d while not open" EOL, FW_GET_FILEID( c ) );
+                genericsReport( V_DEBUG, "Attempt to close descriptor %d while not open" EOL, FW_GET_FILEID( c ) );
             }
             else
             {
-                _report( FW_V_INFO, "Close %s" EOL,  _f.file[FW_GET_FILEID( c )].name );
+                genericsReport( V_INFO, "Close %s" EOL,  _f.file[FW_GET_FILEID( c )].name );
                 fclose( _f.file[FW_GET_FILEID( c )].f );
                 _f.file[FW_GET_FILEID( c )].f = NULL;
                 memset( _f.file[FW_GET_FILEID( c )].name, 0, MAX_FILENAMELEN );
@@ -253,7 +236,7 @@ bool filewriterProcess( struct ITMPacket *p )
         case FW_CMD_ERASE:     // Erase file
             if ( _f.file[FW_GET_FILEID( c )].s != FW_STATE_CLOSED )
             {
-                _report( FW_V_WARN, "Attempt to use open descriptor %d to erase a file" EOL, FW_GET_FILEID( c ) );
+                genericsReport( V_WARN, "Attempt to use open descriptor %d to erase a file" EOL, FW_GET_FILEID( c ) );
             }
             else
             {
@@ -269,7 +252,7 @@ bool filewriterProcess( struct ITMPacket *p )
         case FW_CMD_WRITE:     // Write to file
             if ( _f.file[FW_GET_FILEID( c )].s == FW_STATE_CLOSED )
             {
-                _report( FW_V_WARN, "Request for write on descriptor %d while file closed" EOL, FW_GET_FILEID( c ) );
+                genericsReport( V_WARN, "Request for write on descriptor %d while file closed" EOL, FW_GET_FILEID( c ) );
             }
             else
             {
@@ -279,7 +262,7 @@ bool filewriterProcess( struct ITMPacket *p )
                 }
                 else
                 {
-                    _report( FW_V_DEBUG, "Wrote %d bytes on descriptor %d" EOL, FW_GET_BYTES( c ), FW_GET_FILEID( c ) );
+                    genericsReport( V_DEBUG, "Wrote %d bytes on descriptor %d" EOL, FW_GET_BYTES( c ), FW_GET_FILEID( c ) );
                     fwrite( &( p->d[1] ), 1, FW_GET_BYTES( c ), _f.file[FW_GET_FILEID( c )].f );
                 }
             }
@@ -296,15 +279,14 @@ bool filewriterProcess( struct ITMPacket *p )
     return true;
 }
 // ====================================================================================================
-bool filewriterInit( char *basedir, enum FWverbLevel vSet )
+bool filewriterInit( char *basedir )
 
 /* Initialise the filewriter */
 
 {
     _f.initialised = true;
     _f.basedir     = basedir;
-    _f.v           = vSet;
-    _report( FW_V_DEBUG, "Filewriter initialised" EOL );
+    genericsReport( V_DEBUG, "Filewriter initialised" EOL );
     return true;
 }
 // ====================================================================================================

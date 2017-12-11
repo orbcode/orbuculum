@@ -205,7 +205,7 @@ orbuculum with the -h option.
 
 A typical command line would be;
 
->orbuculum -b swo/ -c 0,text,"%c" -vt
+>orbuculum -b swo/ -c 0,text,"%c" -v
 
 The directory 'swo/' is expected to already exist, into which will be placed
 a file 'text' which delivers the output from swo channel 0 in character
@@ -288,7 +288,7 @@ Specific command line options of note are;
   `-t`: Use TPIU decoder.  This will not sync if TPIU is not configured, so you won't see
      packets in that case.
 
-  `-v`: Verbose mode.
+  `-v`: Verbose mode 0==Errors only, 1=Warnings (Default) 2=Info, 3=Full Debug.
 
 
 Using orbuculum with Other info Sources

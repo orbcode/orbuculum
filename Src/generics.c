@@ -18,7 +18,9 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdint.h>
 #include <limits.h>
 #include "generics.h"
 
@@ -153,5 +155,32 @@ char *GenericsUnescape( char *str )
 
     *d = 0;
     return workingBuffer;
+}
+// ====================================================================================================
+static enum verbLevel lstore = V_WARN;
+
+void genericsSetReportLevel(enum verbLevel lset)
+
+{
+  lstore = lset;
+}
+// ====================================================================================================
+void genericsReport( enum verbLevel l, const char *fmt, ... )
+
+/* Debug reporting stream */
+
+#define MAX_STRLEN (4096)
+  
+{
+    static char op[MAX_STRLEN];
+
+    if ( l <= lstore )
+    {
+        va_list va;
+        va_start( va, fmt );
+        vsnprintf( op, MAX_STRLEN, fmt, va );
+        va_end( va );
+        fputs( op, stdout );
+    }
 }
 // ====================================================================================================
