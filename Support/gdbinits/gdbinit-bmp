@@ -11,8 +11,8 @@ set print pretty
 load
 start
 
-# Configure STM32F1 SWD pin
-enableSTM32F1SWD
+# Configure STM32F SWD pin
+enableSTM32FSWD
 
 # ==== This Section for Bluepill =======
 # 2.25Mbps, don't use TPIU, don't use Manchester encoding
