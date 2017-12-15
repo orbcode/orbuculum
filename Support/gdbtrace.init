@@ -8,9 +8,9 @@ GDB SWO Trace Configuration Helpers
 
 Setup Device
 ------------
-enableSTM32FSWD   : Enable SWO on STM32F pins
+enableSTM32SWD    : Enable SWO on STM32 pins
 prepareSWD        : Prepare SWD output in specified format
-enableSTM32FTRACE : Enable TRACE on STM32F pins
+enableSTM32TRACE  : Enable TRACE on STM32 pins
 prepareTRACE      : Prepare TRACE output in specified format
 
 Configure DWT
@@ -45,7 +45,7 @@ end
 # ====================================================================
 # ====================================================================
 # ====================================================================
-define enableSTM32FSWD
+define enableSTM32SWD
   # RCC->APB2ENR |= RCC_APB2ENR_AFIOEN;
   set *0x40021018 |= 1
   #  AFIO->MAPR |= (2 << 24); // Disable JTAG to release TRACESWO
@@ -53,11 +53,11 @@ define enableSTM32FSWD
   #  DBGMCU->CR |= DBGMCU_CR_TRACE_IOEN;
   set *0xE0042004 |= 0x20 
 end
-document enableSTM32FSWD
-enableSTM32FSWD Configure output pin on STM32F for SWO use.
+document enableSTM32SWD
+enableSTM32SWD Configure output pin on STM32 for SWO use.
 end
 # ====================================================================
-define enableSTM32FTRACE
+define enableSTM32TRACE
   # Enable AHB1ENR
   set *0x40023830 |= 0x10
 
@@ -74,11 +74,11 @@ define enableSTM32FTRACE
   # Set AF0 (==TRACE) in AFRL
   set *0x40021020 &= ~(0x00003FF0)
 end
-document enableSTM32FTRACE
-enableSTM32FTRACE Enable TRACE on STM32F pins
+document enableSTM32TRACE
+enableSTM32TRACE Enable TRACE on STM32 pins
 end
 # ====================================================================
-# Enable TRACE on STM32F pins
+# Enable TRACE on STM32 pins
 define prepareTRACE
   set $bits=4
   
