@@ -1195,6 +1195,8 @@ int usbFeeder( void )
             return ( -1 );
         }
 
+	genericsReport( V_INFO, "Opening USB Device" EOL );
+
         /* Snooze waiting for the device to appear .... this is useful for when they come and go */
         while ( !( handle = libusb_open_device_with_vid_pid( NULL, VID, PID ) ) )
         {
@@ -1223,7 +1225,8 @@ int usbFeeder( void )
 
             if ( ( r < 0 ) && ( r != LIBUSB_ERROR_TIMEOUT ) )
             {
-                break;
+	      genericsReport( V_INFO, "USB data collection failed with error %d" EOL,r );
+	      break;
             }
 
             _sendToClients( size, cbw );

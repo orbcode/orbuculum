@@ -164,7 +164,7 @@ also in the Support directory. Generically, it looks like this;
     dwtPostReset 15                         <-
     dwtCycEna 1                             <---- Configure Data Watch/Trace
 
-    ITMId 9                                 <-
+    ITMId 1                                 <-
     ITMGTSFreq 3                            <-
     ITMTSPrescale 3                         <-
     ITMTXEna 1                              <-

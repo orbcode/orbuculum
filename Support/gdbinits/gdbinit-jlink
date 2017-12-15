@@ -19,7 +19,7 @@ dwtPostInit 1
 dwtPostReset 15
 dwtCycEna 1
 
-ITMId 9
+ITMId 1
 ITMGTSFreq 3
 ITMTSPrescale 3
 ITMTXEna 1

@@ -174,7 +174,7 @@ void genericsReport( enum verbLevel l, const char *fmt, ... )
 {
     static char op[MAX_STRLEN];
 
-    if ( l <= lstore )
+    if ( l >= lstore )
     {
         va_list va;
         va_start( va, fmt );
