@@ -64,7 +64,6 @@
 struct                                      /* Record for options, either defaults or from command line */
 {
     /* Config information */
-    bool verbose;
     bool useTPIU;
     bool forceITMSync;
     uint32_t tpiuITMChannel;
@@ -153,7 +152,7 @@ void _protocolPump( uint8_t c )
             case TPIU_EV_RXEDPACKET:
                 if ( !TPIUGetPacket( &_r.t, &_r.p ) )
                 {
-                    fprintf( stderr, "TPIUGetPacket fell over" EOL );
+                    genericsReport( V_WARN, "TPIUGetPacket fell over" EOL );
                 }
 
                 for ( uint32_t g = 0; g < _r.p.len; g++ )
@@ -164,12 +163,9 @@ void _protocolPump( uint8_t c )
                         continue;
                     }
 
-                    if ( ( _r.p.packet[g].s != 0 ) && ( options.verbose ) )
+                    if ( _r.p.packet[g].s != 0 )
                     {
-                        if ( options.verbose )
-                        {
-                            fprintf( stderr, "Unknown TPIU channel %02x" EOL, _r.p.packet[g].s );
-                        }
+                        genericsReport( V_WARN, "Unknown TPIU channel %02x" EOL, _r.p.packet[g].s );
                     }
                 }
 
@@ -177,7 +173,7 @@ void _protocolPump( uint8_t c )
 
             // ------------------------------------
             case TPIU_EV_ERROR:
-                fprintf( stderr, "****ERROR****" EOL );
+                genericsReport( V_WARN, "****ERROR****" EOL );
                 break;
                 // ------------------------------------
         }
@@ -201,7 +197,7 @@ void _printHelp( char *progName )
     fprintf( stdout, "        p: <Port> to use" EOL );
     fprintf( stdout, "        s: <Server> to use" EOL );
     fprintf( stdout, "        t: Use TPIU decoder" EOL );
-    fprintf( stdout, "        v: Verbose mode (this will intermingle SWO info with the output flow when using stdout)" EOL );
+    fprintf( stdout, "        v: <level> Verbose mode 0(errors)..3(debug)" EOL );
     fprintf( stdout, "        w: Write syncronously to the output file after every packet" EOL );
 }
 // ====================================================================================================
@@ -230,7 +226,7 @@ int _processOptions( int argc, char *argv[] )
                 break;
 
             case 'v':
-                options.verbose = 1;
+                genericsSetReportLevel( atoi( optarg ) );
                 break;
 
             case 't':
@@ -257,49 +253,45 @@ int _processOptions( int argc, char *argv[] )
             case '?':
                 if ( optopt == 'b' )
                 {
-                    fprintf ( stderr, "Option '%c' requires an argument." EOL, optopt );
+                    genericsReport( V_ERROR, "Option '%c' requires an argument." EOL, optopt );
                 }
                 else if ( !isprint ( optopt ) )
                 {
-                    fprintf ( stderr, "Unknown option character `\\x%x'." EOL, optopt );
+                    genericsReport( V_ERROR, "Unknown option character `\\x%x'." EOL, optopt );
                 }
 
                 return false;
 
             default:
-                fprintf( stderr, "Unknown option %c" EOL, optopt );
+                genericsReport( V_ERROR, "Unknown option %c" EOL, optopt );
                 return false;
         }
 
     if ( ( options.useTPIU ) && ( !options.tpiuITMChannel ) )
     {
-        fprintf( stderr, "TPIU set for use but no channel set for ITM output" EOL );
+        genericsReport( V_ERROR, "TPIU set for use but no channel set for ITM output" EOL );
         return false;
     }
 
-    if ( options.verbose )
+    genericsReport( V_INFO, "orbdump V" VERSION " (Git %08X %s, Built " BUILD_DATE ")" EOL, GIT_HASH, ( GIT_DIRTY ? "Dirty" : "Clean" ) );
+
+    genericsReport( V_INFO, "Server    : %s:%d" EOL, options.server, options.port );
+    genericsReport( V_INFO, "ForceSync : %s" EOL, options.forceITMSync ? "true" : "false" );
+
+    if ( options.timelen )
     {
-        fprintf( stdout, "orbdump V" VERSION " (Git %08X %s, Built " BUILD_DATE ")" EOL, GIT_HASH, ( GIT_DIRTY ? "Dirty" : "Clean" ) );
+        genericsReport( V_INFO, "Rec Length: %dmS" EOL, options.timelen );
+    }
+    else
+    {
+        genericsReport( V_INFO, "Rec Length: Unlimited" EOL );
+    }
 
-        fprintf( stdout, "Verbose   : true" EOL );
-        fprintf( stdout, "Server    : %s:%d" EOL, options.server, options.port );
-        fprintf( stdout, "ForceSync : %s" EOL, options.forceITMSync ? "true" : "false" );
+    genericsReport( V_INFO, "Sync Write: %s" EOL, options.writeSync ? "true" : "false" );
 
-        if ( options.timelen )
-        {
-            fprintf( stdout, "Rec Length: %dmS" EOL, options.timelen );
-        }
-        else
-        {
-            fprintf( stdout, "Rec Length: Unlimited" EOL );
-        }
-
-        fprintf( stdout, "Sync Write: %s" EOL, options.writeSync ? "true" : "false" );
-
-        if ( options.useTPIU )
-        {
-            fprintf( stdout, "Using TPIU: true (ITM on channel %d)" EOL, options.tpiuITMChannel );
-        }
+    if ( options.useTPIU )
+    {
+        genericsReport( V_INFO, "Using TPIU: true (ITM on channel %d)" EOL, options.tpiuITMChannel );
     }
 
     return true;
@@ -335,7 +327,7 @@ int main( int argc, char *argv[] )
 
     if ( sockfd < 0 )
     {
-        fprintf( stderr, "Error creating socket" EOL );
+        genericsReport( V_ERROR, "Error creating socket" EOL );
         return -1;
     }
 
@@ -346,7 +338,7 @@ int main( int argc, char *argv[] )
 
     if ( !server )
     {
-        fprintf( stderr, "Cannot find host" EOL );
+        genericsReport( V_ERROR, "Cannot find host" EOL );
         return -1;
     }
 
@@ -358,7 +350,7 @@ int main( int argc, char *argv[] )
 
     if ( connect( sockfd, ( struct sockaddr * ) &serv_addr, sizeof( serv_addr ) ) < 0 )
     {
-        fprintf( stderr, "Could not connect" EOL );
+        genericsReport( V_ERROR, "Could not connect" EOL );
         return -1;
     }
 
@@ -367,14 +359,11 @@ int main( int argc, char *argv[] )
 
     if ( !opFile )
     {
-        fprintf( stderr, "Could not open output file for writing" EOL );
+        genericsReport( V_ERROR, "Could not open output file for writing" EOL );
         return -2;
     }
 
-    if ( options.verbose )
-    {
-        fprintf( stdout, "Waiting for sync" EOL );
-    }
+    genericsReport( V_INFO, "Waiting for sync" EOL );
 
     /* Start the process of collecting the data */
     while ( ( readLength = read( sockfd, cbw, TRANSFER_SIZE ) ) > 0 )
@@ -397,7 +386,7 @@ int main( int argc, char *argv[] )
         /* Check to make sure there's not an unexpected TPIU in here */
         if ( ITMDecoderGetStats( &_r.i )->tpiuSyncCount )
         {
-            fprintf( stderr, "Got a TPIU sync while decoding ITM...did you miss a -t option?" EOL );
+            genericsReport( V_WARN, "Got a TPIU sync while decoding ITM...did you miss a -t option?" EOL );
             break;
         }
 
@@ -413,17 +402,14 @@ int main( int argc, char *argv[] )
             /* Fill in the time to start from */
             firstTime = _timestamp();
 
-            if ( options.verbose )
-            {
-                fprintf( stdout, "Started recording" EOL );
-            }
+            genericsReport( V_INFO, "Started recording" EOL );
         }
 
         octetsRxed += fwrite( cbw, 1, readLength, opFile );
 
         if ( !ITMDecoderIsSynced( &_r.i ) )
         {
-            fprintf( stderr, "Warning:Sync lost while writing output" EOL );
+            genericsReport( V_WARN, "Warning:Sync lost while writing output" EOL );
         }
 
         if ( options.writeSync )
@@ -437,14 +423,11 @@ int main( int argc, char *argv[] )
 
     if ( readLength <= 0 )
     {
-        fprintf( stderr, "Network Read failed" EOL );
+        genericsReport( V_ERROR, "Network Read failed" EOL );
         return -2;
     }
 
-    if ( options.verbose )
-    {
-        fprintf( stdout, "Wrote %ld bytes of data" EOL, octetsRxed );
-    }
+    genericsReport( V_INFO, "Wrote %ld bytes of data" EOL, octetsRxed );
 
     return 0;
 }

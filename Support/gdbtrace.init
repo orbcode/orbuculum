@@ -150,16 +150,19 @@ define prepareSWD
   # Enable DEMCR TRCENA
   set *0xE000EDFC=(1<<24)
   
-  # Output bits at speed dependent on system clock speed
-  set *0xE0040010 = (($clockspeed/($speed))-1)
-
   if ($useMan==0)
     # Use Async mode pin protocol
     set *0xE00400F0 = 2
   else
     # Use Manchester mode pin protocol
     set *0xE00400F0 = 1
+
+    # There are two edges in a bit, so double the clock
+    set $speed = $speed*2
   end
+
+  # Output bits at speed dependent on system clock speed
+  set *0xE0040010 = (($clockspeed/($speed))-1)
 
   if ($useTPIU==1)
     # Use TPIU formatter and flush

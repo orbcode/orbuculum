@@ -191,7 +191,7 @@ bool filewriterProcess( struct ITMPacket *p )
             {
                 /* There was a file open, close it */
                 genericsReport( V_WARN, "Attempt to write to descriptor %d while open writing %s" EOL, FW_GET_FILEID( c ),
-                         _f.file[FW_GET_FILEID( c )].name );
+                                _f.file[FW_GET_FILEID( c )].name );
                 fclose( _f.file[FW_GET_FILEID( c )].f );
                 _f.file[FW_GET_FILEID( c )].f = NULL;
                 _f.file[FW_GET_FILEID( c )].f = NULL;

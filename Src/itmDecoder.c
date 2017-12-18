@@ -36,7 +36,6 @@
 #define DEFAULT_PAGE_REGISTER (0x07)
 
 // Define this to get transitions printed out
-//#define PRINT_TRANSITIONS
 // ====================================================================================================
 void ITMDecoderInit( struct ITMDecoder *i, bool startSynced )
 
@@ -111,9 +110,9 @@ bool ITMGetPacket( struct ITMDecoder *i, struct ITMPacket *p )
     return true;
 }
 // ====================================================================================================
-#ifdef PRINT_TRANSITIONS
+
 static char *_protoNames[] = {PROTO_NAME_LIST};
-#endif
+
 
 enum ITMPumpEvent ITMPump( struct ITMDecoder *i, uint8_t c )
 
@@ -137,7 +136,9 @@ enum ITMPumpEvent ITMPump( struct ITMDecoder *i, uint8_t c )
     if ( ( ( i->syncStat )&SYNCMASK ) == SYNCPATTERN )
     {
         i->stats.syncCount++;
-        i->pageRegister = 0;
+
+	/* Page register is reset on a sync */
+	i->pageRegister = 0;
         retVal = ITM_EV_SYNCED;
         newState = ITM_IDLE;
     }
@@ -153,22 +154,55 @@ enum ITMPumpEvent ITMPump( struct ITMDecoder *i, uint8_t c )
             // -----------------------------------------------------
             case ITM_IDLE:
 
-                // **********
-                if ( !c )
+	      // *************************************************
+	      // ************** SYNC PACKET **********************
+	      // *************************************************
+	      if ( c == 0b00000000 )
                 {
                     break;
                 }
 
-                // **********
-                if ( c == 0b01110000 )
+	      // *************************************************
+	      // ************** SOURCE PACKET ********************
+	      // *************************************************
+	      if ( c & 0b00000011 )
+		{
+		  i->targetCount = ( c & 0x03 );
+		  if ( i->targetCount == 3 )
+		    {
+		      i->targetCount = 4;
+		    }
+		  i->currentCount = 0;
+		  i->srcAddr = ( c & 0xF8 ) >> 3;
+
+		  if ( !( c & 0x04 ) )
+		    {
+		      /* This is a Instrumentation (SW) packet */
+		      i->stats.SWPkt++;
+		      newState = ITM_SW;
+		    }
+		  else
+		    {
+		      /* This is a HW packet */
+		      i->stats.HWPkt++;
+		      newState = ITM_HW;
+		    }
+		  break;
+		}
+
+	      // *************************************************
+	      // ************** PROTOCOL PACKET ******************
+	      // *************************************************
+
+	      if ( c == 0b01110000 )
                 {
-                    /* This is an overflow packet */
-                    i->stats.overflow++;
-                    retVal = ITM_EV_OVERFLOW;
-                    break;
+		  /* This is an overflow packet */
+		  i->stats.overflow++;
+		  retVal = ITM_EV_OVERFLOW;
+		  break;
                 }
 
-                // **********
+                // ***********************************************
                 if ( !( c & 0x0F ) )
                 {
                     i->currentCount = 1; /* The '1' is deliberate. */
@@ -186,11 +220,10 @@ enum ITMPumpEvent ITMPump( struct ITMDecoder *i, uint8_t c )
                         /* This is TS packet format 2, no more to come, and no change of state */
                         retVal = ITM_EV_TS_PACKET_RXED;
                     }
-
                     break;
                 }
-
-                // **********
+                // ***********************************************
+      
                 if ( ( c & 0b11011111 ) == 0b10010100 )
                 {
                     /* This is a global timestamp packet */
@@ -202,12 +235,11 @@ enum ITMPumpEvent ITMPump( struct ITMDecoder *i, uint8_t c )
                     {
                         newState = ITM_GTS2;
                     }
-
                     break;
                 }
 
-                // **********
-                if ( ( c & 0x0B ) == 0x08 )
+                // ***********************************************
+                if ( ( c & 0x0b00001100 ) == 0b00001000 )
                 {
                     /* Extension Packet */
                     i->currentCount = 1; /* The '1' is deliberate. */
@@ -217,79 +249,25 @@ enum ITMPumpEvent ITMPump( struct ITMDecoder *i, uint8_t c )
 
                     if ( !( c & 0x80 ) )
                     {
-                        /* A one byte output */
-                        retVal = ITM_EV_XTN_PACKET_RXED;
+                        /* This is the Stimulus Port Page Register setting ... deal with it here */
+                        i->stats.PagePkt++;
+                        i->pageRegister = ( c >> 4 ) & 0x07;
                         break;
                     }
 
-                    newState = ITM_EXTENSION;
-                    break;
+		    // Any other value here isn't valid - so fall through to illegal packet case
                 }
 
-                // **********
-                if ( ( c & 0x0F ) == 0x04 )
-                {
-                    /* This is a reserved packet */
-                    if ( c & 0x80 )
-                    {
-                        /* This is a reserved encoding we don't know how to handle */
-                        /* ...assume it's line noise and wait for sync again */
-                        i->stats.ErrorPkt++;
-                        retVal = ITM_EV_ERROR;
-                    }
-                    else
-                    {
-                        /* This is the Stimulus Port Page Register setting */
-                        i->stats.PagePkt++;
-                        i->pageRegister = ( c >> 4 ) & 0x07;
-                    }
-
-                    break;
-                }
-
-                // **********
-                if ( !( c & 0x04 ) )
-                {
-                    /* This is a SW packet */
-                    i->stats.SWPkt++;
-                    i->targetCount = ( c & 0x03 );
-
-                    if ( i->targetCount == 3 )
-                    {
-                        i->targetCount = 4;
-                    }
-
-                    i->srcAddr = ( c & 0xF8 ) >> 3;
-                    i->currentCount = 0;
-                    newState = ITM_SW;
-                    break;
-                }
-
-                // **********
-                if ( c & 0x04 )
-                {
-                    /* This is a HW packet */
-                    i->stats.HWPkt++;
-                    i->targetCount = ( c & 0x03 );
-
-                    if ( i->targetCount == 3 )
-                    {
-                        i->targetCount = 4;
-                    }
-
-                    i->srcAddr = ( c & 0xF8 ) >> 3;
-                    i->currentCount = 0;
-                    newState = ITM_HW;
-                    break;
-                }
-
-                // **********
-#ifdef PRINT_TRANSITIONS
-                fprintf( stderr, "General error for packet type %02x" EOL, c );
-#endif
-                retVal = ITM_EV_ERROR;
+	      // *************************************************
+	      // ************** ILLEGAL PACKET *******************
+	      // *************************************************
+		/* This is a reserved encoding we don't know how to handle */
+		/* ...assume it's line noise and wait for sync again */
+		i->stats.ErrorPkt++;
+		retVal = ITM_EV_ERROR;
+                genericsReport( V_DEBUG, "General error for packet type %02x" EOL, c );
                 break;
-
+	
             // -----------------------------------------------------
             case ITM_GTS1:  // Collecting GTS1 timestamp - wait for a zero continuation bit
                 if ( ( c & 0x80 ) == 0 )
@@ -352,30 +330,14 @@ enum ITMPumpEvent ITMPump( struct ITMDecoder *i, uint8_t c )
                 break;
 
             // -----------------------------------------------------
-            case ITM_EXTENSION:
-                i->rxPacket[i->currentCount++] = c;
-
-                if ( ( !( c & 0x80 ) ) || ( i->currentCount >= MAX_PACKET ) )
-                {
-                    /* We are done */
-                    newState = ITM_IDLE;
-                    retVal = ITM_EV_XTN_PACKET_RXED;
-                    break;
-                }
-
-                break;
-                // -----------------------------------------------------
         }
     }
 
-#ifdef PRINT_TRANSITIONS
-
     if ( ( i->p != ITM_UNSYNCED ) || ( newState != ITM_UNSYNCED ) )
     {
-        printf( "%02x %s --> %s(%d)" EOL, c, _protoNames[i->p], _protoNames[newState], i->targetCount );
+        genericsReport( V_DEBUG, "%02x %s --> %s(%d)%s", c, _protoNames[i->p], _protoNames[newState], i->targetCount, ( ( newState == ITM_IDLE ) ? EOL : " : " ) );
     }
 
-#endif
     i->p = newState;
     return retVal;
 }

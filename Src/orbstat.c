@@ -108,7 +108,6 @@ enum CDState { CD_waitinout, CD_waitsrc, CD_waitdst };
 /* ---------- CONFIGURATION ----------------- */
 struct                                       /* Record for options, either defaults or from command line */
 {
-    bool verbose;                            /* Talk more.... */
     bool useTPIU;                            /* Are we decoding via the TPIU? */
     uint32_t tpiuITMChannel;                 /* What channel? */
     bool forceITMSync;                       /* Do we assume ITM starts synced? */
@@ -704,38 +703,22 @@ void _itmPumpProcess( char c )
 
         // ------------------------------------
         case ITM_EV_UNSYNCED:
-            if ( options.verbose )
-            {
-                fprintf( stdout, "ITM Lost Sync (%d)" EOL, ITMDecoderGetStats( &_r.i )->lostSyncCount );
-            }
-
+            genericsReport( V_INFO, "ITM Lost Sync (%d)" EOL, ITMDecoderGetStats( &_r.i )->lostSyncCount );
             break;
 
         // ------------------------------------
         case ITM_EV_SYNCED:
-            if ( options.verbose )
-            {
-                fprintf( stdout, "ITM In Sync (%d)" EOL, ITMDecoderGetStats( &_r.i )->syncCount );
-            }
-
+            genericsReport( V_INFO, "ITM In Sync (%d)" EOL, ITMDecoderGetStats( &_r.i )->syncCount );
             break;
 
         // ------------------------------------
         case ITM_EV_OVERFLOW:
-            if ( options.verbose )
-            {
-                fprintf( stdout, "ITM Overflow (%d)" EOL, ITMDecoderGetStats( &_r.i )->overflow );
-            }
-
+            genericsReport( V_WARN, "ITM Overflow (%d)" EOL, ITMDecoderGetStats( &_r.i )->overflow );
             break;
 
         // ------------------------------------
         case ITM_EV_ERROR:
-            if ( options.verbose )
-            {
-                fprintf( stdout, "ITM Error" EOL );
-            }
-
+            genericsReport( V_WARN, "ITM Error" EOL );
             break;
 
         // ------------------------------------
@@ -753,9 +736,6 @@ void _itmPumpProcess( char c )
             break;
 
         // ------------------------------------
-        case ITM_EV_XTN_PACKET_RXED:
-            break;
-            // ------------------------------------
     }
 }
 // ====================================================================================================
@@ -776,10 +756,7 @@ void _protocolPump( uint8_t c )
         {
             // ------------------------------------
             case TPIU_EV_NEWSYNC:
-                if ( options.verbose )
-                {
-                    fprintf( stdout, "TPIU In Sync (%d)" EOL, TPIUDecoderGetStats( &_r.t )->syncCount );
-                }
+                genericsReport( V_INFO, "TPIU In Sync (%d)" EOL, TPIUDecoderGetStats( &_r.t )->syncCount );
 
             case TPIU_EV_SYNCED:
                 ITMDecoderForceSync( &_r.i, true );
@@ -792,7 +769,7 @@ void _protocolPump( uint8_t c )
 
             // ------------------------------------
             case TPIU_EV_UNSYNCED:
-                fprintf( stdout, "TPIU Lost Sync (%d)" EOL, TPIUDecoderGetStats( &_r.t )->lostSync );
+                genericsReport( V_INFO, "TPIU Lost Sync (%d)" EOL, TPIUDecoderGetStats( &_r.t )->lostSync );
                 ITMDecoderForceSync( &_r.i, false );
                 break;
 
@@ -800,7 +777,7 @@ void _protocolPump( uint8_t c )
             case TPIU_EV_RXEDPACKET:
                 if ( !TPIUGetPacket( &_r.t, &_r.p ) )
                 {
-                    fprintf( stderr, "TPIUGetPacket fell over" EOL );
+                    genericsReport( V_WARN, "TPIUGetPacket fell over" EOL );
                 }
 
                 for ( uint32_t g = 0; g < _r.p.len; g++ )
@@ -811,12 +788,9 @@ void _protocolPump( uint8_t c )
                         continue;
                     }
 
-                    if ( ( _r.p.packet[g].s != 0 ) && ( options.verbose ) )
+                    if ( _r.p.packet[g].s != 0 )
                     {
-                        if ( options.verbose )
-                        {
-                            fprintf( stdout, "Unknown TPIU channel %02x" EOL, _r.p.packet[g].s );
-                        }
+                        genericsReport( V_WARN, "Unknown TPIU channel %02x" EOL, _r.p.packet[g].s );
                     }
                 }
 
@@ -824,7 +798,7 @@ void _protocolPump( uint8_t c )
 
             // ------------------------------------
             case TPIU_EV_ERROR:
-                fprintf( stderr, "****ERROR****" EOL );
+                genericsReport( V_WARN, "****ERROR****" EOL );
                 break;
                 // ------------------------------------
         }
@@ -850,7 +824,7 @@ void _printHelp( char *progName )
     fprintf( stdout, "       n: Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
     fprintf( stdout, "       s: <Server>:<Port> to use" EOL );
     fprintf( stdout, "       t: Use TPIU decoder" EOL );
-    fprintf( stdout, "       v: Verbose mode" EOL );
+    fprintf( stdout, "       v: <level> Verbose mode 0(errors)..3(debug)" EOL );
     fprintf( stdout, "       y: <Filename> dotty filename for structured callgraph output" EOL );
     fprintf( stdout, "       z: <Filename> profile filename for kcachegrind output" EOL );
 }
@@ -931,7 +905,7 @@ int _processOptions( int argc, char *argv[] )
 
             // ------------------------------------
             case 'v':
-                options.verbose = true;
+                genericsSetReportLevel( atoi( optarg ) );
                 break;
 
             // ------------------------------------
@@ -948,49 +922,46 @@ int _processOptions( int argc, char *argv[] )
             case '?':
                 if ( optopt == 'b' )
                 {
-                    fprintf ( stderr, "Option '%c' requires an argument." EOL, optopt );
+                    genericsReport( V_ERROR, "Option '%c' requires an argument." EOL, optopt );
                 }
                 else if ( !isprint ( optopt ) )
                 {
-                    fprintf ( stderr, "Unknown option character `\\x%x'." EOL, optopt );
+                    genericsReport( V_ERROR, "Unknown option character `\\x%x'." EOL, optopt );
                 }
 
                 return false;
 
             // ------------------------------------
             default:
-                fprintf( stderr, "Unknown option %c" EOL, optopt );
+                genericsReport( V_ERROR, "Unknown option %c" EOL, optopt );
                 return false;
                 // ------------------------------------
         }
 
     if ( ( options.useTPIU ) && ( !options.tpiuITMChannel ) )
     {
-        fprintf( stderr, "TPIU set for use but no channel set for ITM output" EOL );
+        genericsReport( V_ERROR, "TPIU set for use but no channel set for ITM output" EOL );
         return false;
     }
 
     if ( !options.elffile )
     {
-        fprintf( stderr, "Elf File not specified" EOL );
+        genericsReport( V_ERROR, "Elf File not specified" EOL );
         exit( -2 );
     }
 
-    if ( options.verbose )
+    genericsReport( V_INFO, "orbtop V" VERSION " (Git %08X %s, Built " BUILD_DATE ")" EOL, GIT_HASH, ( GIT_DIRTY ? "Dirty" : "Clean" ) );
+
+    genericsReport( V_INFO, "Server        : %s:%d" EOL, options.server, options.port );
+    genericsReport( V_INFO, "Delete Mat    : %s" EOL, options.deleteMaterial ? options.deleteMaterial : "None" );
+    genericsReport( V_INFO, "Elf File      : %s" EOL, options.elffile );
+    genericsReport( V_INFO, "DOT file      : %s" EOL, options.dotfile ? options.dotfile : "None" );
+    genericsReport( V_INFO, "ForceSync     : %s" EOL, options.forceITMSync ? "true" : "false" );
+    genericsReport( V_INFO, "Trace/File Ch : %d/%d" EOL, options.traceChannel, options.fileChannel );
+
+    if ( options.useTPIU )
     {
-        fprintf( stdout, "orbtop V" VERSION " (Git %08X %s, Built " BUILD_DATE ")" EOL, GIT_HASH, ( GIT_DIRTY ? "Dirty" : "Clean" ) );
-
-        fprintf( stdout, "Server        : %s:%d" EOL, options.server, options.port );
-        fprintf( stdout, "Delete Mat    : %s" EOL, options.deleteMaterial ? options.deleteMaterial : "None" );
-        fprintf( stdout, "Elf File      : %s" EOL, options.elffile );
-        fprintf( stdout, "DOT file      : %s" EOL, options.dotfile ? options.dotfile : "None" );
-        fprintf( stdout, "ForceSync     : %s" EOL, options.forceITMSync ? "true" : "false" );
-        fprintf( stdout, "Trace/File Ch : %d/%d" EOL, options.traceChannel, options.fileChannel );
-
-        if ( options.useTPIU )
-        {
-            fprintf( stdout, "Using TPIU  : true (ITM on channel %d)" EOL, options.tpiuITMChannel );
-        }
+        genericsReport( V_INFO, "Using TPIU  : true (ITM on channel %d)" EOL, options.tpiuITMChannel );
     }
 
     return true;
@@ -1085,7 +1056,7 @@ int main( int argc, char *argv[] )
                 }
             }
 
-            fprintf( stdout, "%d records processed" EOL, _r.cdCount );
+            genericsReport( V_INFO, "%d records processed" EOL, _r.cdCount );
             /* Now free up this seconds data */
             free( _r.calls );
             _r.calls = NULL;
@@ -1095,10 +1066,7 @@ int main( int argc, char *argv[] )
             {
                 _flushHash();
 
-                if ( options.verbose )
-                {
-                    fprintf( stdout, "Reload %s" EOL, options.elffile );
-                }
+                genericsReport( V_INFO, "Reload %s" EOL, options.elffile );
 
                 if ( !_r.s )
                 {
@@ -1107,7 +1075,7 @@ int main( int argc, char *argv[] )
 
                     if ( !SymbolSetCheckValidity( &_r.s, options.elffile ) )
                     {
-                        fprintf( stderr, "Elf file was lost" EOL );
+                        genericsReport( V_ERROR, "Elf file was lost" EOL );
                         return -1;
                     }
                 }
@@ -1117,14 +1085,14 @@ int main( int argc, char *argv[] )
         /* Check to make sure there's not an unexpected TPIU in here */
         if ( ITMDecoderGetStats( &_r.i )->tpiuSyncCount )
         {
-            fprintf( stderr, "Got a TPIU sync while decoding ITM...did you miss a -t option?" EOL );
+            genericsReport( V_WARN, "Got a TPIU sync while decoding ITM...did you miss a -t option?" EOL );
             break;
         }
     }
 
-    if ( ( options.verbose ) && ( !ITMDecoderGetStats( &_r.i )->tpiuSyncCount ) )
+    if ( ( !ITMDecoderGetStats( &_r.i )->tpiuSyncCount ) )
     {
-        fprintf( stderr, "Read failed" EOL );
+        genericsReport( V_ERROR, "Read failed" EOL );
     }
 
     close( sockfd );

@@ -65,7 +65,6 @@
 struct
 {
     /* Config information */
-    bool verbose;
     bool useTPIU;
     uint32_t tpiuITMChannel;
     bool forceITMSync;
@@ -262,21 +261,6 @@ void _handleHW( struct ITMDecoder *i )
     }
 }
 // ====================================================================================================
-void _handleXTN( struct ITMDecoder *i )
-
-{
-    struct ITMPacket p;
-
-    if ( ITMGetPacket( i, &p ) )
-    {
-        fprintf( stdout, "XTN len=%d (%02x)" EOL, p.len, p.d[0] );
-    }
-    else
-    {
-        fprintf( stdout, "XTN GET FAILED" EOL );
-    }
-}
-// ====================================================================================================
 void _handleTS( struct ITMDecoder *i )
 
 {
@@ -332,35 +316,19 @@ void _itmPumpProcess( char c )
             break;
 
         case ITM_EV_UNSYNCED:
-            if ( options.verbose )
-            {
-                fprintf( stdout, "ITM Unsynced" EOL );
-            }
-
+            genericsReport( V_INFO, "ITM Unsynced" EOL );
             break;
 
         case ITM_EV_SYNCED:
-            if ( options.verbose )
-            {
-                fprintf( stdout, "ITM Synced" EOL );
-            }
-
+            genericsReport( V_INFO, "ITM Synced" EOL );
             break;
 
         case ITM_EV_OVERFLOW:
-            if ( options.verbose )
-            {
-                fprintf( stdout, "ITM Overflow" EOL );
-            }
-
+            genericsReport( V_WARN, "ITM Overflow" EOL );
             break;
 
         case ITM_EV_ERROR:
-            if ( options.verbose )
-            {
-                fprintf( stdout, "ITM Error" EOL );
-            }
-
+            genericsReport( V_WARN, "ITM Error" EOL );
             break;
 
         case ITM_EV_TS_PACKET_RXED:
@@ -373,10 +341,6 @@ void _itmPumpProcess( char c )
 
         case ITM_EV_HW_PACKET_RXED:
             _handleHW( &_r.i );
-            break;
-
-        case ITM_EV_XTN_PACKET_RXED:
-            _handleXTN( &_r.i );
             break;
     }
 }
@@ -410,7 +374,7 @@ void _protocolPump( uint8_t c )
             case TPIU_EV_RXEDPACKET:
                 if ( !TPIUGetPacket( &_r.t, &_r.p ) )
                 {
-                    fprintf( stderr, "TPIUGetPacket fell over" EOL );
+                    genericsReport( V_WARN, "TPIUGetPacket fell over" EOL );
                 }
 
                 for ( uint32_t g = 0; g < _r.p.len; g++ )
@@ -421,19 +385,16 @@ void _protocolPump( uint8_t c )
                         continue;
                     }
 
-                    if ( ( _r.p.packet[g].s != 0 ) && ( options.verbose ) )
+                    if  ( _r.p.packet[g].s != 0 )
                     {
-                        if ( options.verbose )
-                        {
-                            printf( "Unknown TPIU channel %02x" EOL, _r.p.packet[g].s );
-                        }
+                        genericsReport( V_WARN, "Unknown TPIU channel %02x" EOL, _r.p.packet[g].s );
                     }
                 }
 
                 break;
 
             case TPIU_EV_ERROR:
-                fprintf( stderr, "****ERROR****" EOL );
+                genericsReport( V_WARN, "****ERROR****" EOL );
                 break;
         }
     }
@@ -453,7 +414,7 @@ void _printHelp( char *progName )
     fprintf( stdout, "       n: Enforce sync requirement for ITM (i.e. ITM needsd to issue syncs)" EOL );
     fprintf( stdout, "       s: <Server>:<Port> to use" EOL );
     fprintf( stdout, "       t: Use TPIU decoder" EOL );
-    fprintf( stdout, "       v: Verbose mode (this will intermingle state info with the output flow)" EOL );
+    fprintf( stdout, "       v: <level> Verbose mode 0(errors)..3(debug)" EOL );
 }
 // ====================================================================================================
 int _processOptions( int argc, char *argv[] )
@@ -515,7 +476,7 @@ int _processOptions( int argc, char *argv[] )
 
             // ------------------------------------
             case 'v':
-                options.verbose = 1;
+                genericsSetReportLevel( atoi( optarg ) );
                 break;
 
             // ------------------------------------
@@ -526,7 +487,7 @@ int _processOptions( int argc, char *argv[] )
 
                 if ( chan >= NUM_CHANNELS )
                 {
-                    fprintf( stderr, "Channel index out of range" EOL );
+                    genericsReport( V_ERROR, "Channel index out of range" EOL );
                     return false;
                 }
 
@@ -538,7 +499,7 @@ int _processOptions( int argc, char *argv[] )
 
                 if ( !*chanIndex )
                 {
-                    fprintf( stderr, "No output format for channel %d" EOL, chan );
+                    genericsReport( V_ERROR, "No output format for channel %d" EOL, chan );
                     return false;
                 }
 
@@ -550,11 +511,11 @@ int _processOptions( int argc, char *argv[] )
             case '?':
                 if ( optopt == 'b' )
                 {
-                    fprintf ( stderr, "Option '%c' requires an argument." EOL, optopt );
+                    genericsReport( V_ERROR, "Option '%c' requires an argument." EOL, optopt );
                 }
                 else if ( !isprint ( optopt ) )
                 {
-                    fprintf ( stderr, "Unknown option character `\\x%x'." EOL, optopt );
+                    genericsReport( V_ERROR, "Unknown option character `\\x%x'." EOL, optopt );
                 }
 
                 return false;
@@ -567,35 +528,31 @@ int _processOptions( int argc, char *argv[] )
 
     if ( ( options.useTPIU ) && ( !options.tpiuITMChannel ) )
     {
-        fprintf( stderr, "TPIU set for use but no channel set for ITM output" EOL );
+        genericsReport( V_ERROR, "TPIU set for use but no channel set for ITM output" EOL );
         return false;
     }
 
-    if ( options.verbose )
+    genericsReport( V_INFO, "orbcat V" VERSION " (Git %08X %s, Built " BUILD_DATE EOL, GIT_HASH, ( GIT_DIRTY ? "Dirty" : "Clean" ) );
+
+    genericsReport( V_INFO, "Server    : %s:%d" EOL, options.server, options.port );
+    genericsReport( V_INFO, "ForceSync : %s" EOL, options.forceITMSync ? "true" : "false" );
+
+    if ( options.useTPIU )
     {
-        fprintf( stdout, "orbcat V" VERSION " (Git %08X %s, Built " BUILD_DATE EOL, GIT_HASH, ( GIT_DIRTY ? "Dirty" : "Clean" ) );
+        genericsReport( V_INFO, "Using TPIU: true (ITM on channel %d)" EOL, options.tpiuITMChannel );
+    }
+    else
+    {
+        genericsReport( V_INFO, "Using TPIU: false" EOL );
+    }
 
-        fprintf( stdout, "Verbose   : true" EOL );
-        fprintf( stdout, "Server    : %s:%d" EOL, options.server, options.port );
-        fprintf( stdout, "ForceSync : %s" EOL, options.forceITMSync ? "true" : "false" );
+    genericsReport( V_INFO, "Channels  :" EOL );
 
-        if ( options.useTPIU )
+    for ( int g = 0; g < NUM_CHANNELS; g++ )
+    {
+        if ( options.presFormat[g] )
         {
-            fprintf( stdout, "Using TPIU: true (ITM on channel %d)" EOL, options.tpiuITMChannel );
-        }
-        else
-        {
-            fprintf( stdout, "Using TPIU: false" EOL );
-        }
-
-        fprintf( stdout, "Channels  :" EOL );
-
-        for ( int g = 0; g < NUM_CHANNELS; g++ )
-        {
-            if ( options.presFormat[g] )
-            {
-                fprintf( stdout, "        %02d [%s]" EOL, g, GenericsEscape( options.presFormat[g] ) );
-            }
+            genericsReport( V_INFO, "        %02d [%s]" EOL, g, GenericsEscape( options.presFormat[g] ) );
         }
     }
 
@@ -626,7 +583,7 @@ int main( int argc, char *argv[] )
 
     if ( sockfd < 0 )
     {
-        fprintf( stderr, "Error creating socket" EOL );
+        genericsReport( V_ERROR, "Error creating socket" EOL );
         return -1;
     }
 
@@ -636,7 +593,7 @@ int main( int argc, char *argv[] )
 
     if ( !server )
     {
-        fprintf( stderr, "Cannot find host" EOL );
+        genericsReport( V_ERROR, "Cannot find host" EOL );
         return -1;
     }
 
@@ -648,7 +605,7 @@ int main( int argc, char *argv[] )
 
     if ( connect( sockfd, ( struct sockaddr * ) &serv_addr, sizeof( serv_addr ) ) < 0 )
     {
-        fprintf( stderr, "Could not connect" EOL );
+        genericsReport( V_ERROR, "Could not connect" EOL );
         return -1;
     }
 
@@ -664,10 +621,7 @@ int main( int argc, char *argv[] )
         fflush( stdout );
     }
 
-    if ( options.verbose )
-    {
-        fprintf( stderr, "Read failed" EOL );
-    }
+    genericsReport( V_ERROR, "Read failed" EOL );
 
     close( sockfd );
     return -2;

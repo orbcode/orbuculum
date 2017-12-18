@@ -33,7 +33,7 @@ enum verbLevel {V_ERROR, V_WARN, V_INFO, V_DEBUG};
 char *GenericsEscape( char *str );
 char *GenericsUnescape( char *str );
 
-void genericsSetReportLevel(enum verbLevel lset);
+void genericsSetReportLevel( enum verbLevel lset );
 void genericsReport( enum verbLevel l, const char *fmt, ... );
 // ====================================================================================================
 #endif

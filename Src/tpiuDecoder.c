@@ -194,7 +194,7 @@ enum TPIUPumpEvent TPIUPump( struct TPIUDecoder *t, uint8_t d )
             }
             else
             {
-                //fprintf( stderr, ">>>>>>>>> PACKET INTERVAL TOO LONG <<<<<<<<<<<<<<" EOL );
+                genericsReport( V_WARN, ">>>>>>>>> PACKET INTERVAL TOO LONG <<<<<<<<<<<<<<" EOL );
                 t->state = TPIU_UNSYNCED;
                 t->stats.lostSync++;
                 return TPIU_EV_UNSYNCED;
@@ -202,7 +202,7 @@ enum TPIUPumpEvent TPIUPump( struct TPIUDecoder *t, uint8_t d )
 
         // -----------------------------------
         default:
-            fprintf( stderr, "In illegal state %d" EOL, t->state );
+            genericsReport( V_WARN, "In illegal state %d" EOL, t->state );
             t->stats.error++;
             return TPIU_EV_ERROR;
             // -----------------------------------

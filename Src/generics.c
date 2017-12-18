@@ -159,10 +159,10 @@ char *GenericsUnescape( char *str )
 // ====================================================================================================
 static enum verbLevel lstore = V_WARN;
 
-void genericsSetReportLevel(enum verbLevel lset)
+void genericsSetReportLevel( enum verbLevel lset )
 
 {
-  lstore = lset;
+    lstore = lset;
 }
 // ====================================================================================================
 void genericsReport( enum verbLevel l, const char *fmt, ... )
@@ -170,17 +170,17 @@ void genericsReport( enum verbLevel l, const char *fmt, ... )
 /* Debug reporting stream */
 
 #define MAX_STRLEN (4096)
-  
+
 {
     static char op[MAX_STRLEN];
 
-    if ( l >= lstore )
+    if ( l <= lstore )
     {
         va_list va;
         va_start( va, fmt );
         vsnprintf( op, MAX_STRLEN, fmt, va );
         va_end( va );
-        fputs( op, stdout );
+        fputs( op, stderr );
     }
 }
 // ====================================================================================================
