@@ -1,0 +1,34 @@
+# Pin configuration for Lattice ICE40HX8K-B-EVN board
+
+# Trace signals
+set_io traceDin[0]	C16	# J2 pin 37
+set_io traceDin[1]	D16	# J2 pin 35
+set_io traceDin[2]	E16	# J2 pin 33
+set_io traceDin[3]	F16	# J2 pin 29
+set_io traceClk		H16	# J2 pin 25
+
+# UART connection to PC
+set_io uartrx		B10	# RX pin of FT2232H
+set_io uarttx		B12	# TX pin of FT2232H
+set_io rst		A16	# DTRn pin of FT2232H
+set_io cts		A15	# CTSn pin of FT2232H
+
+# Oscillator clock for FPGA PLL
+set_io clkIn		J3	# connected to 12MHz xtal
+
+# LEDs
+set_io sync_led		B5	# LED0 (red)
+set_io rxInd_led	B4	# LED1 (red)
+set_io txInd_led	A2	# LED2 (red)
+set_io txOvf_led	C3	# LED7 (red)
+
+# more LEDs (non-standard)
+set_io yellow		P15	# J2 pin 6
+set_io green		P16	# J2 pin 5
+
+# other indicators (currently unused?)
+set_io D6		A1	# LED3 (disabled)
+set_io D5		C5	# LED4 (disabled)
+set_io D4		C4	# LED5 (disabled)
+set_io D3		B3	# LED6 (disabled)
+
