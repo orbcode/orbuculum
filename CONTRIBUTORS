@@ -2,5 +2,5 @@ The contributors to this project, in alphabetic order, are;
 
 Devan Lai     devan.lai@gmail.com  Fixups for Linux build issues & warnings removal
 Dave Marples  dave@marples.net     Original code and current maintainer
-David Piegdon                      Build fixes for Gentoo and common sense
+David Piegdon                      Build fixes for Gentoo and common sense around fpga
 Karl Palsson                       Build fixes

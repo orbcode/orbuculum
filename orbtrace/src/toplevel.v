@@ -157,7 +157,7 @@ SB_IO #(.PULLUP(1)) MtraceIn3
    
    assign doTransmit = dataAvail & txFree;
 
-   uart #(.CLOCKFRQ(48_000_000))  receiver (
+   uart #(.CLOCKFRQ(48_000_000), .BAUDRATE(12_000_000))  receiver (
 	.clk(clk),                 // System Clock
 	.rst(rst),                 // System Reset
 	.rx(uartrx),               // Uart TX pin
