@@ -60,6 +60,7 @@
     #define FTDI_VID  (0x0403)
     #define FTDI_PID  (0x6010)
     #define FTDI_INTERFACE (INTERFACE_B)
+#define FTDI_INTERFACE_SPEED (12000000)
 #endif
 
 #define SERVER_PORT 3443                      /* Server port definition */
@@ -1124,7 +1125,7 @@ int _processOptions( int argc, char *argv[] )
 
     if ( options.orbtrace )
     {
-        genericsReport( V_INFO, "Orbtrace : true" EOL );
+        genericsReport( V_INFO, "Orbtrace   : true" EOL );
     }
 
 #endif
@@ -1223,7 +1224,7 @@ int usbFeeder( void )
             _sendToClients( size, cbw );
             unsigned char *c = cbw;
 
-            genericsReport( V_DEBUG, "RXED Packet of %d bytes" EOL, size );
+            genericsReport( V_DEBUG, "RXED Packet of %d bytes" EOL,size);
 
             while ( size-- )
             {
@@ -1394,11 +1395,11 @@ int fpgaFeeder( void )
 
         genericsReport( V_INFO, "Port opened" EOL );
 
-        f = ftdi_set_baudrate( _r.ftdi, options.speed );
+        f = ftdi_set_baudrate( _r.ftdi, FTDI_INTERFACE_SPEED );
 
         if ( f < 0 )
         {
-            genericsReport( V_ERROR, "Cannot set baudate %d %d (%s)" EOL, f, options.speed, ftdi_get_error_string( _r.ftdi ) );
+            genericsReport( V_ERROR, "Cannot set baudate %d %d (%s)" EOL, f, FTDI_INTERFACE_SPEED, ftdi_get_error_string( _r.ftdi ) );
             return -2;
         }
 
@@ -1406,6 +1407,8 @@ int fpgaFeeder( void )
 
         ftdi_read_data_set_chunksize( _r.ftdi, TRANSFER_SIZE );
         ftdi_setdtr( _r.ftdi, true );
+
+        genericsReport( V_INFO, "All parameters configured" EOL );
 
         while ( ( t = ftdi_read_data( _r.ftdi, cbw, TRANSFER_SIZE ) ) >= 0 )
         {
@@ -1416,7 +1419,7 @@ int fpgaFeeder( void )
 
             _sendToClients( t, cbw );
             c = cbw;
-
+	    genericsReport( V_DEBUG, "RXED Packet of %d bytes" EOL, t );
             while ( t-- )
             {
                 _protocolPump( *c++ );
@@ -1425,7 +1428,7 @@ int fpgaFeeder( void )
 
         ftdi_setdtr( _r.ftdi, false );
 
-        genericsReport( V_INFO, "Read failed" EOL );
+        genericsReport( V_WARN, "Read failed" EOL );
 
         ftdi_usb_close( _r.ftdi );
         _r.ftdi = NULL;
