@@ -17,18 +17,18 @@ set_io cts		A15	# CTSn pin of FT2232H
 set_io clkIn		J3	# connected to 12MHz xtal
 
 # LEDs
-set_io sync_led		B5	# LED0 (red)
-set_io rxInd_led	B4	# LED1 (red)
-set_io txInd_led	A2	# LED2 (red)
-set_io txOvf_led	C3	# LED7 (red)
+set_io sync_led		B5	# LED0 (D9, red)
+set_io rxInd_led	B4	# LED1 (D8, red)
+set_io txInd_led	A2	# LED2 (D7, red)
+set_io txOvf_led	C3	# LED7 (D2, red)
 
 # more LEDs (non-standard)
 set_io yellow		P15	# J2 pin 6
 set_io green		P16	# J2 pin 5
 
 # other indicators (currently unused?)
-set_io D6		A1	# LED3 (disabled)
-set_io D5		C5	# LED4 (disabled)
-set_io D4		C4	# LED5 (disabled)
-set_io D3		B3	# LED6 (disabled)
+set_io D6		A1	# LED3 (D6, disabled)
+set_io D5		C5	# LED4 (D5, disabled)
+set_io D4		C4	# LED5 (D4, disabled)
+set_io D3		B3	# LED6 (D3, disabled)
 

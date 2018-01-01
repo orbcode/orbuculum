@@ -22,27 +22,27 @@
 // 
 
 module uart(
-    input 	 clk, // The master clock for this module
-    input 	 rst, // Synchronous reset.
-    input 	 rx, // Incoming serial line
-    output 	 tx, // Outgoing serial line
-    input 	 transmit, // Signal to transmit
-    input [7:0]  tx_byte, // Byte to transmit
-    output 	 received, // Indicated that a byte has been received.
-    output 	 tx_free, // Indicator that transmit register is available
-    output [7:0] rx_byte, // Byte received
-    output 	 is_receiving, // Low when receive line is idle.
-    output 	 is_transmitting, // Low when transmit line is idle.
-    output 	 recv_error // Indicates error in receiving packet.
-    );
+	    input 	 clk, // The master clock for this module
+	    input 	 rst, // Synchronous reset.
+	    input 	 rx, // Incoming serial line
+	    output 	 tx, // Outgoing serial line
+	    input 	 transmit, // Signal to transmit
+	    input [7:0]  tx_byte, // Byte to transmit
+	    output 	 received, // Indicated that a byte has been received.
+	    output 	 tx_free, // Indicator that transmit register is available
+	    output [7:0] rx_byte, // Byte received
+	    output 	 is_receiving, // Low when receive line is idle.
+	    output 	 is_transmitting, // Low when transmit line is idle.
+	    output 	 recv_error // Indicates error in receiving packet.
+	    );
    
    parameter CLOCKFRQ=48_000_000;                   // Frequency of the oscillator
    parameter BAUDRATE=12_000_000;                    // Required baudrate
-	
-	parameter COUNTDOWN=2;
+   
+   parameter COUNTDOWN=2;
    parameter CLOCK_DIVIDE=(CLOCKFRQ/(BAUDRATE*COUNTDOWN))-1; // clock rate / (baud rate * 4)  
-	
-
+   
+   
    // States for the receiving state machine.
    // These are just constants, not parameters to override.
    parameter RX_IDLE = 3'd0;
@@ -52,29 +52,29 @@ module uart(
    parameter RX_DELAY_RESTART = 3'd4;
    parameter RX_ERROR = 3'd5;
    parameter RX_RECEIVED = 3'd6;
-
+   
    // States for the transmitting state machine.
    // Constants - do not override.
    parameter TX_IDLE = 2'd0;
    parameter TX_SENDING = 2'd1;
    parameter TX_DELAY_RESTART = 2'd2;
    
-   reg [12:0] 	 rx_clk_divider;
-   reg [12:0] 	 tx_clk_divider;
+   reg [12:0] 		 rx_clk_divider;
+   reg [12:0] 		 tx_clk_divider;
    
-   reg [2:0] 	 recv_state;
-   reg [5:0] 	 rx_countdown;
-   reg [3:0] 	 rx_bits_remaining;
-   reg [7:0] 	 rx_data;
+   reg [2:0] 		 recv_state;
+   reg [5:0] 		 rx_countdown;
+   reg [3:0] 		 rx_bits_remaining;
+   reg [7:0] 		 rx_data;
    
-   reg 		 tx_out;
-   reg [1:0] 	 tx_state;
-   reg [5:0] 	 tx_countdown;
-   reg [3:0] 	 tx_bits_remaining;
-   reg [7:0] 	 tx_data;
-
-   reg [16:0] 	 tx_ledstretch;
-   reg [16:0] 	 rx_ledstretch;
+   reg 			 tx_out;
+   reg [1:0] 		 tx_state;
+   reg [5:0] 		 tx_countdown;
+   reg [3:0] 		 tx_bits_remaining;
+   reg [7:0] 		 tx_data;
+   
+   reg [16:0] 		 tx_ledstretch;
+   reg [16:0] 		 rx_ledstretch;
    
    assign is_receiving = (rx_ledstretch != 0); 
    assign is_transmitting = (tx_ledstretch != 0);
@@ -84,7 +84,7 @@ module uart(
    assign tx_free = (tx_state == TX_IDLE);
    assign received = (recv_state == RX_RECEIVED);
    assign recv_error = (recv_state == RX_ERROR);
-
+   
    always @(posedge clk) begin
       if (rst) begin
 	 recv_state <= RX_IDLE;
@@ -99,7 +99,7 @@ module uart(
 	begin
 	   if (rx_ledstretch) rx_ledstretch <= rx_ledstretch-17'd1;
 	   if (tx_ledstretch) tx_ledstretch <= tx_ledstretch-17'd1;
-	         
+	   
 	   // The clk_divider counter counts down from
 	   // the CLOCK_DIVIDE constant. Whenever it
 	   // reaches 0, 1/16 of the bit period has elapsed.
@@ -118,7 +118,7 @@ module uart(
 		tx_clk_divider <= CLOCK_DIVIDE;
 		tx_countdown <= tx_countdown - 1;
 	     end
-	
+	   
 	   // Receive state machine
 	   case (recv_state)
 	     RX_IDLE: // -------------------------------------------------------------
@@ -211,7 +211,7 @@ module uart(
 		  recv_state <= RX_IDLE;
 	       end
 	   endcase
-	
+	   
 	   // Transmit state machine
 	   case (tx_state)
 	     TX_IDLE: // -----------------------------------------------------------
@@ -224,16 +224,16 @@ module uart(
 		       tx_ledstretch <= ~0;
 		       
 		       tx_data <= tx_byte;
-		      // Send the initial, low pulse of 1 bit period
-		      // to signal the start, followed by the data
-		      tx_clk_divider <= CLOCK_DIVIDE;
-		      tx_countdown <= COUNTDOWN;
-		      tx_out <= 0;
-		      tx_bits_remaining <= 8;
-		      tx_state <= TX_SENDING;
+		       // Send the initial, low pulse of 1 bit period
+		       // to signal the start, followed by the data
+		       tx_clk_divider <= CLOCK_DIVIDE;
+		       tx_countdown <= COUNTDOWN;
+		       tx_out <= 0;
+		       tx_bits_remaining <= 8;
+		       tx_state <= TX_SENDING;
 		    end
 	       end
-
+	     
 	     TX_SENDING: // --------------------------------------------------------
 	       begin
 		  if (!tx_countdown) 

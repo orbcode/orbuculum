@@ -23,9 +23,8 @@ module topLevel(
 		output reg  cts,
 		output 	    yellow,
 		output 	    green   
-		);
-   
-
+		);      
+	    
    // Parameters =============================================================================
 
    parameter MAX_BUS_WIDTH=4;  // Maximum bus width that system is set for 
@@ -118,7 +117,7 @@ SB_IO #(.PULLUP(1)) MtraceIn3
                    .traceDina(tTraceDina),       // Tracedata rising edge ... 1-n bits
                    .traceDinb(tTraceDinb),       // Tracedata falling edge (LSB) ... 1-n bits		   
                    .traceClkin(BtraceClk),       // Tracedata clock
-		   .width(4),                    // Current trace buffer width 
+		   .width(2),        // Current trace buffer width 
 
 		   // Upwards interface to packet processor
 		   .PacketAvail(packetizer_avail_flag),   // Flag indicating packet is available
@@ -192,12 +191,24 @@ SB_IO #(.PULLUP(1)) MtraceIn3
 			  .PLLOUTCORE(clk)
 			  );
 
-   always @(negedge rst)
+   reg [25:0] 		   clkCount;
+
+   assign D6 = clkCount[25];
+   
+   always @(posedge clk)
      begin
-	D6<=1'b0;
-	D5<=1'b0;
-	D4<=1'b0;
-	D3<=1'b0;
-	cts<=1'b0;
+	if (rst)
+	  begin
+	     D5<=1'b0;
+	     D4<=1'b0;
+	     D3<=1'b0;
+	     cts<=1'b0;
+	     clkCount <= 0;
+	     
+	  end
+	else
+	  begin	  
+	     clkCount <= clkCount + 1;
+	  end // else: !if(rst)
      end
 endmodule // topLevel
