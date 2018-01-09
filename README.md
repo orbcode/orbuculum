@@ -9,12 +9,8 @@ You can find information about using this suite on the Embedded Rambling
 blog at http://shadetail.com/.
 
 *This program is in heavy development. Check back frequently for new versions 
-with additional functionality. The current status (24th Nov) is that
-a small filewriter has been added to allow files to be written on the machine
-running the orbuculum session ... this delivers similar functionality to
-SemiHosting and much faster, but less reliable. I needed this to be able to
-do code profiling efficiently.  Client side libraries can be found in the
-Support directory.*
+with additional functionality. The current status (9th Jan) is that the fpga
+code is starting to stablise nicely, but only for 1 & 2 bit parallel operation...still more work to be done there.  The apps appear quite stable though.*
 
 The code is in daily use now and small issues
 are patched as they are found. The parallel trace hardware using a iCE40HX-8K breakout board and the icestorm tools is stable and hardware is in development.

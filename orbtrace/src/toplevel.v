@@ -1,3 +1,5 @@
+`default_nettype none
+
 module topLevel(
 		input [3:0] traceDin, // Port is always 4 bits wide, even if we use less
 		input 	    traceClk, // Supporting clock for input - must be on a global clock pin
@@ -27,7 +29,7 @@ module topLevel(
 	    
    // Parameters =============================================================================
 
-   parameter MAX_BUS_WIDTH=4;  // Maximum bus width that system is set for 
+   parameter MAX_BUS_WIDTH=4;  // Maximum bus width that system is set for...not more than 4!! 
    //    
    // Internals =============================================================================
 
@@ -37,15 +39,14 @@ module topLevel(
    wire [MAX_BUS_WIDTH-1:0] tTraceDinb;
  		    
    wire 		    packetizer_avail_flag;
-   wire 		    packetizer_strobe;
-   wire 		    packetizer_word_strobe;
-   wire [15:0] 		    packetizer_packet;
+   wire 		    packetizer_ack;
+   wire [127:0]             packetizer_packet;
 
-   wire 		   filter_strobe;
-   wire [7:0] 		   filter_data;
+   reg [7:0] 		   filter_data;
 
-   wire 		   doTransmit;
    wire 		   dataAvail;
+   wire 		   dataReady;
+ 		   
    wire 		   txFree;
    
    wire [7:0]		   rx_byte_tl;
@@ -54,7 +55,10 @@ module topLevel(
 
    wire 		   lock; // Indicator that PLL has locked
 
-   wire 		   clk;	
+   wire 		   clk;
+   wire 		   clkOut;
+   wire 		   BtraceClk;
+  
 
    
 `ifdef NO_GB_IO_AVAILABLE
@@ -74,7 +78,7 @@ SB_GB_IO #(.PIN_TYPE(6'b000001)) BtraceClk0
 `endif
 
 // Trace input pins config   
-SB_IO #(.PULLUP(1)) MtraceIn0
+SB_IO #(.PULLUP(0)) MtraceIn0
 (
  .PACKAGE_PIN (traceDin[0]),
  .INPUT_CLK (BtraceClk),
@@ -82,7 +86,7 @@ SB_IO #(.PULLUP(1)) MtraceIn0
  .D_IN_1 (tTraceDinb[0])
  );
    
-SB_IO #(.PULLUP(1)) MtraceIn1
+SB_IO #(.PULLUP(0)) MtraceIn1
 (
  .PACKAGE_PIN (traceDin[1]),
  .INPUT_CLK (BtraceClk),
@@ -90,7 +94,7 @@ SB_IO #(.PULLUP(1)) MtraceIn1
  .D_IN_1 (tTraceDinb[1])
   );
    
-SB_IO #(.PULLUP(1)) MtraceIn2
+SB_IO #(.PULLUP(0)) MtraceIn2
 (
  .PACKAGE_PIN (traceDin[2]),
  .INPUT_CLK (BtraceClk),
@@ -98,71 +102,58 @@ SB_IO #(.PULLUP(1)) MtraceIn2
  .D_IN_1 (tTraceDinb[2])
  );
    
-SB_IO #(.PULLUP(1)) MtraceIn3 
+SB_IO #(.PULLUP(0)) MtraceIn3 
 (
  .PACKAGE_PIN (traceDin[3]),
  .INPUT_CLK (BtraceClk),
  .D_IN_0 (tTraceDina[3]),
  .D_IN_1 (tTraceDinb[3])
  );
-   
-   wire 		   target_a;
-   wire 		   target_b;
-   
-   traceIF target (
-                   .clk(clk), 
+
+  // -----------------------------------------------------------------------------------------
+  traceIF #(.BUSWIDTH(MAX_BUS_WIDTH)) traceif (
+                   .clk(clkOut), 
                    .rst(rst), 
 
 		   // Downwards interface to trace pins
                    .traceDina(tTraceDina),       // Tracedata rising edge ... 1-n bits
                    .traceDinb(tTraceDinb),       // Tracedata falling edge (LSB) ... 1-n bits		   
                    .traceClkin(BtraceClk),       // Tracedata clock
-		   .width(2),        // Current trace buffer width 
+		   .width(2),                    // Current trace buffer width 
 
 		   // Upwards interface to packet processor
-		   .PacketAvail(packetizer_avail_flag),   // Flag indicating packet is available
-		   .PacketNext(packetizer_strobe),        // Strobe for requesting next packet
-		   .PacketNextWd(packetizer_word_strobe), // Strobe for next 16 bit word in packet	 
-
-		   .PacketOut(packetizer_packet),         // The next packet word
-
-		   .sync(sync_led)                        // Indicator of if we are in sync
+		   .PackAvail(packetizer_avail_flag),   // Flag indicating packet is available
+		   .PacketOut(packetizer_packet),       // The next packet word
+		   .PackAvailAck(packetizer_ack),       // Flag indicating we've heard about the available packet
+		   .sync(sync_led)                      // Indicator of if we are in sync
                    );
-
-   assign green=target_a; // Ch 0
-   
-
+  // -----------------------------------------------------------------------------------------
    packSend splitter (
-		   .clk(clk), 
+		   .clk(clkOut), 
 		   .rst(rst), 
 
 		   .sync(sync_led), // Indicator of if we are in sync
 
 		   // Downwards interface to target interface
 		   .PacketAvail(packetizer_avail_flag),     // Flag indicating packet is available
-		   .PacketNext(packetizer_strobe),          // Strobe for requesting next packet
-		   .PacketNextWd(packetizer_word_strobe),   // Strobe for next 16 bit word in packet	 
 		   .PacketIn(packetizer_packet),            // The next packet word
+		   .PacketAvailAck(packetizer_ack),         // Indicator that we've heard about the packet 		      
 
 		   // Upwards interface to serial (or other) handler
-		   .DataAvail(dataAvail),                   // There is decoded data ready for processing
+                   .DataReady(dataReady),
 		   .DataVal(filter_data),                   // Output data value
-		   .DataNext(doTransmit),                   // Request for data
+		   .DataNext(txFree),                       // Request for data
 
-                   .DataOverf(txOvf_led),                   // Too much data in buffer
-		   .Probe(filter_a)
+                   .DataOverf(txOvf_led)                    // Too much data in buffer
  		      );
-   assign yellow=filter_a; // Ch 1
-   
-   assign doTransmit = dataAvail & txFree;
-
+  // -----------------------------------------------------------------------------------------   
    uart #(.CLOCKFRQ(48_000_000), .BAUDRATE(12_000_000))  receiver (
-	.clk(clk),                 // System Clock
+	.clk(clkOut),                 // System Clock
 	.rst(rst),                 // System Reset
 	.rx(uartrx),               // Uart TX pin
 	.tx(uarttx),               // Uart RX pin
 					  
-	.transmit(doTransmit),
+	.transmit(dataReady),
         .tx_byte(filter_data),
         .tx_free(txFree),
 					  
@@ -175,6 +166,7 @@ SB_IO #(.PULLUP(1)) MtraceIn3
 	.is_transmitting(txInd_led)
     );
 
+  // -----------------------------------------------------------------------------------------   
  // Set up clock for 48Mhz with input of 12MHz
    SB_PLL40_CORE #(
 		   .FEEDBACK_PATH("SIMPLE"),
@@ -188,14 +180,14 @@ SB_IO #(.PULLUP(1)) MtraceIn3
 			  .RESETB(1'b1),
 			  .BYPASS(1'b0),
 			  .REFERENCECLK(clkIn),
-			  .PLLOUTCORE(clk)
+			  .PLLOUTCORE(clkOut)
 			  );
 
    reg [25:0] 		   clkCount;
 
    assign D6 = clkCount[25];
    
-   always @(posedge clk)
+   always @(posedge clkOut)
      begin
 	if (rst)
 	  begin
@@ -204,7 +196,6 @@ SB_IO #(.PULLUP(1)) MtraceIn3
 	     D3<=1'b0;
 	     cts<=1'b0;
 	     clkCount <= 0;
-	     
 	  end
 	else
 	  begin	  

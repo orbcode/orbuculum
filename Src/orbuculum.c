@@ -839,7 +839,17 @@ void _itmPumpProcess( char c )
             _handleHW( &_r.i );
             break;
 
-        // ------------------------------------
+        // ------------------------------------	    
+        case ITM_EV_RESERVED_PACKET_RXED:
+            genericsReport( V_INFO, "Reserved Packet Received" EOL );
+	    break;
+
+        // ------------------------------------	    	  
+    case ITM_EV_XTN_PACKET_RXED:
+            genericsReport( V_INFO, "Unknown Extension Packet Received" EOL );
+	    break;
+
+	    // ------------------------------------
     }
 }
 // ====================================================================================================
@@ -1422,8 +1432,10 @@ int fpgaFeeder( void )
 	    genericsReport( V_DEBUG, "RXED Packet of %d bytes" EOL, t );
             while ( t-- )
             {
+	      //	      	      printf("%02X ",*c);
                 _protocolPump( *c++ );
             }
+
         }
 
         ftdi_setdtr( _r.ftdi, false );

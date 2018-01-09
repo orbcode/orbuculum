@@ -239,7 +239,7 @@ enum ITMPumpEvent ITMPump( struct ITMDecoder *i, uint8_t c )
                 }
 
                 // ***********************************************
-                if ( ( c & 0x0b00001100 ) == 0b00001000 )
+                if ( ( c & 0b00001000 ) == 0b00001000 )
                 {
                     /* Extension Packet */
                     i->currentCount = 1; /* The '1' is deliberate. */
@@ -247,16 +247,44 @@ enum ITMPumpEvent ITMPump( struct ITMDecoder *i, uint8_t c )
 
                     i->rxPacket[0] = c;
 
-                    if ( !( c & 0x80 ) )
+                    if ( !( c & 0x84 ) )
                     {
                         /* This is the Stimulus Port Page Register setting ... deal with it here */
                         i->stats.PagePkt++;
                         i->pageRegister = ( c >> 4 ) & 0x07;
-                        break;
                     }
-
-		    // Any other value here isn't valid - so fall through to illegal packet case
+		    else
+		      {
+			newState = ITM_XTN;
+		      }
+		    break;
                 }
+
+                // ***********************************************
+		if (((c&0b11000100) == 0b11000100) ||
+		    ((c&0b10000100) == 0b10000100) ||
+		    ((c&0b11110000) == 0b11110000) ||
+		    ((c&0b00000100) == 0b00000100))
+		  {
+		    /* Reserved packets - we have no idea what these are */
+		    i->currentCount = 1;
+		    i->stats.ReservedPkt++;
+		    i->rxPacket[0] = c;
+
+		    if (!(c&0x80))
+		      {
+                        retVal = ITM_EV_RESERVED_PACKET_RXED;
+		      }
+		    else
+		      {
+			/* According to protocol, this is multi-byte, so report it */
+			newState = ITM_RSVD;
+		      }
+		    break;
+		  }
+
+		  // Any other value here isn't valid - so fall through to illegal packet case
+		  
 
 	      // *************************************************
 	      // ************** ILLEGAL PACKET *******************
@@ -264,6 +292,7 @@ enum ITMPumpEvent ITMPump( struct ITMDecoder *i, uint8_t c )
 		/* This is a reserved encoding we don't know how to handle */
 		/* ...assume it's line noise and wait for sync again */
 		i->stats.ErrorPkt++;
+		fprintf(stderr,EOL "%02X " EOL,c);
 		retVal = ITM_EV_ERROR;
                 genericsReport( V_DEBUG, "General error for packet type %02x" EOL, c );
                 break;
@@ -324,6 +353,34 @@ enum ITMPumpEvent ITMPump( struct ITMDecoder *i, uint8_t c )
                     /* We are done */
                     newState = ITM_IDLE;
                     retVal = ITM_EV_TS_PACKET_RXED;
+                    break;
+                }
+
+                break;
+
+            // -----------------------------------------------------
+            case ITM_RSVD:
+                i->rxPacket[i->currentCount++] = c;
+
+                if ( ( !( c & 0x80 ) ) || ( i->currentCount >= MAX_PACKET ) )
+                {
+                    /* We are done */
+                    newState = ITM_IDLE;
+                    retVal = ITM_EV_RESERVED_PACKET_RXED;
+                    break;
+                }
+
+                break;
+
+		// -----------------------------------------------------
+            case ITM_XTN:
+                i->rxPacket[i->currentCount++] = c;
+
+                if ( ( !( c & 0x80 ) ) || ( i->currentCount >= MAX_PACKET ) )
+                {
+                    /* We are done */
+                    newState = ITM_IDLE;
+                    retVal = ITM_EV_XTN_PACKET_RXED;
                     break;
                 }
 

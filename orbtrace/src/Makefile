@@ -53,8 +53,8 @@ ICE40HX8K_B_EVN.asc: traceIF_GBIO.blif
 	yosys -f "verilog $(BUFFER_FLAGS)" -p "synth_ice40 -blif $@" $^
 
 traceIF_GBIO.blif: BUFFER_FLAGS=
-traceIF_GBIO.blif: toplevel.v uart.v traceIF.v packSend.v
+traceIF_GBIO.blif: toplevel.v uart.v traceIF.v packSend.v flagSync.v
 
 traceIF_GB.blif: BUFFER_FLAGS=-DNO_GB_IO_AVAILABLE
-traceIF_GB.blif: toplevel.v uart.v traceIF.v packSend.v
+traceIF_GB.blif: toplevel.v uart.v traceIF.v packSend.v flagSync.v
 

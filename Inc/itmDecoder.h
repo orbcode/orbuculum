@@ -36,6 +36,8 @@ enum ITMPumpEvent
     ITM_EV_SW_PACKET_RXED,
     ITM_EV_HW_PACKET_RXED,
     ITM_EV_OVERFLOW,
+    ITM_EV_RESERVED_PACKET_RXED,
+    ITM_EV_XTN_PACKET_RXED,
     ITM_EV_ERROR
 };
 
@@ -59,9 +61,11 @@ enum _protoState
     ITM_SW,
     ITM_HW,
     ITM_GTS1,
-    ITM_GTS2
+    ITM_GTS2,
+    ITM_RSVD,
+    ITM_XTN
 };
-#define PROTO_NAME_LIST "UNSYNCED", "IDLE", "TS", "SW", "HW", "GTS1", "GTS2"
+#define PROTO_NAME_LIST "UNSYNCED", "IDLE", "TS", "SW", "HW", "GTS1", "GTS2", "RSVD", "XTN"
 
 /* Type of the packet received over the link */
 struct ITMPacket
@@ -87,6 +91,7 @@ struct ITMDecoderStats
     uint32_t TSPkt;                      /* Number of TS Packets received */
     uint32_t HWPkt;                      /* Number of HW Packets received */
     uint32_t XTNPkt;                     /* Number of XTN Packets received */
+    uint32_t ReservedPkt;                /* Number of Reserved Packets received */  
     uint32_t ErrorPkt;                   /* Number of Packets received we don't know how to handle */
     uint32_t PagePkt;                    /* Number of Packets received containing page sets */
 };
