@@ -57,10 +57,8 @@ module uart(
    
    // States for the transmitting state machine.
    // Constants - do not override.
-   parameter TX_STARTUP = 2'd0;
-   parameter TX_IDLE = 2'd1;
-   parameter TX_SENDING = 2'd2;
-   parameter TX_DELAY_RESTART = 2'd3;
+   parameter TX_IDLE = 2'd0;
+   parameter TX_SENDING = 2'd1;
    
    reg [12:0] 		 rx_clk_divider;
    reg [12:0] 		 tx_clk_divider;
@@ -70,7 +68,7 @@ module uart(
    reg [3:0] 		 rx_bits_remaining;
    reg [7:0] 		 rx_data;
    
-   reg [1:0] 		 tx_state;
+   reg  		 tx_state;
    reg [5:0] 		 tx_countdown;
    reg [3:0] 		 tx_bits_remaining;
    reg [7:0] 		 tx_data;
@@ -89,11 +87,11 @@ module uart(
    always @(posedge clk) begin
       if (rst) begin
 	 recv_state <= RX_IDLE;
-	 tx_state <= TX_STARTUP;
+	 tx_state <= TX_IDLE;
 	 rx_clk_divider <= CLOCK_DIVIDE;
 	 tx_clk_divider <= CLOCK_DIVIDE;
 	 rx_ledstretch <= 0;
-	 tx_ledstretch <= ~0;
+	 tx_ledstretch <= 0;
 	 tx <= 1;
       end
       else
@@ -216,14 +214,6 @@ module uart(
 	   
 	   // Transmit state machine
 	   case (tx_state)
-	     TX_STARTUP: // Wait for things to calm down after reset
-	       begin
-		  if (tx_ledstretch==0)
-		    tx_state<=TX_IDLE;
-		  else
-		    tx_ledstretch<=tx_ledstretch-1;
-	       end
-	     
 	     TX_IDLE: // -----------------------------------------------------------
 	       begin
 		  if (transmit) 
@@ -239,11 +229,13 @@ module uart(
 		       tx_clk_divider <= CLOCK_DIVIDE;
 		       tx_countdown <= COUNTDOWN;
 		       tx <= 0;
-		       tx_bits_remaining <= 8;
+		       tx_bits_remaining <= 9; // This includes the stopbit
 		       tx_state <= TX_SENDING;
 		    end // if (transmit)
 		  else
-		    tx <= 1;
+		    begin
+		       tx <= 1;
+		    end
 	       end
 	     
 	     TX_SENDING: // --------------------------------------------------------
@@ -254,25 +246,15 @@ module uart(
 			 begin
 			    tx_bits_remaining <= tx_bits_remaining - 4'd1;
 			    tx <= tx_data[0];
-			    tx_data <= {1'b0, tx_data[7:1]};
+			    tx_data <= {1'b1, tx_data[7:1]}; // By shifting 1's we get stopbits automatically
 			    tx_countdown <= COUNTDOWN;
 			    tx_state <= TX_SENDING;
 			 end 
 		       else 
 			 begin
-			    // Set delay to send out 2 stop bits.
-			    tx <= 1;
-			    tx_countdown <= (2*COUNTDOWN);
-			    tx_state <= TX_DELAY_RESTART;
+			    tx_state<=TX_IDLE;
 			 end
 		    end
-	       end
-	     TX_DELAY_RESTART: // ---------------------------------------------------
-	       begin
-		  // Wait until tx_countdown reaches the end before
-		  // we send another transmission. This covers the
-		  // "stop bit" delay.
-		  tx_state <= tx_countdown ? TX_DELAY_RESTART : TX_IDLE;
 	       end
 	   endcase // case (tx_state)
 	end // else: !if(rst)

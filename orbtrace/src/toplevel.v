@@ -34,33 +34,12 @@ module topLevel(
    // Internals =============================================================================
 
 
-   // DDR input data
-   wire [MAX_BUS_WIDTH-1:0] tTraceDina;
-   wire [MAX_BUS_WIDTH-1:0] tTraceDinb;
- 		    
-   wire 		    packetizer_avail_flag;
-   wire 		    packetizer_ack;
-   wire [127:0]             packetizer_packet;
-
-   reg [7:0] 		   filter_data;
-
-   wire 		   dataAvail;
-   wire 		   dataReady;
- 		   
-   wire 		   txFree;
-   
-   wire [7:0]		   rx_byte_tl;
-   wire 		   rxTrig_tl;
-   wire 		   rxErr_tl;
-
    wire 		   lock; // Indicator that PLL has locked
 
    wire 		   clk;
    wire 		   clkOut;
    wire 		   BtraceClk;
   
-
-   
 `ifdef NO_GB_IO_AVAILABLE
 // standard input pin for trace clock,
 // then route it into an internal global buffer.
@@ -110,6 +89,16 @@ SB_IO #(.PULLUP(0)) MtraceIn3
  .D_IN_1 (tTraceDinb[3])
  );
 
+   // DDR input data
+   wire [MAX_BUS_WIDTH-1:0] tTraceDina;
+   wire [MAX_BUS_WIDTH-1:0] tTraceDinb;
+ 		    
+   wire 		    wclk;
+   wire 		    wdavail;
+   wire [15:0] 		    packetwd;
+   wire 		    packetr;
+   wire 		    packetComm;
+   
   // -----------------------------------------------------------------------------------------
   traceIF #(.BUSWIDTH(MAX_BUS_WIDTH)) traceif (
                    .clk(clkOut), 
@@ -119,34 +108,53 @@ SB_IO #(.PULLUP(0)) MtraceIn3
                    .traceDina(tTraceDina),       // Tracedata rising edge ... 1-n bits
                    .traceDinb(tTraceDinb),       // Tracedata falling edge (LSB) ... 1-n bits		   
                    .traceClkin(BtraceClk),       // Tracedata clock
-		   .width(2),                    // Current trace buffer width 
+		   .width(1),                    // Current trace buffer width 
 
 		   // Upwards interface to packet processor
-		   .PackAvail(packetizer_avail_flag),   // Flag indicating packet is available
-		   .PacketOut(packetizer_packet),       // The next packet word
-		   .PackAvailAck(packetizer_ack),       // Flag indicating we've heard about the available packet
-		   .sync(sync_led)                      // Indicator of if we are in sync
-                   );
+		   .wrClk(wclk),                 // Clock for write side operations to fifo
+		   .WdAvail(wdavail),            // Flag indicating word is available
+		   .PacketWd(packetwd),          // The next packet word
+		   .PacketReset(packetr),        // Flag indicating to start again
+		   .PacketCommit(packetComm),    // Flag indicating packet is complete and can be processed
+
+   		   .sync(sync_led)               // Indicator that we are in sync
+		);		  
+
   // -----------------------------------------------------------------------------------------
-   packSend splitter (
-		   .clk(clkOut), 
-		   .rst(rst), 
 
-		   .sync(sync_led), // Indicator of if we are in sync
+   reg [7:0] 		    filter_data;
 
-		   // Downwards interface to target interface
-		   .PacketAvail(packetizer_avail_flag),     // Flag indicating packet is available
-		   .PacketIn(packetizer_packet),            // The next packet word
-		   .PacketAvailAck(packetizer_ack),         // Indicator that we've heard about the packet 		      
+   wire 		    dataAvail;
+   wire 		    dataReady;
+   
+   wire 		    txFree;
+   
+   wire [7:0] 		    rx_byte_tl;
+   wire 		    rxTrig_tl;
+   wire 		    rxErr_tl;
+   
+   packSend marshall (
+		      .clk(clkOut), 
+		      .rst(rst), 
 
-		   // Upwards interface to serial (or other) handler
-                   .DataReady(dataReady),
-		   .DataVal(filter_data),                   // Output data value
-		   .DataNext(txFree),                       // Request for data
+		      .sync(sync_led), // Indicator of if we are in sync
 
-                   .DataOverf(txOvf_led)                    // Too much data in buffer
+		      // Downwards interface to target interface
+		      .wrClk(wclk),                  // Clock for write side operations to fifo
+		      .WdAvail(wdavail),             // Flag indicating word is available
+		      .PacketReset(packetr),         // Flag indicating to start again
+		      .PacketWd(packetwd),           // The next packet word
+		      
+		      .PacketCommit(packetComm),     // Flag indicating packet is complete and can be processed
+		      
+		      // Upwards interface to serial (or other) handler
+                      .DataReady(dataReady),
+		      .DataVal(filter_data),         // Output data value
+		      .DataNext(txFree),             // Request for data
+		      
+                      .DataOverf(txOvf_led)          // Too much data in buffer
  		      );
-  // -----------------------------------------------------------------------------------------   
+   // -----------------------------------------------------------------------------------------   
    uart #(.CLOCKFRQ(48_000_000), .BAUDRATE(12_000_000))  receiver (
 	.clk(clkOut),                 // System Clock
 	.rst(rst),                 // System Reset
@@ -185,8 +193,6 @@ SB_IO #(.PULLUP(0)) MtraceIn3
 
    reg [25:0] 		   clkCount;
 
-   assign D6 = clkCount[25];
-   
    always @(posedge clkOut)
      begin
 	if (rst)
@@ -194,12 +200,14 @@ SB_IO #(.PULLUP(0)) MtraceIn3
 	     D5<=1'b0;
 	     D4<=1'b0;
 	     D3<=1'b0;
+	     D6<=1'b0;
 	     cts<=1'b0;
 	     clkCount <= 0;
 	  end
 	else
 	  begin	  
 	     clkCount <= clkCount + 1;
+	     D6<=clkCount[25];
 	  end // else: !if(rst)
      end
 endmodule // topLevel

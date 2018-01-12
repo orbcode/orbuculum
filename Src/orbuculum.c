@@ -1379,11 +1379,14 @@ int serialFeeder( void )
 }
 // ====================================================================================================
 #ifdef INCLUDE_FPGA_SUPPORT
+
+#define FTDI_HS_TRANSFER_SIZE (4096)
+
 int fpgaFeeder( void )
 
 {
     int f, t;
-    uint8_t cbw[TRANSFER_SIZE];
+    uint8_t cbw[FTDI_HS_TRANSFER_SIZE];
     uint8_t *c;
 
     _r.ftdi = ftdi_new();
@@ -1415,12 +1418,12 @@ int fpgaFeeder( void )
 
         ftdi_set_line_property( _r.ftdi, 8, STOP_BIT_1, NONE );
 
-        ftdi_read_data_set_chunksize( _r.ftdi, TRANSFER_SIZE );
+        ftdi_read_data_set_chunksize( _r.ftdi, FTDI_HS_TRANSFER_SIZE );
         ftdi_setdtr( _r.ftdi, true );
 
         genericsReport( V_INFO, "All parameters configured" EOL );
 
-        while ( ( t = ftdi_read_data( _r.ftdi, cbw, TRANSFER_SIZE ) ) >= 0 )
+        while ( ( t = ftdi_read_data( _r.ftdi, cbw, FTDI_HS_TRANSFER_SIZE ) ) >= 0 )
         {
             if ( !t )
             {
@@ -1430,12 +1433,11 @@ int fpgaFeeder( void )
             _sendToClients( t, cbw );
             c = cbw;
 	    genericsReport( V_DEBUG, "RXED Packet of %d bytes" EOL, t );
+	    
             while ( t-- )
             {
-	      //	      	      printf("%02X ",*c);
-                _protocolPump( *c++ );
+	      _protocolPump( *c++ );
             }
-
         }
 
         ftdi_setdtr( _r.ftdi, false );
