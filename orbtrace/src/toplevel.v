@@ -24,7 +24,7 @@ module topLevel(
 		output reg  D3,
 		output reg  cts,
 		output 	    yellow,
-		output 	    green   
+		output 	    green
 		);      
 	    
    // Parameters =============================================================================
@@ -108,10 +108,9 @@ SB_IO #(.PULLUP(0)) MtraceIn3
                    .traceDina(tTraceDina),       // Tracedata rising edge ... 1-n bits
                    .traceDinb(tTraceDinb),       // Tracedata falling edge (LSB) ... 1-n bits		   
                    .traceClkin(BtraceClk),       // Tracedata clock
-		   .width(1),                    // Current trace buffer width 
+		   .width(4),                    // Current trace buffer width 
 
 		   // Upwards interface to packet processor
-		   .wrClk(wclk),                 // Clock for write side operations to fifo
 		   .WdAvail(wdavail),            // Flag indicating word is available
 		   .PacketWd(packetwd),          // The next packet word
 		   .PacketReset(packetr),        // Flag indicating to start again
@@ -132,6 +131,7 @@ SB_IO #(.PULLUP(0)) MtraceIn3
    wire [7:0] 		    rx_byte_tl;
    wire 		    rxTrig_tl;
    wire 		    rxErr_tl;
+
    
    packSend marshall (
 		      .clk(clkOut), 
@@ -140,7 +140,7 @@ SB_IO #(.PULLUP(0)) MtraceIn3
 		      .sync(sync_led), // Indicator of if we are in sync
 
 		      // Downwards interface to target interface
-		      .wrClk(wclk),                  // Clock for write side operations to fifo
+		      .wrClk(BtraceClk),             // Clock for write side operations to fifo
 		      .WdAvail(wdavail),             // Flag indicating word is available
 		      .PacketReset(packetr),         // Flag indicating to start again
 		      .PacketWd(packetwd),           // The next packet word

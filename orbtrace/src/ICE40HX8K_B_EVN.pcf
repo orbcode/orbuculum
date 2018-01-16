@@ -25,6 +25,7 @@ set_io txOvf_led	C3	# LED7 (D2, red)
 # more LEDs (non-standard)
 set_io yellow		P15	# J2 pin 6
 set_io green		P16	# J2 pin 5
+set_io blue		R15	# J2 pin 4
 
 # other indicators (currently unused?)
 set_io D6		A1	# LED3 (D6, disabled)

@@ -19,14 +19,13 @@ module traceIF # (parameter BUSWIDTH = 4) (
 		input [2:0] 	     width, // How wide the bus under consideration is 1..4 (0, 3 & >4 invalid)
 
 	// Upwards interface to packet processor
-		output 		     wrClk, // Clock for write side operations to fifo
 		output reg 	     WdAvail, // Flag indicating word is available
 		output reg [15:0]    PacketWd, // The next packet word
 
 		output reg 	     PacketReset, // Flag indicating to start again
 		output reg 	     PacketCommit, // Flag indicating packet is complete and can be processed
 
-		output reg 	     sync // Indicator that we are in sync
+		output 		     sync // Indicator that we are in sync
 		);		  
    
    // Internals =============================================================================
@@ -34,7 +33,7 @@ module traceIF # (parameter BUSWIDTH = 4) (
    reg [38:0] 	construct;                // Track of data being constructed (extra bits for mis-sync)
    reg [4:0] 	readBits;                 // How many bits of the sample we have
    
-   reg [2:0] 	gotSync;                  // Pulse stretch between domains for sync
+   reg [1:0] 	gotSync;                  // Pulse stretch between domains for sync
    
    reg [23:0] 	lostSync;                 // Counter for sync loss timeout
 
@@ -43,9 +42,6 @@ module traceIF # (parameter BUSWIDTH = 4) (
    reg [2:0] 	offset;                   // Offset in sync process
 
    wire 	newSync;                  // Indicator that sync has been discovered
-
-   // Make the trace input clock available for writing to the dual port RAM
-   assign wrClk=traceClkin;
 
    // ================== Input data against traceclock from target system ====================
    always @(posedge traceClkin)
@@ -57,6 +53,7 @@ module traceIF # (parameter BUSWIDTH = 4) (
 	     gotSync<=0;
 	     PacketCommit<=1'b0;
 	     WdCount<=0;
+	     WdAvail<=0;
 	  end
 	else
 	  begin
@@ -71,27 +68,26 @@ module traceIF # (parameter BUSWIDTH = 4) (
 		      if (construct[36 -: 32]==32'h7fff_ffff) offset<=5;
 		      else
 			if (construct[35 -: 32]==32'h7fff_ffff) offset<=4;
-			else
-		   	  if (construct[34 -:32]==32'h7fff_ffff) offset<=3;		    
-			  else
-			    if (construct[33 -: 32]==32'h7fff_ffff) offset<=2;		    
-			    else
-			      if (construct[32 -:32]==32'h7fff_ffff) offset<=1;		    
-			      else
-				if (construct[31 -:32]==32'h7fff_ffff) offset<=0;
+//			else
+//		   	  if (construct[34 -:32]==32'h7fff_ffff) offset<=3;		    
+//			  else
+//			    if (construct[33 -: 32]==32'h7fff_ffff) offset<=2;		    
+//			    else
+//			      if (construct[32 -:32]==32'h7fff_ffff) offset<=1;		    
+//			      else
+//				if (construct[31 -:32]==32'h7fff_ffff) offset<=0;
 				else
 				  newSync=0;
-	       end else // if (gotSync==0)
-		 begin
-		    newSync=0;
-		    if (gotSync>0) gotSync<=gotSync-1;
-		    PacketReset <= 1'b0; // Stop erasing any partial packets
-		 end
+	       end // if (gotSync==0)
+	     else
+	       newSync=0;
+	     
 	     
 	     if (newSync==1)
 	       begin
 		  gotSync<=~0;                // We synced, let people know
 		  readBits<={1'b0,width}<<1;  // ... and reset writing position in recevied data
+		  
 		  PacketReset <= 1'b1;        // tell upstairs to erase any partial packet it got
 		  PacketCommit<=1'b0;       
 		  WdAvail <= 0;
@@ -99,6 +95,9 @@ module traceIF # (parameter BUSWIDTH = 4) (
 	       end
 	     else
 	       begin
+		  if (gotSync>0) gotSync<=gotSync-1;
+		  PacketReset <= 1'b0; // Stop erasing any partial packets
+
 		  // Deal with complete packet reception
 		  if (WdCount==8)
 		    begin
@@ -114,34 +113,30 @@ module traceIF # (parameter BUSWIDTH = 4) (
 		       // Deal with complete element reception ========================
 		       if ((sync) && (readBits==16))
 			 begin
+			    // Either a 7fff packet to be ignored or real data. Either way, we got 16 bits
+			    // of it, so reset the bits counter (bearing in mind we'll take a sample this cycle)
+			    readBits<={1'b0,width}<<1;
+			    
 			    // Got a full set of bits, so store them ... except if they're useless
-			    if (construct[31+offset -:16]!=16'h7fff)
+			    if (construct[31+offset -:16]==16'h7fff)
+			      WdAvail<=1'b0;
+			    else
 			      begin
 				 PacketWd<=construct[31+offset -:16];
 				 WdAvail<=1'b1;
 				 WdCount<=WdCount+1;
 			      end
-			    else
-			      begin
-				 WdAvail<=1'b0;
-			      end
-		       
-			    // Either a 7fff packet to be ignored or real data. Either way, we got 16 bits
-			    // of it, so reset the bits counter (bearing in mind we'll take a sample this cycle)
-			    readBits<={1'b0,width}<<1;
 			 end // if ((sync) && (readBits==16))
 		       else
 			 begin
 			    WdAvail<=1'b0;
+
 			    // We are still collecting data...increment the bits counter
 			    readBits<=readBits+({1'b0,width}<<1);
 			 end // else: !if((sync) && (readBits==16))
 		    end // else: !if(WdCount==8)
-		  
-
 	       end // else: !if(newSync==1)
-	     
-	     
+
 	     // Now get the new data elements that have arrived
 	     case (width)
 	       1: construct<={traceDinb[0],traceDina[0],construct[38:2]};

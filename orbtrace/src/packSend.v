@@ -9,15 +9,15 @@ module packSend (
 		
 		input 	     sync, // Indicator of if we are in sync
 		
-	        // Downwards interface to packet processor
+	        // Downwards interface to packet processor : wrClk Clock
 		input 	     wrClk, // Clock for write side operations to fifo
 		input 	     WdAvail, // Flag indicating word is available
 		input 	     PacketReset, // Flag indicating to start again
 		input [15:0] PacketWd, // The next packet word
 		input 	     PacketCommit, // Flag indicating packet is complete and can be processed
 		
-		// Upwards interface to serial (or other) handler
-		output [7:0] DataVal, // Output data value
+		// Upwards interface to serial (or other) handler : clk Clock
+		output [9:0] DataVal, // Output data value
 		input 	     DataNext, // Request for next data element
 		output reg   DataReady,
 		
@@ -25,109 +25,100 @@ module packSend (
  		);
 
    // Internals ==============================================================================
-   parameter BUFFLENLOG2=10;
+   parameter BUFFLENLOG2=12;
 
    reg [15:0] 			 opbuffmem[0:(2**BUFFLENLOG2)-1]; // Output buffer packet memory
 
-   reg [BUFFLENLOG2-1:0]	 outputRp;         // Element position in output buffer
-   reg [BUFFLENLOG2-1:0] 	 outputWpNext;     // Element position in output buffer for packet currently being written
+   reg [BUFFLENLOG2-1:0]	 outputRp;         // Read Element position in output buffer
+   reg [BUFFLENLOG2-1:0]	 outputRpGray;     // Read Element position in output buffer
+   reg [BUFFLENLOG2-1:0] 	 outputRpGrayR;    // Element position in output buffer for packet currently being written
+   reg [BUFFLENLOG2-1:0] 	 outputRpGrayRR;   // Element position in output buffer for packet currently being written
+
+   reg [BUFFLENLOG2-1:0]	 outputWp;         // Write Element position in output buffer
+   reg [BUFFLENLOG2-1:0]	 outputWpGrayR;    // Write Element position in output buffer
+   reg [BUFFLENLOG2-1:0]	 outputWpGrayRR;   // Write Element position in output buffer
+
+   reg [BUFFLENLOG2-1:0] 	 outputWpFrame;     // Element position in output buffer for packet currently being written
+   reg [BUFFLENLOG2-1:0] 	 outputWpFrameGray; // Element position in output buffer for packet currently being written
+   
    reg [BUFFLENLOG2-1:0] 	 opN;
    
-   reg [BUFFLENLOG2-1:0]	 outputWp;         // Element position in output buffer
+   reg 				 ovfSet;           // Cross domain flag for ovfStretch
+   reg [28:0] 			 ovfStretch;       // LED stretch for overflow indication
 
-   reg 				 oldSync;          // Flag indicating previous sync state
- 				
-   reg [16:0] 			 ovfStretch;       // LED stretch for overflow indication
+   reg 				 odd;              // Indicator of if even or add byte is being presented to upper level
+   reg 				 holdoff;
+   reg 				 bufferFlush;
+   
+   reg [20:0]                    syncArm;
+   reg [1:0] 			 syncSending;
 
-   reg [1:0] 			 queueState;       // State of the queuing mechanism
-   reg 				 odd;              // Indicator of if even or add byte is being presented to uppoer level
-   reg 				 PacketCommitSynced;
-   reg [10:0] 			 syncPktInterval;
- 			 
-   reg [1:0] 			 syncOfs;
-   
-   
-   parameter
-     WR_FF12=0,
-     WR_FF37=1,
-     WR_NORMAL=2;
 
-Signal_CrossDomain s (
-    .SignalIn_clkA(PacketCommit),
-    .clkB(clk),
-    .SignalOut_clkB(PacketCommitSynced)
-);
-   
+   // Gray Code Converter ====================================================================
+   function [BUFFLENLOG2-1:0] toGray;
+      input [BUFFLENLOG2-1:0] 	 inp;
+      begin
+	 toGray = {inp[BUFFLENLOG2-1],inp[BUFFLENLOG2-2:0] ^ inp[BUFFLENLOG2-1:1]};
+      end
+   endfunction // toGray
+
    // ======= Write data to RAM using source domain clock =================================================
    always @(posedge wrClk)
-     if ((rst) || (sync && !oldSync))
-       begin
-	  queueState<=WR_FF12;
-	  outputWpNext<=0;
-	  ovfStretch<=0;
-	  oldSync<=sync;
-	  syncOfs<=0;
-       end 
-     else
-       begin
-	  oldSync<=sync;
-	  if (ovfStretch!=0) ovfStretch<=ovfStretch-1;
-	  if (PacketReset) outputWpNext<=outputWp+syncOfs;
-	  else
-	    begin
-	       if (!PacketCommit)
-		 begin
-		    if (queueState!=WR_NORMAL)
-		      begin
-			 /* Write starter flag material */
-			 queueState<=queueState+1;				
-			 outputWpNext<=outputWpNext+1;
-			 case (queueState)
-			   WR_FF12:
-			     begin
-				opbuffmem[outputWpNext]<=16'hffff;
-				syncOfs<=2'd1;
-			     end
-			   WR_FF37:
-			     begin
-				opbuffmem[outputWpNext]<=16'h7fff;
-				syncOfs<=2'd2;
-			     end
-			 endcase
-		      end
-		    else
-		      begin
-			 /* Normal Queue State, See if there are any data to be filed */
-			 if (WdAvail)
-			   begin
-			      opN=outputWpNext+1;
-			      
-			      if (opN!=outputRp)
-				begin
-				   opbuffmem[outputWpNext]<= PacketWd;
-				   outputWpNext<=opN;
-				end
-			      else
-				begin
-				   /* Overflow condition - best flag it */
-				   ovfStretch<=~0;
-				end
-			   end // if ((WdAvail) || (wordPending))
-		      end // else: !if(queueState!=WR_NORMAL)
-		 end // if (!PacketCommit)
-	       else
-		 begin
-		    // No matter what, make sure we sync now and again
-		    syncOfs<=0;
-		    syncPktInterval<=syncPktInterval+1;
-		    if (syncPktInterval==0) queueState<=WR_FF12;
-		 end
-		    
-		    
+     begin
+	if (rst)
+	  begin
+	     outputWpFrame<=0;
+	     outputRpGrayR<=0;
+	     outputRpGrayRR<=0;	     
+	     outputWp<=0;
+	     ovfSet<=0;
+	     holdoff<=0;
+	  end
+	else
+	  begin
+	     // Output ReadPointer into our clock
+	     outputRpGrayR<=outputRpGray;
+	     outputRpGrayRR<=outputRpGrayR;	 
 
-	    end // else: !if(PacketReset)
-       end // else: !if(rst)
- 
+	     if (PacketCommit)
+	       begin
+		  holdoff<=0;
+		  ovfSet<=0;
+		  outputWp<=outputWpFrame;
+	       end
+	     else
+	     if (PacketReset) 
+	       begin
+		  holdoff<=0;
+		  ovfSet<=0;
+		  outputWpFrame<=outputWp;
+	       end
+	     else
+	       begin
+		  opN=outputWpFrame+1;
+		  
+		  if (toGray(opN)==outputRpGray)
+		    begin
+		       /* Overflow condition - best flag it and flush buffers */
+		       ovfSet<=1;
+		       holdoff<=1;
+		       outputWpFrame<=0;
+		       outputWp<=0;
+		    end
+		  else
+		    begin
+		       ovfSet<=0;
+		       bufferFlush<=0;
+		       if ((WdAvail)  && (!holdoff))
+			 begin
+			    opbuffmem[outputWpFrame]<=PacketWd;
+			    outputWpFrame<=opN;
+			 end
+		    end // else: !if(opN==outputRp)
+	       end // else: !if(PacketReset)
+	  end
+     end
+   
    
    // ======== Send data to upstairs if relevant, and dispatch to collect more from downstairs ============
 
@@ -135,37 +126,77 @@ Signal_CrossDomain s (
    
    always @(posedge clk)
      begin
-	if (rst)
+	if ((rst) || (ovfSet))
 	  begin
 	     // ============= Setup reset conditions ============================
 	     outputRp<=0;
-	     outputWp<=0;
+	     outputRpGray<=0;
+	     outputWpGrayR<=0;
+	     outputWpGrayRR<=0;
+	     if (ovfSet)
+	       ovfStretch<=~0;
+	     else
+	       ovfStretch<=0;
 	     odd<=0;
 	     DataReady<=0;
+	     syncSending<=0;
+	     syncArm<=0;
 	  end // else: !if(!rst)
 	else
 	  begin
-	     if (PacketCommitSynced) outputWp<=outputWpNext;
-	     
-	     DataVal<=(odd)?opbuffmem[outputRp][15:8]:opbuffmem[outputRp][7:0];
-	     	     
-	     // Check to see if anyone is asking us for data
-	     if (DataNext) 
+	     // Sync write position to our clock - only most significant bits
+	     // because we should only write out complete, comitted, packets
+	     outputWpGrayR<=toGray({outputWp[BUFFLENLOG2-1:3],3'b000});
+	     outputWpGrayRR<=outputWpGrayR;	 
+
+	     // Countdown interval to next sync transmission
+	     if (syncArm!=0) syncArm<=syncArm-1;
+
+	     // If there's been an overflow then stretch it out so the pulse is visible
+	     if (ovfStretch!=0) ovfStretch<=ovfStretch-1;
+
+
+	     // If we are at the end of a packet and the timeout has expired and we are
+	     // sync'ed then re-generate a sync packet to the host
+	     if ((outputRp[2:0]==0) && (!syncArm) && (!odd) && (sync))
 	       begin
-		  if ((outputWp!=outputRp) && (!DataReady)) 
+		  if ((DataNext) && (!DataReady))
 		    begin
+		       case(syncSending)
+			 0: DataVal<=8'hff;
+			 1: DataVal<=8'hff;
+			 2: DataVal<=8'hff;
+			 3: 
+			   begin
+			      DataVal<=8'h7f;
+			      syncArm<=~0;
+			   end
+		       endcase			 
+		       syncSending<=syncSending+1;
 		       DataReady<=1;
-		       if (odd)
-			 begin
-			    odd <= 0;
-			    outputRp<=outputRp+1;
-			 end
-		       else
-			 odd <= 1'b1;
-		       
 		    end
 		  else
 		    DataReady<=0;
+	       end // if ((outputRp==0) && (!syncArm))
+	     else
+	       begin
+		  // Check to see if anyone is asking us for data ... if so, and we have any, dispatch it
+		  if (DataNext) 
+		    begin
+		       if ((outputWpGrayRR!=outputRpGray) && (!DataReady))
+			 begin
+			    DataReady<=1;
+			    odd<=!odd;
+			    DataVal<=(odd)?opbuffmem[outputRp][15:8]:opbuffmem[outputRp][7:0];
+			    if (odd) 
+			      begin
+				 outputRp<=outputRp+1;
+				 outputRpGray<=toGray(outputRp+1);
+			      end
+			 end
+		       else
+			 DataReady<=0;
+		    end // if (DataNext)
 	       end
 	  end // if (!rst)
      end // always @ (posedge clk)
