@@ -30,10 +30,12 @@ module traceIF # (parameter BUSWIDTH = 4) (
    
    // Internals =============================================================================
 
-   reg [38:0] 	construct;                // Track of data being constructed (extra bits for mis-sync)
+   reg [35:0] 	construct;                // Track of data being constructed (extra bits for mis-sync)
    reg [4:0] 	readBits;                 // How many bits of the sample we have
    
    reg [1:0] 	gotSync;                  // Pulse stretch between domains for sync
+   reg 		prevSync;
+   
    
    reg [23:0] 	lostSync;                 // Counter for sync loss timeout
 
@@ -57,31 +59,19 @@ module traceIF # (parameter BUSWIDTH = 4) (
 	  end
 	else
 	  begin
+	     newSync=1;
 	     // Deal with sync flagging ===============================================
-	     if (gotSync==0)
-	       begin
-		  newSync=1;
-		  if (construct[38 -: 32]==32'h7fff_ffff) offset<=7;
-		  else
-		    if (construct[37 -: 32]==32'h7fff_ffff) offset<=6;
-		    else
-		      if (construct[36 -: 32]==32'h7fff_ffff) offset<=5;
-		      else
-			if (construct[35 -: 32]==32'h7fff_ffff) offset<=4;
-//			else
-//		   	  if (construct[34 -:32]==32'h7fff_ffff) offset<=3;		    
-//			  else
-//			    if (construct[33 -: 32]==32'h7fff_ffff) offset<=2;		    
-//			    else
-//			      if (construct[32 -:32]==32'h7fff_ffff) offset<=1;		    
-//			      else
-//				if (construct[31 -:32]==32'h7fff_ffff) offset<=0;
-				else
-				  newSync=0;
-	       end // if (gotSync==0)
+	     if (construct[35 -: 32]==32'h7fff_ffff) offset<=4;
 	     else
-	       newSync=0;
-	     
+	       if (construct[34 -: 32]==32'h7fff_ffff) offset<=3;
+	       else
+		 if ((width>1) && (construct[33 -: 32]==32'h7fff_ffff)) offset<=2;
+		 else
+		   if ((width>1) && (construct[32 -: 32]==32'h7fff_ffff)) offset<=1;
+		   else
+		     if ((width>2) && (construct[31 -:32]==32'h7fff_ffff)) offset<=0;	    
+		     else
+		       newSync=0;
 	     
 	     if (newSync==1)
 	       begin
@@ -139,9 +129,9 @@ module traceIF # (parameter BUSWIDTH = 4) (
 
 	     // Now get the new data elements that have arrived
 	     case (width)
-	       1: construct<={traceDinb[0],traceDina[0],construct[38:2]};
-	       2: construct<={traceDinb[1:0],traceDina[1:0],construct[38:4]};
-	       4: construct<={traceDinb[3:0],traceDina[3:0],construct[38:8]};
+	       1: construct<={traceDinb[0],traceDina[0],construct[35:2]};
+	       2: construct<={traceDinb[1:0],traceDina[1:0],construct[35:4]};
+	       4: construct<={traceDinb[3:0],traceDina[3:0],construct[35:8]};
 	       default:  construct<=0;  // These cases cannot really occur!
 	     endcase // case (width)
 	  end // else: !if(rst)
@@ -155,6 +145,8 @@ module traceIF # (parameter BUSWIDTH = 4) (
 	     // Reset states
 	     lostSync<=0;
 	     sync<=0;
+	     prevSync<=0;
+	     
 	  end // else: !if(!rst)
 	else
 	  begin
@@ -162,7 +154,9 @@ module traceIF # (parameter BUSWIDTH = 4) (
 	     sync<=(lostSync!=0);
 	     
 	     // ...and count down sync in case we don't see it again
-	     if (gotSync!=0) lostSync<=~0;
+	     prevSync<=(gotSync!=0);
+	     
+	     if ((gotSync!=0) && (prevSync==0)) lostSync<=~0;
 	     else 
 	       if (lostSync>0) lostSync<=lostSync-1;
 	  end // else: !if(rst)
