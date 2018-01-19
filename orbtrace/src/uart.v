@@ -57,8 +57,8 @@ module uart(
    
    // States for the transmitting state machine.
    // Constants - do not override.
-   parameter TX_IDLE = 2'd0;
-   parameter TX_SENDING = 2'd1;
+   parameter TX_IDLE = 1'd0;
+   parameter TX_SENDING = 1'd1;
    
    reg [12:0] 		 rx_clk_divider;
    reg [12:0] 		 tx_clk_divider;
@@ -97,8 +97,8 @@ module uart(
       else
 	begin
 
-	   if (rx_ledstretch) rx_ledstretch <= rx_ledstretch-17'd1;
-	   if (tx_ledstretch) tx_ledstretch <= tx_ledstretch-17'd1;
+	   if (rx_ledstretch!=0) rx_ledstretch <= rx_ledstretch-1;
+	   if (tx_ledstretch!=0) tx_ledstretch <= tx_ledstretch-1;
 	   
 	   // The clk_divider counter counts down from
 	   // the CLOCK_DIVIDE constant. Whenever it
@@ -106,14 +106,14 @@ module uart(
 	   // Countdown timers for the receiving and transmitting
 	   // state machines are decremented.
 	   rx_clk_divider <= rx_clk_divider - 1;
-	   if (!rx_clk_divider) 
+	   if (rx_clk_divider==0) 
 	     begin
 		rx_clk_divider <= CLOCK_DIVIDE;
 		rx_countdown <= rx_countdown - 1;
 	     end
 	   
 	   tx_clk_divider <= tx_clk_divider - 1;
-	   if (!tx_clk_divider) 
+	   if (tx_clk_divider==0) 
 	     begin
 		tx_clk_divider <= CLOCK_DIVIDE;
 		tx_countdown <= tx_countdown - 1;

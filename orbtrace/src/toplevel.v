@@ -15,16 +15,17 @@ module topLevel(
 		
 		// Config and housekeeping
 		input 	    clkIn,
-		input 	    rst,
+		input 	    rstIn,
 
 		// Other indicators
 		output reg  D6,
 		output reg  D5,
 		output reg  D4,
 		output reg  D3,
-		output reg  cts,
-		output 	    yellow,
-		output 	    green
+		output reg  cts
+//		,output 	    yellow
+//		,output 	    green
+//		,output      blue	    
 		);      
 	    
    // Parameters =============================================================================
@@ -35,7 +36,7 @@ module topLevel(
 
 
    wire 		   lock; // Indicator that PLL has locked
-
+   wire 		   rst;
    wire 		   clk;
    wire 		   clkOut;
    wire 		   BtraceClk;
@@ -57,7 +58,7 @@ SB_GB_IO #(.PIN_TYPE(6'b000001)) BtraceClk0
 `endif
 
 // Trace input pins config   
-SB_IO #(.PULLUP(0)) MtraceIn0
+SB_IO #(.PULLUP(1)) MtraceIn0
 (
  .PACKAGE_PIN (traceDin[0]),
  .INPUT_CLK (BtraceClk),
@@ -65,7 +66,7 @@ SB_IO #(.PULLUP(0)) MtraceIn0
  .D_IN_1 (tTraceDinb[0])
  );
    
-SB_IO #(.PULLUP(0)) MtraceIn1
+SB_IO #(.PULLUP(1)) MtraceIn1
 (
  .PACKAGE_PIN (traceDin[1]),
  .INPUT_CLK (BtraceClk),
@@ -73,7 +74,7 @@ SB_IO #(.PULLUP(0)) MtraceIn1
  .D_IN_1 (tTraceDinb[1])
   );
    
-SB_IO #(.PULLUP(0)) MtraceIn2
+SB_IO #(.PULLUP(1)) MtraceIn2
 (
  .PACKAGE_PIN (traceDin[2]),
  .INPUT_CLK (BtraceClk),
@@ -81,7 +82,7 @@ SB_IO #(.PULLUP(0)) MtraceIn2
  .D_IN_1 (tTraceDinb[2])
  );
    
-SB_IO #(.PULLUP(0)) MtraceIn3 
+SB_IO #(.PULLUP(1)) MtraceIn3 
 (
  .PACKAGE_PIN (traceDin[3]),
  .INPUT_CLK (BtraceClk),
@@ -97,7 +98,6 @@ SB_IO #(.PULLUP(0)) MtraceIn3
    wire 		    wdavail;
    wire [15:0] 		    packetwd;
    wire 		    packetr;
-   wire 		    packetComm;
    
   // -----------------------------------------------------------------------------------------
   traceIF #(.BUSWIDTH(MAX_BUS_WIDTH)) traceif (
@@ -114,11 +114,10 @@ SB_IO #(.PULLUP(0)) MtraceIn3
 		   .WdAvail(wdavail),            // Flag indicating word is available
 		   .PacketWd(packetwd),          // The next packet word
 		   .PacketReset(packetr),        // Flag indicating to start again
-		   .PacketCommit(packetComm),    // Flag indicating packet is complete and can be processed
 
    		   .sync(sync_led)               // Indicator that we are in sync
 		);		  
-
+   
   // -----------------------------------------------------------------------------------------
 
    reg [7:0] 		    filter_data;
@@ -144,8 +143,6 @@ SB_IO #(.PULLUP(0)) MtraceIn3
 		      .WdAvail(wdavail),             // Flag indicating word is available
 		      .PacketReset(packetr),         // Flag indicating to start again
 		      .PacketWd(packetwd),           // The next packet word
-		      
-		      .PacketCommit(packetComm),     // Flag indicating packet is complete and can be processed
 		      
 		      // Upwards interface to serial (or other) handler
                       .DataReady(dataReady),
@@ -193,6 +190,9 @@ SB_IO #(.PULLUP(0)) MtraceIn3
 
    reg [25:0] 		   clkCount;
 
+   // We don't want anything awake until the clocks are stable
+   assign rst=(lock&rstIn);
+   
    always @(posedge clkOut)
      begin
 	if (rst)

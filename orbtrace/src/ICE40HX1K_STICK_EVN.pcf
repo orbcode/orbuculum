@@ -10,7 +10,7 @@ set_io traceClk		116	# J1 pin 7
 # UART connection to PC
 set_io uartrx		9	# RX pin to FTDI
 set_io uarttx		8	# TX pin to FTDI
-set_io rst		3	# DTRn pin to FTDI
+set_io rstIn		3	# DTRn pin to FTDI
 set_io cts		4	# CTSn pin to FTDI
 
 # Oscillator clock for FPGA PLL

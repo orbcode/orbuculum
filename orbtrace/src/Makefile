@@ -1,4 +1,4 @@
-
+RVAL ?= $$RANDOM
 SUPPORTED_HARDWARE=ICE40HX8K_B_EVN ICE40HX1K_STICK_EVN
 
 .PHONY: all clean $(SUPPORTED_HARDWARE)
@@ -37,7 +37,7 @@ $(SUPPORTED_HARDWARE):%:%.bin
 # place and route stage:
 
 %.asc:
-	arachne-pnr -m 800 -d $(subst hx,,$(subst lp,,$(DEVICE))) -P $(PACKAGE) -p $(subst .asc,.pcf,$@) $< -o $@
+	arachne-pnr -s $(RVAL) -m 800 -d $(subst hx,,$(subst lp,,$(DEVICE))) -P $(PACKAGE) -p $(subst .asc,.pcf,$@) $< -o $@
 
 ICE40HX1K_STICK_EVN.asc: DEVICE := hx1k
 ICE40HX1K_STICK_EVN.asc: PACKAGE := tq144
@@ -57,4 +57,5 @@ traceIF_GBIO.blif: toplevel.v uart.v traceIF.v packSend.v flagSync.v
 
 traceIF_GB.blif: BUFFER_FLAGS=-DNO_GB_IO_AVAILABLE
 traceIF_GB.blif: toplevel.v uart.v traceIF.v packSend.v flagSync.v
+
 

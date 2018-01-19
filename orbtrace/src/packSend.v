@@ -14,10 +14,9 @@ module packSend (
 		input 	     WdAvail, // Flag indicating word is available
 		input 	     PacketReset, // Flag indicating to start again
 		input [15:0] PacketWd, // The next packet word
-		input 	     PacketCommit, // Flag indicating packet is complete and can be processed
-		
+
 		// Upwards interface to serial (or other) handler : clk Clock
-		output [9:0] DataVal, // Output data value
+		output [7:0] DataVal, // Output data value
 		input 	     DataNext, // Request for next data element
 		output reg   DataReady,
 		
@@ -29,90 +28,92 @@ module packSend (
 
    reg [15:0] 			 opbuffmem[0:(2**BUFFLENLOG2)-1]; // Output buffer packet memory
 
+   // DomB (System clk domain) registers
    reg [BUFFLENLOG2-1:0]	 outputRp;         // Read Element position in output buffer
-   reg [BUFFLENLOG2-1:0]	 outputRpGray;     // Read Element position in output buffer
-   reg [BUFFLENLOG2-1:0] 	 outputRpGrayR;    // Element position in output buffer for packet currently being written
-   reg [BUFFLENLOG2-1:0] 	 outputRpGrayRR;   // Element position in output buffer for packet currently being written
+   reg [BUFFLENLOG2-1:0] 	 outputRpPostBox;  // Postbox for output RP
+   reg [BUFFLENLOG2-1:0] 	 outputRpDomA;     // Second clock domain copy of RP
+   reg [1:0] 			 tickA2B;
+   reg 				 tickA;
+   reg 				 lastTickB;
+   
 
+   // DomA (Target clk domain) registers
    reg [BUFFLENLOG2-1:0]	 outputWp;         // Write Element position in output buffer
-   reg [BUFFLENLOG2-1:0]	 outputWpGrayR;    // Write Element position in output buffer
-   reg [BUFFLENLOG2-1:0]	 outputWpGrayRR;   // Write Element position in output buffer
+   reg [BUFFLENLOG2-4:0]	 outputWpPostBox;  // Postbox for output WP
+   reg [BUFFLENLOG2-4:0] 	 outputWpDomB;     // Second clock domain copy of WP
+   reg [1:0] 			 tickB2A;
+   reg 				 tickB;
+   reg 				 lastTickA;
+   
+   reg [BUFFLENLOG2-1:0] 	 opN;              // Output next value
 
-   reg [BUFFLENLOG2-1:0] 	 outputWpFrame;     // Element position in output buffer for packet currently being written
-   reg [BUFFLENLOG2-1:0] 	 outputWpFrameGray; // Element position in output buffer for packet currently being written
-   
-   reg [BUFFLENLOG2-1:0] 	 opN;
-   
-   reg 				 ovfSet;           // Cross domain flag for ovfStretch
-   reg [28:0] 			 ovfStretch;       // LED stretch for overflow indication
+   reg  			 ovfSet;           // Cross domain flag for ovfStretch
+   reg [25:0] 			 ovfStretch;       // LED stretch for overflow indication
 
    reg 				 odd;              // Indicator of if even or add byte is being presented to upper level
-   reg 				 holdoff;
-   reg 				 bufferFlush;
    
-   reg [20:0]                    syncArm;
-   reg [1:0] 			 syncSending;
-
-
-   // Gray Code Converter ====================================================================
-   function [BUFFLENLOG2-1:0] toGray;
-      input [BUFFLENLOG2-1:0] 	 inp;
-      begin
-	 toGray = {inp[BUFFLENLOG2-1],inp[BUFFLENLOG2-2:0] ^ inp[BUFFLENLOG2-1:1]};
-      end
-   endfunction // toGray
+   reg [16:0]                    syncArm;          // Interval countdown for sending sync pulses for keepalive
+   reg [1:0] 			 syncSending;      // Current state of sync sending process
 
    // ======= Write data to RAM using source domain clock =================================================
-   always @(posedge wrClk)
+   always @(posedge wrClk) // Clock Domain A : From the target
      begin
 	if (rst)
 	  begin
-	     outputWpFrame<=0;
-	     outputRpGrayR<=0;
-	     outputRpGrayRR<=0;	     
 	     outputWp<=0;
+	     outputWpPostBox<=0;
+	     outputRpDomA<=0;
 	     ovfSet<=0;
-	     holdoff<=0;
+	     tickB2A<=0;
+	     lastTickB<=0;
+	     tickA<=0;
 	  end
 	else
 	  begin
-	     // Output ReadPointer into our clock
-	     outputRpGrayR<=outputRpGray;
-	     outputRpGrayRR<=outputRpGrayR;	 
+	     // Domain cross the sync tick from domain B (the system Clock domain)
+	     tickB2A[0]<=tickB;
+	     tickB2A[1]<=tickB2A[0];
+	     lastTickB<=tickB2A[1];
 
-	     if (PacketCommit)
+	     // Get ReadPointer into our clock, so we can see if there is room for more data
+	     if (lastTickB!=tickB2A[1])
 	       begin
-		  holdoff<=0;
-		  ovfSet<=0;
-		  outputWp<=outputWpFrame;
+		  // Get the latest info about the read pointer
+		  outputRpDomA<=outputRpPostBox;
 	       end
-	     else
+
 	     if (PacketReset) 
 	       begin
-		  holdoff<=0;
-		  ovfSet<=0;
-		  outputWpFrame<=outputWp;
+		  // Need to send a tick to get an update for Rp, but no need to re-send our postbox
+		  outputWp<={outputWp[BUFFLENLOG2-1:3],3'b000};
+		  tickA<=!tickA;
+		  ovfSet<=1'b0;
 	       end
 	     else
 	       begin
-		  opN=outputWpFrame+1;
+		  opN=outputWp+1;
 		  
-		  if (toGray(opN)==outputRpGray)
+		  if (opN==outputRpDomA)
 		    begin
-		       /* Overflow condition - best flag it and flush buffers */
-		       ovfSet<=1;
-		       holdoff<=1;
-		       outputWpFrame<=0;
-		       outputWp<=0;
+		       /* Overflow condition - best flag it and flush buffers (when PacketReset Rxed) */
+		       ovfSet<=1'b1;
 		    end
 		  else
 		    begin
-		       ovfSet<=0;
-		       bufferFlush<=0;
-		       if ((WdAvail)  && (!holdoff))
+		       if (WdAvail)
 			 begin
-			    opbuffmem[outputWpFrame]<=PacketWd;
-			    outputWpFrame<=opN;
+			    // Let the other end know something interesting happened if this will be a complete packet
+			    if (opN[2:0]==0)
+			      begin
+				 outputWpPostBox<=outputWp[BUFFLENLOG2-1:3];
+				 tickA<=!tickA;
+			      end
+
+			    if (!ovfSet)
+			      begin
+				 opbuffmem[outputWp]<=PacketWd;
+				 outputWp<=opN;
+			      end
 			 end
 		    end // else: !if(opN==outputRp)
 	       end // else: !if(PacketReset)
@@ -124,80 +125,84 @@ module packSend (
 
    assign DataOverf=(ovfStretch>0);
    
-   always @(posedge clk)
+   always @(posedge clk)  // Clock Domain B : From the system PLL
      begin
-	if ((rst) || (ovfSet))
+	if (rst)
 	  begin
 	     // ============= Setup reset conditions ============================
+	     ovfStretch<=0;
 	     outputRp<=0;
-	     outputRpGray<=0;
-	     outputWpGrayR<=0;
-	     outputWpGrayRR<=0;
-	     if (ovfSet)
-	       ovfStretch<=~0;
-	     else
-	       ovfStretch<=0;
 	     odd<=0;
 	     DataReady<=0;
 	     syncSending<=0;
 	     syncArm<=0;
+	     tickA2B<=0;
+	     outputRpPostBox<=0;
+	     lastTickA<=0;
+	     outputWpDomB<=0;
+	     tickB<=1;
 	  end // else: !if(!rst)
 	else
 	  begin
-	     // Sync write position to our clock - only most significant bits
-	     // because we should only write out complete, comitted, packets
-	     outputWpGrayR<=toGray({outputWp[BUFFLENLOG2-1:3],3'b000});
-	     outputWpGrayRR<=outputWpGrayR;	 
+	     // Domain cross the sync tick from domain B (the system Clock domain)
+	     tickA2B[0]<=tickA;
+	     tickA2B[1]<=tickA2B[0];
+	     lastTickA<=tickA2B[1];
 
+	     // Get WritePointer into our clock so we know what's available for transmission
+	     // and post current value of Read Pointer.
+	     if (lastTickA!=tickA2B[1])
+	       begin
+		  outputRpPostBox<=outputRp;
+		  outputWpDomB<=outputWpPostBox;
+		  tickB<=!tickB;
+	       end
+
+	     // If there's been an overflow then stretch it out so the pulse is visible
+	     if (ovfSet!=0) ovfStretch<=~0;
+	     else
+	       if (ovfStretch!=0) ovfStretch<=ovfStretch-1;
+	     
 	     // Countdown interval to next sync transmission
 	     if (syncArm!=0) syncArm<=syncArm-1;
 
-	     // If there's been an overflow then stretch it out so the pulse is visible
-	     if (ovfStretch!=0) ovfStretch<=ovfStretch-1;
-
-
-	     // If we are at the end of a packet and the timeout has expired and we are
-	     // sync'ed then re-generate a sync packet to the host
-	     if ((outputRp[2:0]==0) && (!syncArm) && (!odd) && (sync))
+	     // Things to do if there's the potential to send a byte to the serial link
+	     if ((DataNext) & (!DataReady))
 	       begin
-		  if ((DataNext) && (!DataReady))
+		  if ((outputRp[2:0]!=0) || odd || syncArm!=0)
 		    begin
-		       case(syncSending)
-			 0: DataVal<=8'hff;
-			 1: DataVal<=8'hff;
-			 2: DataVal<=8'hff;
-			 3: 
-			   begin
-			      DataVal<=8'h7f;
-			      syncArm<=~0;
-			   end
-		       endcase			 
-		       syncSending<=syncSending+1;
-		       DataReady<=1;
-		    end
-		  else
-		    DataReady<=0;
-	       end // if ((outputRp==0) && (!syncArm))
-	     else
-	       begin
-		  // Check to see if anyone is asking us for data ... if so, and we have any, dispatch it
-		  if (DataNext) 
-		    begin
-		       if ((outputWpGrayRR!=outputRpGray) && (!DataReady))
+		       // Check and send regular data element
+		       if ({outputWpDomB,3'b000}!=outputRp)
 			 begin
 			    DataReady<=1;
 			    odd<=!odd;
 			    DataVal<=(odd)?opbuffmem[outputRp][15:8]:opbuffmem[outputRp][7:0];
-			    if (odd) 
-			      begin
-				 outputRp<=outputRp+1;
-				 outputRpGray<=toGray(outputRp+1);
-			      end
+			    if (odd) outputRp<=outputRp+1;
+			 end // if (outputWpDomB!=outputRp)
+		    end // if ((outputRp[2:0]!=0) || odd || syncArm!=0)
+		  else
+		    begin
+		       // If we are at the start of a packet and the timeout has expired and we are
+		       // sync'ed then re-generate a sync packet to the host
+		       if ((syncArm==0) && (sync))
+			 begin
+			    case(syncSending)
+			      0: DataVal<=8'hff;
+			      1: DataVal<=8'hff;
+			      2: DataVal<=8'hff;
+			      3: 
+				begin
+				   DataVal<=8'h7f;
+				   syncArm<=~0;
+				end
+			    endcase			 
+			    syncSending<=syncSending+1;
+			    DataReady<=1;
 			 end
-		       else
-			 DataReady<=0;
-		    end // if (DataNext)
-	       end
-	  end // if (!rst)
+		    end // else: !if((outputRp[2:0]!=0) || odd || syncArm!=0)
+	       end // if ((DataNext) & (!DataReady))
+	     else
+	       DataReady<=0;
+	  end // else: !if(rst)
      end // always @ (posedge clk)
 endmodule // packSend

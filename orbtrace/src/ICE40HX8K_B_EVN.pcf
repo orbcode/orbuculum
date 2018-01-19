@@ -10,7 +10,7 @@ set_io traceClk		H16	# J2 pin 25
 # UART connection to PC
 set_io uartrx		B10	# RX pin of FT2232H
 set_io uarttx		B12	# TX pin of FT2232H
-set_io rst		A16	# DTRn pin of FT2232H
+set_io rstIn		A16	# DTRn pin of FT2232H
 set_io cts		A15	# CTSn pin of FT2232H
 
 # Oscillator clock for FPGA PLL
