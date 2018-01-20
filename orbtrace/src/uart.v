@@ -136,7 +136,7 @@ module uart(
 	       end
 	     RX_CHECK_START: // ------------------------------------------------------
 	       begin
-		  if (!rx_countdown) 
+		  if (rx_countdown==0) 
 		    begin
 		       // Check the pulse is still there
 		       if (!rx) 
@@ -159,7 +159,7 @@ module uart(
 	       end
 	     RX_READ_BITS: // -------------------------------------------------------
 	       begin
-		  if (!rx_countdown) 
+		  if (rx_countdown==0) 
 		    begin
 		       // Should be half-way through a bit pulse here.
 		       // Read this bit in, wait for the next if we
@@ -167,12 +167,12 @@ module uart(
 		       rx_data <= {rx, rx_data[7:1]};
 		       rx_countdown <= COUNTDOWN;
 		       rx_bits_remaining <= rx_bits_remaining - 1;
-		       recv_state <= rx_bits_remaining ? RX_READ_BITS : RX_CHECK_STOP;
+		       recv_state <= (rx_bits_remaining!=0) ? RX_READ_BITS : RX_CHECK_STOP;
 		    end
 	       end
 	     RX_CHECK_STOP:  // -----------------------------------------------------
 	       begin
-		  if (!rx_countdown) 
+		  if (rx_countdown==0) 
 		    begin
 		       // Should resume half-way through the stop bit
 		       // This should be high - if not, reject the
@@ -191,7 +191,7 @@ module uart(
 	       begin
 		  // Waits a set number of cycles before accepting
 		  // another transmission.
-		  recv_state <= rx_countdown ? RX_DELAY_RESTART : RX_IDLE;
+		  recv_state <= (rx_countdown!=0) ? RX_DELAY_RESTART : RX_IDLE;
 	       end
 	     RX_ERROR: // ----------------------------------------------------------
 	       begin
@@ -240,9 +240,9 @@ module uart(
 	     
 	     TX_SENDING: // --------------------------------------------------------
 	       begin
-		  if (!tx_countdown) 
+		  if (tx_countdown==0) 
 		    begin
-		       if (tx_bits_remaining) 
+		       if (tx_bits_remaining!=0) 
 			 begin
 			    tx_bits_remaining <= tx_bits_remaining - 4'd1;
 			    tx <= tx_data[0];

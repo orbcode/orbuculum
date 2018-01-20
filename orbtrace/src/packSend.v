@@ -52,7 +52,7 @@ module packSend (
 
    reg 				 odd;              // Indicator of if even or add byte is being presented to upper level
    
-   reg [16:0]                    syncArm;          // Interval countdown for sending sync pulses for keepalive
+   reg [20:0]                    syncArm;          // Interval countdown for sending sync pulses for keepalive
    reg [1:0] 			 syncSending;      // Current state of sync sending process
 
    // ======= Write data to RAM using source domain clock =================================================
