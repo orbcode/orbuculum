@@ -57,10 +57,16 @@
 
 #ifdef INCLUDE_FPGA_SUPPORT
     #include <libftdi1/ftdi.h>
+    #include "ftdispi.h"
     #define FTDI_VID  (0x0403)
     #define FTDI_PID  (0x6010)
-    #define FTDI_INTERFACE (INTERFACE_B)
-#define FTDI_INTERFACE_SPEED (12000000)
+    #define FTDI_INTERFACE (INTERFACE_A)
+    #define FTDI_UART_INTERFACE (INTERFACE_B)
+    #define FTDI_INTERFACE_SPEED CLOCK_MAX_SPEEDX5
+    #define FTDI_PACKET_SIZE  (17)
+    #define FTDI_NUM_FRAMES   (960)  // If you make this too large the driver drops frames
+    #define FTDI_HS_TRANSFER_SIZE (FTDI_PACKET_SIZE*FTDI_NUM_FRAMES)
+    // #define DUMP_FTDI_BYTES // Uncomment to get data dump of bytes from FTDI transfer
 #endif
 
 #define SERVER_PORT 3443                      /* Server port definition */
@@ -99,6 +105,7 @@ struct
 
 #ifdef INCLUDE_FPGA_SUPPORT
     bool orbtrace;
+    uint32_t orbtraceWidth;
 #endif
     char *seggerHost;
     int32_t seggerPort;
@@ -121,6 +128,10 @@ struct
     .useTPIU = false,
     .tpiuITMChannel = 1,
     .seggerHost = SEGGER_HOST
+#ifdef INCLUDE_FPGA_SUPPORT
+    ,
+    .orbtraceWidth = 4
+#endif
 };
 
 
@@ -168,6 +179,7 @@ struct
 
 #ifdef INCLUDE_FPGA_SUPPORT
     struct ftdi_context *ftdi;
+    struct ftdispi_context ftdifsc;
 #endif
 } _r;
 
@@ -839,17 +851,17 @@ void _itmPumpProcess( char c )
             _handleHW( &_r.i );
             break;
 
-        // ------------------------------------	    
+        // ------------------------------------
         case ITM_EV_RESERVED_PACKET_RXED:
             genericsReport( V_INFO, "Reserved Packet Received" EOL );
-	    break;
+            break;
 
-        // ------------------------------------	    	  
-    case ITM_EV_XTN_PACKET_RXED:
+        // ------------------------------------
+        case ITM_EV_XTN_PACKET_RXED:
             genericsReport( V_INFO, "Unknown Extension Packet Received" EOL );
-	    break;
+            break;
 
-	    // ------------------------------------
+            // ------------------------------------
     }
 }
 // ====================================================================================================
@@ -944,7 +956,7 @@ void _printHelp( char *progName )
     fprintf( stdout, "        i: <channel> Set ITM Channel in TPIU decode (defaults to 1)" EOL );
     fprintf( stdout, "        n: Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
 #ifdef INCLUDE_FPGA_SUPPORT
-    fprintf( stdout, "        o: Use orbuculum custom interface" EOL );
+    fprintf( stdout, "        o: <num> Use traceport FPGA custom interface with 1, 2 or 4 bits width" EOL );
 #endif
     fprintf( stdout, "        p: <serialPort> to use" EOL );
     fprintf( stdout, "        s: <address>:<port> Set address for SEGGER JLink connection (default none:%d)" EOL, SEGGER_PORT );
@@ -961,7 +973,7 @@ int _processOptions( int argc, char *argv[] )
     char *chanIndex;
 #define DELIMITER ','
 
-    while ( ( c = getopt ( argc, argv, "a:b:c:f:hi:nop:s:tv:" ) ) != -1 )
+    while ( ( c = getopt ( argc, argv, "a:b:c:f:hi:no:p:s:tv:" ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -1000,6 +1012,7 @@ int _processOptions( int argc, char *argv[] )
                 // Generally you need TPIU for orbtrace
                 options.useTPIU = true;
                 options.orbtrace = true;
+                options.orbtraceWidth = atoi( optarg );
                 break;
 #endif
 
@@ -1115,6 +1128,12 @@ int _processOptions( int argc, char *argv[] )
         return false;
     }
 
+    if ( ( options.orbtrace ) && !( ( options.orbtraceWidth == 1 ) || ( options.orbtraceWidth == 2 ) || ( options.orbtraceWidth == 4 ) ) )
+    {
+        genericsReport( V_ERROR, "Orbtrace interface illegal port width" EOL );
+        return false;
+    }
+
     /* ... and dump the config if we're being verbose */
     genericsReport( V_INFO, "Orbuculum V" VERSION " (Git %08X %s, Built " BUILD_DATE ")" EOL, GIT_HASH, ( GIT_DIRTY ? "Dirty" : "Clean" ) );
 
@@ -1135,7 +1154,7 @@ int _processOptions( int argc, char *argv[] )
 
     if ( options.orbtrace )
     {
-        genericsReport( V_INFO, "Orbtrace   : true" EOL );
+        genericsReport( V_INFO, "Orbtrace   : %d bits width" EOL, options.orbtraceWidth );
     }
 
 #endif
@@ -1234,7 +1253,7 @@ int usbFeeder( void )
             _sendToClients( size, cbw );
             unsigned char *c = cbw;
 
-            genericsReport( V_DEBUG, "RXED Packet of %d bytes" EOL,size);
+            genericsReport( V_DEBUG, "RXED Packet of %d bytes" EOL, size );
 
             while ( size-- )
             {
@@ -1380,22 +1399,40 @@ int serialFeeder( void )
 // ====================================================================================================
 #ifdef INCLUDE_FPGA_SUPPORT
 
-#define FTDI_HS_TRANSFER_SIZE (4096)
-
 int fpgaFeeder( void )
 
 {
     int f, t;
     uint8_t cbw[FTDI_HS_TRANSFER_SIZE];
+    uint8_t scratchBuffer[FTDI_HS_TRANSFER_SIZE - FTDI_NUM_FRAMES];
     uint8_t *c;
+    uint8_t *d;
+    uint8_t initSequence[] = {0xA5, 0xAC};
+
+    // Insert appropriate control byte to set port width for trace
+    initSequence[1] = ( char[] )
+    {
+        0xA0, 0xA4, 0xAC, 0xAC
+    }[options.orbtraceWidth - 1];
 
     _r.ftdi = ftdi_new();
+    ftdi_set_interface( _r.ftdi, FTDI_UART_INTERFACE );
+    ftdi_usb_open( _r.ftdi, FTDI_VID, FTDI_PID );
+    ftdi_setdtr_rts( _r.ftdi, true, false );
+    ftdi_usb_close( _r.ftdi );
+    ftdi_deinit( _r.ftdi );
+
+    // FTDI Chip takes a little while to reset itself
+    usleep( 400000 );
 
     while ( 1 )
     {
+
+
+        _r.ftdi = ftdi_new();
+
         do
         {
-            ftdi_set_interface( _r.ftdi, FTDI_INTERFACE );
             f = ftdi_usb_open( _r.ftdi, FTDI_VID, FTDI_PID );
 
             if ( f < 0 )
@@ -1408,46 +1445,80 @@ int fpgaFeeder( void )
 
         genericsReport( V_INFO, "Port opened" EOL );
 
-        f = ftdi_set_baudrate( _r.ftdi, FTDI_INTERFACE_SPEED );
+        f = ftdispi_open( &_r.ftdifsc, _r.ftdi, FTDI_INTERFACE );
 
         if ( f < 0 )
         {
-            genericsReport( V_ERROR, "Cannot set baudate %d %d (%s)" EOL, f, FTDI_INTERFACE_SPEED, ftdi_get_error_string( _r.ftdi ) );
+            genericsReport( V_ERROR, "Cannot open spi %d (%s)" EOL, f, ftdi_get_error_string( _r.ftdi ) );
             return -2;
         }
 
-        ftdi_set_line_property( _r.ftdi, 8, STOP_BIT_1, NONE );
+        ftdispi_setmode( &_r.ftdifsc, 1, 0, 1, 0, 0, 0x90 );
 
-        ftdi_read_data_set_chunksize( _r.ftdi, FTDI_HS_TRANSFER_SIZE );
-        ftdi_setdtr( _r.ftdi, true );
+        ftdispi_setloopback( &_r.ftdifsc, 0 );
+
+        f = ftdispi_setclock( &_r.ftdifsc, FTDI_INTERFACE_SPEED );
+
+        if ( f < 0 )
+        {
+            genericsReport( V_ERROR, "Cannot set clockrate %d %d (%s)" EOL, f, FTDI_INTERFACE_SPEED, ftdi_get_error_string( _r.ftdi ) );
+            return -2;
+        }
 
         genericsReport( V_INFO, "All parameters configured" EOL );
 
-        while ( ( t = ftdi_read_data( _r.ftdi, cbw, FTDI_HS_TRANSFER_SIZE ) ) >= 0 )
+
+        TPIUDecoderForceSync( &_r.t, 0 );
+
+        while ( ( t = ftdispi_write_read( &_r.ftdifsc, initSequence, 2, cbw, FTDI_HS_TRANSFER_SIZE, 0x80 ) ) >= 0 )
         {
-            if ( !t )
+            c = cbw;
+            d = scratchBuffer;
+
+            for ( f = 0; f < FTDI_NUM_FRAMES; f++ )
             {
-                continue;
+                if ( ( *c ) & 0x80 )
+                {
+                    // This frame has no useful data
+                    c += FTDI_PACKET_SIZE;
+                    continue;
+                }
+                else
+                {
+                    // This frame contains something - copy and feed it, excluding header byte
+                    memcpy( d, &c[1], FTDI_PACKET_SIZE - 1 );
+                    d += FTDI_PACKET_SIZE - 1;
+
+                    for ( uint32_t e = 1; e < FTDI_PACKET_SIZE; e++ )
+                    {
+#ifdef DUMP_FTDI_BYTES
+                        printf( "%02X ", c[e] );
+#endif
+                        _protocolPump( c[e] );
+                    }
+
+                    c += FTDI_PACKET_SIZE;
+#ifdef DUMP_FTDI_BYTES
+                    printf( "\n" );
+#endif
+                }
             }
 
-            _sendToClients( t, cbw );
-            c = cbw;
-	    genericsReport( V_DEBUG, "RXED Packet of %d bytes" EOL, t );
-	    
-            while ( t-- )
-            {
-	      _protocolPump( *c++ );
-            }
+            genericsReport( V_WARN, "RXED frame of %d/%d full packets (%3d%%)" EOL,
+                            ( d - scratchBuffer ) / ( FTDI_PACKET_SIZE - 1 ), FTDI_NUM_FRAMES, ( ( d - scratchBuffer ) * 100 ) / ( FTDI_HS_TRANSFER_SIZE - FTDI_NUM_FRAMES ) );
+
+            _sendToClients( ( d - scratchBuffer ), scratchBuffer );
+            //  exit(-1);
         }
 
-        ftdi_setdtr( _r.ftdi, false );
+        genericsReport( V_INFO, "Read failed (,%d, %s)" EOL, t, ftdi_get_error_string( _r.ftdi ) );
+        ftdispi_close( &_r.ftdifsc, 1 );
 
-        genericsReport( V_WARN, "Read failed" EOL );
-
-        ftdi_usb_close( _r.ftdi );
+        //ftdi_usb_close( _r.ftdi );
         _r.ftdi = NULL;
     }
 }
+
 // ====================================================================================================
 void fpgaFeederClose( void )
 
@@ -1459,7 +1530,7 @@ void fpgaFeederClose( void )
     ftdi_usb_close( _r.ftdi );
     ftdi_deinit( _r.ftdi );
     _r.ftdi = ftdi_new();
-    ftdi_set_interface( _r.ftdi, FTDI_INTERFACE );
+    ftdi_set_interface( _r.ftdi, FTDI_UART_INTERFACE );
     ftdi_usb_open( _r.ftdi, FTDI_VID, FTDI_PID );
     ftdi_setdtr_rts( _r.ftdi, false, false );
     ftdi_usb_close( _r.ftdi );

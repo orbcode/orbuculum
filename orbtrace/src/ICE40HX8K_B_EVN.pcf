@@ -13,6 +13,12 @@ set_io uarttx		B12	# TX pin of FT2232H
 set_io rstIn		A16	# DTRn pin of FT2232H
 set_io cts		A15	# CTSn pin of FT2232H
 
+# SPI connection to PC
+set_io spitx            P12
+set_io spirx            P11
+set_io spiclk	        R11
+set_io spics            R12
+
 # Oscillator clock for FPGA PLL
 set_io clkIn		J3	# connected to 12MHz xtal
 

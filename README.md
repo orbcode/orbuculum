@@ -9,8 +9,8 @@ You can find information about using this suite on the Embedded Rambling
 blog at http://shadetail.com/.
 
 *This program is in heavy development. Check back frequently for new versions 
-with additional functionality. The current status (9th Jan) is that the fpga
-code is starting to stablise nicely, but only for 1 & 2 bit parallel operation...still more work to be done there.  The apps appear quite stable though.*
+with additional functionality. The current status (23rd Jan) is that the fpga
+code appears stable for 1, 2 and 4 bit parallel port operation, and support has been integrated into orbuclum for it.  It's not fully documented though so you might be digging through source files to use it.*
 
 The code is in daily use now and small issues
 are patched as they are found. The parallel trace hardware using a iCE40HX-8K breakout board and the icestorm tools is stable and hardware is in development.
@@ -103,7 +103,7 @@ you are using.
 When using parallel trace you are limited by the capabilities of the FPGA configuration and
 the speed you can get data off the chip. The current maximum speed supported for the
 target is around 150MHz but you will swamp the chip very quickly if you start streaming
-data at that speed. The offboard link is only 12Mbps serial. This issue will be
+data at that speed. The offboard link is curently limited to about 22Mbps serial. This issue will be
 resolved when dedicated FPGA target hardware is available (it's on its way).
 
 Configuring the Target
@@ -176,8 +176,7 @@ replace them with the following;
     enableSTM32TRACE                         <---- Switch on parallel trace on the STM32
     prepareTRACE 4                           <---- Set up the TPIU for 4 bit output (or 2 or 1)
 
-...be careful to set the trace width to be the same as what you've configured on the FPGA (the .width
-parameter in toplevel.v).
+...be careful to set the trace width to be the same as what you've configured on the FPGA (the -o parameter on the orbuculum command line).
 
 Building
 ========
@@ -275,7 +274,7 @@ Specific command line options of note are;
 
   `-n`: Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)
 
-  `-o`: Use the custom (ice40 FPGA) based interface (if compiled with support)
+  `-o [width]`: Use the custom (ice40 FPGA) based interface (if compiled with support) at specified port width. Current fpga supports 1, 2 and 4 bit parallel operation.
 
   `-p [serialPort]`: to use. If not specified then the program defaults to Blackmagic probe.
 
@@ -403,6 +402,7 @@ links as follows;
   * D9: Sync has been established with the target.
   * D8: Data Receive from host computer.
   * D7: Data Send to host computer.
+  * D6: Heartbeat
   * D2: Data overflow (too much data for FPGA to host link).
 
 For normal operation you can burn the program image into the configuration serial memory

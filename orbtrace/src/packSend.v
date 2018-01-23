@@ -4,23 +4,27 @@
 // ========
 //
 module packSend (
-		input 	     clk, // System Clock
-		input 	     rst, // Clock synchronised reset
+		input 	      clk, // System Clock
+		input 	      rst, // Clock synchronised reset
 		
-		input 	     sync, // Indicator of if we are in sync
+		input 	      sync, // Indicator of if we are in sync
 		
 	        // Downwards interface to packet processor : wrClk Clock
-		input 	     wrClk, // Clock for write side operations to fifo
-		input 	     WdAvail, // Flag indicating word is available
-		input 	     PacketReset, // Flag indicating to start again
-		input [15:0] PacketWd, // The next packet word
+		input 	      wrClk, // Clock for write side operations to fifo
+		input 	      WdAvail, // Flag indicating word is available
+		input 	      PacketReset, // Flag indicating to start again
+		input [15:0]  PacketWd, // The next packet word
 
 		// Upwards interface to serial (or other) handler : clk Clock
-		output [7:0] DataVal, // Output data value
-		input 	     DataNext, // Request for next data element
-		output reg   DataReady,
-		
-		output 	     DataOverf // Too much data in buffer
+		output [15:0] DataVal, // Output data value
+
+		input 	      rdClk,
+		input 	      DataNext, // Request for next data element
+		output reg    DataReady, // Indicator that the next data element is available
+		input 	      DataFrameReset, // Reset to start of data frame
+		output reg    FrameReady, // Indicator that a complete frame of data is available
+ 
+		output 	      DataOverf // Too much data in buffer
  		);
 
    // Internals ==============================================================================
@@ -52,8 +56,8 @@ module packSend (
 
    reg 				 odd;              // Indicator of if even or add byte is being presented to upper level
    
-   reg [20:0]                    syncArm;          // Interval countdown for sending sync pulses for keepalive
-   reg [1:0] 			 syncSending;      // Current state of sync sending process
+   reg 				 oldDataNext;
+   
 
    // ======= Write data to RAM using source domain clock =================================================
    always @(posedge wrClk) // Clock Domain A : From the target
@@ -67,6 +71,7 @@ module packSend (
 	     tickB2A<=0;
 	     lastTickB<=0;
 	     tickA<=0;
+	     oldDataNext<=0;
 	  end
 	else
 	  begin
@@ -124,8 +129,10 @@ module packSend (
    // ======== Send data to upstairs if relevant, and dispatch to collect more from downstairs ============
 
    assign DataOverf=(ovfStretch>0);
+   assign FrameReady=(outputWpDomB!=outputRp[BUFFLENLOG2-1:3]);
+   assign DataReady=({outputWpDomB,3'b000}!=outputRp);
    
-   always @(posedge clk)  // Clock Domain B : From the system PLL
+   always @(posedge rdClk)  // Clock Domain B : From the target domain
      begin
 	if (rst)
 	  begin
@@ -134,8 +141,6 @@ module packSend (
 	     outputRp<=0;
 	     odd<=0;
 	     DataReady<=0;
-	     syncSending<=0;
-	     syncArm<=0;
 	     tickA2B<=0;
 	     outputRpPostBox<=0;
 	     lastTickA<=0;
@@ -144,6 +149,8 @@ module packSend (
 	  end // else: !if(!rst)
 	else
 	  begin
+	     DataVal<=opbuffmem[outputRp];
+	     
 	     // Domain cross the sync tick from domain B (the system Clock domain)
 	     tickA2B[0]<=tickA;
 	     tickA2B[1]<=tickA2B[0];
@@ -163,46 +170,14 @@ module packSend (
 	     else
 	       if (ovfStretch!=0) ovfStretch<=ovfStretch-1;
 	     
-	     // Countdown interval to next sync transmission
-	     if (syncArm!=0) syncArm<=syncArm-1;
-
 	     // Things to do if there's the potential to send a byte to the serial link
-	     if ((DataNext) & (!DataReady))
-	       begin
-		  if ((outputRp[2:0]!=0) || odd || syncArm!=0)
-		    begin
-		       // Check and send regular data element
-		       if ({outputWpDomB,3'b000}!=outputRp)
-			 begin
-			    DataReady<=1;
-			    odd<=!odd;
-			    DataVal<=(odd)?opbuffmem[outputRp][15:8]:opbuffmem[outputRp][7:0];
-			    if (odd) outputRp<=outputRp+1;
-			 end // if (outputWpDomB!=outputRp)
-		    end // if ((outputRp[2:0]!=0) || odd || syncArm!=0)
-		  else
-		    begin
-		       // If we are at the start of a packet and the timeout has expired and we are
-		       // sync'ed then re-generate a sync packet to the host
-		       if ((syncArm==0) && (sync))
-			 begin
-			    case(syncSending)
-			      0: DataVal<=8'hff;
-			      1: DataVal<=8'hff;
-			      2: DataVal<=8'hff;
-			      3: 
-				begin
-				   DataVal<=8'h7f;
-				   syncArm<=~0;
-				end
-			    endcase			 
-			    syncSending<=syncSending+1;
-			    DataReady<=1;
-			 end
-		    end // else: !if((outputRp[2:0]!=0) || odd || syncArm!=0)
-	       end // if ((DataNext) & (!DataReady))
+	     oldDataNext<=DataNext;
+
+	     // Check if we need to roll back to start of this frame
+	     if (DataFrameReset)
+	       outputRp<={outputRp[BUFFLENLOG2-1:3],3'b000};
 	     else
-	       DataReady<=0;
+	       if ((oldDataNext==0) && (DataNext==1) && ({outputWpDomB,3'b000}!=outputRp)) outputRp<=outputRp+1;
 	  end // else: !if(rst)
      end // always @ (posedge clk)
 endmodule // packSend

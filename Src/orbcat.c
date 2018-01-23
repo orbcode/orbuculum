@@ -325,11 +325,11 @@ void _itmPumpProcess( char c )
 
         case ITM_EV_RESERVED_PACKET_RXED:
             genericsReport( V_INFO, "Reserved Packet Received" EOL );
-	    break;
+            break;
 
         case ITM_EV_XTN_PACKET_RXED:
             genericsReport( V_INFO, "Unknown Extension Packet Received" EOL );
-	    break;
+            break;
 
         case ITM_EV_OVERFLOW:
             genericsReport( V_WARN, "ITM Overflow" EOL );

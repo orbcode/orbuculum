@@ -137,8 +137,8 @@ enum ITMPumpEvent ITMPump( struct ITMDecoder *i, uint8_t c )
     {
         i->stats.syncCount++;
 
-	/* Page register is reset on a sync */
-	i->pageRegister = 0;
+        /* Page register is reset on a sync */
+        i->pageRegister = 0;
         retVal = ITM_EV_SYNCED;
         newState = ITM_IDLE;
     }
@@ -154,52 +154,55 @@ enum ITMPumpEvent ITMPump( struct ITMDecoder *i, uint8_t c )
             // -----------------------------------------------------
             case ITM_IDLE:
 
-	      // *************************************************
-	      // ************** SYNC PACKET **********************
-	      // *************************************************
-	      if ( c == 0b00000000 )
+                // *************************************************
+                // ************** SYNC PACKET **********************
+                // *************************************************
+                if ( c == 0b00000000 )
                 {
                     break;
                 }
 
-	      // *************************************************
-	      // ************** SOURCE PACKET ********************
-	      // *************************************************
-	      if ( c & 0b00000011 )
-		{
-		  i->targetCount = ( c & 0x03 );
-		  if ( i->targetCount == 3 )
-		    {
-		      i->targetCount = 4;
-		    }
-		  i->currentCount = 0;
-		  i->srcAddr = ( c & 0xF8 ) >> 3;
-
-		  if ( !( c & 0x04 ) )
-		    {
-		      /* This is a Instrumentation (SW) packet */
-		      i->stats.SWPkt++;
-		      newState = ITM_SW;
-		    }
-		  else
-		    {
-		      /* This is a HW packet */
-		      i->stats.HWPkt++;
-		      newState = ITM_HW;
-		    }
-		  break;
-		}
-
-	      // *************************************************
-	      // ************** PROTOCOL PACKET ******************
-	      // *************************************************
-
-	      if ( c == 0b01110000 )
+                // *************************************************
+                // ************** SOURCE PACKET ********************
+                // *************************************************
+                if ( c & 0b00000011 )
                 {
-		  /* This is an overflow packet */
-		  i->stats.overflow++;
-		  retVal = ITM_EV_OVERFLOW;
-		  break;
+                    i->targetCount = ( c & 0x03 );
+
+                    if ( i->targetCount == 3 )
+                    {
+                        i->targetCount = 4;
+                    }
+
+                    i->currentCount = 0;
+                    i->srcAddr = ( c & 0xF8 ) >> 3;
+
+                    if ( !( c & 0x04 ) )
+                    {
+                        /* This is a Instrumentation (SW) packet */
+                        i->stats.SWPkt++;
+                        newState = ITM_SW;
+                    }
+                    else
+                    {
+                        /* This is a HW packet */
+                        i->stats.HWPkt++;
+                        newState = ITM_HW;
+                    }
+
+                    break;
+                }
+
+                // *************************************************
+                // ************** PROTOCOL PACKET ******************
+                // *************************************************
+
+                if ( c == 0b01110000 )
+                {
+                    /* This is an overflow packet */
+                    i->stats.overflow++;
+                    retVal = ITM_EV_OVERFLOW;
+                    break;
                 }
 
                 // ***********************************************
@@ -220,10 +223,12 @@ enum ITMPumpEvent ITMPump( struct ITMDecoder *i, uint8_t c )
                         /* This is TS packet format 2, no more to come, and no change of state */
                         retVal = ITM_EV_TS_PACKET_RXED;
                     }
+
                     break;
                 }
+
                 // ***********************************************
-      
+
                 if ( ( c & 0b11011111 ) == 0b10010100 )
                 {
                     /* This is a global timestamp packet */
@@ -235,6 +240,7 @@ enum ITMPumpEvent ITMPump( struct ITMDecoder *i, uint8_t c )
                     {
                         newState = ITM_GTS2;
                     }
+
                     break;
                 }
 
@@ -253,50 +259,52 @@ enum ITMPumpEvent ITMPump( struct ITMDecoder *i, uint8_t c )
                         i->stats.PagePkt++;
                         i->pageRegister = ( c >> 4 ) & 0x07;
                     }
-		    else
-		      {
-			newState = ITM_XTN;
-		      }
-		    break;
+                    else
+                    {
+                        newState = ITM_XTN;
+                    }
+
+                    break;
                 }
 
                 // ***********************************************
-		if (((c&0b11000100) == 0b11000100) ||
-		    ((c&0b10000100) == 0b10000100) ||
-		    ((c&0b11110000) == 0b11110000) ||
-		    ((c&0b00000100) == 0b00000100))
-		  {
-		    /* Reserved packets - we have no idea what these are */
-		    i->currentCount = 1;
-		    i->stats.ReservedPkt++;
-		    i->rxPacket[0] = c;
+                if ( ( ( c & 0b11000100 ) == 0b11000100 ) ||
+                        ( ( c & 0b10000100 ) == 0b10000100 ) ||
+                        ( ( c & 0b11110000 ) == 0b11110000 ) ||
+                        ( ( c & 0b00000100 ) == 0b00000100 ) )
+                {
+                    /* Reserved packets - we have no idea what these are */
+                    i->currentCount = 1;
+                    i->stats.ReservedPkt++;
+                    i->rxPacket[0] = c;
 
-		    if (!(c&0x80))
-		      {
+                    if ( !( c & 0x80 ) )
+                    {
                         retVal = ITM_EV_RESERVED_PACKET_RXED;
-		      }
-		    else
-		      {
-			/* According to protocol, this is multi-byte, so report it */
-			newState = ITM_RSVD;
-		      }
-		    break;
-		  }
+                    }
+                    else
+                    {
+                        /* According to protocol, this is multi-byte, so report it */
+                        newState = ITM_RSVD;
+                    }
 
-		  // Any other value here isn't valid - so fall through to illegal packet case
-		  
+                    break;
+                }
 
-	      // *************************************************
-	      // ************** ILLEGAL PACKET *******************
-	      // *************************************************
-		/* This is a reserved encoding we don't know how to handle */
-		/* ...assume it's line noise and wait for sync again */
-		i->stats.ErrorPkt++;
-		fprintf(stderr,EOL "%02X " EOL,c);
-		retVal = ITM_EV_ERROR;
+                // Any other value here isn't valid - so fall through to illegal packet case
+
+
+                // *************************************************
+                // ************** ILLEGAL PACKET *******************
+                // *************************************************
+                /* This is a reserved encoding we don't know how to handle */
+                /* ...assume it's line noise and wait for sync again */
+                i->stats.ErrorPkt++;
+                fprintf( stderr, EOL "%02X " EOL, c );
+                retVal = ITM_EV_ERROR;
                 genericsReport( V_DEBUG, "General error for packet type %02x" EOL, c );
                 break;
-	
+
             // -----------------------------------------------------
             case ITM_GTS1:  // Collecting GTS1 timestamp - wait for a zero continuation bit
                 if ( ( c & 0x80 ) == 0 )
@@ -372,7 +380,7 @@ enum ITMPumpEvent ITMPump( struct ITMDecoder *i, uint8_t c )
 
                 break;
 
-		// -----------------------------------------------------
+            // -----------------------------------------------------
             case ITM_XTN:
                 i->rxPacket[i->currentCount++] = c;
 
@@ -386,7 +394,7 @@ enum ITMPumpEvent ITMPump( struct ITMDecoder *i, uint8_t c )
 
                 break;
 
-            // -----------------------------------------------------
+                // -----------------------------------------------------
         }
     }
 

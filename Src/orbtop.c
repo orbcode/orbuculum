@@ -497,15 +497,15 @@ void _itmPumpProcess( char c )
             genericsReport( V_WARN, "ITM Overflow (%d)" EOL, ITMDecoderGetStats( &_r.i )->overflow );
             break;
 
-        // ------------------------------------	    
+        // ------------------------------------
         case ITM_EV_RESERVED_PACKET_RXED:
             genericsReport( V_INFO, "Reserved Packet Received" EOL );
-	    break;
+            break;
 
-        // ------------------------------------	    
+        // ------------------------------------
         case ITM_EV_XTN_PACKET_RXED:
             genericsReport( V_INFO, "Unknown Extension Packet Received" EOL );
-	    break;
+            break;
 
         // ------------------------------------
         case ITM_EV_ERROR:
@@ -526,7 +526,7 @@ void _itmPumpProcess( char c )
             _handleHW( &_r.i );
             break;
 
-        // ------------------------------------
+            // ------------------------------------
     }
 }
 // ====================================================================================================

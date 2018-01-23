@@ -4,8 +4,13 @@ module topLevel(
 		input [3:0] traceDin, // Port is always 4 bits wide, even if we use less
 		input 	    traceClk, // Supporting clock for input - must be on a global clock pin
 
-		input 	    uartrx, // Receive data into UART
-		output 	    uarttx, // Transmit data from UART 
+		output 	    spitx,
+		output 	    spirx,		
+		input 	    spics,
+		input 	    spiclk,
+		
+//		input 	    uartrx, // Receive data into UART
+//		output 	    uarttx, // Transmit data from UART 
 
 		// Leds....
 		output 	    sync_led,
@@ -23,14 +28,12 @@ module topLevel(
 		output reg  D4,
 		output reg  D3,
 		output reg  cts
-		,output 	    yellow
-//		,output 	    green
-//		,output      blue	    
 		);      
 	    
    // Parameters =============================================================================
 
    parameter MAX_BUS_WIDTH=4;  // Maximum bus width that system is set for...not more than 4!! 
+//   parameter WIDTH_SET=2;
    //    
    // Internals =============================================================================
 
@@ -90,9 +93,26 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b0)) MtraceIn3
  .D_IN_1 (tTraceDinb[3])
  );
 
+SB_IO #(.PULLUP(1), .PIN_TYPE(6'b000001)) SpiClkIn
+(
+ .PACKAGE_PIN (spiclk),
+ .D_IN_0 (spiclkIn),
+ );
+
+SB_IO #(.PULLUP(1), .PIN_TYPE(6'b000001)) SpiRxIn
+(
+ .PACKAGE_PIN (spirx),
+ .INPUT_CLK (spiclkIn),
+ .D_IN_0 (spirxIn),
+ );
+
    // DDR input data
    wire [MAX_BUS_WIDTH-1:0] tTraceDina;
    wire [MAX_BUS_WIDTH-1:0] tTraceDinb;
+
+   wire 		    spiclkIn;
+   wire 		    spirxIn;
+   
  		    
    wire 		    wclk;
    wire 		    wdavail;
@@ -108,7 +128,7 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b0)) MtraceIn3
                    .traceDina(tTraceDina),       // Tracedata rising edge ... 1-n bits
                    .traceDinb(tTraceDinb),       // Tracedata falling edge (LSB) ... 1-n bits		   
                    .traceClkin(BtraceClk),       // Tracedata clock
-		   .width(4),                    // Current trace buffer width 
+		   .width(widthSet),             // Current trace buffer width 
 
 		   // Upwards interface to packet processor
 		   .WdAvail(wdavail),            // Flag indicating word is available
@@ -120,7 +140,7 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b0)) MtraceIn3
    
   // -----------------------------------------------------------------------------------------
 
-   wire [7:0] 		    filter_data;
+   wire [15:0] 		    filter_data;
 
    wire 		    dataAvail;
    wire 		    dataReady;
@@ -130,7 +150,8 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b0)) MtraceIn3
    wire [7:0] 		    rx_byte_tl;
    wire 		    rxTrig_tl;
    wire 		    rxErr_tl;
-
+   wire 		    frameReset;
+   wire [2:0] 		    widthSet;
    
    packSend marshall (
 		      .clk(clkOut), 
@@ -145,32 +166,51 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b0)) MtraceIn3
 		      .PacketWd(packetwd),           // The next packet word
 		      
 		      // Upwards interface to serial (or other) handler
-                      .DataReady(dataReady),
+		      .rdClk(spiclkIn),
+                      .FrameReady(dataReady),
 		      .DataVal(filter_data),         // Output data value
 		      .DataNext(txFree),             // Request for data
-		      
+		      .DataFrameReset(frameReset),   // Reset to start of output frame
                       .DataOverf(txOvf_led)          // Too much data in buffer
  		      );
+
+ spi transmitter (
+		  .clk(clkOut), // The master clock for this module
+		  .rst(rst), // Synchronous reset.
+
+		  .tx(spitx), // Outgoing serial line
+		  .rx(spirxIn), // Incoming serial line
+		  .dClk(spiclkIn),
+		  .cs(spics),
+		  .transmitIn(dataReady), // Signal to transmit
+		  .tx_word(filter_data), // Byte to transmit
+		  .tx_free(txFree), // Indicator that transmit register is available
+		  .is_transmitting(txInd_led), // Low when transmit line is idle.
+		  .sync(sync_led),
+		  .widthEnc(widthSet),
+		  .rxFrameReset(frameReset)
+		  );
+   
    // -----------------------------------------------------------------------------------------   
-   uart #(.CLOCKFRQ(48_000_000), .BAUDRATE(12_000_000))  receiver (
-	.clk(clkOut),                 // System Clock
-	.rst(rst),                 // System Reset
-	.rx(uartrx),               // Uart TX pin
-	.tx(uarttx),               // Uart RX pin
-					  
-	.transmit(dataReady),
-        .tx_byte(filter_data),
-        .tx_free(txFree),
-					  
-	.received(rxTrig_tl),
-	.rx_byte(rx_byte_tl),
-					 
-	.recv_error(rxErr_tl),
-
-	.is_receiving(rxInd_led),
-	.is_transmitting(txInd_led)
-    );
-
+//   uart #(.CLOCKFRQ(48_000_000), .BAUDRATE(12_000_000))  receiver (
+//	.clk(clkOut),                 // System Clock
+///	.rst(rst),                 // System Reset
+//	.rx(uartrx),               // Uart TX pin
+//	.tx(uarttx),               // Uart RX pin
+//					  
+//	.transmit(dataReady),
+  //      .tx_byte(filter_data),
+    //    .tx_free(txFree),
+//					  
+//	.received(rxTrig_tl),
+//	.rx_byte(rx_byte_tl),
+//					 
+//	.recv_error(rxErr_tl),
+//
+//	.is_receiving(rxInd_led),
+//	.is_transmitting(txInd_led)
+//  );
+//
   // -----------------------------------------------------------------------------------------   
  // Set up clock for 48Mhz with input of 12MHz
    SB_PLL40_CORE #(

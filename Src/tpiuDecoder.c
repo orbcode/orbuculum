@@ -26,6 +26,7 @@
 
 #define SYNCPATTERN 0xFFFFFF7F
 #define NO_CHANNEL_CHANGE (0xFF)
+#define TIMEOUT (3)
 
 // ====================================================================================================
 void TPIUDecoderInit( struct TPIUDecoder *t )
@@ -187,7 +188,7 @@ enum TPIUPumpEvent TPIUPump( struct TPIUDecoder *t, uint8_t d )
             t->byteCount = 0;
 
             /* If it was less than a second since the last packet then it's valid */
-            if ( !diffTime.tv_sec )
+            if ( diffTime.tv_sec < TIMEOUT )
             {
                 t->stats.packets++;
                 return TPIU_EV_RXEDPACKET;

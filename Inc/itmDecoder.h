@@ -91,7 +91,7 @@ struct ITMDecoderStats
     uint32_t TSPkt;                      /* Number of TS Packets received */
     uint32_t HWPkt;                      /* Number of HW Packets received */
     uint32_t XTNPkt;                     /* Number of XTN Packets received */
-    uint32_t ReservedPkt;                /* Number of Reserved Packets received */  
+    uint32_t ReservedPkt;                /* Number of Reserved Packets received */
     uint32_t ErrorPkt;                   /* Number of Packets received we don't know how to handle */
     uint32_t PagePkt;                    /* Number of Packets received containing page sets */
 };
