@@ -1,0 +1,229 @@
+display_init()
+get_font() dejavusansmono
+get_font() : Located Font = lato
+get_font() : Located Font = tlwgtypo
+get_font() : Located Font = latinmodernmonolight
+get_font() : Located Font = dejavuserif
+get_font() : Located Font = kalapi
+get_font() : Located Font = rekha
+get_font() : Located Font = tlwgtypewriter
+get_font() : Located Font = latinmodernmono
+get_font() : Located Font = dejavusansmono
+get_font() : Located Font = padauk
+get_font() : Located Font = notosanscjkjp
+get_font() : Located Font = dejavusans
+get_font() : Located Font = texgyrebonum
+get_font() : Located Font = notoserifcjksc
+get_font() : Located Font = latinmodernroman
+get_font() : Located Font = garuda
+get_font() : Located Font = texgyrecursor
+get_font() : Located Font = notoserifcjktc
+get_font() : Located Font = freesans
+get_font() : Located Font = liberationsansnarrow
+get_font() : Located Font = texgyretermes
+get_font() : Located Font = kacstfarsi
+get_font() : Located Font = carlito
+get_font() : Located Font = rachana
+get_font() : Located Font = padmaa
+get_font() : Located Font = notoserifcjkjp
+get_font() : Located Font = notoserifcjkkr
+get_font() : Located Font = freeserif
+get_font() : Located Font = ipamincho
+get_font() : Located Font = latinmodernmonocaps
+get_font() : Located Font = latinmodernsans
+get_font() : Located Font = texgyreadventor
+get_font() : Located Font = mrykacstqurn
+get_font() : Located Font = tlwgtypist
+get_font() : Located Font = kacstone
+get_font() : Located Font = freemono
+get_font() : Located Font = liberationsans
+get_font() : Located Font = notosansmonocjkkr
+get_font() : Located Font = nanumsquare
+get_font() : Located Font = liberationmono
+get_font() : Located Font = loma
+get_font() : Located Font = texgyrescholamath
+get_font() : Located Font = ubuntumono
+get_font() : Located Font = liberationserif
+get_font() : Located Font = wenquanyimicrohei
+get_font() : Located Font = notosansmonocjkjp
+get_font() : Located Font = kacstdigital
+get_font() : Located Font = texgyrepagellamath
+get_font() : Located Font = latinmodernmonoproplight
+get_font() : Located Font = kacstpen
+get_font() : Located Font = laksaman
+get_font() : Located Font = kinnari
+get_font() : Located Font = nanumbarungothic
+get_font() : Located Font = lohitgurmukhi
+get_font() : Located Font = tlwgmono
+get_font() : Located Font = latinmodernromandunhill
+get_font() : Located Font = texgyrepagella
+get_font() : Located Font = latinmodernsansdemicond
+get_font() : Located Font = waree
+get_font() : Located Font = texgyreheros
+get_font() : Located Font = sarai
+get_font() : Located Font = wenquanyizenhei
+get_font() : Located Font = umpush
+get_font() : Located Font = wenquanyizenheisharp
+get_font() : Located Font = latinmodernromancaps
+get_font() : Located Font = mitramono
+get_font() : Located Font = sawasdee
+get_font() : Located Font = texgyreheroscn
+get_font() : Located Font = lohitbengali
+get_font() : Located Font = kacstscreen
+get_font() : Located Font = kacstart
+get_font() : Located Font = notosansmonocjktc
+get_font() : Located Font = saab
+get_font() : Located Font = samyaktamil
+get_font() : Located Font = lohitgujarati
+get_font() : Located Font = lohitassamese
+get_font() : Located Font = latinmodernsansquotation
+get_font() : Located Font = texgyreschola
+get_font() : Located Font = notosanscjkkr
+get_font() : Located Font = nanumgothic
+get_font() : Located Font = norasi
+get_font() : Located Font = purisa
+get_font() : Located Font = caladea
+get_font() : Located Font = latinmodernmath
+get_font() : Located Font = khmeros
+get_font() : Located Font = meera
+get_font() : Located Font = cantarell
+get_font() : Located Font = latinmodernmonoprop
+get_font() : Located Font = muktinarrow
+get_font() : Located Font = symbola
+get_font() : Located Font = notosansmonocjksc
+get_font() : Located Font = ipapgothic
+get_font() : Located Font = lohitdevanagari
+get_font() : Located Font = dejavumathtexgyre
+get_font() : Located Font = kalimati
+get_font() : Located Font = droidsansfallback
+get_font() : Located Font = takaopgothic
+get_font() : Located Font = ubuntu
+get_font() : Located Font = khmerossystem
+get_font() : Located Font = latinmodernromanunslanted
+get_font() : Located Font = notosanscjktc
+get_font() : Located Font = texgyrebonummath
+get_font() : Located Font = kalyani
+get_font() : Located Font = lohittelugu
+get_font() : Located Font = abyssinicasil
+get_font() : Located Font = latinmodernromanslanted
+get_font() : Located Font = texgyretermesmath
+get_font() : Located Font = lohitodia
+get_font() : Located Font = latinmodernromandemi
+get_font() : Located Font = ubuntucondensed
+get_font() : Located Font = phetsarathot
+get_font() : Located Font = kacstdecorative
+get_font() : Located Font = lklug
+get_font() : Located Font = notosanscjksc
+get_font() : Located Font = padaukbook
+get_font() : Located Font = ipapmincho
+get_font() : Located Font = ipagothic
+get_font() : Located Font = lohittamilclassical
+get_font() : Located Font = texgyrechorus
+get_font() : Located Font = jamrul
+get_font() : Located Font = pagul
+get_font() : Located Font = lohittamil
+get_font() : Located Font = likhan
+get_font() : Located Font = raghumalayalam
+get_font() : Located Font = samyakdevanagari
+get_font() : Located Font = latinmodernmonolightcond
+get_font() : Located Font = lohitmalayalam
+get_font() : Located Font = kacsttitlel
+get_font() : Located Font = anjalioldlipi
+get_font() : Located Font = navilu
+get_font() : Located Font = tibetanmachineuni
+get_font() : Located Font = kacstletter
+get_font() : Located Font = suruma
+get_font() : Located Font = wenquanyizenheimono
+get_font() : Located Font = ori1uni
+get_font() : Located Font = opensymbol
+get_font() : Located Font = aakar
+get_font() : Located Font = notomono
+get_font() : Located Font = wenquanyimicroheimono
+get_font() : Located Font = texgyredejavumath
+get_font() : Located Font = lohitkannada
+get_font() : Located Font = pothana2000
+get_font() : Located Font = gubbi
+get_font() : Located Font = gargi
+get_font() : Located Font = dyuthi
+get_font() : Located Font = samyakgujarati
+get_font() : Located Font = chandas
+get_font() : Located Font = kacstbook
+get_font() : Located Font = kacstposter
+get_font() : Located Font = padmaabold11
+get_font() : Located Font = sahadeva
+get_font() : Located Font = kacstqurn
+get_font() : Located Font = nanummyeongjo
+get_font() : Located Font = kacstnaskh
+get_font() : Located Font = nakula
+get_font() : Located Font = latinmodernmonoslanted
+get_font() : Located Font = samanata
+get_font() : Located Font = vemana2000
+get_font() : Located Font = ani
+get_font() : Located Font = kacsttitle
+get_font() : Located Font = samyakmalayalam
+get_font() : Located Font = kacstoffice
+sump_connect()
+sump_dump_data()
+proc_cmd()  ['', '', '']
+proc_cmd() cursor_snap ['695', '654']
+proc_cmd() Arm_RLE ['', '', '', '']
+sump_arm()
+proc_cmd()  ['', '', '']
+proc_cmd() cursor_snap ['838', '628']
+proc_cmd()  ['', '', '']
+proc_cmd() Download_RLE ['', '', '', '']
+sump_dump_rle_data()
+Generating RLE Event Signal List of values
+Generating RLE DWORD Signal List of values
+proc_cmd() zoom_to ['43', '2677']
+proc_cmd() cursor_snap ['879', '29']
+proc_cmd() [-T----] ['', '', '', '']
+proc_cmd() Arm_RLE ['', '', '', '']
+sump_arm()
+proc_cmd() Download_RLE ['', '', '', '']
+sump_dump_rle_data()
+Generating RLE Event Signal List of values
+Generating RLE DWORD Signal List of values
+proc_cmd() zoom_to ['0', '0']
+proc_cmd() [-T----] ['', '', '', '']
+proc_cmd() Arm_RLE ['', '', '', '']
+sump_arm()
+proc_cmd() Download_RLE ['', '', '', '']
+sump_dump_rle_data()
+Generating RLE Event Signal List of values
+Generating RLE DWORD Signal List of values
+proc_cmd() zoom_to ['55', '2379']
+proc_cmd() cursor_snap ['839', '26']
+proc_cmd() cursor_snap ['1402', '234']
+proc_cmd() Expand ['']
+proc_cmd() collapse ['']
+proc_cmd() Expand ['']
+proc_cmd() cursor_snap ['935', '599']
+proc_cmd() cursor_snap ['500', '474']
+proc_cmd() cursor_snap ['395', '23']
+proc_cmd() cursor_snap ['1313', '458']
+proc_cmd() cursor_snap ['1455', '543']
+proc_cmd() cursor_snap ['1187', '577']
+proc_cmd() cursor_snap ['1078', '503']
+proc_cmd() cursor_snap ['988', '577']
+proc_cmd() cursor_snap ['1082', '648']
+proc_cmd() cursor_snap ['973', '562']
+proc_cmd() cursor_snap ['718', '499']
+proc_cmd() cursor_snap ['589', '455']
+proc_cmd() cursor_snap ['1139', '580']
+proc_cmd() cursor_snap ['1127', '570']
+proc_cmd() cursor_snap ['1098', '650']
+proc_cmd()  ['', '', '']
+proc_cmd() cursor_snap ['1059', '113']
+proc_cmd() cursor_snap ['705', '598']
+proc_cmd() cursor_snap ['438', '20']
+proc_cmd() Cursor2_to_Here ['', '', '', '']
+proc_cmd()  ['', '', '']
+proc_cmd() Zoom_Out ['', '', '', '']
+proc_cmd()  ['', '', '']
+proc_cmd() Zoom_Previous ['', '', '', '']
+proc_cmd() zoom_to ['998', '1579']
+shutdown()
+var_dump()
+proc_cmd() save_format ['']
+save_format() sump2_wave.txt

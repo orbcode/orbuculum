@@ -66,6 +66,8 @@
     #define FTDI_PACKET_SIZE  (17)
     #define FTDI_NUM_FRAMES   (960)  // If you make this too large the driver drops frames
     #define FTDI_HS_TRANSFER_SIZE (FTDI_PACKET_SIZE*FTDI_NUM_FRAMES)
+    #define FPGA_AWAKE (0x80)
+    #define FPGA_ASLEEP (0x90)
     // #define DUMP_FTDI_BYTES // Uncomment to get data dump of bytes from FTDI transfer
 #endif
 
@@ -178,6 +180,7 @@ struct
     struct TPIUPacket p;
 
 #ifdef INCLUDE_FPGA_SUPPORT
+  bool feederExit;
     struct ftdi_context *ftdi;
     struct ftdispi_context ftdifsc;
 #endif
@@ -1415,21 +1418,15 @@ int fpgaFeeder( void )
         0xA0, 0xA4, 0xAC, 0xAC
     }[options.orbtraceWidth - 1];
 
-    _r.ftdi = ftdi_new();
-    ftdi_set_interface( _r.ftdi, FTDI_UART_INTERFACE );
-    ftdi_usb_open( _r.ftdi, FTDI_VID, FTDI_PID );
-    ftdi_setdtr_rts( _r.ftdi, true, false );
-    ftdi_usb_close( _r.ftdi );
-    ftdi_deinit( _r.ftdi );
-
     // FTDI Chip takes a little while to reset itself
-    usleep( 400000 );
+    // usleep( 400000 );
 
-    while ( 1 )
+    _r.feederExit=false;
+    while ( !_r.feederExit )
     {
-
-
         _r.ftdi = ftdi_new();
+	ftdi_set_interface( _r.ftdi, FTDI_INTERFACE );
+
 
         do
         {
@@ -1437,14 +1434,13 @@ int fpgaFeeder( void )
 
             if ( f < 0 )
             {
-                genericsReport( V_INFO, "Cannot open device (%s)" EOL, ftdi_get_error_string( _r.ftdi ) );
+                genericsReport( V_WARN, "Cannot open device (%s)" EOL, ftdi_get_error_string( _r.ftdi ) );
                 usleep( 50000 );
             }
         }
-        while ( f < 0 );
+        while (( f < 0 ) && (!_r.feederExit));
 
         genericsReport( V_INFO, "Port opened" EOL );
-
         f = ftdispi_open( &_r.ftdifsc, _r.ftdi, FTDI_INTERFACE );
 
         if ( f < 0 )
@@ -1453,7 +1449,7 @@ int fpgaFeeder( void )
             return -2;
         }
 
-        ftdispi_setmode( &_r.ftdifsc, 1, 0, 1, 0, 0, 0x90 );
+        ftdispi_setmode( &_r.ftdifsc, 1, 0, 1, 0, 0, FPGA_AWAKE );
 
         ftdispi_setloopback( &_r.ftdifsc, 0 );
 
@@ -1470,7 +1466,7 @@ int fpgaFeeder( void )
 
         TPIUDecoderForceSync( &_r.t, 0 );
 
-        while ( ( t = ftdispi_write_read( &_r.ftdifsc, initSequence, 2, cbw, FTDI_HS_TRANSFER_SIZE, 0x80 ) ) >= 0 )
+        while ((!_r.feederExit) && ( ( t = ftdispi_write_read( &_r.ftdifsc, initSequence, 2, cbw, FTDI_HS_TRANSFER_SIZE, FPGA_AWAKE ) ) >= 0 ))
         {
             c = cbw;
             d = scratchBuffer;
@@ -1504,36 +1500,26 @@ int fpgaFeeder( void )
                 }
             }
 
-            genericsReport( V_WARN, "RXED frame of %d/%d full packets (%3d%%)" EOL,
+            genericsReport( V_WARN, "RXED frame of %d/%d full packets (%3d%%)    \r",
                             ( d - scratchBuffer ) / ( FTDI_PACKET_SIZE - 1 ), FTDI_NUM_FRAMES, ( ( d - scratchBuffer ) * 100 ) / ( FTDI_HS_TRANSFER_SIZE - FTDI_NUM_FRAMES ) );
 
             _sendToClients( ( d - scratchBuffer ), scratchBuffer );
-            //  exit(-1);
         }
 
-        genericsReport( V_INFO, "Read failed (,%d, %s)" EOL, t, ftdi_get_error_string( _r.ftdi ) );
-        ftdispi_close( &_r.ftdifsc, 1 );
+        genericsReport( V_WARN, "Exit Requested (%d, %s)" EOL, t, ftdi_get_error_string( _r.ftdi ) );
 
-        //ftdi_usb_close( _r.ftdi );
-        _r.ftdi = NULL;
+	ftdispi_setgpo(&_r.ftdifsc, FPGA_ASLEEP);
+	ftdispi_close( &_r.ftdifsc, 1 );
     }
+    return 0;
 }
 
 // ====================================================================================================
-void fpgaFeederClose( void )
+void fpgaFeederClose( int dummy )
 
 {
-    /* OK, this is a bit odd.  Because there may have been a transfer in progress we need to close down */
-    /* and re-open the driver in order to perform the DTR drop. Since we're in the process of leaving */
-    /* anyway there's not too much point in error checking! */
-
-    ftdi_usb_close( _r.ftdi );
-    ftdi_deinit( _r.ftdi );
-    _r.ftdi = ftdi_new();
-    ftdi_set_interface( _r.ftdi, FTDI_UART_INTERFACE );
-    ftdi_usb_open( _r.ftdi, FTDI_VID, FTDI_PID );
-    ftdi_setdtr_rts( _r.ftdi, false, false );
-    ftdi_usb_close( _r.ftdi );
+  (void)dummy;
+  _r.feederExit=true;
 }
 #endif
 // ====================================================================================================
@@ -1613,13 +1599,13 @@ int main( int argc, char *argv[] )
     /* Start the filewriter */
     filewriterInit( options.fwbasedir );
 
-    /* Using the exit construct rather than return ensures the atexit gets called */
+    /* Using the exit construct rather than return ensures any atexit gets called */
 #ifdef INCLUDE_FPGA_SUPPORT
 
     if ( options.orbtrace )
     {
-        atexit( fpgaFeederClose );
-        exit( fpgaFeeder() );
+      signal( SIGINT, fpgaFeederClose );
+      exit( fpgaFeeder() );
     }
 
 #endif

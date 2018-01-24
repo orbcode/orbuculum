@@ -1,0 +1,20 @@
+/TraceA  -bundle -hex
+  /event[0]  -nickname tTraceDinA[0]
+  /event[1]  -nickname tTraceDinA[1]
+  /event[2]  -nickname tTraceDinA[2]
+  /event[3]  -nickname tTraceDin[3]
+/TraceB  -bundle -hex
+  /event[4]  -nickname tTraceDinB[0]
+  /event[5]  -nickname tTraceDinB[1]
+  /event[6]  -nickname tTraceDinB[2]
+  /event[7]  -nickname tTraceDinB[3]
+/-------- 
+/event[8]  -nickname TraceClk
+/event[9]  -nickname txOvf
+/event[10]  -nickname clk
+/-------- 
+/event[11]  -nickname wdAvail
+/event[12]  -nickname packetR
+/event[13]  -nickname packetWD
+/event[14]  -nickname dataReady
+/event[15]  -nickname sync

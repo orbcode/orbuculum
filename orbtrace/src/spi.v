@@ -8,7 +8,6 @@ module spi (
 	    input        rx,
  	 
 	    input 	 dClk,
-	    input 	 cs, 
 	    input 	 transmitIn, // Signal to transmit
 	    input [15:0] tx_word, // Byte to transmit
 	    output 	 tx_free, // Indicator that transmit register is available
@@ -36,7 +35,7 @@ module spi (
      if (rst) tx_ledstretch <= 0;
      else
        begin
-	  if (realTransmission && cs==0) tx_ledstretch<=~0;
+	  if (realTransmission) tx_ledstretch<=~0;
 	  else
 	    if (tx_ledstretch!=0) tx_ledstretch <= tx_ledstretch-1;
        end

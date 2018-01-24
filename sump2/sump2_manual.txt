@@ -1,0 +1,205 @@
+#####################################################################
+# SUMP2 by BlackMesaLabs  GNU GPL V2 Open Source License. Python 3.x 
+# (C) Copyright 2017 Kevin M. Hubbard - All rights reserved.         
+#####################################################################
+1.0 Scope                                                            
+ This document describes the SUMP2 software and hardware.            
+                                                                     
+2.0 Software Architecture                                            
+ The SUMP2 application is a Python 3.5 script using the PyGame module
+ for mouse and graphical user interface. Communication to hardware is
+ via TCP Socket communications to a BD_SERVER.py instance. The SW is 
+ architected as a GUI wrapper around a command line application with 
+ a bd_shell interface.  When the PyGame GUI is used, mouse menu      
+ selections create commands that are then interpreted by bd_shell.   
+ In theory, sump2.py may be executed without PyGame as a command line
+ only program to arm the sump2 hardware and then dump captured data  
+ to a VCD file for offline viewing by another application.           
+                                                                     
+3.0 Command Descriptions                                             
+ Zoom_In            : Increase signal view magnification 2x          
+ Zoom_Out           : Decrease signal view magnification 2x          
+ Zoom_Full          : View all signal samples : WARNING May be slow  
+ Zoom_Previous      : Return to previous zoom view.                  
+ Zoom_to_Cursors    : View region bound by cursors                   
+ Crop_to_Cursors    : Reduce sample set to region bound by cursors   
+ Crop_to_INI        : Reduce sample set to region bound by INI file  
+ Cursors_to_View    : Bring both cursors into current view           
+ Cursor1_to_Here    : Bring Cursor1 to mouse pointer                 
+ Cursor2_to_Here    : Bring Cursor2 to mouse pointer                 
+ Acquire_Normal     : Arm for non-RLE acquisition and wait for trig  
+ Acquire_RLE        : Arm for RLE acquisition and wait for trigger   
+ Acquire_RLE_Lossy  : Arm for RLE Lossy acquisition and wait for trig
+ Arm_Normal         : Arm for non-RLE acquisition.                   
+ Arm_RLE            : Arm for RLE acquisition.                       
+ Download_Normal    : Download acquisition from Arm_Normal           
+ Download_RLE       : Download acquisition from Arm_RLE              
+ Download_RLE_Lossy : Download acquisition from Arm_RLE              
+ Acquire_Stop       : Abort an Arming                                
+ Acquire_Continuous : Arm hardware for looping non-RLE acquisitions  
+ Load_VCD           : View the specified VCD file                    
+ Save_VCD_Full      : Save entire acquisition to VCD file            
+ Save_VCD_Cursors   : Save Cursor Region to VCD file                 
+ List_View          : View selected signals in a text file           
+ File_Load          : Load a bd_shell script file                    
+ File_Save          : Save capture to a VCD,PNG,JPG, etc file        
+ Save_Rename        : Rename the last file saved                     
+ Font_Larger        : Increase GUI font size                         
+ Font_Smaller       : Decrease GUI font size                         
+ BD_SHELL           : Close GUI and open a BD_SHELL command line     
+                                                                     
+ Rename             : Rename a selected signal's nickname            
+ Insert_Divider     : Insert a dummy signal divider                  
+ Clipboard          : Cut and Paste selected signals                 
+ Visibility         : Change visibility. Impacts RLE Compression     
+ Trigger_Rising     : Set Trigger for Rising edge of selected        
+ Trigger_Falling    : Set Trigger for Falling edge of selected       
+ Trigger_Watchdog   : Set Trigger for Watchdog timeout of selected   
+ Set_Pattern0       : Advanced Triggering                            
+ Set_Pattern1       : Advanced Triggering                            
+ Clear_Pattern_Match: Advanced Triggering                            
+ Set_Data_Enable    : Advanced data sampling                         
+ Clear_Data_Enable  : Advanced data sampling                         
+ SUMP_Configuration : Modify advanced SUMP variables                 
+ Acquisition_Length : Configure amount of non-RLE RAM to use         
+                                                                     
+4.0 SUMP2 Environment Variables                                      
+ bd_connection           : Connection type to hardware. tcp only     
+ bd_protocol             : Communication protocol to HW, poke only   
+ bd_server_ip            : IP address or localhost for bd_server     
+ bd_server_socket        : Socket Number for bd_server, 21567 typ
+ sump_addr               : 32bit PCI address of sump_ctrl_reg        
+ sump_data_enable        : Event bits to use for data_enable feature 
+ sump_rle_event_en       : Event bits to use for RLE capture         
+ sump_rle_post_trig_len  : Max number of post trigger RLE samples    
+ sump_rle_pre_trig_len   : Max number of pre trigger RLE samples     
+ sump_trigger_delay      : Number of clocks to delay trigger         
+ sump_trigger_field      : Event bits to use for trigger             
+ sump_trigger_nth        : nTh trigger to trigger on                 
+ sump_trigger_type       : or_rising,or_falling,watchdog,pattern_ris 
+ sump_user_ctrl          : 32bit user_ctrl field                     
+ sump_user_pattern0      : 32bit user pattern0 field                 
+ sump_user_pattern1      : 32bit user pattern1 field                 
+ sump_watchdog_time      : Watchdog timeout for Watchdog trigger     
+ sump_rle_gap_remove     : For RLE_LOSSY, replace any RLE gaps that  
+                           exceed N clocks with M gap_replace clocks.
+ sump_rle_gap_replace    : For RLE_LOSSY, see sump_rle_gap_remove,   
+                           this is M value to replace the N gaps.    
+ sump_rle_autocull       : If 1, remove any RLE dead time at front   
+                           or end of RLE acquisition samples.        
+                                                                     
+5.0 SUMP2 Hardware                                                   
+ The SUMP2 hardware is a single verilog file with fixed input parms  
+ for the depth and width of capture memory to use. A maximum SUMP2   
+ configuration contains a 32bit Block RAM for non-RLE events and a   
+ 64bit Block RAM for RLE events and time stamps. In addition to 32   
+ signal events, SUMP2 may also capture 16 DWORDs (512 bits ) of non  
+ RLE data. The SUMP2 software automatically adjusts to each instance 
+ of hardware for memory depth, width and advanced features. A key    
+ feature for acquiring long captures in time is the ability to mask  
+ any of the event inputs, which can be used to dramatically reduce   
+ event occurrence and support capturing only events of interest. The 
+ software supports masking events by double-clicking the signal name 
+ prior to arming which hides the signals and masks them from the RLE 
+ compression. 10x to 1000x compression is possible run-time for some 
+ designs by dynamically masking input events prior to acquisition.   
+                    ---------------                                  
+  events[31:0] -+->| Trigger Logic |-------------------------        
+                |   ---------------      -----------------   |       
+                +---------------------->| RLE Compression |  |       
+                |   ---------------     | Timestamp and   |<-+       
+                +->|   RLE RAM     |<---| Addr Generator  |  |       
+                |   ---------------      -----------------   |       
+                |   ---------------      -----------------   |       
+                 ->| non-RLE RAM   |<-+-| Addr Generator  |<-        
+                    ---------------   |  -----------------           
+                    ---------------   |                              
+  dwords[511:0] -->| non-RLE RAM   |<-                               
+                    ---------------                                  
+                                                                     
+6.0 Working with large RLE datasets                                  
+ RLE datasets can be overwhelming large to work with in software once
+ samples have been decompressed. Compression ratios of 10,000:1 are  
+ possible for some systems. SUMP Software provides internal tools for
+ reducing the hardware captured RLE dataset to more manageable size  
+ for both viewing and VCD generation.                                
+  crop_to_cursors : Permanently crops the number of samples to a     
+                    region indicated by the cursors.                 
+  Signal Hiding   : Hiding a signal prior to acquisition will mask   
+                    the signal entirely and increase the overall RLE 
+                    acquisition length. Hiding a signal post acquire 
+                    speeds up rendering time for remaining signals.  
+                                                                     
+ 6.1 Bundles                                                         
+   The following is an example of manually modifying sump2_wave.txt  
+   file in order to group together multiple events into a bundle.    
+   /my_cnt -bundle -hex                                              
+     /event[12]  -nickname event[12]                                 
+     /event[13]  -nickname event[13]                                 
+     /event[14]  -nickname event[14]                                 
+     /event[15]  -nickname event[15]                                 
+                                                                     
+7.0 History                                                          
+ The original OSH+OSS SUMP was designed in 2007 as an external logic 
+ logic analyzer using a Xilinx FPGA eval board for capturing external
+ electrical signals non compressed to all available FPGA block RAM.  
+ See http://www.sump.org/projects/analyzer/                          
+ The original developer published the serial communication protocol  
+ and also wrote a Java based waveform capture tool. The simplicity of
+ the protocol and the quality and maintenance of the Open-Source Java
+ client has inspired many new SUMP compliant projects such as:       
+ 'Open Logic Sniffer' : https://www.sparkfun.com/products/9857       
+                                                                     
+ 7.1 SUMP1-RLE ( 2014 )                                              
+  Black Mesa Labs developed the SUMP1-RLE hardware in 2014 as a      
+  software protocol compatible SUMP engine that was capable of real  
+  time hardware compression of samples ( Run Length Encoded ). The   
+  idea of the project was to leverage the open-source Java software  
+  and couple it with new hardware IP that was capable of storing deep
+  capture acquisitions using only a single FPGA Block RAM, allowing  
+  SUMP to be used internally with existing FPGA designs rather than  
+  a standalone device. FPGA vendor closed license logic analyzers all
+  store using no compression requiring vast amount of Block RAMS to  
+  be useful and typically do not fit will within the limited fabric  
+  resources of an existing FPGA design requiring debugging. SUMP1-RLE
+  was later enhanced to include 2 DWORDs of sampled data along with  
+  the RLE compressed signal events. This enhancement required new    
+  software which was written in .NET Powershell for Windows platform.
+                                                                     
+ 7.2 SUMP2-RLE ( 2016 )                                              
+  SUMP2 is a software and hardware complete redesign to improve upon 
+  the SUMP1-RLE concept. For SUMP2 the .NET software was tossed due  
+  to poor user interface performance and replaced with a PyGame based
+  VCD waveform viewer ( chip_wave.py also from BML ). The SUMP2 HW   
+  is now a single Verilog file with no backwards compatibility with  
+  any legacy SUMP hardware or software systems. SUMP2 hardware is    
+  designed to capture 512bits of DWORDs and 32bits of events versus  
+  the SUMP1 limits of 16 event bits and 64bits of DWORDs. Sample     
+  depth for SUMP2 is now completely defined by a hardware instance   
+  with software that automatically adapts.  The RLE aspect of SUMP2  
+  is optional and not required for simple data intensive captures.   
+  SUMP2 software includes bd_shell support for changing variables    
+  on the fly and providing simple low level hardware access to regs. 
+                                                                     
+8.0 BD_SERVER.py                                                     
+  The SUMP2.py application does not communicate directly to hardware 
+  but instead uses BD_SERVER.py as an interface layer. BD_SERVER is  
+  a multi use server application that accepts requests via TCP to    
+  read and write to low level hardware and then translates those     
+  requests using one of many low level hardware protocols available. 
+  BD_SERVER allows the low level communications to easily change from
+  interfaces like USB FTDI serial to PCI without requiring any change
+  to the high level application. This interface also supports the    
+  debugging of an embedded system from a users regular desktop with  
+  a standard Ethernet or Wifi connection between the two. Typical use
+  is to run both python applications on same machine and use the TCP 
+  localhost feature within the TCP stack for communications.         
+                                                                     
+    ------------           --------------           ---------------  
+   |  sump2.py  |<------->| bd-server.py |<------->| SUMP Hardware | 
+    ------------  Ethernet --------------  USB,PCI  ---------------  
+                                                                     
+9.0 License                                                          
+ This hardware and software is released under the GNU GPLv2 license. 
+ Full license is available at http://www.gnu.org                     
+                                                                     
