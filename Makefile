@@ -1,6 +1,6 @@
 #VERBOSE=1
 DEBUG=1
-WITH_FPGA=1
+WITH_FPGA?=1
 
 CFLAGS=-DVERSION="\"0.20\""
 
@@ -51,9 +51,10 @@ LDLIBS = -L/usr/local/lib -lusb-1.0 -lelf -lbfd -lz -ldl -liberty
 LDLIBS += -lpthread
 #endif
 
-ifdef WITH_FPGA
+ifeq ($(WITH_FPGA),1)
 CFLAGS+=-DINCLUDE_FPGA_SUPPORT
 LDLIBS += -lftdi1
+FPGA_CFILES=$(App_DIR)/ftdispi.c
 endif
 
 DEBUG_OPTS = -g3 -gdwarf-2 -ggdb
@@ -71,7 +72,7 @@ DEBUG_OPTS = -g3 -gdwarf-2 -ggdb
 App_DIR=Src
 INCLUDE_PATHS += -IInc -I$(OLOC)
 
-ORBUCULUM_CFILES = $(App_DIR)/$(ORBUCULUM).c $(App_DIR)/filewriter.c $(App_DIR)/ftdispi.c
+ORBUCULUM_CFILES = $(App_DIR)/$(ORBUCULUM).c $(App_DIR)/filewriter.c $(FPGA_CFILES)
 ORBCAT_CFILES = $(App_DIR)/$(ORBCAT).c 
 ORBTOP_CFILES = $(App_DIR)/$(ORBTOP).c $(App_DIR)/symbols.c 
 ORBDUMP_CFILES = $(App_DIR)/$(ORBDUMP).c
