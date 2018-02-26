@@ -82,6 +82,7 @@ from the target;
 * generic USB TTL Serial Interfaces
 * FTDI High speed serial interfaces
 * The ice40-HX8K Breakout Board for parallel trace.
+* Anything capable of saving the raw SWO data to a file, eg OpenOCD
 
 Information about using each individual interface can be found in the
 docs directory. gdb setup files for each device type can be found in the `Support` directory.
@@ -186,9 +187,20 @@ replace them with the following;
 Building
 ========
 
+Dependencies
+------------
+* libusb-1.0
+* libbfd (binutils-devel)
+* libelf (elfutils-libelf)
+* libftdi (For FPGA support only)
+
 The command line to build the Orbuculum tool suite is;
 
 make
+
+or
+
+make WITH_FPGA=0 if you don't need the fpga trace capture support.
 
 ...you may need to change the paths to your libusb files, depending on
 how well your build environment is set up.
