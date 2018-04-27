@@ -38,6 +38,7 @@
 #include <string.h>
 #include <stdarg.h>
 #include <elf.h>
+#include <libiberty/demangle.h>
 #include "bfd_wrapper.h"
 #if defined OSX
     #include <libusb.h>
@@ -106,6 +107,7 @@ struct                                       /* Record for options, either defau
     uint32_t maxRoutines;                    /* Historic information to emit */
     uint32_t maxHistory;
     bool lineDisaggregation;                 /* Aggregate per line or per function? */
+    bool demangle;
 
     int port;                                /* Source information */
     char *server;
@@ -119,6 +121,7 @@ struct                                       /* Record for options, either defau
     .lineDisaggregation = false,
     .maxRoutines = 8,
     .maxHistory = 30,
+    .demangle = false,
     .port = SERVER_PORT,
     .server = "localhost"
 };
@@ -322,6 +325,11 @@ void outputTop( void )
 
             if ( report[n].count )
             {
+                char *d = NULL;
+                if ( ( options.demangle ) && ( !options.reportFilenames ) )
+                {
+                    d = cplus_demangle( report[n].n->function, DMGL_AUTO );
+                }
                 if ( ( percentage >= CUTOFF ) && ( ( !options.cutscreen ) || ( n < options.cutscreen ) ) )
                 {
                     fprintf( stdout, "%3d.%02d%% %8ld ", percentage / 100, percentage % 100, report[n].count );
@@ -335,11 +343,11 @@ void outputTop( void )
 
                     if ( ( options.lineDisaggregation ) && ( report[n].n->line ) )
                     {
-                        fprintf( stdout, "%s::%d" EOL, report[n].n->function, report[n].n->line );
+                        fprintf( stdout, "%s::%d" EOL, d ? d : report[n].n->function, report[n].n->line );
                     }
                     else
                     {
-                        fprintf( stdout, "%s" EOL, report[n].n->function );
+                        fprintf( stdout, "%s" EOL, d ? d : report[n].n->function);
                     }
 
                     totPercent += percentage;
@@ -349,11 +357,11 @@ void outputTop( void )
                 {
                     if ( !options.lineDisaggregation )
                     {
-                        fprintf( p, "%s,%3d.%02d" EOL, report[n].n->function, percentage / 100, percentage % 100 );
+                        fprintf( p, "%s,%3d.%02d" EOL, d ? d : report[n].n->function, percentage / 100, percentage % 100 );
                     }
                     else
                     {
-                        fprintf( p, "%s::%d,%3d.%02d" EOL, report[n].n->function, report[n].n->line, percentage / 100, percentage % 100 );
+                        fprintf( p, "%s::%d,%3d.%02d" EOL, d ? d : report[n].n->function, report[n].n->line, percentage / 100, percentage % 100 );
                     }
                 }
             }
@@ -625,7 +633,7 @@ int _processOptions( int argc, char *argv[] )
 {
     int c;
 
-    while ( ( c = getopt ( argc, argv, "c:d:e:hi:lm:no:r:s:tv:" ) ) != -1 )
+    while ( ( c = getopt ( argc, argv, "c:d:De:hi:lm:no:r:s:tv:" ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -641,6 +649,11 @@ int _processOptions( int argc, char *argv[] )
             // ------------------------------------
             case 'd':
                 options.deleteMaterial = optarg;
+                break;
+
+            // ------------------------------------
+            case 'D':
+                options.demangle = true;
                 break;
 
             // ------------------------------------
