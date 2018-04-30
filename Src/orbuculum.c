@@ -25,15 +25,25 @@
 #include <ctype.h>
 #include <sys/socket.h>
 #include <sys/types.h>
-#include <sys/ioctl.h>
 #include <sys/stat.h>
 #include <stdio.h>
 #include <string.h>
 #if defined OSX
+    #include <sys/ioctl.h>
     #include <libusb.h>
+    #include <termios.h>
 #else
     #if defined LINUX
         #include <libusb-1.0/libusb.h>
+        #include <asm/ioctls.h>
+        #if defined TCGETS2
+            #include <asm/termios.h>
+            /* Manual declaration to avoid conflict. */
+            extern int ioctl (int __fd, unsigned long int __request, ...) __THROW;
+        #else
+            #include <sys/ioctl.h>
+            #include <termios.h>
+        #endif
     #else
         #error "Unknown OS"
     #endif
@@ -41,7 +51,6 @@
 #include <stdint.h>
 #include <inttypes.h>
 #include <limits.h>
-#include <termios.h>
 #include <pthread.h>
 #include <sys/socket.h>
 #include <netdb.h>
@@ -1339,13 +1348,118 @@ int seggerFeeder( void )
     return -2;
 }
 // ====================================================================================================
-int serialFeeder( void )
-
+#if defined(LINUX) && defined (TCGETS2)
+int setSerialConfig ( int f, speed_t speed )
 {
-    int f;
+    // Use Linux specific termios2.
+    struct termios2 settings;
+    int ret = ioctl( f, TCGETS2, &settings );
+    if ( ret < 0 )
+        return ( -3 );
+
+    settings.c_iflag &= ~( ISTRIP | INLCR | IGNCR | ICRNL | IXON | IXOFF );
+    settings.c_lflag &= ~( ICANON | ECHO | ECHOE | ISIG );
+    settings.c_cflag &= ~PARENB; /* no parity */
+    settings.c_cflag &= ~CSTOPB; /* 1 stop bit */
+    settings.c_cflag &= ~CSIZE;
+    settings.c_cflag &= ~(CBAUD | CIBAUD);
+    settings.c_cflag |= CS8 | CLOCAL; /* 8 bits */
+    settings.c_oflag &= ~OPOST; /* raw output */
+
+    const unsigned int speed1[] = {
+        B115200, B230400, 0, B460800, B576000,
+        0, 0, B921600, 0, B1152000
+    };
+    const unsigned int speed2[] = {
+        B500000,  B1000000, B1500000, B2000000,
+        B2500000, B3000000, B3500000, B4000000
+    };
+    int speed_ok = 0;
+    if ( (speed % 500000) == 0) {
+        // speed is multiple of 500000, use speed2 table.
+        int i = speed / 500000;
+        if ( i <= 8 )
+            speed_ok = speed2[i-1];
+    }
+    else if ( (speed % 115200) == 0) {
+        int i = speed / 115200;
+        if ( i <= 10 && speed1[i-1] )
+            speed_ok = speed2[i-1];
+    }
+    if ( speed_ok ) {
+        settings.c_cflag |= speed_ok;
+    }
+    else {
+        settings.c_cflag |= BOTHER;
+        settings.c_ispeed = speed;
+        settings.c_ospeed = speed;
+    }
+    // Ensure input baud is same than output.
+    settings.c_cflag |= (settings.c_cflag & CBAUD) << IBSHIFT;
+    // Now configure port.
+    ret = ioctl( f, TCSETS2, &settings );
+    if (ret < 0)
+    {
+        genericsReport( V_ERROR, "Unsupported baudrate" EOL );
+        return ( -3 );
+    }
+    // Check configuration is ok.
+    ret = ioctl( f, TCGETS2, &settings );
+    if ( ret < 0 )
+        return ( -3 );
+    if ( speed_ok ) {
+        if ( ( settings.c_cflag & CBAUD ) != speed_ok ) {
+            genericsReport( V_WARN, "Fail to set baudrate" EOL );
+        }
+    }
+    else {
+        if ( ( settings.c_ispeed != speed ) || ( settings.c_ospeed != speed ) ) {
+            genericsReport( V_WARN, "Fail to set baudrate" EOL );
+        }
+    }
+    // Flush port.
+    ioctl( f, TCFLSH, TCIOFLUSH );
+    return 0;
+}
+#else
+int setSerialConfig ( int f, speed_t speed )
+{
+    struct termios settings;
+    if ( tcgetattr( f, &settings ) < 0 )
+    {
+        perror( "tcgetattr" );
+        return ( -3 );
+    }
+
+    if ( cfsetspeed( &settings, speed ) < 0 )
+    {
+        genericsReport( V_ERROR, "Error Setting input speed" EOL );
+        return ( -3 );
+    }
+
+    settings.c_iflag &= ~( ISTRIP | INLCR | IGNCR | ICRNL | IXON | IXOFF );
+    settings.c_lflag &= ~( ICANON | ECHO | ECHOE | ISIG );
+    settings.c_cflag &= ~PARENB; /* no parity */
+    settings.c_cflag &= ~CSTOPB; /* 1 stop bit */
+    settings.c_cflag &= ~CSIZE;
+    settings.c_cflag |= CS8 | CLOCAL; /* 8 bits */
+    settings.c_oflag &= ~OPOST; /* raw output */
+
+    if ( tcsetattr( f, TCSANOW, &settings ) < 0 )
+    {
+        genericsReport( V_ERROR, "Unsupported baudrate" EOL );
+        return ( -3 );
+    }
+
+    tcflush( f, TCOFLUSH );
+    return 0;
+}
+#endif
+int serialFeeder( void )
+{
+    int f, ret;
     unsigned char cbw[TRANSFER_SIZE];
     ssize_t t;
-    struct termios settings;
 
     while ( 1 )
     {
@@ -1357,33 +1471,10 @@ int serialFeeder( void )
 
         genericsReport( V_INFO, "Port opened" EOL );
 
-        if ( tcgetattr( f, &settings ) < 0 )
+        if ( ( ret = setSerialConfig (f, options.speed) ) < 0 )
         {
-            perror( "tcgetattr" );
-            return ( -3 );
+            exit ( ret );
         }
-
-        if ( cfsetspeed( &settings, options.speed ) < 0 )
-        {
-            genericsReport( V_ERROR, "Error Setting input speed" );
-            return -3;
-        }
-
-        settings.c_iflag &= ~( ISTRIP | INLCR | IGNCR | ICRNL | IXON | IXOFF );
-        settings.c_lflag &= ~( ICANON | ECHO | ECHOE | ISIG );
-        settings.c_cflag &= ~PARENB; /* no parity */
-        settings.c_cflag &= ~CSTOPB; /* 1 stop bit */
-        settings.c_cflag &= ~CSIZE;
-        settings.c_cflag |= CS8 | CLOCAL; /* 8 bits */
-        settings.c_oflag &= ~OPOST; /* raw output */
-
-        if ( tcsetattr( f, TCSANOW, &settings ) < 0 )
-        {
-            genericsReport( V_ERROR, "Unsupported baudrate" EOL );
-            exit( -3 );
-        }
-
-        tcflush( f, TCOFLUSH );
 
         while ( ( t = read( f, cbw, TRANSFER_SIZE ) ) > 0 )
         {
