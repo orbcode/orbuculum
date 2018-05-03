@@ -68,7 +68,7 @@
 #define CUTOFF              (10)             /* Default cutoff at 0.1% */
 #define SERVER_PORT         (3443)           /* Server port definition */
 #define TRANSFER_SIZE       (4096)           /* Maximum packet we might receive */
-#define TOP_UPDATE_INTERVAL (1000LL)         /* Interval between each on screen update */
+#define TOP_UPDATE_INTERVAL (1000ULL)        /* Interval between each on screen update */
 
 
 struct visitedAddr                           /* Structure for Hashmap of visited/observed addresses */
@@ -108,6 +108,7 @@ struct                                       /* Record for options, either defau
     uint32_t maxHistory;
     bool lineDisaggregation;                 /* Aggregate per line or per function? */
     bool demangle;
+    uint64_t displayInterval;
 
     int port;                                /* Source information */
     char *server;
@@ -122,6 +123,7 @@ struct                                       /* Record for options, either defau
     .maxRoutines = 8,
     .maxHistory = 30,
     .demangle = false,
+    .displayInterval = TOP_UPDATE_INTERVAL,
     .port = SERVER_PORT,
     .server = "localhost"
 };
@@ -612,12 +614,14 @@ void _protocolPump( uint8_t c )
 void _printHelp( char *progName )
 
 {
-    fprintf( stdout, "Useage: %s <htv> <-e ElfFile> <-m MaxHistory> <-o filename> -r <routines> <-i channel> <-p port> <-s server>" EOL, progName );
+    fprintf( stdout, "Usage: %s <htv> <-e ElfFile> <-m MaxHistory> <-o filename> -r <routines> <-i channel> <-p port> <-s server>" EOL, progName );
     fprintf( stdout, "        c: <num> Cut screen output after number of lines" EOL );
     fprintf( stdout, "        d: <DeleteMaterial> to take off front of filenames" EOL );
+    fprintf( stdout, "        D: Demangle C++ symbols" EOL );
     fprintf( stdout, "        e: <ElfFile> to use for symbols" EOL );
     fprintf( stdout, "        h: This help" EOL );
     fprintf( stdout, "        i: <channel> Set ITM Channel in TPIU decode (defaults to 1)" EOL );
+    fprintf( stdout, "        I: <interval> Display interval in seconds (defaults to 1.0)" EOL );
     fprintf( stdout, "        l: Aggregate per line rather than per function" EOL );
     fprintf( stdout, "        m: <MaxHistory> to record in history file (default %d intervals)" EOL, options.maxHistory );
     fprintf( stdout, "        n: Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
@@ -625,7 +629,7 @@ void _printHelp( char *progName )
     fprintf( stdout, "        r: <routines> to record in history file (default %d routines)" EOL, options.maxRoutines );
     fprintf( stdout, "        s: <Server>:<Port> to use" EOL );
     fprintf( stdout, "        t: Use TPIU decoder" EOL );
-    fprintf( stdout, "       v: <level> Verbose mode 0(errors)..3(debug)" EOL );
+    fprintf( stdout, "        v: <level> Verbose mode 0(errors)..3(debug)" EOL );
 }
 // ====================================================================================================
 int _processOptions( int argc, char *argv[] )
@@ -633,7 +637,7 @@ int _processOptions( int argc, char *argv[] )
 {
     int c;
 
-    while ( ( c = getopt ( argc, argv, "c:d:De:hi:lm:no:r:s:tv:" ) ) != -1 )
+    while ( ( c = getopt ( argc, argv, "c:d:De:hi:I:lm:no:r:s:tv:" ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -654,6 +658,11 @@ int _processOptions( int argc, char *argv[] )
             // ------------------------------------
             case 'D':
                 options.demangle = true;
+                break;
+
+            // ------------------------------------
+            case 'I':
+                options.displayInterval = (uint64_t) ( atof( optarg ) * 1000 );
                 break;
 
             // ------------------------------------
@@ -845,7 +854,7 @@ int main( int argc, char *argv[] )
             _protocolPump( *c++ );
         }
 
-        if ( _timestamp() - lastTime > TOP_UPDATE_INTERVAL )
+        if ( ( _timestamp() - lastTime ) > options.displayInterval )
         {
             lastTime = _timestamp();
             outputTop();
