@@ -249,11 +249,22 @@ static void *_runFifo( void *arg )
 
             /* Build 32 value the long way around to avoid type-punning issues */
             w = ( p.d[3] << 24 ) | ( p.d[2] << 16 ) | ( p.d[1] << 8 ) | ( p.d[0] );
-            writeDataLen = snprintf( constructString, MAX_STRING_LENGTH, options.channel[params->portNo].presFormat, w );
-
-            if ( write( fifo, constructString, ( writeDataLen < MAX_STRING_LENGTH ) ? writeDataLen : MAX_STRING_LENGTH ) <= 0 )
+            if (options.channel[params->portNo].presFormat)
             {
-                break;
+                // formatted output.
+                writeDataLen = snprintf( constructString, MAX_STRING_LENGTH, options.channel[params->portNo].presFormat, w );
+                if ( write( fifo, constructString, ( writeDataLen < MAX_STRING_LENGTH ) ? writeDataLen : MAX_STRING_LENGTH ) <= 0 )
+                {
+                    break;
+                }
+            }
+            else
+            {
+                // raw output.
+                if ( write( fifo, &w, sizeof (w) ) <= 0 )
+                {
+                    break;
+                }
             }
         }
 
@@ -1122,8 +1133,9 @@ int _processOptions( int argc, char *argv[] )
 
                 if ( !*chanIndex )
                 {
-                    genericsReport( V_ERROR, "No output format for channel %d" EOL, chan );
-                    return false;
+                    genericsReport( V_WARN, "No output format for channel %d, output raw!" EOL, chan );
+                    options.channel[chan].presFormat = NULL;
+                    break;
                 }
 
                 *chanIndex++ = 0;
@@ -1210,7 +1222,7 @@ int _processOptions( int argc, char *argv[] )
     {
         if ( options.channel[g].chanName )
         {
-            genericsReport( V_INFO, "         %02d [%s] [%s]" EOL, g, GenericsEscape( options.channel[g].presFormat ), options.channel[g].chanName );
+            genericsReport( V_INFO, "         %02d [%s] [%s]" EOL, g, GenericsEscape( options.channel[g].presFormat ?: "RAW" ), options.channel[g].chanName );
         }
     }
 
