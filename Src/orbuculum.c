@@ -973,7 +973,7 @@ static void _intHandler( int sig, siginfo_t *si, void *unused )
 void _printHelp( char *progName )
 
 {
-    fprintf( stdout, "Useage: %s <hntv> <a name:number> <b basedir> <f filename>  <i channel> <p port> <s speed>" EOL, progName );
+    fprintf( stdout, "Usage: %s <hntv> <s name:number> <b basedir> <f filename>  <i channel> <p port> <a speed>" EOL, progName );
     fprintf( stdout, "        a: <serialSpeed> to use" EOL );
     fprintf( stdout, "        b: <basedir> for channels" EOL );
     fprintf( stdout, "        c: <Number>,<Name>,<Format> of channel to populate (repeat per channel)" EOL );
