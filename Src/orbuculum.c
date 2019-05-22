@@ -122,6 +122,7 @@ struct
     char *port;
     char *file;
     int speed;
+    int listenPort;
 } options =
 {
     .forceITMSync = true,
@@ -129,6 +130,7 @@ struct
     .speed = 115200,
     .useTPIU = false,
     .tpiuITMChannel = 1,
+    .listenPort = SERVER_PORT,
     .seggerHost = SEGGER_HOST
 #ifdef INCLUDE_FPGA_SUPPORT
     ,
@@ -481,7 +483,7 @@ static void *_listenTask( void *arg )
     return NULL;
 }
 // ====================================================================================================
-static bool _makeServerTask( void )
+static bool _makeServerTask( int port )
 
 /* Creating the listening server thread */
 
@@ -502,7 +504,7 @@ static bool _makeServerTask( void )
     bzero( ( char * ) &serv_addr, sizeof( serv_addr ) );
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_addr.s_addr = INADDR_ANY;
-    serv_addr.sin_port = htons( SERVER_PORT );
+    serv_addr.sin_port = htons( port );
 
     if ( setsockopt( sockfd, SOL_SOCKET, SO_REUSEADDR, &( int )
 {
@@ -957,6 +959,7 @@ void _printHelp( char *progName )
     fprintf( stdout, "        f: <filename> Take input from specified file" EOL );
     fprintf( stdout, "        h: This help" EOL );
     fprintf( stdout, "        i: <channel> Set ITM Channel in TPIU decode (defaults to 1)" EOL );
+    fprintf( stdout, "        l: <port> Listen port for the incoming connections (defaults to %d)" EOL, SERVER_PORT );
     fprintf( stdout, "        n: Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
 #ifdef INCLUDE_FPGA_SUPPORT
     fprintf( stdout, "        o: <num> Use traceport FPGA custom interface with 1, 2 or 4 bits width" EOL );
@@ -976,7 +979,7 @@ int _processOptions( int argc, char *argv[] )
     char *chanIndex;
 #define DELIMITER ','
 
-    while ( ( c = getopt ( argc, argv, "a:b:c:f:hi:no:p:s:tv:" ) ) != -1 )
+    while ( ( c = getopt ( argc, argv, "a:b:c:f:hi:l:no:p:s:tv:" ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -1002,6 +1005,10 @@ int _processOptions( int argc, char *argv[] )
             // ------------------------------------
             case 'i':
                 options.tpiuITMChannel = atoi( optarg );
+                break;
+
+            case 'l':
+                options.listenPort = atoi( optarg );
                 break;
 
             // ------------------------------------
@@ -1588,7 +1595,7 @@ int main( int argc, char *argv[] )
         exit( -1 );
     }
 
-    if ( !_makeServerTask() )
+    if ( !_makeServerTask( options.listenPort ) )
     {
         genericsReport( V_ERROR, "Failed to make network server" EOL );
         exit( -1 );
