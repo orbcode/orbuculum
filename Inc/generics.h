@@ -24,7 +24,11 @@
 #include <limits.h>
 #include <stdint.h>
 
+#if defined LINUX
+#define EOL "\n"
+#else
 #define EOL "\n\r"
+#endif
 
 // ====================================================================================================
 enum verbLevel {V_ERROR, V_WARN, V_INFO, V_DEBUG};
