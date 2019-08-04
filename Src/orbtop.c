@@ -328,10 +328,12 @@ void outputTop( void )
             if ( report[n].count )
             {
                 char *d = NULL;
+
                 if ( ( options.demangle ) && ( !options.reportFilenames ) )
                 {
                     d = cplus_demangle( report[n].n->function, DMGL_AUTO );
                 }
+
                 if ( ( percentage >= CUTOFF ) && ( ( !options.cutscreen ) || ( n < options.cutscreen ) ) )
                 {
                     fprintf( stdout, "%3d.%02d%% %8ld ", percentage / 100, percentage % 100, report[n].count );
@@ -349,7 +351,7 @@ void outputTop( void )
                     }
                     else
                     {
-                        fprintf( stdout, "%s" EOL, d ? d : report[n].n->function);
+                        fprintf( stdout, "%s" EOL, d ? d : report[n].n->function );
                     }
 
                     totPercent += percentage;
@@ -662,7 +664,7 @@ int _processOptions( int argc, char *argv[] )
 
             // ------------------------------------
             case 'I':
-                options.displayInterval = (uint64_t) ( atof( optarg ) * 1000 );
+                options.displayInterval = ( uint64_t ) ( atof( optarg ) * 1000 );
                 break;
 
             // ------------------------------------

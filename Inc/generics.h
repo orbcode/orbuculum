@@ -25,9 +25,9 @@
 #include <stdint.h>
 
 #if defined LINUX
-#define EOL "\n"
+    #define EOL "\n"
 #else
-#define EOL "\n\r"
+    #define EOL "\n\r"
 #endif
 
 // ====================================================================================================

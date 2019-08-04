@@ -39,7 +39,7 @@
         #if defined TCGETS2
             #include <asm/termios.h>
             /* Manual declaration to avoid conflict. */
-            extern int ioctl (int __fd, unsigned long int __request, ...) __THROW;
+            extern int ioctl ( int __fd, unsigned long int __request, ... ) __THROW;
         #else
             #include <sys/ioctl.h>
             #include <termios.h>
@@ -191,7 +191,7 @@ struct
     struct TPIUPacket p;
 
 #ifdef INCLUDE_FPGA_SUPPORT
-  bool feederExit;
+    bool feederExit;
     struct ftdi_context *ftdi;
     struct ftdispi_context ftdifsc;
 #endif
@@ -1148,11 +1148,13 @@ int _processOptions( int argc, char *argv[] )
     }
 
 #ifdef INCLUDE_FPGA_SUPPORT
+
     if ( ( options.orbtrace ) && !( ( options.orbtraceWidth == 1 ) || ( options.orbtraceWidth == 2 ) || ( options.orbtraceWidth == 4 ) ) )
     {
         genericsReport( V_ERROR, "Orbtrace interface illegal port width" EOL );
         return false;
     }
+
 #endif
 
     /* ... and dump the config if we're being verbose */
@@ -1361,69 +1363,98 @@ int setSerialConfig ( int f, speed_t speed )
     // Use Linux specific termios2.
     struct termios2 settings;
     int ret = ioctl( f, TCGETS2, &settings );
+
     if ( ret < 0 )
+    {
         return ( -3 );
+    }
 
     settings.c_iflag &= ~( ISTRIP | INLCR | IGNCR | ICRNL | IXON | IXOFF );
     settings.c_lflag &= ~( ICANON | ECHO | ECHOE | ISIG );
     settings.c_cflag &= ~PARENB; /* no parity */
     settings.c_cflag &= ~CSTOPB; /* 1 stop bit */
     settings.c_cflag &= ~CSIZE;
-    settings.c_cflag &= ~(CBAUD | CIBAUD);
+    settings.c_cflag &= ~( CBAUD | CIBAUD );
     settings.c_cflag |= CS8 | CLOCAL; /* 8 bits */
     settings.c_oflag &= ~OPOST; /* raw output */
 
-    const unsigned int speed1[] = {
+    const unsigned int speed1[] =
+    {
         B115200, B230400, 0, B460800, B576000,
         0, 0, B921600, 0, B1152000
     };
-    const unsigned int speed2[] = {
+    const unsigned int speed2[] =
+    {
         B500000,  B1000000, B1500000, B2000000,
         B2500000, B3000000, B3500000, B4000000
     };
     int speed_ok = 0;
-    if ( (speed % 500000) == 0) {
+
+    if ( ( speed % 500000 ) == 0 )
+    {
         // speed is multiple of 500000, use speed2 table.
         int i = speed / 500000;
+
         if ( i <= 8 )
-            speed_ok = speed2[i-1];
+        {
+            speed_ok = speed2[i - 1];
+        }
     }
-    else if ( (speed % 115200) == 0) {
+    else if ( ( speed % 115200 ) == 0 )
+    {
         int i = speed / 115200;
-        if ( i <= 10 && speed1[i-1] )
-            speed_ok = speed2[i-1];
+
+        if ( i <= 10 && speed1[i - 1] )
+        {
+            speed_ok = speed2[i - 1];
+        }
     }
-    if ( speed_ok ) {
+
+    if ( speed_ok )
+    {
         settings.c_cflag |= speed_ok;
     }
-    else {
+    else
+    {
         settings.c_cflag |= BOTHER;
         settings.c_ispeed = speed;
         settings.c_ospeed = speed;
     }
+
     // Ensure input baud is same than output.
-    settings.c_cflag |= (settings.c_cflag & CBAUD) << IBSHIFT;
+    settings.c_cflag |= ( settings.c_cflag & CBAUD ) << IBSHIFT;
     // Now configure port.
     ret = ioctl( f, TCSETS2, &settings );
-    if (ret < 0)
+
+    if ( ret < 0 )
     {
         genericsReport( V_ERROR, "Unsupported baudrate" EOL );
         return ( -3 );
     }
+
     // Check configuration is ok.
     ret = ioctl( f, TCGETS2, &settings );
+
     if ( ret < 0 )
+    {
         return ( -3 );
-    if ( speed_ok ) {
-        if ( ( settings.c_cflag & CBAUD ) != speed_ok ) {
+    }
+
+    if ( speed_ok )
+    {
+        if ( ( settings.c_cflag & CBAUD ) != speed_ok )
+        {
             genericsReport( V_WARN, "Fail to set baudrate" EOL );
         }
     }
-    else {
-        if ( ( settings.c_ispeed != speed ) || ( settings.c_ospeed != speed ) ) {
+    else
+    {
+        if ( ( settings.c_ispeed != speed ) || ( settings.c_ospeed != speed ) )
+        {
             genericsReport( V_WARN, "Fail to set baudrate" EOL );
         }
     }
+
     // Flush port.
     ioctl( f, TCFLSH, TCIOFLUSH );
     return 0;
@@ -1432,6 +1463,7 @@ int setSerialConfig ( int f, speed_t speed )
 int setSerialConfig ( int f, speed_t speed )
 {
     struct termios settings;
+
     if ( tcgetattr( f, &settings ) < 0 )
     {
         perror( "tcgetattr" );
@@ -1462,6 +1494,7 @@ int setSerialConfig ( int f, speed_t speed )
     return 0;
 }
 #endif
+// ====================================================================================================
 int serialFeeder( void )
 {
     int f, ret;
@@ -1470,7 +1503,12 @@ int serialFeeder( void )
 
     while ( 1 )
     {
+#ifdef OSX
+
+        while ( ( f = open( options.port, O_RDONLY | O_NONBLOCK ) ) < 0 )
+#else
         while ( ( f = open( options.port, O_RDONLY ) ) < 0 )
+#endif
         {
             genericsReport( V_WARN, "Can't open serial port" EOL );
             usleep( 500000 );
@@ -1478,7 +1516,26 @@ int serialFeeder( void )
 
         genericsReport( V_INFO, "Port opened" EOL );
 
-        if ( ( ret = setSerialConfig (f, options.speed) ) < 0 )
+#ifdef OSX
+        /* Remove the O_NONBLOCK flag now the port is open (OSX Only) */
+
+        if ( ( flags = fcntl( f, F_GETFL, NULL ) ) < 0 )
+        {
+            genericsReport( V_ERROR, "F_GETFL failed" EOL );
+            exit( -3 );
+        }
+
+        flags &= ~O_NONBLOCK;
+
+        if ( ( flags = fcntl( f, F_SETFL, flags ) ) < 0 )
+        {
+            genericsReport( V_ERROR, "F_SETFL failed" EOL );
+            exit( -3 );
+        }
+
+#endif
+
+        if ( ( ret = setSerialConfig ( f, options.speed ) ) < 0 )
         {
             exit ( ret );
         }
@@ -1521,11 +1578,12 @@ int fpgaFeeder( void )
     // FTDI Chip takes a little while to reset itself
     // usleep( 400000 );
 
-    _r.feederExit=false;
+    _r.feederExit = false;
+
     while ( !_r.feederExit )
     {
         _r.ftdi = ftdi_new();
-	ftdi_set_interface( _r.ftdi, FTDI_INTERFACE );
+        ftdi_set_interface( _r.ftdi, FTDI_INTERFACE );
 
 
         do
@@ -1538,7 +1596,7 @@ int fpgaFeeder( void )
                 usleep( 50000 );
             }
         }
-        while (( f < 0 ) && (!_r.feederExit));
+        while ( ( f < 0 ) && ( !_r.feederExit ) );
 
         genericsReport( V_INFO, "Port opened" EOL );
         f = ftdispi_open( &_r.ftdifsc, _r.ftdi, FTDI_INTERFACE );
@@ -1566,7 +1624,7 @@ int fpgaFeeder( void )
 
         TPIUDecoderForceSync( &_r.t, 0 );
 
-        while ((!_r.feederExit) && ( ( t = ftdispi_write_read( &_r.ftdifsc, initSequence, 2, cbw, FTDI_HS_TRANSFER_SIZE, FPGA_AWAKE ) ) >= 0 ))
+        while ( ( !_r.feederExit ) && ( ( t = ftdispi_write_read( &_r.ftdifsc, initSequence, 2, cbw, FTDI_HS_TRANSFER_SIZE, FPGA_AWAKE ) ) >= 0 ) )
         {
             c = cbw;
             d = scratchBuffer;
@@ -1608,9 +1666,10 @@ int fpgaFeeder( void )
 
         genericsReport( V_WARN, "Exit Requested (%d, %s)" EOL, t, ftdi_get_error_string( _r.ftdi ) );
 
-	ftdispi_setgpo(&_r.ftdifsc, FPGA_ASLEEP);
-	ftdispi_close( &_r.ftdifsc, 1 );
+        ftdispi_setgpo( &_r.ftdifsc, FPGA_ASLEEP );
+        ftdispi_close( &_r.ftdifsc, 1 );
     }
+
     return 0;
 }
 
@@ -1618,8 +1677,8 @@ int fpgaFeeder( void )
 void fpgaFeederClose( int dummy )
 
 {
-  (void)dummy;
-  _r.feederExit=true;
+    ( void )dummy;
+    _r.feederExit = true;
 }
 #endif
 // ====================================================================================================
@@ -1704,8 +1763,8 @@ int main( int argc, char *argv[] )
 
     if ( options.orbtrace )
     {
-      signal( SIGINT, fpgaFeederClose );
-      exit( fpgaFeeder() );
+        signal( SIGINT, fpgaFeederClose );
+        exit( fpgaFeeder() );
     }
 
 #endif
