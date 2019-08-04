@@ -2,11 +2,11 @@ Orbuculum - ARM Cortex Debug Output Processing Tools
 ====================================================
 
 * Latest Changes:
-After some time away, I'm finally back onto this and have pulled in a number of changes that people have submitted. The most important of these is that the gdbinit has been changed to referend _SWO_ and not _SWD_. Sorry, that may mean slight changes to your startup scripts.
+After some time away, I'm finally back onto this and have pulled in a number of changes that people have submitted. The most important of these is that the gdbinit has been changed to refer to _SWO_ and not _SWD_. Sorry, that may mean slight changes to your startup scripts.
 
 The CHANGES file now tells you what's been done when.
 
-Orbuculum now has an active Gitter channel at https://gitter.im/orbcode/orbuculum ... come join the discussion.*
+Orbuculum now has an active Gitter channel at https://gitter.im/orbcode/orbuculum ... come join the discussion.
 
 An Orbuculum is a Crystal Ball, used for seeing things that would 
  be otherwise invisible. A  nodding reference to (the) BlackMagic
@@ -15,9 +15,7 @@ An Orbuculum is a Crystal Ball, used for seeing things that would
 You can find information about using this suite on the Embedded Rambling
 blog at http://shadetail.com/.
 
-*This program is in heavy development. Check back frequently for new versions 
-with additional functionality. The current status (23rd Jan) is that the fpga
-code appears stable for 1, 2 and 4 bit parallel port operation, and support has been integrated into orbuclum for it.  It's not fully documented though so you might be digging through source files to use it.*
+*This program is back in development after far too long away. Development on the fpga is now underway but stability and functional fixes will continue to be made on master.*
 
 For the current development status you will need to use the blackorb branch. The majority of effort at the moment is being spent on the fpga parallel trace activity.
 
