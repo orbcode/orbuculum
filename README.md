@@ -1,7 +1,12 @@
 Orbuculum - ARM Cortex Debug Output Processing Tools
 ====================================================
 
-*Stop press: Orbuculum now has an active Gitter channel at https://gitter.im/orbcode/orbuculum ... come join the discussion.*
+* Latest Changes:
+After some time away, I'm finally back onto this and have pulled in a number of changes that people have submitted. The most important of these is that the gdbinit has been changed to referend _SWO_ and not _SWD_. Sorry, that may mean slight changes to your startup scripts.
+
+The CHANGES file now tells you what's been done when.
+
+Orbuculum now has an active Gitter channel at https://gitter.im/orbcode/orbuculum ... come join the discussion.*
 
 An Orbuculum is a Crystal Ball, used for seeing things that would 
  be otherwise invisible. A  nodding reference to (the) BlackMagic

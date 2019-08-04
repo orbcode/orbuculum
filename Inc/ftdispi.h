@@ -44,7 +44,7 @@
 #ifndef __FTDISPI_H__
 #define __FTDISPI_H__
 
-#include <ftdi.h>
+#include <libftdi1/ftdi.h>
 #include <unistd.h>
 #include <string.h>
 #include <stdint.h>

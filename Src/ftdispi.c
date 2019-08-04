@@ -41,6 +41,7 @@
  * SUCH DAMAGE.
  */
 
+#include <stdlib.h>
 #include <stdio.h>
 #include "ftdispi.h"
 
