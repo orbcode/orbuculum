@@ -68,7 +68,7 @@
 #define CUTOFF              (10)             /* Default cutoff at 0.1% */
 #define SERVER_PORT         (3443)           /* Server port definition */
 #define TRANSFER_SIZE       (4096)           /* Maximum packet we might receive */
-#define TOP_UPDATE_INTERVAL (1000ULL)        /* Interval between each on screen update */
+#define TOP_UPDATE_INTERVAL (1000)           /* Interval between each on screen update */
 
 
 struct visitedAddr                           /* Structure for Hashmap of visited/observed addresses */
@@ -101,14 +101,14 @@ struct                                       /* Record for options, either defau
 
     char *elffile;                           /* Target program config */
 
-    char *outfile;                           /* File to output historic information */
+    char *outfile;                           /* File to output current information */
+    char *logfile;                           /* File to output historic information */
 
     uint32_t cutscreen;                      /* Cut screen output after specified number of lines */
     uint32_t maxRoutines;                    /* Historic information to emit */
-    uint32_t maxHistory;
     bool lineDisaggregation;                 /* Aggregate per line or per function? */
-    bool demangle;
-    uint64_t displayInterval;
+    bool demangle;                           /* Do we want to demangle any C++ we come across? */
+    uint64_t displayInterval;  /* What is the display interval? */
 
     int port;                                /* Source information */
     char *server;
@@ -119,10 +119,10 @@ struct                                       /* Record for options, either defau
     .useTPIU = false,
     .tpiuITMChannel = 1,
     .outfile = NULL,
+    .logfile = NULL,
     .lineDisaggregation = false,
     .maxRoutines = 8,
-    .maxHistory = 30,
-    .demangle = false,
+    .demangle = true,
     .displayInterval = TOP_UPDATE_INTERVAL,
     .port = SERVER_PORT,
     .server = "localhost"
@@ -252,6 +252,7 @@ void outputTop( void )
     uint32_t totPercent = 0;
 
     FILE *p = NULL;
+    FILE *q = NULL;
 
     /* Put the address into order of the file and function names */
     HASH_SORT( _r.addresses, _routines_sort_fn );
@@ -311,9 +312,16 @@ void outputTop( void )
     /* Now put the whole thing into order of number of samples */
     qsort( report, reportLines, sizeof( struct reportLine ), _report_sort_fn );
 
+    /* This is the file retaining the current samples */
     if ( options.outfile )
     {
         p = fopen( options.outfile, "w" );
+    }
+
+    /* This is the file containing the historic samples */
+    if ( options.logfile )
+    {
+        q = fopen( options.logfile, "a" );
     }
 
     fprintf( stdout, "\033[2J\033[;H" );
@@ -357,7 +365,7 @@ void outputTop( void )
                     totPercent += percentage;
                 }
 
-                if ( ( p )  && ( n < options.maxRoutines ) )
+                if ( ( p )  && ( n < options.maxRoutines ) && ( percentage >= CUTOFF ) )
                 {
                     if ( !options.lineDisaggregation )
                     {
@@ -368,6 +376,19 @@ void outputTop( void )
                         fprintf( p, "%s::%d,%3d.%02d" EOL, d ? d : report[n].n->function, report[n].n->line, percentage / 100, percentage % 100 );
                     }
                 }
+
+                if ( ( q )  && ( percentage >= CUTOFF ) )
+                {
+                    if ( !options.lineDisaggregation )
+                    {
+                        fprintf( q, "%s,%3d.%02d" EOL, d ? d : report[n].n->function, percentage / 100, percentage % 100 );
+                    }
+                    else
+                    {
+                        fprintf( q, "%s::%d,%3d.%02d" EOL, d ? d : report[n].n->function, report[n].n->line, percentage / 100, percentage % 100 );
+                    }
+                }
+
             }
         }
     }
@@ -386,7 +407,12 @@ void outputTop( void )
     if ( p )
     {
         fclose( p );
-        p = NULL;
+    }
+
+    if ( q )
+    {
+        fprintf( q, "===================================" EOL );
+        fclose( q );
     }
 
     genericsReport( V_INFO, "         Ovf=%3d  ITMSync=%3d TPIUSync=%3d ITMErrors=%3d" EOL,
@@ -616,19 +642,19 @@ void _protocolPump( uint8_t c )
 void _printHelp( char *progName )
 
 {
-    fprintf( stdout, "Usage: %s <htv> <-e ElfFile> <-m MaxHistory> <-o filename> -r <routines> <-i channel> <-p port> <-s server>" EOL, progName );
+    fprintf( stdout, "Usage: %s <htv> <-e ElfFile> <-g filename> <-o filename> -r <routines> <-i channel> <-p port> <-s server>" EOL, progName );
     fprintf( stdout, "        c: <num> Cut screen output after number of lines" EOL );
     fprintf( stdout, "        d: <DeleteMaterial> to take off front of filenames" EOL );
-    fprintf( stdout, "        D: Demangle C++ symbols" EOL );
+    fprintf( stdout, "        D: Switch off C++ symbol demangling" EOL );
     fprintf( stdout, "        e: <ElfFile> to use for symbols" EOL );
+    fprintf( stdout, "        g: <LogFile> append historic records to specified file" EOL );
     fprintf( stdout, "        h: This help" EOL );
     fprintf( stdout, "        i: <channel> Set ITM Channel in TPIU decode (defaults to 1)" EOL );
-    fprintf( stdout, "        I: <interval> Display interval in seconds (defaults to 1.0)" EOL );
+    fprintf( stdout, "        I: <interval> Display interval in seconds (defaults to %d mS)" EOL, TOP_UPDATE_INTERVAL );
     fprintf( stdout, "        l: Aggregate per line rather than per function" EOL );
-    fprintf( stdout, "        m: <MaxHistory> to record in history file (default %d intervals)" EOL, options.maxHistory );
     fprintf( stdout, "        n: Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
-    fprintf( stdout, "        o: <filename> to be used for output history file" EOL );
-    fprintf( stdout, "        r: <routines> to record in history file (default %d routines)" EOL, options.maxRoutines );
+    fprintf( stdout, "        o: <filename> to be used for output live file" EOL );
+    fprintf( stdout, "        r: <routines> to record in live file (default %d routines)" EOL, options.maxRoutines );
     fprintf( stdout, "        s: <Server>:<Port> to use" EOL );
     fprintf( stdout, "        t: Use TPIU decoder" EOL );
     fprintf( stdout, "        v: <level> Verbose mode 0(errors)..3(debug)" EOL );
@@ -639,7 +665,7 @@ int _processOptions( int argc, char *argv[] )
 {
     int c;
 
-    while ( ( c = getopt ( argc, argv, "c:d:De:hi:I:lm:no:r:s:tv:" ) ) != -1 )
+    while ( ( c = getopt ( argc, argv, "c:d:De:g:hi:I:lm:no:r:s:tv:" ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -653,13 +679,18 @@ int _processOptions( int argc, char *argv[] )
                 break;
 
             // ------------------------------------
+            case 'g':
+                options.logfile = optarg;
+                break;
+
+            // ------------------------------------
             case 'd':
                 options.deleteMaterial = optarg;
                 break;
 
             // ------------------------------------
             case 'D':
-                options.demangle = true;
+                options.demangle = false;
                 break;
 
             // ------------------------------------
@@ -678,11 +709,7 @@ int _processOptions( int argc, char *argv[] )
                 break;
 
             // ------------------------------------
-            case 'm':
-                options.maxHistory = atoi( optarg );
-                break;
 
-            // ------------------------------------
             case 'n':
                 options.forceITMSync = false;
                 break;
@@ -771,10 +798,13 @@ int _processOptions( int argc, char *argv[] )
 
     genericsReport( V_INFO, "orbtop V" VERSION " (Git %08X %s, Built " BUILD_DATE ")" EOL, GIT_HASH, ( GIT_DIRTY ? "Dirty" : "Clean" ) );
 
-    genericsReport( V_INFO, "Server      : %s:%d" EOL, options.server, options.port );
-    genericsReport( V_INFO, "Delete Mat  : %s" EOL, options.deleteMaterial ? options.deleteMaterial : "None" );
-    genericsReport( V_INFO, "Elf File    : %s" EOL, options.elffile );
-    genericsReport( V_INFO, "ForceSync   : %s" EOL, options.forceITMSync ? "true" : "false" );
+    genericsReport( V_INFO, "Server           : %s:%d" EOL, options.server, options.port );
+    genericsReport( V_INFO, "Delete Mat       : %s" EOL, options.deleteMaterial ? options.deleteMaterial : "None" );
+    genericsReport( V_INFO, "Elf File         : %s" EOL, options.elffile );
+    genericsReport( V_INFO, "ForceSync        : %s" EOL, options.forceITMSync ? "true" : "false" );
+    genericsReport( V_INFO, "C++ Demangle     : %s" EOL, options.demangle ? "true" : "false" );
+    genericsReport( V_INFO, "Display Interval : %d mS" EOL, options.displayInterval );
+    genericsReport( V_INFO, "Log File         : %s" EOL, options.logfile ? options.logfile : "None" );
 
     if ( options.useTPIU )
     {

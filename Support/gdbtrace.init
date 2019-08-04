@@ -8,10 +8,16 @@ GDB SWO Trace Configuration Helpers
 
 Setup Device
 ------------
-enableSTM32SWO    : Enable SWO on STM32 pins (for STM32F4 if 4 is passed as first argument)
-prepareSWO        : Prepare SWO output in specified format
-enableSTM32TRACE  : Enable TRACE on STM32 pins
-prepareTRACE      : Prepare TRACE output in specified format
+STM32;
+  enableSTM32SWO  : Enable SWO on STM32 pins (for STM32F4 if 4 is passed as first argument)
+  enableSTM32TRACE: Enable TRACE on STM32 pins
+
+IMXRT;
+  enableIMXRTSWO  : Enable SWO on IMXRT pins
+
+All;
+  prepareSWO      : Prepare SWO output in specified format
+  prepareTRACE    : Prepare TRACE output in specified format
 
 Configure DWT
 -------------
@@ -45,6 +51,24 @@ end
 # ====================================================================
 # ====================================================================
 # ====================================================================
+define enableIMXRTSWO
+  # Enable Trace Clocks
+  set *0x400FC068|=(3<<22)
+
+  # Set AD_B0_11 to be SWO
+  set *0x401F80E8=6
+
+  # set output characteristics for AD_B0_11
+  set *0x401F825C=0x99
+
+  # Enable trace support in DBGMCU
+  set *0xE0042004 |= 0x20
+end
+document enableIMXRTSWO
+enableIMXRTSWO Configure output pin on IMXRT for SWO use.
+end
+# ====================================================================
+
 define enableSTM32SWO
   set $tgt=1
   if $argc >= 1
