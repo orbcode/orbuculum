@@ -28,6 +28,7 @@
 #include <sys/stat.h>
 #include <stdio.h>
 #include <string.h>
+#include <semaphore.h>
 #if defined OSX
     #include <sys/ioctl.h>
     #include <libusb.h>
@@ -179,6 +180,8 @@ struct
 {
     struct channelRuntime c[NUM_CHANNELS + 1];   /* Output for each channel */
     struct nwClient *firstClient;                /* Head of linked list of network clients */
+    sem_t clientList;                              /* Locking semaphore for list of network clients */
+
     pthread_t ipThread;                          /* The listening thread for n/w clients */
 
     /* Timestamp info */
@@ -414,6 +417,9 @@ static void *_client( void *args )
             close( params->portNo );
             close( params->listenHandle );
 
+            /* First of all, make sure we can get access to the client list */
+            sem_wait( &_r.clientList );
+
             if ( params->client->prevClient )
             {
                 params->client->prevClient->nextClient = params->client->nextClient;
@@ -427,6 +433,9 @@ static void *_client( void *args )
             {
                 params->client->nextClient->prevClient = params->client->prevClient;
             }
+
+            /* OK, we made our modifications */
+            sem_post( &_r.clientList );
 
             return NULL;
         }
@@ -470,6 +479,8 @@ static void *_listenTask( void *arg )
                 pthread_detach( params->client->thread );
 
                 /* Hook into linked list */
+                sem_wait( &_r.clientList );
+
                 params->client->nextClient = _r.firstClient;
                 params->client->prevClient = NULL;
 
@@ -479,6 +490,8 @@ static void *_listenTask( void *arg )
                 }
 
                 _r.firstClient = params->client;
+
+                sem_post( &_r.clientList );
             }
         }
     }
@@ -539,11 +552,15 @@ static void _sendToClients( uint32_t len, uint8_t *buffer )
 {
     struct nwClient *n = _r.firstClient;
 
+    sem_wait( &_r.clientList );
+
     while ( n )
     {
         write( n->handle, buffer, len );
         n = n->nextClient;
     }
+
+    sem_post( &_r.clientList );
 }
 // ====================================================================================================
 void _handleException( struct ITMDecoder *i, struct ITMPacket *p )
@@ -1726,6 +1743,8 @@ int main( int argc, char *argv[] )
     }
 
     atexit( _removeFifoTasks );
+
+    sem_init( &_r.clientList, 0, 1 );
 
     /* Reset the TPIU handler before we start */
     TPIUDecoderInit( &_r.t );
