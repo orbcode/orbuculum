@@ -292,6 +292,8 @@ Specific command line options of note are;
      be in use for this to make sense.  If you call the GenericsConfigureTracing
      routine above with the ITM Channel set to 0 then the TPIU will be bypassed.
 
+ `-l [port]`: Set listening port for the incoming connections from clients.
+
   `-n`: Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)
 
   `-o [width]`: Use the custom (ice40 FPGA) based interface (if compiled with support) at specified port width. Current fpga supports 1, 2 and 4 bit parallel operation.
@@ -388,7 +390,11 @@ Command line options for orbtop are;
 
  `-d [DeleteMaterial]`: to take off front of filenames (for pretty printing).
 
+ `-D`: Switch off C++ symbol demangling (on by default).
+
  `-e`: Set elf file for recovery of program symbols. This will be monitored and reloaded if it changes.
+
+ `-g [LogFile]`: Append historic records to specified file on an ongoing basis.
 
  `-h`: Brief help.
 
@@ -396,9 +402,9 @@ Command line options for orbtop are;
      be in use for this to make sense.  If you call the GenericsConfigureTracing
      routine above with the ITM Channel set to 0 then the TPIU will be bypassed.
 
- `-l`: Aggregate per line rather than per function
+ `-I [Interval]`: Set integration and display interval in milliseconds (defaults to 1000 mS)
 
- `-m [MaxHistory]`: Number of intervals to record in history file
+ `-l`: Aggregate per line rather than per function
 
  `-n`: Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)
 

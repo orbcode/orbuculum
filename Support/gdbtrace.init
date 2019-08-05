@@ -51,6 +51,19 @@ end
 # ====================================================================
 # ====================================================================
 # ====================================================================
+
+# Legacy fixups...lets avoid upsetting anyone too much
+
+define enableSTM32SWD
+       echo enableSTM32SWD: This command has been replaced with enableSTM32SWO\n
+       quit
+end
+
+define prepareSWD
+       echo prepareSWD: This command has been replaced with prepareSWO\n
+       quit
+end
+# ====================================================================
 define enableIMXRTSWO
   # Enable Trace Clocks
   set *0x400FC068|=(3<<22)

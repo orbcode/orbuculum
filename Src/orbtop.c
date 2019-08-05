@@ -650,7 +650,7 @@ void _printHelp( char *progName )
     fprintf( stdout, "        g: <LogFile> append historic records to specified file" EOL );
     fprintf( stdout, "        h: This help" EOL );
     fprintf( stdout, "        i: <channel> Set ITM Channel in TPIU decode (defaults to 1)" EOL );
-    fprintf( stdout, "        I: <interval> Display interval in seconds (defaults to %d mS)" EOL, TOP_UPDATE_INTERVAL );
+    fprintf( stdout, "        I: <interval> Display interval in milliseconds (defaults to %d mS)" EOL, TOP_UPDATE_INTERVAL );
     fprintf( stdout, "        l: Aggregate per line rather than per function" EOL );
     fprintf( stdout, "        n: Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
     fprintf( stdout, "        o: <filename> to be used for output live file" EOL );
