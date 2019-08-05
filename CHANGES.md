@@ -1,4 +1,9 @@
-4th August 2014 (Version 0.21)
+5th August 2019 (Version 0.22)
+
+* Internal simplifications and tidying
+* Fix signal bug which could lead to orbuculum bailing when a client disconnected
+
+4th August 2019 (Version 0.21)
 
 * gdbinit is changed to reference SWO rather than SWD (Issue #22)
 * Support for higher speed connections using linux kernels that support the BOTHER option.

@@ -20,9 +20,12 @@
 
 #include <stdarg.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <stdint.h>
 #include <limits.h>
 #include "generics.h"
+
+#define MAX_STRLEN (4096) // Maximum length of debug string
 
 // ====================================================================================================
 char *GenericsEscape( char *str )
@@ -169,8 +172,6 @@ void genericsReport( enum verbLevel l, const char *fmt, ... )
 
 /* Debug reporting stream */
 
-#define MAX_STRLEN (4096)
-
 {
     static char op[MAX_STRLEN];
 
@@ -182,5 +183,19 @@ void genericsReport( enum verbLevel l, const char *fmt, ... )
         va_end( va );
         fputs( op, stderr );
     }
+}
+// ====================================================================================================
+void genericsExit( int status, const char *fmt, ... )
+
+{
+    static char op[MAX_STRLEN];
+
+    va_list va;
+    va_start( va, fmt );
+    vsnprintf( op, MAX_STRLEN, fmt, va );
+    va_end( va );
+    fputs( op, stderr );
+
+    exit( status );
 }
 // ====================================================================================================

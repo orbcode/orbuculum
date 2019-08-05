@@ -229,9 +229,6 @@ static void *_runFifo( void *arg )
         return NULL;
     }
 
-    /* Don't kill this sub-process when any reader or writer evaporates */
-    signal( SIGPIPE, SIG_IGN );
-
     while ( 1 )
     {
         /* This is the child */
@@ -277,9 +274,6 @@ static void *_runHWFifo( void *arg )
     {
         return NULL;
     }
-
-    /* Don't kill this sub-process when any reader or writer evaporates */
-    signal( SIGPIPE, SIG_IGN );
 
     while ( 1 )
     {
@@ -952,9 +946,10 @@ void _protocolPump( uint8_t c )
     }
 }
 // ====================================================================================================
-void intHandler( int dummy )
+static void _intHandler( int sig, siginfo_t *si, void *unused )
 
 {
+    /* CTRL-C exit is not an error... */
     exit( 0 );
 }
 // ====================================================================================================
@@ -1521,23 +1516,21 @@ int serialFeeder( void )
 
         if ( ( flags = fcntl( f, F_GETFL, NULL ) ) < 0 )
         {
-            genericsReport( V_ERROR, "F_GETFL failed" EOL );
-            exit( -3 );
+            genericsExit( -3, "F_GETFL failed" EOL );
         }
 
         flags &= ~O_NONBLOCK;
 
         if ( ( flags = fcntl( f, F_SETFL, flags ) ) < 0 )
         {
-            genericsReport( V_ERROR, "F_SETFL failed" EOL );
-            exit( -3 );
+            genericsExit( -3, "F_SETFL failed" EOL );
         }
 
 #endif
 
         if ( ( ret = setSerialConfig ( f, options.speed ) ) < 0 )
         {
-            exit ( ret );
+            genericsExit( ret, "setSerialConfig failed" EOL );
         }
 
         while ( ( t = read( f, cbw, TRANSFER_SIZE ) ) > 0 )
@@ -1691,8 +1684,7 @@ int fileFeeder( void )
 
     if ( ( f = open( options.file, O_RDONLY ) ) < 0 )
     {
-        genericsReport( V_ERROR, "Can't open file %s" EOL, options.file );
-        exit( -4 );
+        genericsExit( -4, "Can't open file %s" EOL, options.file );
     }
 
     genericsReport( V_INFO, "Reading from file" EOL );
@@ -1725,9 +1717,12 @@ int fileFeeder( void )
 int main( int argc, char *argv[] )
 
 {
+    sigset_t set;
+    struct sigaction sa;
+
     if ( !_processOptions( argc, argv ) )
     {
-        exit( -1 );
+        genericsExit( -1, "processOptions failed" EOL );
     }
 
     atexit( _removeFifoTasks );
@@ -1737,18 +1732,32 @@ int main( int argc, char *argv[] )
     ITMDecoderInit( &_r.i, options.forceITMSync );
 
     /* This ensures the atexit gets called */
-    signal( SIGINT, intHandler );
+    sa.sa_flags = SA_SIGINFO;
+    sigemptyset( &sa.sa_mask );
+    sa.sa_sigaction = _intHandler;
+
+    if ( sigaction( SIGINT, &sa, NULL ) == -1 )
+    {
+        genericsExit( -1, "Failed to establish Int handler" EOL );
+    }
+
+    /* Don't kill a sub-process when any reader or writer evaporates */
+    sigemptyset( &set );
+    sigaddset( &set, SIGPIPE );
+
+    if ( pthread_sigmask( SIG_BLOCK, &set, NULL ) == -1 )
+    {
+        genericsExit( -1, "Failed to establish Int handler" EOL );
+    }
 
     if ( !_makeFifoTasks() )
     {
-        genericsReport( V_ERROR, "Failed to make channel devices" EOL );
-        exit( -1 );
+        genericsExit( -1, "Failed to make channel devices" EOL );
     }
 
     if ( !_makeServerTask( options.listenPort ) )
     {
-        genericsReport( V_ERROR, "Failed to make network server" EOL );
-        exit( -1 );
+        genericsExit( -1, "Failed to make network server" EOL );
     }
 
     /* Make sure there's an initial timestamp to work with */
