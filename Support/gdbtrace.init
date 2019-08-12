@@ -12,8 +12,8 @@ STM32;
   enableSTM32SWO  : Enable SWO on STM32 pins (for STM32F4 if 4 is passed as first argument)
   enableSTM32TRACE: Enable TRACE on STM32 pins
 
-IMXRT;
-  enableIMXRTSWO  : Enable SWO on IMXRT pins
+IMXRT1021;
+  enableIMXRT1021SWO : Enable SWO on IMXRT pins
 
 All;
   prepareSWO      : Prepare SWO output in specified format
@@ -52,6 +52,20 @@ end
 # ====================================================================
 # ====================================================================
 
+# Locations in the memory map for interesting things
+
+set $ITMBASE=0xE0000000
+set $DWTBASE=0xE0001000
+set $FPBBASE=0xE0002000
+set $SCBBASE=0xE000ED00
+set $DCBBASE=0xE000EDF0
+set $TPIUBASE=0xE0040000
+set $ETMBASE=0xE0041000
+
+# Definitions for the CPU types we currently support
+set $CPU_IMXRT1021=1
+set $CPU_STM32=2
+
 # Legacy fixups...lets avoid upsetting anyone too much
 
 define enableSTM32SWD
@@ -64,21 +78,27 @@ define prepareSWD
        quit
 end
 # ====================================================================
-define enableIMXRTSWO
+define enableIMXRT1021SWO
+  # Store the CPU we are using
+  set $CPU=$CPU_IMXRT1021
+
   # Enable Trace Clocks
   set *0x400FC068|=(3<<22)
 
-  # Set AD_B0_11 to be SWO
+  # Set Trace clock input to be from PLL2 PFD0
+  set *0x400Fc018&=~(3<<14)
+  set *0x400Fc018|=(2<<14)
+
+  # Set AD_B0_04 to be an input, and no drive (defaults to JTAG otherwise)
+  set *0x401f80cc=5
+  set *0x401f8240=0
+
+  # Set AD_B0_11 to be SWO, with specific output characteristics
   set *0x401F80E8=6
-
-  # set output characteristics for AD_B0_11
-  set *0x401F825C=0x99
-
-  # Enable trace support in DBGMCU
-  set *0xE0042004 |= 0x20
+  set *0x401F825C=0x6020
 end
-document enableIMXRTSWO
-enableIMXRTSWO Configure output pin on IMXRT for SWO use.
+document enableIMXRT1021SWO
+enableIMXRT1021SWO Configure output pin on IMXRT1021 for SWO use.
 end
 # ====================================================================
 
@@ -87,6 +107,7 @@ define enableSTM32SWO
   if $argc >= 1
     set $tgt = $arg0
   end
+  set $CPU=$CPU_STM32
   if ($tgt==4)
     # STM32F4 variant.
     # Enable AHB1ENR
@@ -116,6 +137,7 @@ enableSTM32SWO Configure output pin on STM32 for SWO use.
 end
 # ====================================================================
 define enableSTM32TRACE
+  set $CPU=$CPU_STM32
   # Enable AHB1ENR
   set *0x40023830 |= 0x10
 
@@ -136,7 +158,7 @@ document enableSTM32TRACE
 enableSTM32TRACE Enable TRACE on STM32 pins
 end
 # ====================================================================
-# Enable TRACE on STM32 pins
+# Enable CORTEX TRACE on preconfigured pins
 define prepareTRACE
   set $bits=4
   
@@ -150,28 +172,30 @@ define prepareTRACE
      set $bits = $bits-1
 
      # Enable Trace TRCENA
-     set *0xE000EDFC=(1<<24)
+     set *($DCBBASE+0xC)=(1<<24)
 
-     # Set number of bits in DBGMCU_CR
-     set *0xE0042004 &= ~(3<<6)
+     if ($CPU==$CPU_STM32)
+          # Set number of bits in DBGMCU_CR
+     	  set *0xE0042004 &= ~(3<<6)
 
-     if ($bits<3)
-       set *0xE0042004 |= ((($bits+1)<<6) | (1<<5))
-     else
-       set *0xE0042004 |= ((($bits)<<6) | (1<<5))
+	  if ($bits<3)
+	     set *0xE0042004 |= ((($bits+1)<<6) | (1<<5))
+	  else
+	     set *0xE0042004 |= ((($bits)<<6) | (1<<5))
+	  end
      end
    
      # Set port size
-     set *0xE0040004 = (1<<$bits)
+     set *($TPIUBASE+4) = (1<<$bits)
 
      # Set pin protocol to Sync Trace Port
-     set *0xE00400F0=0
+     set *($TPIUBASE+0xF0)=0
   
      # Flush all initial configuration
-     set *0xe000edfc |= 0x1000000
-     set *0xe0001000 = 0
-     set *0xe0000fb0 = 0xc5acce55
-     set *0xe0000e80 = 0
+     set *($DCBBASE+0xc) |= 0x1000000
+     set *($DWTBASE) = 0
+     set *($DWTBASE+0xfb0) = 0xc5acce55
+     set *($ITMBASE+0xe80) = 0
   end
 end
 document prepareTRACE
@@ -202,37 +226,37 @@ define prepareSWO
   end
 
   # Make sure we can get to everything
-  set *0xe0000fb0 = 0xc5acce55
-  set *0xe0041fb0 = 0xc5acce55
+  set *($ITMBASE+0xfb0) = 0xc5acce55
+  set *($ETMBASE+0xfb0) = 0xc5acce55
 
   # Enable DEMCR TRCENA
-  set *0xE000EDFC|=(1<<24)
+  set *($DCBBASE+0xC)|=(1<<24)
 
   if ($useMan==0)
     # Use Async mode pin protocol
-    set *0xE00400F0 = 2
+    set *($TPIUBASE+0xF0) = 2
   else
     # Use Manchester mode pin protocol
-    set *0xE00400F0 = 1
+    set *($TPIUBASE+0xF0) = 1
 
     # There are two edges in a bit, so double the clock
     set $speed = $speed*2
   end
 
-  # Output bits at speed dependent on system clock speed
-  set *0xE0040010 = (($clockspeed/($speed))-1)
+  # Output bits at speed dependent on system clock speed (floats to avoid round-down)
+  set *($TPIUBASE+0x10) = (int)((((float)$clockspeed)/((float)$speed))+(float)0.5)-1
 
   if ($useTPIU==1)
     # Use TPIU formatter and flush
-    set *0xE0040304 = 0x102
+    set *($TPIUBASE+0x304) = 0x102
   else
-    set *0xE0040304 = 0x100
+    set *($TPIUBASE+0x304) = 0x100
   end
 
   # Flush all initial configuration
-  set *0xe000edfc |= 0x1000000
-  set *0xe0001000 = 0
-  set *0xe0000e80 = 0
+  set *($DCBBASE+0xC) |= 0x1000000
+  set *($DWTBASE) = 0
+  set *($ITMBASE+0xe80) = 0
 end
 document prepareSWO
 prepareSWO <ClockSpd> <Speed> <UseTPIU> <UseMan>: Prepare output trace data port at specified speed
@@ -247,11 +271,11 @@ define dwtPOSTCNT
   if ($argc!=1)
     help dwtPOSTCNT
   else
-    set *0xe000edfc |= 0x1000000
+    set *($DCBBASE+0xC) |= 0x1000000
     if ($arg0==1)
-      set *0xe0001000 |= (1<<22)
+      set *($DWTBASE) |= (1<<22)
     else
-      set *0xe0001000 &= ~(1<<22)
+      set *($DWTBASE) &= ~(1<<22)
     end
   end
 end
@@ -263,11 +287,11 @@ define dwtFOLDEVT
   if ($argc!=1)
     help dwtFOLDEVT
   else
-    set *0xe000edfc |= 0x1000000
+    set *($DCBBASE+0xC) |= 0x1000000
     if ($arg0==1)
-      set *0xe0001000 |= (1<<21)
+      set *($DWTBASE) |= (1<<21)
     else
-      set *0xe0001000 &= ~(1<<21)
+      set *($DWTBASE) &= ~(1<<21)
     end
   end
 end
@@ -279,11 +303,11 @@ define dwtLSUEVT
   if ($argc!=1)
     help dwtLSUEVT
   else
-    set *0xe000edfc |= 0x1000000
+    set *($DCBBASE+0xC) |= 0x1000000
     if ($arg0==1)
-      set *0xe0001000 |= (1<<20)
+      set *($DWTBASE) |= (1<<20)
     else
-      set *0xe0001000 &= ~(1<<20)
+      set *($DWTBASE) &= ~(1<<20)
     end
   end
 end
@@ -295,11 +319,11 @@ define dwtSLEEPEVT
   if ($argc!=1)
     help dwtSLEEPEVT
   else
-    set *0xe000edfc |= 0x1000000
+    set *($DCBBASE+0xC) |= 0x1000000
     if ($arg0==1)
-      set *0xe0001000 |= (1<<19)
+      set *($DWTBASE) |= (1<<19)
     else
-      set *0xe0001000 &= ~(1<<19)
+      set *($DWTBASE) &= ~(1<<19)
     end
   end
 end
@@ -311,11 +335,11 @@ define dwtCEVEVT
   if ($argc!=1)
     help dwtCEVEVT
   else
-    set *0xe000edfc |= 0x1000000
+    set *($DCBBASE+0xC) |= 0x1000000
     if ($arg0==1)
-      set *0xe0001000 |= (1<<18)
+      set *($DWTBASE) |= (1<<18)
     else
-      set *0xe0001000 &= ~(1<<18)
+      set *($DWTBASE) &= ~(1<<18)
     end
   end
 end
@@ -327,11 +351,11 @@ define dwtCPIEVT
   if ($argc!=1)
     help dwtCPIEVT
   else
-    set *0xe000edfc |= 0x1000000
+    set *($DCBBASE+0xC) |= 0x1000000
     if ($arg0==1)
-      set *0xe0001000 |= (1<<17)
+      set *($DWTBASE) |= (1<<17)
     else
-      set *0xe0001000 &= ~(1<<17)
+      set *($DWTBASE) &= ~(1<<17)
     end
   end
 end
@@ -343,11 +367,11 @@ define dwtTraceException
   if ($argc!=1)
     help dwtTraceException
   else
-    set *0xe000edfc |= 0x1000000
+    set *($DCBBASE+0xC) |= 0x1000000
     if ($arg0==1)
-      set *0xe0001000 |= (1<<16)
+      set *($DWTBASE) |= (1<<16)
     else
-      set *0xe0001000 &= ~(1<<16)
+      set *($DWTBASE) &= ~(1<<16)
     end
   end
 end
@@ -359,11 +383,11 @@ define dwtSamplePC
   if ($argc!=1)
     help dwtSamplePC
   else
-    set *0xe000edfc |= 0x1000000
+    set *($DCBBASE+0xC) |= 0x1000000
     if ($arg0==1)
-      set *0xe0001000 |= (1<<12)
+      set *($DWTBASE) |= (1<<12)
     else
-      set *0xe0001000 &= ~(1<<12)
+      set *($DWTBASE) &= ~(1<<12)
     end
   end
 end
@@ -375,9 +399,9 @@ define dwtSyncTap
   if (($argc!=1) || ($arg0<0) || ($arg0>3))
     help dwtSyncTap
   else
-    set *0xe000edfc |= 0x1000000
-    set *0xe0001000 &= ~(0x03<<10)
-    set *0xe0001000 |= (($arg0&0x03)<<10)
+    set *($DCBBASE|0xC) |= 0x1000000
+    set *($DWTBASE) &= ~(0x03<<10)
+    set *($DWTBASE) |= (($arg0&0x03)<<10)
   end
 end
 document dwtSyncTap
@@ -388,11 +412,11 @@ define dwtPostTap
   if (($argc!=1) || ($arg0<0) || ($arg0>1))
     help dwtPostTap
   else
-    set *0xe000edfc |= 0x1000000
+    set *($DCBBASE|0xC) |= 0x1000000
     if ($arg0==0)
-      set *0xe0001000 &= ~(1<<9)
+      set *($DWTBASE) &= ~(1<<9)
     else
-      set *0xe0001000 |= (1<<9)      
+      set *($DWTBASE) |= (1<<9)      
     end
   end
 end
@@ -404,9 +428,9 @@ define dwtPostInit
   if (($argc!=1) || ($arg0<0) || ($arg0>15))
     help dwtPostInit
   else
-    set *0xe000edfc |= 0x1000000
-    set *0xe0001000 &= ~(0x0f<<5)    
-    set *0xe0001000 |= (($arg0&0x0f)<<5)
+    set *($DCBBASE+0xC) |= 0x1000000
+    set *($DWTBASE) &= ~(0x0f<<5)    
+    set *($DWTBASE) |= (($arg0&0x0f)<<5)
   end
 end
 document dwtPostInit
@@ -417,9 +441,9 @@ define dwtPostReset
   if (($argc!=1) || ($arg0<0) || ($arg0>15))
     help dwtPostInit
   else
-    set *0xe000edfc |= 0x1000000
-    set *0xe0001000 &= ~(0x0f<<1)    
-    set *0xe0001000 |= (($arg0&0x0f)<<1)
+    set *($DCBBASE+0xC) |= 0x1000000
+    set *($DWTBASE) &= ~(0x0f<<1)    
+    set *($DWTBASE) |= (($arg0&0x0f)<<1)
   end
 end
 document dwtPostReset
@@ -430,11 +454,11 @@ define dwtCycEna
   if ($argc!=1)
     help dwtCycEna
   else
-    set *0xe000edfc |= 0x1000000
+    set *($DCBBASE+0xC) |= 0x1000000
     if ($arg0==1)
-      set *0xe0001000 |= (1<<0)
+      set *($DWTBASE) |= (1<<0)
     else
-      set *0xe0001000 &= ~(1<<0)
+      set *($DWTBASE) &= ~(1<<0)
     end
   end
 end
@@ -447,9 +471,9 @@ define ITMId
   if (($argc!=1) || ($arg0<0) || ($arg0>127))
     help ITMBusId
   else
-    set *0xe0000fb0 = 0xc5acce55
-    set *0xe0000e80 &= ~(0x7F<<16)
-    set *0xe0000e80 |= (($arg0&0x7f)<<16)
+    set *($DWTBASE+0xfb0) = 0xc5acce55
+    set *($ITMBASE+0xe80) &= ~(0x7F<<16)
+    set *($ITMBASE+0xe80) |= (($arg0&0x7f)<<16)
   end
 end
 document ITMId
@@ -460,9 +484,9 @@ define ITMGTSFreq
   if (($argc!=1) || ($arg0<0) || ($arg0>3))
     help ITMGTSFreq
   else
-    set *0xe0000fb0 = 0xc5acce55
-    set *0xe0000e80 &= ~(0x3<<10)
-    set *0xe0000e80 |= (($arg0&3)<<10)
+    set *($DWTBASE+0xfb0) = 0xc5acce55
+    set *($ITMBASE+0xe80) &= ~(0x3<<10)
+    set *($ITMBASE+0xe80) |= (($arg0&3)<<10)
   end
 end
 document ITMGTSFreq
@@ -475,9 +499,9 @@ define ITMTSPrescale
   if (($argc!=1) || ($arg0<0) || ($arg0>3))
     help ITMGTSFreq
   else
-    set *0xe0000fb0 = 0xc5acce55
-    set *0xe0000e80 &= ~(0x3<<8)
-    set *0xe0000e80 |= (($arg0&3)<<8)
+    set *($DWTBASE+0xfb0) = 0xc5acce55
+    set *($ITMBASE+0xe80) &= ~(0x3<<8)
+    set *($ITMBASE+0xe80) |= (($arg0&3)<<8)
   end
 end
 document ITMTSPrescale
@@ -488,11 +512,11 @@ define ITMSWOEna
   if (($argc!=1) || ($arg0<0) || ($arg0>1))
     help ITMSWOEna
   else
-    set *0xe0000fb0 = 0xc5acce55
+    set *($DWTBASE+0xfb0) = 0xc5acce55
     if ($arg0==0)
-      set *0xe0000e80 &= ~(0x1<<4)
+      set *($ITMBASE+0xe80) &= ~(0x1<<4)
     else
-      set *0xe0000e80 |= (($arg0&1)<<4)
+      set *($ITMBASE+0xe80) |= (($arg0&1)<<4)
     end
   end
 end
@@ -505,11 +529,11 @@ define ITMTXEna
   if (($argc!=1) || ($arg0<0) || ($arg0>1))
     help ITMTXEna
   else
-    set *0xe0000fb0 = 0xc5acce55
+    set *($DWTBASE+0xfb0) = 0xc5acce55
     if ($arg0==0)
-      set *0xe0000e80 &= ~(0x1<<3)
+      set *($ITMBASE+0xe80) &= ~(0x1<<3)
     else
-      set *0xe0000e80 |= (($arg0&1)<<3)
+      set *($ITMBASE+0xe80) |= (($arg0&1)<<3)
     end
   end
 end
@@ -522,11 +546,11 @@ define ITMSYNCEna
   if (($argc!=1) || ($arg0<0) || ($arg0>1))
     help ITMSYNCEna
   else
-    set *0xe0000fb0 = 0xc5acce55
+    set *($DWTBASE+0xfb0) = 0xc5acce55
     if ($arg0==0)
-      set *0xe0000e80 &= ~(0x1<<2)
+      set *($ITMBASE+0xe80) &= ~(0x1<<2)
     else
-      set *0xe0000e80 |= (($arg0&1)<<2)
+      set *($ITMBASE+0xe80) |= (($arg0&1)<<2)
     end
   end
 end
@@ -539,11 +563,11 @@ define ITMTSEna
   if (($argc!=1) || ($arg0<0) || ($arg0>1))
     help ITMTSEna
   else
-    set *0xe0000fb0 = 0xc5acce55
+    set *($DWTBASE+0xfb0) = 0xc5acce55
     if ($arg0==0)
-      set *0xe0000e80 &= ~(0x1<<1)
+      set *($ITMBASE+0xe80) &= ~(0x1<<1)
     else
-      set *0xe0000e80 |= (($arg0&1)<<1)
+      set *($ITMBASE+0xe80) |= (($arg0&1)<<1)
     end
   end
 end
@@ -555,11 +579,11 @@ define ITMEna
   if (($argc!=1) || ($arg0<0) || ($arg0>1))
     help ITMEna
   else
-    set *0xe0000fb0 = 0xc5acce55
+    set *($DWTBASE+0xfb0) = 0xc5acce55
     if ($arg0==0)
-      set *0xe0000e80 &= ~(0x1<<0)
+      set *($ITMBASE+0xe80) &= ~(0x1<<0)
     else
-      set *0xe0000e80 |= (($arg0&1)<<0)
+      set *($ITMBASE+0xe80) |= (($arg0&1)<<0)
     end
   end
 end
@@ -571,8 +595,8 @@ define ITMTER
   if (($argc!=2) || ($arg0<0) || ($arg0>7))
     help ITMTER
   else
-    set *0xe0000fb0 = 0xc5acce55
-    set *(0xe0000e00+4*$arg0) = $arg1
+    set *($DWTBASE+0xfb0) = 0xc5acce55
+    set *($ITMBASE+0xe00+4*$arg0) = $arg1
   end
 end
 document ITMTER
@@ -583,8 +607,8 @@ define ITMTPR
   if ($argc!=1)
     help ITMTPR
   else
-    set *0xe0000fb0 = 0xc5acce55
-    set *0xe0000e40 = $arg0 
+    set *($DWTBASE+0xfb0) = 0xc5acce55
+    set *($ITMBASE+0xe40) = $arg0 
   end
 end
 document ITMTPR
