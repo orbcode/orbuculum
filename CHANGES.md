@@ -1,3 +1,9 @@
+(Version 1.00-InProgress)
+
+* Change to BSD from GPL License
+* Use of nextpnr-ice40 instead of arachne-pnr
+* Extensive changes to gdbtrace.init 
+
 5th August 2019 (Version 0.22)
 
 * Internal simplifications and tidying

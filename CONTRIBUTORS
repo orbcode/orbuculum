@@ -1,9 +1,17 @@
 The contributors to this project, in alphabetic order, are;
 
 Uwe Bonnes    bon@elektron.ikp.physik.tu-darmstadt.de *
-David Girault david.f.girault@gmail.com  
+David Girault david.f.girault@gmail.com               *
 Devan Lai     devan.lai@gmail.com                     *
 Dave Marples  dave@marples.net                        *
 David Piegdon                                         *
 Karl Palsson  karlp@tweak.net.au                      *
 David Sidrane david_s5@nscdg.com                      *
+
+
+(Note that contributors marked * made some contributions while
+ Orbuculum was under a GPL licence. Each kindly agreed by email
+ for their contributions to re-licenced to BSD, MIT or Apache
+ as selected by Dave Marples in his role as primary author
+ and maintainer.)
+ 

@@ -10,14 +10,13 @@ Setup Device
 ------------
 STM32;
   enableSTM32SWO  : Enable SWO on STM32 pins (for STM32F4 if 4 is passed as first argument)
-  enableSTM32TRACE: Enable TRACE on STM32 pins
+  enableSTM32TRACE: Start TRACE on STM32 pins
 
 IMXRT1021;
   enableIMXRT1021SWO : Enable SWO on IMXRT pins
 
 All;
   prepareSWO      : Prepare SWO output in specified format
-  prepareTRACE    : Prepare TRACE output in specified format
 
 Configure DWT
 -------------
@@ -78,6 +77,70 @@ define prepareSWD
        quit
 end
 # ====================================================================
+define prepareSWO
+  set $clockspeed=72000000
+  set $speed=2250000
+  set $useTPIU=1
+  set $useMan=0
+
+  if $argc >= 1
+    set $clockspeed = $arg0
+  end
+
+  if $argc >= 2
+    set $speed = $arg1
+  end
+
+  if $argc >= 3
+    set $useTPIU = $arg2
+  end
+
+  if $argc >= 4
+    set $useMan = $arg3
+  end
+
+  # Make sure we can get to everything
+  set *($ITMBASE+0xfb0) = 0xc5acce55
+  set *($ETMBASE+0xfb0) = 0xc5acce55
+
+  # Enable DEMCR TRCENA
+  set *($DCBBASE+0xC)|=(1<<24)
+
+  if ($useMan==0)
+    # Use Async mode pin protocol (TPIU_SPPR)
+    set *($TPIUBASE+0xF0) = 2
+  else
+    # Use Manchester mode pin protocol (TPIU_SPPR)
+    set *($TPIUBASE+0xF0) = 1
+
+    # There are two edges in a bit, so double the clock
+    set $speed = $speed*2
+  end
+
+  # Output bits at speed dependent on system clock speed (floats to avoid round-down)
+  set *($TPIUBASE+0x10) = (int)((((float)$clockspeed)/((float)$speed))+(float)0.5)-1
+
+  if ($useTPIU==1)
+    # Use TPIU formatter and flush
+    set *($TPIUBASE+0x304) = 0x102
+  else
+    set *($TPIUBASE+0x304) = 0x100
+  end
+
+  # Flush all initial configuration
+  set *($DCBBASE+0xC) |= 0x1000000
+  set *($DWTBASE) = 0
+  set *($ITMBASE+0xe80) = 0
+end
+document prepareSWO
+prepareSWO <ClockSpd> <Speed> <UseTPIU> <UseMan>: Prepare output trace data port at specified speed
+  <ClockSpd>: Speed of the CPU SystemCoreClock
+  <Speed>   : Speed to use (Ideally an integer divisor of SystemCoreClock)
+  <UseTPIU> : Set to 1 to use TPIU
+  <UseMan>  : Set to 1 use use Manchester encoding
+end
+
+# ====================================================================
 define enableIMXRT1021SWO
   # Store the CPU we are using
   set $CPU=$CPU_IMXRT1021
@@ -136,136 +199,90 @@ document enableSTM32SWO
 enableSTM32SWO Configure output pin on STM32 for SWO use.
 end
 # ====================================================================
-define enableSTM32TRACE
-  set $CPU=$CPU_STM32
-  # Enable AHB1ENR
-  set *0x40023830 |= 0x10
+# Enable CORTEX TRACE on preconfigured pins
+define _doTRACE
+     # Must be called with $bits containing number of bits to set trace for
 
-  # Set Alternate function mode for PE2-PE6
-  set *0x40021000 &= ~(0x00003FF0)
-  set *0x40021000 |= 0x2AA0
+     # Enable Trace TRCENA (DCB DEMCR)
+     set *($DCBBASE+0xC)=(1<<24)
 
-  # Set max (100MHz) speed in OSPEEDR
-  set *0x40021008 |= 0x3ff0
+     set *($ITMBASE+0xfb0) = 0xc5acce55
+     set *($ETMBASE+0xfb0) = 0xc5acce55
 
-  # No pull up or down in PUPDR
-  set *0x4002100C &= ~(0x00003FF0)
+     # Set port size (TPIU_CSPSR)
+     set *($TPIUBASE+4) = (1<<$bits)
 
-  # Set AF0 (==TRACE) in AFRL
-  set *0x40021020 &= ~(0x00003FF0)
-end
-document enableSTM32TRACE
-enableSTM32TRACE Enable TRACE on STM32 pins
+     # Set pin protocol to Sync Trace Port (TPIU_SPPR)
+     set *($TPIUBASE+0xF0)=0
+  
+     # Flush all initial configuration
+     # DWT_CTRL = 0,  ITM_TCR = 0 to start off with
+     set *($DWTBASE) = 0
+     set *($ITMBASE+0xe80) = 0
 end
 # ====================================================================
-# Enable CORTEX TRACE on preconfigured pins
-define prepareTRACE
+define enableSTM32TRACE
   set $bits=4
   
   if $argc >= 1
     set $bits = $arg0
   end
-
-  if (($bits<1) || ($bits==3) || ($bits>4))
-  help prepareTRACE
-  else
-     set $bits = $bits-1
-
-     # Enable Trace TRCENA
-     set *($DCBBASE+0xC)=(1<<24)
-
-     if ($CPU==$CPU_STM32)
-          # Set number of bits in DBGMCU_CR
-     	  set *0xE0042004 &= ~(3<<6)
-
-	  if ($bits<3)
-	     set *0xE0042004 |= ((($bits+1)<<6) | (1<<5))
-	  else
-	     set *0xE0042004 |= ((($bits)<<6) | (1<<5))
-	  end
-     end
-   
-     # Set port size
-     set *($TPIUBASE+4) = (1<<$bits)
-
-     # Set pin protocol to Sync Trace Port
-     set *($TPIUBASE+0xF0)=0
-  
-     # Flush all initial configuration
-     set *($DCBBASE+0xc) |= 0x1000000
-     set *($DWTBASE) = 0
-     set *($DWTBASE+0xfb0) = 0xc5acce55
-     set *($ITMBASE+0xe80) = 0
+    if (($bits<1) || ($bits==3) || ($bits>4))
+    help enableSTM32TRACE
   end
+
+  set $bits = $bits-1
+  set $CPU=$CPU_STM32
+
+  # Enable AHB1ENR
+  set *0x40023830 |= 0x10
+
+  # Setup PE2 & PE3
+  # Port Mode
+  set *0x40021000 &= ~(0x000000F0)
+  set *0x40021000 |= 0xA0
+  # Drive speed (Very high)
+  set *0x40021008 |= 0xf0
+  # No Pull up or down
+  set *0x4002100C &= ~0xF0
+  # AF0
+  set *0x40021020 &= ~0xF0
+
+  if ($bits>0)
+     # Setup PE4
+     set *0x40021000 &= ~(0x00000300)
+     set *0x40021000 |= 0x200
+     set *0x40021008 |= 0x300
+     set *0x4002100C &= ~0x300
+     set *0x40021020 &= ~0x300
+  end
+
+  if ($bits>1)
+     # Setup PE5 & PE6
+
+     set *0x40021000 &= ~(0x00003C00)
+     set *0x40021000 |= 0x2800
+     set *0x40021008 |= 0x3C00
+     set *0x4002100C &= ~0x3C00
+     set *0x40021020 &= ~0x3C00
+  end
+
+  # Set number of bits in DBGMCU_CR
+  set *0xE0042004 &= ~(3<<6)
+
+  if ($bits<3)
+     set *0xE0042004 |= ((($bits+1)<<6) | (1<<5))
+  else
+     set *0xE0042004 |= ((3<<6) | (1<<5))
+  end
+
+  # Finally start the trace output
+  _doTRACE
 end
-document prepareTRACE
-prepareTRACE <Width>: Prepare TRACE output in specified format
+document enableSTM32TRACE
+enableSTM32TRACE <Width>: Enable TRACE on STM32 pins
   <Width>   : Number of bits wide (1,2 or 4 only)
 end
-# ====================================================================
-define prepareSWO
-  set $clockspeed=72000000
-  set $speed=2250000
-  set $useTPIU=1
-  set $useMan=0
-
-  if $argc >= 1
-    set $clockspeed = $arg0
-  end
-
-  if $argc >= 2
-    set $speed = $arg1
-  end
-
-  if $argc >= 3
-    set $useTPIU = $arg2
-  end
-
-  if $argc >= 4
-    set $useMan = $arg3
-  end
-
-  # Make sure we can get to everything
-  set *($ITMBASE+0xfb0) = 0xc5acce55
-  set *($ETMBASE+0xfb0) = 0xc5acce55
-
-  # Enable DEMCR TRCENA
-  set *($DCBBASE+0xC)|=(1<<24)
-
-  if ($useMan==0)
-    # Use Async mode pin protocol
-    set *($TPIUBASE+0xF0) = 2
-  else
-    # Use Manchester mode pin protocol
-    set *($TPIUBASE+0xF0) = 1
-
-    # There are two edges in a bit, so double the clock
-    set $speed = $speed*2
-  end
-
-  # Output bits at speed dependent on system clock speed (floats to avoid round-down)
-  set *($TPIUBASE+0x10) = (int)((((float)$clockspeed)/((float)$speed))+(float)0.5)-1
-
-  if ($useTPIU==1)
-    # Use TPIU formatter and flush
-    set *($TPIUBASE+0x304) = 0x102
-  else
-    set *($TPIUBASE+0x304) = 0x100
-  end
-
-  # Flush all initial configuration
-  set *($DCBBASE+0xC) |= 0x1000000
-  set *($DWTBASE) = 0
-  set *($ITMBASE+0xe80) = 0
-end
-document prepareSWO
-prepareSWO <ClockSpd> <Speed> <UseTPIU> <UseMan>: Prepare output trace data port at specified speed
-  <ClockSpd>: Speed of the CPU SystemCoreClock
-  <Speed>   : Speed to use (Ideally an integer divisor of SystemCoreClock)
-  <UseTPIU> : Set to 1 to use TPIU
-  <UseMan>  : Set to 1 use use Manchester encoding
-end
-
 # ====================================================================
 define dwtPOSTCNT
   if ($argc!=1)
@@ -471,7 +488,7 @@ define ITMId
   if (($argc!=1) || ($arg0<0) || ($arg0>127))
     help ITMBusId
   else
-    set *($DWTBASE+0xfb0) = 0xc5acce55
+    set *($ITMBASE+0xfb0) = 0xc5acce55
     set *($ITMBASE+0xe80) &= ~(0x7F<<16)
     set *($ITMBASE+0xe80) |= (($arg0&0x7f)<<16)
   end
@@ -484,7 +501,7 @@ define ITMGTSFreq
   if (($argc!=1) || ($arg0<0) || ($arg0>3))
     help ITMGTSFreq
   else
-    set *($DWTBASE+0xfb0) = 0xc5acce55
+    set *($ITMBASE+0xfb0) = 0xc5acce55
     set *($ITMBASE+0xe80) &= ~(0x3<<10)
     set *($ITMBASE+0xe80) |= (($arg0&3)<<10)
   end
@@ -499,7 +516,7 @@ define ITMTSPrescale
   if (($argc!=1) || ($arg0<0) || ($arg0>3))
     help ITMGTSFreq
   else
-    set *($DWTBASE+0xfb0) = 0xc5acce55
+    set *($ITMBASE+0xfb0) = 0xc5acce55
     set *($ITMBASE+0xe80) &= ~(0x3<<8)
     set *($ITMBASE+0xe80) |= (($arg0&3)<<8)
   end
@@ -512,7 +529,7 @@ define ITMSWOEna
   if (($argc!=1) || ($arg0<0) || ($arg0>1))
     help ITMSWOEna
   else
-    set *($DWTBASE+0xfb0) = 0xc5acce55
+    set *($ITMBASE+0xfb0) = 0xc5acce55
     if ($arg0==0)
       set *($ITMBASE+0xe80) &= ~(0x1<<4)
     else
@@ -529,7 +546,7 @@ define ITMTXEna
   if (($argc!=1) || ($arg0<0) || ($arg0>1))
     help ITMTXEna
   else
-    set *($DWTBASE+0xfb0) = 0xc5acce55
+    set *($ITMBASE+0xfb0) = 0xc5acce55
     if ($arg0==0)
       set *($ITMBASE+0xe80) &= ~(0x1<<3)
     else
@@ -546,7 +563,7 @@ define ITMSYNCEna
   if (($argc!=1) || ($arg0<0) || ($arg0>1))
     help ITMSYNCEna
   else
-    set *($DWTBASE+0xfb0) = 0xc5acce55
+    set *($ITMBASE+0xfb0) = 0xc5acce55
     if ($arg0==0)
       set *($ITMBASE+0xe80) &= ~(0x1<<2)
     else
@@ -563,7 +580,7 @@ define ITMTSEna
   if (($argc!=1) || ($arg0<0) || ($arg0>1))
     help ITMTSEna
   else
-    set *($DWTBASE+0xfb0) = 0xc5acce55
+    set *($ITMBASE+0xfb0) = 0xc5acce55
     if ($arg0==0)
       set *($ITMBASE+0xe80) &= ~(0x1<<1)
     else
@@ -579,7 +596,7 @@ define ITMEna
   if (($argc!=1) || ($arg0<0) || ($arg0>1))
     help ITMEna
   else
-    set *($DWTBASE+0xfb0) = 0xc5acce55
+    set *($ITMBASE+0xfb0) = 0xc5acce55
     if ($arg0==0)
       set *($ITMBASE+0xe80) &= ~(0x1<<0)
     else
@@ -595,7 +612,7 @@ define ITMTER
   if (($argc!=2) || ($arg0<0) || ($arg0>7))
     help ITMTER
   else
-    set *($DWTBASE+0xfb0) = 0xc5acce55
+    set *($ITMBASE+0xfb0) = 0xc5acce55
     set *($ITMBASE+0xe00+4*$arg0) = $arg1
   end
 end
@@ -607,7 +624,7 @@ define ITMTPR
   if ($argc!=1)
     help ITMTPR
   else
-    set *($DWTBASE+0xfb0) = 0xc5acce55
+    set *($ITMBASE+0xfb0) = 0xc5acce55
     set *($ITMBASE+0xe40) = $arg0 
   end
 end
