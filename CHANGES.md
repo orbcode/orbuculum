@@ -1,3 +1,7 @@
+13th August 2019 (Version 0.22 - no functional changes)
+
+* Makefile/Include path change to allow compilation on OpenSuse
+
 5th August 2019 (Version 0.22)
 
 * Internal simplifications and tidying
