@@ -38,7 +38,7 @@
 #include <string.h>
 #include <stdarg.h>
 #include <elf.h>
-#include <libiberty/demangle.h>
+#include <demangle.h>
 #include "bfd_wrapper.h"
 #if defined OSX
     #include <libusb.h>
