@@ -4,6 +4,16 @@
 * Use of nextpnr-ice40 instead of arachne-pnr
 * Extensive changes to gdbtrace.init 
 
+14th August 2019 (Version 0.23)
+
+* Small edits to gdbtrace.init for tidying purposes
+* Fix integration time units in orbtop
+* Allow orbtop to gracefully restart when elf file is changed (e.g. on recompile)
+
+13th August 2019 (Version 0.22 - no functional changes)
+
+* Makefile/Include path change to allow compilation on OpenSuse
+
 5th August 2019 (Version 0.22)
 
 * Internal simplifications and tidying

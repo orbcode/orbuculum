@@ -456,7 +456,7 @@ end
 # ====================================================================
 define dwtPostReset
   if (($argc!=1) || ($arg0<0) || ($arg0>15))
-    help dwtPostInit
+    help dwtPostReset
   else
     set *($DCBBASE+0xC) |= 0x1000000
     set *($DWTBASE) &= ~(0x0f<<1)    
@@ -465,6 +465,8 @@ define dwtPostReset
 end
 document dwtPostReset
 dwtPostReset <0..15> Sets the reload value for the POSTCNT counter
+In conjunction with the dwtPostTap, this gives you a relatively wide range
+of sampling speeds.  Lower numbers are faster.
 end
 # ====================================================================
 define dwtCycEna

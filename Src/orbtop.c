@@ -114,7 +114,7 @@ struct                                       /* Record for options, either defau
     uint32_t maxRoutines;                    /* Historic information to emit */
     bool lineDisaggregation;                 /* Aggregate per line or per function? */
     bool demangle;                           /* Do we want to demangle any C++ we come across? */
-    uint64_t displayInterval;  /* What is the display interval? */
+    uint64_t displayInterval;                /* What is the display interval? */
 
     int port;                                /* Source information */
     char *server;
@@ -701,7 +701,7 @@ int _processOptions( int argc, char *argv[] )
 
             // ------------------------------------
             case 'I':
-                options.displayInterval = ( uint64_t ) ( atof( optarg ) * 1000 );
+                options.displayInterval = ( uint64_t ) ( atof( optarg ) );
                 break;
 
             // ------------------------------------
@@ -902,12 +902,15 @@ int main( int argc, char *argv[] )
                 /* Make sure old references are invalidated */
                 _flushHash();
 
-                genericsReport( V_INFO, "Reload %s" EOL, options.elffile );
-
-                if ( !_r.s )
+                if ( _r.s )
+                {
+                    genericsReport( V_WARN, "Reloaded %s" EOL, options.elffile );
+                }
+                else
                 {
                     /* Its possible the file was in the process of being written, so wait before testing again */
                     usleep( 1000000 );
+                    genericsReport( V_WARN, "Attempt second reload of %s" EOL, options.elffile );
 
                     if ( !SymbolSetCheckValidity( &_r.s, options.elffile ) )
                     {

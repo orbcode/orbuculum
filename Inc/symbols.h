@@ -68,7 +68,7 @@ struct SymbolSet
 
 // ====================================================================================================
 struct SymbolSet *SymbolSetCreate( char *filename );
-void SymbolSetDelete( struct SymbolSet *s );
+void SymbolSetDelete( struct SymbolSet **s );
 bool SymbolSetCheckValidity( struct SymbolSet **s, char *filename );
 bool SymbolLookup( struct SymbolSet *s, uint32_t addr, struct nameEntry *n, char *deleteMaterial ) ;
 // ====================================================================================================
