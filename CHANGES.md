@@ -2,6 +2,7 @@
 
 * Small edits to gdbtrace.init for tidying purposes
 * Fix integration time units in orbtop
+* Allow orbtop to gracefully restart when elf file is changed (e.g. on recompile)
 
 13th August 2019 (Version 0.22 - no functional changes)
 
