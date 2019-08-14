@@ -896,12 +896,15 @@ int main( int argc, char *argv[] )
                 /* Make sure old references are invalidated */
                 _flushHash();
 
-                genericsReport( V_INFO, "Reload %s" EOL, options.elffile );
-
-                if ( !_r.s )
+                if ( _r.s )
+                {
+                    genericsReport( V_WARN, "Reloaded %s" EOL, options.elffile );
+                }
+                else
                 {
                     /* Its possible the file was in the process of being written, so wait before testing again */
                     usleep( 1000000 );
+                    genericsReport( V_WARN, "Attempt second reload of %s" EOL, options.elffile );
 
                     if ( !SymbolSetCheckValidity( &_r.s, options.elffile ) )
                     {

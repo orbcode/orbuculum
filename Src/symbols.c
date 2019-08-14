@@ -36,10 +36,13 @@
 #include <stdarg.h>
 #include <elf.h>
 #include <stdint.h>
+#include <assert.h>
 #include "generics.h"
 #include "symbols.h"
 
 #define TEXT_SEGMENT ".text"
+
+#define ELF_RELOAD_DELAY_TIME 1000000   /* Time before elf reload will be attempted when its been lost */
 
 // ====================================================================================================
 // ====================================================================================================
@@ -65,7 +68,7 @@ bool _symbolsLoad( struct SymbolSet *s )
 
     if ( !s->abfd )
     {
-        fprintf( stderr, "Couldn't open ELF file" EOL );
+        genericsReport( V_ERROR, "Couldn't open ELF file" EOL );
         return false;
     }
 
@@ -73,19 +76,19 @@ bool _symbolsLoad( struct SymbolSet *s )
 
     if ( bfd_check_format( s->abfd, bfd_archive ) )
     {
-        fprintf( stderr, "Cannot get addresses from archive %s" EOL, s->elfFile );
+        genericsReport( V_ERROR, "Cannot get addresses from archive %s" EOL, s->elfFile );
         return false;
     }
 
     if ( ! bfd_check_format_matches ( s->abfd, bfd_object, &matching ) )
     {
-        fprintf( stderr, "Ambigious format for file" EOL );
+        genericsReport( V_ERROR, "Ambigious format for file" EOL );
         return false;
     }
 
     if ( ( bfd_get_file_flags ( s->abfd ) & HAS_SYMS ) == 0 )
     {
-        fprintf( stderr, "No symbols found" EOL );
+        genericsReport( V_ERROR, "No symbols found" EOL );
         return false;
     }
 
@@ -122,6 +125,7 @@ bool SymbolLookup( struct SymbolSet *s, uint32_t addr, struct nameEntry *n, char
 
     uint32_t line;
 
+    assert( s );
     uint32_t workingAddr = addr - bfd_get_section_vma( s->abfd, s->sect );
 
     if ( workingAddr <= bfd_section_size( s->abfd, s->sect ) )
@@ -181,15 +185,15 @@ struct SymbolSet *SymbolSetCreate( char *filename )
     return s;
 }
 // ====================================================================================================
-void SymbolSetDelete( struct SymbolSet *s )
+void SymbolSetDelete( struct SymbolSet **s )
 
 {
-    if ( s->abfd )
+    if ( ( *s ) && ( ( *s )->abfd ) )
     {
-        bfd_close( s->abfd );
-        free( s->elfFile );
-        free( s );
-        s = NULL;
+        bfd_close( ( *s )->abfd );
+        free( ( *s )->elfFile );
+        free( *s );
+        *s = NULL;
     }
 }
 // ====================================================================================================
@@ -200,17 +204,20 @@ bool SymbolSetCheckValidity( struct SymbolSet **s, char *filename )
     stat( filename, &n );
 
     /* We check filesize, modification time and status change time for any differences */
-    if ( ( memcmp( &n.st_size, &( ( *s )->st.st_size ), sizeof( off_t ) ) ) ||
+    if ( ( !( *s ) ) ||
+            ( memcmp( &n.st_size, &( ( *s )->st.st_size ), sizeof( off_t ) ) ) ||
             ( memcmp( &n.st_mtim, &( ( *s )->st.st_mtim ), sizeof( struct timespec ) ) ) ||
             ( memcmp( &n.st_ctim, &( ( *s )->st.st_ctim ), sizeof( struct timespec ) ) )
        )
     {
-        /* There was a difference, re-create the symbol set */
-        SymbolSetDelete( *s );
+        /* There was either no file, or a difference, re-create the symbol set */
+        SymbolSetDelete( s );
+
+        /* Since something changed, let's wait a while before trying to reload */
+        usleep( ELF_RELOAD_DELAY_TIME );
         *s = SymbolSetCreate( filename );
-        return false;
     }
 
-    return true;
+    return ( ( *s ) != NULL );
 }
 // ====================================================================================================
