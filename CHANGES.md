@@ -1,3 +1,8 @@
+14th August 2019 (Version 0.23)
+
+* Small edits to gdbtrace.init for tidying purposes
+* Fix integration time units in orbtop
+
 13th August 2019 (Version 0.22 - no functional changes)
 
 * Makefile/Include path change to allow compilation on OpenSuse

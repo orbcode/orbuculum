@@ -108,7 +108,7 @@ struct                                       /* Record for options, either defau
     uint32_t maxRoutines;                    /* Historic information to emit */
     bool lineDisaggregation;                 /* Aggregate per line or per function? */
     bool demangle;                           /* Do we want to demangle any C++ we come across? */
-    uint64_t displayInterval;  /* What is the display interval? */
+    uint64_t displayInterval;                /* What is the display interval? */
 
     int port;                                /* Source information */
     char *server;
@@ -695,7 +695,7 @@ int _processOptions( int argc, char *argv[] )
 
             // ------------------------------------
             case 'I':
-                options.displayInterval = ( uint64_t ) ( atof( optarg ) * 1000 );
+                options.displayInterval = ( uint64_t ) ( atof( optarg ) );
                 break;
 
             // ------------------------------------
