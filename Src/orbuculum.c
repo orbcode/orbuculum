@@ -660,8 +660,8 @@ void _handleDataRWWP( struct ITMDecoder *i, struct ITMPacket *p )
 
 {
     uint64_t ts = _timestampuS(); /* Stamp as early as possible */
-    uint32_t comp = ( p->d[0] & 0x30 ) >> 4;
-    bool isWrite = ( ( p->d[0] & 0x08 ) != 0 );
+    uint8_t comp = ( p->srcAddr >> 1) & 0x3;
+    bool isWrite = ( ( p->srcAddr & 0x01 ) != 0 );
     uint32_t data;
     char outputString[MAX_STRING_LENGTH];
     int opLen;
@@ -672,15 +672,15 @@ void _handleDataRWWP( struct ITMDecoder *i, struct ITMPacket *p )
     switch ( p->len )
     {
         case 1:
-            data = p->d[1];
+            data = p->d[0];
             break;
 
         case 2:
-            data = ( p->d[1] ) | ( ( p->d[2] ) << 8 );
+            data = ( p->d[0] ) | ( ( p->d[1] ) << 8 );
             break;
 
         default:
-            data = ( p->d[1] ) | ( ( p->d[2] ) << 8 ) | ( ( p->d[3] ) << 16 ) | ( ( p->d[4] ) << 24 );
+            data = ( p->d[0] ) | ( ( p->d[1] ) << 8 ) | ( ( p->d[2] ) << 16 ) | ( ( p->d[3] ) << 24 );
             break;
     }
 
@@ -694,8 +694,8 @@ void _handleDataAccessWP( struct ITMDecoder *i, struct ITMPacket *p )
 
 {
     uint64_t ts = _timestampuS(); /* Stamp as early as possible */
-    uint32_t comp = ( p->d[0] & 0x30 ) >> 4;
-    uint32_t data = ( p->d[1] ) | ( ( p->d[2] ) << 8 ) | ( ( p->d[3] ) << 16 ) | ( ( p->d[4] ) << 24 );
+    uint8_t comp = ( p->srcAddr >> 1) & 0x3;
+    uint32_t data = ( p->d[0] ) | ( ( p->d[1] ) << 8 ) | ( ( p->d[2] ) << 16 ) | ( ( p->d[3] ) << 24 );
     char outputString[MAX_STRING_LENGTH];
     int opLen;
 
@@ -712,8 +712,8 @@ void _handleDataOffsetWP( struct ITMDecoder *i, struct ITMPacket *p )
 
 {
     uint64_t ts = _timestampuS(); /* Stamp as early as possible */
-    uint32_t comp = ( p->d[0] & 0x30 ) >> 4;
-    uint32_t offset = ( p->d[1] ) | ( ( p->d[2] ) << 8 );
+    uint8_t comp = ( p->srcAddr >> 1) & 0x3;
+    uint32_t offset = ( p->d[0] ) | ( ( p->d[1] ) << 8 );
     char outputString[MAX_STRING_LENGTH];
     int opLen;
     uint64_t eventdifftS = ts - _r.lastHWExceptionTS;
@@ -777,15 +777,15 @@ void _handleHW( struct ITMDecoder *i )
 
         // --------------
         default:
-            if ( ( p.d[0] & 0xC4 ) == 0x84 )
+            if ( ( p.srcAddr & 0x19 ) == 0x11)
             {
                 _handleDataRWWP( i, &p );
             }
-            else if ( ( p.d[0] & 0xCF ) == 0x47 )
+            else if ( ( p.srcAddr & 0x19 ) == 0x08 )
             {
                 _handleDataAccessWP( i, &p );
             }
-            else if ( ( p.d[0] & 0xCF ) == 0x4E )
+            else if ( ( p.srcAddr & 0x19 ) == 0x09 )
             {
                 _handleDataOffsetWP( i, &p );
             }
