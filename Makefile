@@ -2,7 +2,7 @@
 DEBUG=1
 WITH_FPGA?=1
 
-CFLAGS=-DVERSION="\"1.00-InProgress\""
+CFLAGS=-DVERSION="\"1.00\""
 
 CROSS_COMPILE=
 # Output Files

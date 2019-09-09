@@ -2,7 +2,8 @@ Orbuculum - ARM Cortex Debug Output Processing Tools
 ====================================================
 
 * Latest Changes:
-After some time away, I'm finally back onto this and have pulled in a number of changes that people have submitted. The most important of these is that the gdbinit has been changed to refer to _SWO_ and not _SWD_. Sorry, that may mean slight changes to your startup scripts.
+
+Upissue to V1.00. The number doesn't really mean anything, but it does represent a change from GPL to BSD licence. See the CONTRIBUTORS file for details on all authors agreement to this change.
 
 The CHANGES file now tells you what's been done when.
 

@@ -1,6 +1,7 @@
-(Version 1.00-InProgress)
+9th September 2019 (Version 1.00)
 
 * Change to BSD from GPL License
+* Fixes to command line options, raw output and HW event decoding
 * Use of nextpnr-ice40 instead of arachne-pnr
 * Extensive changes to gdbtrace.init 
 
