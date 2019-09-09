@@ -262,11 +262,22 @@ static void *_runFifo( void *arg )
 
             /* Build 32 value the long way around to avoid type-punning issues */
             w = ( p.d[3] << 24 ) | ( p.d[2] << 16 ) | ( p.d[1] << 8 ) | ( p.d[0] );
-            writeDataLen = snprintf( constructString, MAX_STRING_LENGTH, options.channel[params->portNo].presFormat, w );
-
-            if ( write( fifo, constructString, ( writeDataLen < MAX_STRING_LENGTH ) ? writeDataLen : MAX_STRING_LENGTH ) <= 0 )
+            if (options.channel[params->portNo].presFormat)
             {
-                break;
+                // formatted output.
+                writeDataLen = snprintf( constructString, MAX_STRING_LENGTH, options.channel[params->portNo].presFormat, w );
+                if ( write( fifo, constructString, ( writeDataLen < MAX_STRING_LENGTH ) ? writeDataLen : MAX_STRING_LENGTH ) <= 0 )
+                {
+                    break;
+                }
+            }
+            else
+            {
+                // raw output.
+                if ( write( fifo, &w, sizeof (w) ) <= 0 )
+                {
+                    break;
+                }
             }
         }
 
@@ -662,8 +673,8 @@ void _handleDataRWWP( struct ITMDecoder *i, struct ITMPacket *p )
 
 {
     uint64_t ts = _timestampuS(); /* Stamp as early as possible */
-    uint32_t comp = ( p->d[0] & 0x30 ) >> 4;
-    bool isWrite = ( ( p->d[0] & 0x08 ) != 0 );
+    uint8_t comp = ( p->srcAddr >> 1) & 0x3;
+    bool isWrite = ( ( p->srcAddr & 0x01 ) != 0 );
     uint32_t data;
     char outputString[MAX_STRING_LENGTH];
     int opLen;
@@ -674,15 +685,15 @@ void _handleDataRWWP( struct ITMDecoder *i, struct ITMPacket *p )
     switch ( p->len )
     {
         case 1:
-            data = p->d[1];
+            data = p->d[0];
             break;
 
         case 2:
-            data = ( p->d[1] ) | ( ( p->d[2] ) << 8 );
+            data = ( p->d[0] ) | ( ( p->d[1] ) << 8 );
             break;
 
         default:
-            data = ( p->d[1] ) | ( ( p->d[2] ) << 8 ) | ( ( p->d[3] ) << 16 ) | ( ( p->d[4] ) << 24 );
+            data = ( p->d[0] ) | ( ( p->d[1] ) << 8 ) | ( ( p->d[2] ) << 16 ) | ( ( p->d[3] ) << 24 );
             break;
     }
 
@@ -696,8 +707,8 @@ void _handleDataAccessWP( struct ITMDecoder *i, struct ITMPacket *p )
 
 {
     uint64_t ts = _timestampuS(); /* Stamp as early as possible */
-    uint32_t comp = ( p->d[0] & 0x30 ) >> 4;
-    uint32_t data = ( p->d[1] ) | ( ( p->d[2] ) << 8 ) | ( ( p->d[3] ) << 16 ) | ( ( p->d[4] ) << 24 );
+    uint8_t comp = ( p->srcAddr >> 1) & 0x3;
+    uint32_t data = ( p->d[0] ) | ( ( p->d[1] ) << 8 ) | ( ( p->d[2] ) << 16 ) | ( ( p->d[3] ) << 24 );
     char outputString[MAX_STRING_LENGTH];
     int opLen;
 
@@ -714,8 +725,8 @@ void _handleDataOffsetWP( struct ITMDecoder *i, struct ITMPacket *p )
 
 {
     uint64_t ts = _timestampuS(); /* Stamp as early as possible */
-    uint32_t comp = ( p->d[0] & 0x30 ) >> 4;
-    uint32_t offset = ( p->d[1] ) | ( ( p->d[2] ) << 8 );
+    uint8_t comp = ( p->srcAddr >> 1) & 0x3;
+    uint32_t offset = ( p->d[0] ) | ( ( p->d[1] ) << 8 );
     char outputString[MAX_STRING_LENGTH];
     int opLen;
     uint64_t eventdifftS = ts - _r.lastHWExceptionTS;
@@ -779,15 +790,15 @@ void _handleHW( struct ITMDecoder *i )
 
         // --------------
         default:
-            if ( ( p.d[0] & 0xC4 ) == 0x84 )
+            if ( ( p.srcAddr & 0x19 ) == 0x11)
             {
                 _handleDataRWWP( i, &p );
             }
-            else if ( ( p.d[0] & 0xCF ) == 0x47 )
+            else if ( ( p.srcAddr & 0x19 ) == 0x08 )
             {
                 _handleDataAccessWP( i, &p );
             }
-            else if ( ( p.d[0] & 0xCF ) == 0x4E )
+            else if ( ( p.srcAddr & 0x19 ) == 0x09 )
             {
                 _handleDataOffsetWP( i, &p );
             }
@@ -986,7 +997,7 @@ static void _intHandler( int sig, siginfo_t *si, void *unused )
 void _printHelp( char *progName )
 
 {
-    fprintf( stdout, "Useage: %s <hntv> <a name:number> <b basedir> <f filename>  <i channel> <p port> <s speed>" EOL, progName );
+    fprintf( stdout, "Usage: %s <hntv> <s name:number> <b basedir> <f filename>  <i channel> <p port> <a speed>" EOL, progName );
     fprintf( stdout, "        a: <serialSpeed> to use" EOL );
     fprintf( stdout, "        b: <basedir> for channels" EOL );
     fprintf( stdout, "        c: <Number>,<Name>,<Format> of channel to populate (repeat per channel)" EOL );
@@ -1135,8 +1146,9 @@ int _processOptions( int argc, char *argv[] )
 
                 if ( !*chanIndex )
                 {
-                    genericsReport( V_ERROR, "No output format for channel %d" EOL, chan );
-                    return false;
+                    genericsReport( V_WARN, "No output format for channel %d, output raw!" EOL, chan );
+                    options.channel[chan].presFormat = NULL;
+                    break;
                 }
 
                 *chanIndex++ = 0;
@@ -1223,7 +1235,7 @@ int _processOptions( int argc, char *argv[] )
     {
         if ( options.channel[g].chanName )
         {
-            genericsReport( V_INFO, "         %02d [%s] [%s]" EOL, g, GenericsEscape( options.channel[g].presFormat ), options.channel[g].chanName );
+            genericsReport( V_INFO, "         %02d [%s] [%s]" EOL, g, GenericsEscape( options.channel[g].presFormat ?: "RAW" ), options.channel[g].chanName );
         }
     }
 
