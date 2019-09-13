@@ -262,10 +262,12 @@ static void *_runFifo( void *arg )
 
             /* Build 32 value the long way around to avoid type-punning issues */
             w = ( p.d[3] << 24 ) | ( p.d[2] << 16 ) | ( p.d[1] << 8 ) | ( p.d[0] );
-            if (options.channel[params->portNo].presFormat)
+
+            if ( options.channel[params->portNo].presFormat )
             {
                 // formatted output.
                 writeDataLen = snprintf( constructString, MAX_STRING_LENGTH, options.channel[params->portNo].presFormat, w );
+
                 if ( write( fifo, constructString, ( writeDataLen < MAX_STRING_LENGTH ) ? writeDataLen : MAX_STRING_LENGTH ) <= 0 )
                 {
                     break;
@@ -274,7 +276,7 @@ static void *_runFifo( void *arg )
             else
             {
                 // raw output.
-                if ( write( fifo, &w, sizeof (w) ) <= 0 )
+                if ( write( fifo, &w, sizeof ( w ) ) <= 0 )
                 {
                     break;
                 }
@@ -673,7 +675,7 @@ void _handleDataRWWP( struct ITMDecoder *i, struct ITMPacket *p )
 
 {
     uint64_t ts = _timestampuS(); /* Stamp as early as possible */
-    uint8_t comp = ( p->srcAddr >> 1) & 0x3;
+    uint8_t comp = ( p->srcAddr >> 1 ) & 0x3;
     bool isWrite = ( ( p->srcAddr & 0x01 ) != 0 );
     uint32_t data;
     char outputString[MAX_STRING_LENGTH];
@@ -707,7 +709,7 @@ void _handleDataAccessWP( struct ITMDecoder *i, struct ITMPacket *p )
 
 {
     uint64_t ts = _timestampuS(); /* Stamp as early as possible */
-    uint8_t comp = ( p->srcAddr >> 1) & 0x3;
+    uint8_t comp = ( p->srcAddr >> 1 ) & 0x3;
     uint32_t data = ( p->d[0] ) | ( ( p->d[1] ) << 8 ) | ( ( p->d[2] ) << 16 ) | ( ( p->d[3] ) << 24 );
     char outputString[MAX_STRING_LENGTH];
     int opLen;
@@ -725,7 +727,7 @@ void _handleDataOffsetWP( struct ITMDecoder *i, struct ITMPacket *p )
 
 {
     uint64_t ts = _timestampuS(); /* Stamp as early as possible */
-    uint8_t comp = ( p->srcAddr >> 1) & 0x3;
+    uint8_t comp = ( p->srcAddr >> 1 ) & 0x3;
     uint32_t offset = ( p->d[0] ) | ( ( p->d[1] ) << 8 );
     char outputString[MAX_STRING_LENGTH];
     int opLen;
@@ -790,7 +792,7 @@ void _handleHW( struct ITMDecoder *i )
 
         // --------------
         default:
-            if ( ( p.srcAddr & 0x19 ) == 0x11)
+            if ( ( p.srcAddr & 0x19 ) == 0x11 )
             {
                 _handleDataRWWP( i, &p );
             }
@@ -1235,7 +1237,7 @@ int _processOptions( int argc, char *argv[] )
     {
         if ( options.channel[g].chanName )
         {
-            genericsReport( V_INFO, "         %02d [%s] [%s]" EOL, g, GenericsEscape( options.channel[g].presFormat ?: "RAW" ), options.channel[g].chanName );
+            genericsReport( V_INFO, "         %02d [%s] [%s]" EOL, g, GenericsEscape( options.channel[g].presFormat ? : "RAW" ), options.channel[g].chanName );
         }
     }
 

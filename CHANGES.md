@@ -1,3 +1,8 @@
+V1.10 Under construction
+
+* Addition of JSON output for orbtop
+* povray splash screen generator
+
 9th September 2019 (Version 1.00)
 
 * Change to BSD from GPL License

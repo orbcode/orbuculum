@@ -2,7 +2,9 @@
 
 * Latest Changes:
 
-Upissue to V1.00. The number doesn't really mean anything, but it does represent a change from GPL to BSD licence. See the CONTRIBUTORS file for details on all authors agreement to this change.
+This is V1.10 in progress.
+
+* JSON output has been added into orbtop.
 
 The CHANGES file now tells you what's been done when.
 
@@ -139,8 +141,8 @@ parameters for each macro are available via the help system too.
 In general, you will configure orbuculum via your local `.gdbinit` file. Several example files are 
 also in the Support directory. Generically, it looks like this; 
 
-    source config/gdbtrace.init             <---- Source the trace specific stuff
-    target extended-remote /dev/ttyACM1     <-
+    source Support/gdbtrace.init            <---- Source the trace specific stuff
+    target extended-remote /dev/ttyACM0     <-
     monitor swdp_scan                       <-
     file ofiles/firmware.elf                <- 
     attach 1                                <---- Connect to the target
@@ -148,10 +150,9 @@ also in the Support directory. Generically, it looks like this;
     set print pretty                        <-
     load                                    <---- Load the program
     
-    
     start                                   <---- and get to main
 
-    enableSTM32SWD                          <*--- turn on SWO output pin on CPU
+    enableSTM32SWO                          <*--- turn on SWO output pin on CPU
 
     # ---------- EITHER, IF USING A BLUEPILL-------------------------
     monitor traceswo 2250000                <*--- wakeup tracing on the probe
@@ -163,8 +164,8 @@ also in the Support directory. Generically, it looks like this;
     # ----------END OF ALTERNATIVE-----------------------------------
     
     dwtSamplePC 1                           <-
-    dwtSyncTAP 3                            <-
-    dwtPostTAP 1                            <-
+    dwtSyncTap 3                            <-
+    dwtPostTap 1                            <-
     dwtPostInit 1                           <-
     dwtPostReset 15                         <-
     dwtCycEna 1                             <---- Configure Data Watch/Trace
@@ -403,6 +404,8 @@ Command line options for orbtop are;
      routine above with the ITM Channel set to 0 then the TPIU will be bypassed.
 
  `-I [Interval]`: Set integration and display interval in milliseconds (defaults to 1000 mS)
+
+ `-j`: Output in JSON, rather than human-readable, form
 
  `-l`: Aggregate per line rather than per function
 

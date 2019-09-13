@@ -45,6 +45,8 @@
 #include <stdarg.h>
 #include <elf.h>
 #include <demangle.h>
+#include <assert.h>
+
 #include "bfd_wrapper.h"
 #if defined OSX
     #include <libusb.h>
@@ -63,6 +65,7 @@
 #include <netinet/in.h>
 #include <netdb.h>
 
+#include "cJSON.h"
 #include "generics.h"
 #include "uthash.h"
 #include "git_version_info.h"
@@ -148,6 +151,7 @@ struct
 
     struct visitedAddr *addresses;         /* Addresses we received in the SWV */
 
+    uint64_t lastReport;                    /* Last time an output report was generated */
     uint32_t interrupts;
     uint32_t sleeps;
     uint32_t notFound;
@@ -159,34 +163,6 @@ struct
 // Internally available routines
 // ====================================================================================================
 // ====================================================================================================
-// ====================================================================================================
-
-
-
-// ====================================================================================================
-// ====================================================================================================
-// ====================================================================================================
-// Handler for individual message types from SWO
-// ====================================================================================================
-// ====================================================================================================
-// ====================================================================================================
-void _handleException( struct ITMDecoder *i, struct ITMPacket *p )
-
-{
-
-}
-// ====================================================================================================
-void _handleDWTEvent( struct ITMDecoder *i, struct ITMPacket *p )
-
-{
-
-}
-// ====================================================================================================
-void _handleSW( struct ITMDecoder *i )
-
-{
-
-}
 // ====================================================================================================
 uint64_t _timestamp( void )
 
@@ -240,26 +216,44 @@ int _report_sort_fn( const void *a, const void *b )
     return ( ( struct reportLine * )b )->count - ( ( struct reportLine * )a )->count;
 }
 // ====================================================================================================
-void outputTop( void )
+// ====================================================================================================
+// ====================================================================================================
+// Handler for individual message types from SWO
+// ====================================================================================================
+// ====================================================================================================
+// ====================================================================================================
+void _handleException( struct ITMDecoder *i, struct ITMPacket *p )
 
-/* Produce the output */
+{
+
+}
+// ====================================================================================================
+void _handleDWTEvent( struct ITMDecoder *i, struct ITMPacket *p )
+
+{
+
+}
+// ====================================================================================================
+void _handleSW( struct ITMDecoder *i )
+
+{
+
+}
+// ====================================================================================================
+// ====================================================================================================
+// Outputter routines
+// ====================================================================================================
+// ====================================================================================================
+uint32_t _consolodateReport( struct reportLine **returnReport, uint32_t *returnReportLines )
 
 {
     struct nameEntry *n;
     struct visitedAddr *a;
 
-
     uint32_t reportLines = 0;
     struct reportLine *report = NULL;
-
     uint32_t total = 0;
-    uint64_t samples = 0;
-    uint64_t dispSamples = 0;
-    uint32_t percentage;
-    uint32_t totPercent = 0;
 
-    FILE *p = NULL;
-    FILE *q = NULL;
 
     /* Put the address into order of the file and function names */
     HASH_SORT( _r.addresses, _routines_sort_fn );
@@ -319,6 +313,40 @@ void outputTop( void )
     /* Now put the whole thing into order of number of samples */
     qsort( report, reportLines, sizeof( struct reportLine ), _report_sort_fn );
 
+    *returnReport = report;
+    *returnReportLines = reportLines;
+
+    return total;
+}
+// ====================================================================================================
+void _outputTop( void )
+
+/* Produce the output */
+
+{
+    /* Returned materials from report generation */
+    uint32_t reportLines = 0;
+    struct reportLine *report = NULL;
+    uint32_t total = 0;
+
+    /* JSON output constructor */
+    cJSON *jsonStore;
+    cJSON *jsonElement;
+    cJSON *jsonTopTable;
+    cJSON *jsonTableEntry;
+    char *opString;
+
+    uint64_t samples = 0;
+    uint64_t dispSamples = 0;
+    uint32_t percentage;
+    uint32_t totPercent = 0;
+
+    FILE *p = NULL;
+    FILE *q = NULL;
+
+    /* Create the report that we will output */
+    total = _consolodateReport( &report, &reportLines );
+
     /* This is the file retaining the current samples */
     if ( options.outfile )
     {
@@ -331,18 +359,35 @@ void outputTop( void )
         q = fopen( options.logfile, "a" );
     }
 
-    if (!options.json)
-      {
-	fprintf( stdout, "\033[2J\033[;H" );
-      }
-    else
-      {
-	/* Start of frame in JSON format */
-
-      }
-
     if ( total )
     {
+        if ( !options.json )
+        {
+            fprintf( stdout, "\033[2J\033[;H" );
+        }
+        else
+        {
+            /* Start of frame in JSON format */
+            jsonStore = cJSON_CreateObject();
+            assert( jsonStore );
+            jsonElement = cJSON_CreateNumber( _timestamp() );
+            assert( jsonElement );
+            cJSON_AddItemToObject( jsonStore, "timestamp", jsonElement );
+            jsonElement = cJSON_CreateNumber( total );
+            assert( jsonElement );
+            cJSON_AddItemToObject( jsonStore, "elements", jsonElement );
+            uint64_t t = _timestamp();
+            jsonElement = cJSON_CreateNumber( t - _r.lastReport );
+            assert( jsonElement );
+            _r.lastReport = t;
+            cJSON_AddItemToObject( jsonStore, "interval", jsonElement );
+
+            jsonTopTable = cJSON_CreateArray();
+            assert( jsonTopTable );
+            cJSON_AddItemToObject( jsonStore, "toptable", jsonTopTable );
+        }
+
+
         for ( uint32_t n = 0; n < reportLines; n++ )
         {
             percentage = ( report[n].count * 10000 ) / total;
@@ -362,77 +407,107 @@ void outputTop( void )
                     dispSamples += report[n].count;
                     totPercent += percentage;
 
-		    if (!options.json)
-		      {
-			fprintf( stdout, "%3d.%02d%% %8ld ", percentage / 100, percentage % 100, report[n].count );
-
-
-			if ( ( options.reportFilenames ) && ( report[n].n->filename ) )
-			  {
-			    fprintf( stdout, "%s::", report[n].n->filename );
-			  }
-
-			if ( ( options.lineDisaggregation ) && ( report[n].n->line ) )
-			  {
-			    fprintf( stdout, "%s::%d" EOL, d ? d : report[n].n->function, report[n].n->line );
-			  }
-			else
-			  {
-			    fprintf( stdout, "%s" EOL, d ? d : report[n].n->function );
-			  }
-		      }
-		    else
-		      {
-			/* Output in JSON Format */
-		      }
-                }
-
-                if ( ( p )  && ( n < options.maxRoutines ) && ( percentage >= CUTOFF ) )
-                {
-                    if ( !options.lineDisaggregation )
+                    if ( !options.json )
                     {
-                        fprintf( p, "%s,%3d.%02d" EOL, d ? d : report[n].n->function, percentage / 100, percentage % 100 );
+                        fprintf( stdout, "%3d.%02d%% %8ld ", percentage / 100, percentage % 100, report[n].count );
+
+
+                        if ( ( options.reportFilenames ) && ( report[n].n->filename ) )
+                        {
+                            fprintf( stdout, "%s::", report[n].n->filename );
+                        }
+
+                        if ( ( options.lineDisaggregation ) && ( report[n].n->line ) )
+                        {
+                            fprintf( stdout, "%s::%d" EOL, d ? d : report[n].n->function, report[n].n->line );
+                        }
+                        else
+                        {
+                            fprintf( stdout, "%s" EOL, d ? d : report[n].n->function );
+                        }
                     }
                     else
                     {
-                        fprintf( p, "%s::%d,%3d.%02d" EOL, d ? d : report[n].n->function, report[n].n->line, percentage / 100, percentage % 100 );
+                        /* Output in JSON Format */
+                        jsonTableEntry = cJSON_CreateObject();
+                        assert( jsonTableEntry );
+
+                        jsonElement = cJSON_CreateNumber( report[n].count );
+                        assert( jsonElement );
+                        cJSON_AddItemToObject( jsonTableEntry, "count", jsonElement );
+                        jsonElement = cJSON_CreateString( report[n].n->filename ? report[n].n->filename : "" );
+                        assert( jsonElement );
+                        cJSON_AddItemToObject( jsonTableEntry, "filename", jsonElement );
+                        jsonElement = cJSON_CreateString(  d ? d : report[n].n->function );
+                        assert( jsonElement );
+                        cJSON_AddItemToObject( jsonTableEntry, "function", jsonElement );
+
+                        if ( options.lineDisaggregation )
+                        {
+                            jsonElement = cJSON_CreateNumber( report[n].n->line ? report[n].n->line : 0 );
+                            assert( jsonElement );
+                            cJSON_AddItemToObject( jsonTableEntry, "line", jsonElement );
+                        }
+
+                        cJSON_AddItemToObject( jsonTopTable, "top", jsonTableEntry );
                     }
                 }
 
-                if ( ( q )  && ( percentage >= CUTOFF ) )
+                /* Write to current and historical data files if appropriate */
+                if ( percentage >= CUTOFF )
                 {
                     if ( !options.lineDisaggregation )
                     {
-                        fprintf( q, "%s,%3d.%02d" EOL, d ? d : report[n].n->function, percentage / 100, percentage % 100 );
+                        if ( ( p ) && ( n < options.maxRoutines ) )
+                        {
+                            fprintf( p, "%s,%3d.%02d" EOL, d ? d : report[n].n->function, percentage / 100, percentage % 100 );
+                        }
+
+                        if ( q )
+                        {
+                            fprintf( q, "%s,%3d.%02d" EOL, d ? d : report[n].n->function, percentage / 100, percentage % 100 );
+                        }
                     }
                     else
                     {
-                        fprintf( q, "%s::%d,%3d.%02d" EOL, d ? d : report[n].n->function, report[n].n->line, percentage / 100, percentage % 100 );
+                        if ( ( p ) && ( n < options.maxRoutines ) )
+                        {
+                            fprintf( p, "%s::%d,%3d.%02d" EOL, d ? d : report[n].n->function, report[n].n->line, percentage / 100, percentage % 100 );
+                        }
+
+                        if ( q )
+                        {
+                            fprintf( q, "%s::%d,%3d.%02d" EOL, d ? d : report[n].n->function, report[n].n->line, percentage / 100, percentage % 100 );
+                        }
                     }
                 }
-
             }
         }
     }
 
-    if (!options.json)
-      {
-	fprintf( stdout, "-----------------" EOL );
+    if ( !options.json )
+    {
+        fprintf( stdout, "-----------------" EOL );
 
-	if ( samples == dispSamples )
-	  {
-	    fprintf( stdout, "%3d.%02d%% %8ld Samples" EOL, totPercent / 100, totPercent % 100, samples );
-	  }
-	else
-	  {
-	    fprintf( stdout, "%3d.%02d%% %8ld of %ld Samples" EOL, totPercent / 100, totPercent % 100, dispSamples, samples );
-	  }
-      }
+        if ( samples == dispSamples )
+        {
+            fprintf( stdout, "%3d.%02d%% %8ld Samples" EOL, totPercent / 100, totPercent % 100, samples );
+        }
+        else
+        {
+            fprintf( stdout, "%3d.%02d%% %8ld of %ld Samples" EOL, totPercent / 100, totPercent % 100, dispSamples, samples );
+        }
+    }
     else
-      {
-	/* Close off JSON report */
+    {
+        /* Close off JSON report - if you want your printing pretty then use the first line */
+        //opString=cJSON_Print(jsonStore);
 
-      }
+        opString = cJSON_PrintUnformatted( jsonStore );
+        cJSON_Delete( jsonStore );
+        fprintf( stdout, "%s" EOL, opString );
+        free( opString );
+    }
 
     if ( p )
     {
@@ -599,9 +674,7 @@ void _itmPumpProcess( char c )
 }
 // ====================================================================================================
 // ====================================================================================================
-// ====================================================================================================
 // Protocol pump for decoding messages
-// ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
 void _protocolPump( uint8_t c )
@@ -681,7 +754,7 @@ void _printHelp( char *progName )
     fprintf( stdout, "        h: This help" EOL );
     fprintf( stdout, "        i: <channel> Set ITM Channel in TPIU decode (defaults to 1)" EOL );
     fprintf( stdout, "        I: <interval> Display interval in milliseconds (defaults to %d mS)" EOL, TOP_UPDATE_INTERVAL );
-    fprintf( stdout, "        j: Output in JSON format" EOL);
+    fprintf( stdout, "        j: Output in JSON format" EOL );
     fprintf( stdout, "        l: Aggregate per line rather than per function" EOL );
     fprintf( stdout, "        n: Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
     fprintf( stdout, "        o: <filename> to be used for output live file" EOL );
@@ -731,10 +804,10 @@ int _processOptions( int argc, char *argv[] )
 
             // ------------------------------------
             case 'j':
-	      options.json = true;
+                options.json = true;
                 break;
 
-		// ------------------------------------
+            // ------------------------------------
             case 'l':
                 options.lineDisaggregation = true;
                 break;
@@ -850,6 +923,12 @@ int _processOptions( int argc, char *argv[] )
     return true;
 }
 // ====================================================================================================
+// ====================================================================================================
+// ====================================================================================================
+// Externally available routines
+// ====================================================================================================
+// ====================================================================================================
+// ====================================================================================================
 int main( int argc, char *argv[] )
 
 {
@@ -913,6 +992,9 @@ int main( int argc, char *argv[] )
         return -1;
     }
 
+    /* First interval will be from startup to first packet arriving */
+    _r.lastReport = _timestamp();
+
     while ( ( t = read( sockfd, cbw, TRANSFER_SIZE ) ) > 0 )
     {
         uint8_t *c = cbw;
@@ -925,7 +1007,7 @@ int main( int argc, char *argv[] )
         if ( ( _timestamp() - lastTime ) > options.displayInterval )
         {
             lastTime = _timestamp();
-            outputTop();
+            _outputTop();
 
             if ( !SymbolSetCheckValidity( &_r.s, options.elffile ) )
             {

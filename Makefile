@@ -33,31 +33,32 @@ endif
 # Overall system defines for compilation
 ifdef DEBUG
 GCC_DEFINE= -DDEBUG
+DEBUG_OPTS = -g3 -gdwarf-2 -ggdb
 OPT_LEVEL = 
 else
 GCC_DEFINE=
+DEBUG_OPTS =
 OPT_LEVEL = -O2
 endif
+
+# Directories for sources
+App_DIR=Src
+Inc_DIR=Inc
+EXT=$(App_DIR)/external
+EXTINC=$(Inc_DIR)/external
+INCLUDE_PATHS = -I$(Inc_DIR) -I$(EXTINC) -I$(OLOC)
 
 GCC_DEFINE+= -std=gnu99
 
 CFILES =
 SFILES =
 OLOC = ofiles
-INCLUDE_PATHS = -I/usr/local/include/libusb-1.0 -I/usr/include/libiberty
+INCLUDE_PATHS += -I/usr/local/include/libusb-1.0 -I/usr/include/libiberty
 LDLIBS = -L/usr/local/lib -lusb-1.0 -lelf -lbfd -lz -ldl -liberty
 
 #ifdef LINUX
 LDLIBS += -lpthread
 #endif
-
-ifeq ($(WITH_FPGA),1)
-CFLAGS+=-DINCLUDE_FPGA_SUPPORT
-LDLIBS += -lftdi1
-FPGA_CFILES=$(App_DIR)/ftdispi.c
-endif
-
-DEBUG_OPTS = -g3 -gdwarf-2 -ggdb
 
 ##########################################################################
 # Generic multi-project files 
@@ -69,14 +70,21 @@ DEBUG_OPTS = -g3 -gdwarf-2 -ggdb
 
 # Main Files
 # ==========
-App_DIR=Src
-INCLUDE_PATHS += -IInc -I$(OLOC)
 
 ORBUCULUM_CFILES = $(App_DIR)/$(ORBUCULUM).c $(App_DIR)/filewriter.c $(FPGA_CFILES)
 ORBCAT_CFILES = $(App_DIR)/$(ORBCAT).c 
-ORBTOP_CFILES = $(App_DIR)/$(ORBTOP).c $(App_DIR)/symbols.c 
+ORBTOP_CFILES = $(App_DIR)/$(ORBTOP).c $(App_DIR)/symbols.c $(EXT)/cJSON.c
 ORBDUMP_CFILES = $(App_DIR)/$(ORBDUMP).c
-ORBSTAT_CFILES = $(App_DIR)/$(ORBSTAT).c $(App_DIR)/symbols.c 
+ORBSTAT_CFILES = $(App_DIR)/$(ORBSTAT).c $(App_DIR)/symbols.c
+
+# FPGA Files
+# ==========
+
+ifeq ($(WITH_FPGA),1)
+CFLAGS+=-DINCLUDE_FPGA_SUPPORT
+LDLIBS += -lftdi1
+FPGA_CFILES=$(EXT)/ftdispi.c
+endif
 
 ##########################################################################
 # GNU GCC compiler prefix and location
