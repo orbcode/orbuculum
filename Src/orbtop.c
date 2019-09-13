@@ -97,6 +97,7 @@ struct reportLine
 struct                                       /* Record for options, either defaults or from command line */
 {
     bool useTPIU;                            /* Are we decoding via the TPIU? */
+    bool json;                               /* Output in JSON format rather than human readable */
     bool reportFilenames;                    /* Report filenames for each routine? -- not presented via UI, intended for debug */
     uint32_t tpiuITMChannel;                 /* What channel? */
     bool forceITMSync;                       /* Must ITM start synced? */
@@ -330,7 +331,15 @@ void outputTop( void )
         q = fopen( options.logfile, "a" );
     }
 
-    fprintf( stdout, "\033[2J\033[;H" );
+    if (!options.json)
+      {
+	fprintf( stdout, "\033[2J\033[;H" );
+      }
+    else
+      {
+	/* Start of frame in JSON format */
+
+      }
 
     if ( total )
     {
@@ -350,25 +359,32 @@ void outputTop( void )
 
                 if ( ( percentage >= CUTOFF ) && ( ( !options.cutscreen ) || ( n < options.cutscreen ) ) )
                 {
-                    fprintf( stdout, "%3d.%02d%% %8ld ", percentage / 100, percentage % 100, report[n].count );
-
                     dispSamples += report[n].count;
-
-                    if ( ( options.reportFilenames ) && ( report[n].n->filename ) )
-                    {
-                        fprintf( stdout, "%s::", report[n].n->filename );
-                    }
-
-                    if ( ( options.lineDisaggregation ) && ( report[n].n->line ) )
-                    {
-                        fprintf( stdout, "%s::%d" EOL, d ? d : report[n].n->function, report[n].n->line );
-                    }
-                    else
-                    {
-                        fprintf( stdout, "%s" EOL, d ? d : report[n].n->function );
-                    }
-
                     totPercent += percentage;
+
+		    if (!options.json)
+		      {
+			fprintf( stdout, "%3d.%02d%% %8ld ", percentage / 100, percentage % 100, report[n].count );
+
+
+			if ( ( options.reportFilenames ) && ( report[n].n->filename ) )
+			  {
+			    fprintf( stdout, "%s::", report[n].n->filename );
+			  }
+
+			if ( ( options.lineDisaggregation ) && ( report[n].n->line ) )
+			  {
+			    fprintf( stdout, "%s::%d" EOL, d ? d : report[n].n->function, report[n].n->line );
+			  }
+			else
+			  {
+			    fprintf( stdout, "%s" EOL, d ? d : report[n].n->function );
+			  }
+		      }
+		    else
+		      {
+			/* Output in JSON Format */
+		      }
                 }
 
                 if ( ( p )  && ( n < options.maxRoutines ) && ( percentage >= CUTOFF ) )
@@ -399,16 +415,24 @@ void outputTop( void )
         }
     }
 
-    fprintf( stdout, "-----------------" EOL );
+    if (!options.json)
+      {
+	fprintf( stdout, "-----------------" EOL );
 
-    if ( samples == dispSamples )
-    {
-        fprintf( stdout, "%3d.%02d%% %8ld Samples" EOL, totPercent / 100, totPercent % 100, samples );
-    }
+	if ( samples == dispSamples )
+	  {
+	    fprintf( stdout, "%3d.%02d%% %8ld Samples" EOL, totPercent / 100, totPercent % 100, samples );
+	  }
+	else
+	  {
+	    fprintf( stdout, "%3d.%02d%% %8ld of %ld Samples" EOL, totPercent / 100, totPercent % 100, dispSamples, samples );
+	  }
+      }
     else
-    {
-        fprintf( stdout, "%3d.%02d%% %8ld of %ld Samples" EOL, totPercent / 100, totPercent % 100, dispSamples, samples );
-    }
+      {
+	/* Close off JSON report */
+
+      }
 
     if ( p )
     {
@@ -657,6 +681,7 @@ void _printHelp( char *progName )
     fprintf( stdout, "        h: This help" EOL );
     fprintf( stdout, "        i: <channel> Set ITM Channel in TPIU decode (defaults to 1)" EOL );
     fprintf( stdout, "        I: <interval> Display interval in milliseconds (defaults to %d mS)" EOL, TOP_UPDATE_INTERVAL );
+    fprintf( stdout, "        j: Output in JSON format" EOL);
     fprintf( stdout, "        l: Aggregate per line rather than per function" EOL );
     fprintf( stdout, "        n: Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
     fprintf( stdout, "        o: <filename> to be used for output live file" EOL );
@@ -671,7 +696,7 @@ int _processOptions( int argc, char *argv[] )
 {
     int c;
 
-    while ( ( c = getopt ( argc, argv, "c:d:De:g:hi:I:lm:no:r:s:tv:" ) ) != -1 )
+    while ( ( c = getopt ( argc, argv, "c:d:De:g:hi:I:jlm:no:r:s:tv:" ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -705,6 +730,11 @@ int _processOptions( int argc, char *argv[] )
                 break;
 
             // ------------------------------------
+            case 'j':
+	      options.json = true;
+                break;
+
+		// ------------------------------------
             case 'l':
                 options.lineDisaggregation = true;
                 break;
