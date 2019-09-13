@@ -8,12 +8,17 @@ David Piegdon david@piegdon.de                        *5
 Karl Palsson  karlp@tweak.net.au                      *6
 David Sidrane david_s5@nscdg.com                      *7
 
-
  Note that contributors marked * made some contributions while
  Orbuculum was under a GPL licence. Each kindly agreed by email
  for their contributions to re-licenced to BSD, MIT or Apache
  as selected by Dave Marples in his role as primary author
- and maintainer. Email references for each partys' agreement are;
+ and maintainer. Email references for each partys' agreement are
+ at the foot of this document.
+
+The Orbuculum broken crystal splash image is based on
+work from Michael Scharrer ( https://mscharrer.net ) and
+is licenced under a CC-BY-4.0 license
+( https://creativecommons.org/licenses/by/4.0/ ).
 
 1:<23877.49864.295305.676026@gargle.gargle.HOWL>
 2:<CAHeP9+a9YMaShQOHtWkmLFoEktKDwAteBhzRtoaxcRqLH7dd=g@mail.gmail.com>
