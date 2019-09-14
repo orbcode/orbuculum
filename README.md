@@ -6,7 +6,7 @@ Upissue to V1.00. The number doesn't really mean anything, but it does represent
 
 The CHANGES file now tells you what's been done when.
 
-Orbuculum now has an active Gitter channel at https://gitter.im/orbcode/orbuculum ... come join the discussion.
+Orbuculum now has an active Discord channel at https://discord.gg/P7FYThy . Thats the place to go if you need interactive help.
 
 An Orbuculum is a Crystal Ball, used for seeing things that would 
  be otherwise invisible. A  nodding reference to (the) BlackMagic
