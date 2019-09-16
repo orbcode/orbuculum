@@ -1,6 +1,9 @@
 V1.10 Under construction
 
 * Addition of JSON output for orbtop
+* Interrupt measurements have been added into orbtop
+* Per interval status reporting (overflow, sync etc) has been
+  added to the orbtop interactive display.
 * povray splash screen generator
 
 9th September 2019 (Version 1.00)

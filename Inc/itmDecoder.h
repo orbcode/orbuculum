@@ -40,17 +40,28 @@
 #define ITM_MAX_PACKET  (5)  // This length can only happen for a timestamp
 #define ITM_DATA_PACKET (4)  // This is the maximum length of everything else
 
+enum ITMPacketType
+
+{
+    ITM_PT_NONE,
+    ITM_PT_TS,
+    ITM_PT_SW,
+    ITM_PT_HW,
+    ITM_PT_XTN,
+    ITM_PT_RSRVD
+};
+
 enum ITMPumpEvent
 {
-    ITM_EV_NONE,
+    ITM_EV_NONE = ITM_PT_NONE,
+    ITM_EV_TS_PACKET_RXED = ITM_PT_TS,
+    ITM_EV_SW_PACKET_RXED = ITM_PT_SW,
+    ITM_EV_HW_PACKET_RXED = ITM_PT_HW,
+    ITM_EV_XTN_PACKET_RXED = ITM_PT_XTN,
+    ITM_EV_RESERVED_PACKET_RXED = ITM_PT_RSRVD,
     ITM_EV_UNSYNCED,
     ITM_EV_SYNCED,
-    ITM_EV_TS_PACKET_RXED,
-    ITM_EV_SW_PACKET_RXED,
-    ITM_EV_HW_PACKET_RXED,
     ITM_EV_OVERFLOW,
-    ITM_EV_RESERVED_PACKET_RXED,
-    ITM_EV_XTN_PACKET_RXED,
     ITM_EV_ERROR
 };
 
@@ -92,6 +103,7 @@ enum _protoState
 struct ITMPacket
 
 {
+    enum ITMPacketType type;
     uint8_t srcAddr;
 
     uint8_t len;

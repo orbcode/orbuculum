@@ -5,6 +5,7 @@
 This is V1.10 in progress.
 
 * JSON output has been added into orbtop.
+* Interrupt measurements have been added into orbtop.
 
 The CHANGES file now tells you what's been done when.
 
@@ -395,6 +396,8 @@ Command line options for orbtop are;
 
  `-e`: Set elf file for recovery of program symbols. This will be monitored and reloaded if it changes.
 
+ `-E`: Include exception (interrupt) measurements.
+
  `-g [LogFile]`: Append historic records to specified file on an ongoing basis.
 
  `-h`: Brief help.
@@ -421,6 +424,40 @@ Command line options for orbtop are;
      packets in that case.
 
  `-v`: Verbose mode.
+
+Its worth a few notes about interrupt measurements. orbtop can provide information about the number of
+times an interrupt is called, what its maximum nesting is, how many 'execution ticks' it's active for
+and what the spread is of those. Here's a typical combination output for a simple system;
+
+```
+ 98.25%     1911 ** SLEEPING **
+  0.25%        5 uart_xmitchars
+  0.20%        4 up_serialin
+  0.10%        2 up_doirq
+  0.10%        2 up_interrupt
+  0.10%        2 up_restoreusartint
+  0.10%        2 uart_pollnotify
+  0.10%        2 uart_write
+  0.10%        2 nxsem_post
+-----------------
+ 99.30%     1932 of 1945 Samples
+
+
+ Ex |   Count  |  MaxD | TotalTicks  |  AveTicks  |  minTicks  |  maxTicks 
+----+----------+-------+-------------+------------+------------+------------
+ 11 |        1 |     1 |        263  |        263 |       263  |       263
+ 15 |      100 |     1 |      10208  |        102 |       100  |       210
+ 53 |      210 |     1 |      44752  |        213 |        97  |       479
+
+[V-TH] Interval = 1002mS / 7966664 (~7950 Ticks/mS)
+```
+
+The top half of this display is the typical 'top' output, the bottom half is a table of
+active interrupts that have been monitored in the interval. Note that outputs are
+given in terms of 'ticks', and the number of cpu cycles that correspond to a tick
+is set by ```ITMTSPrescale```. You will also need to set ```dwtTraceException`` and
+```ITMTSEna``` to be able to use this output mode.
+
 
 Using the ice40HX8K board
 =========================

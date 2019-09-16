@@ -74,6 +74,7 @@
 #include "tpiuDecoder.h"
 #include "itmDecoder.h"
 #include "symbols.h"
+#include "itmSeq.h"
 
 #define CUTOFF              (10)             /* Default cutoff at 0.1% */
 #define SERVER_PORT         (3443)           /* Server port definition */
@@ -82,6 +83,8 @@
 
 #define MAX_EXCEPTIONS      (512)            /* Maximum number of exceptions to be considered */
 #define NO_EXCEPTION        (0xFFFFFFFF)     /* Flag indicating no exception is being processed */
+
+#define ITM_REORDER_BUFLEN  (10)             /* Maximum number of samples to re-order for timekeeping */
 
 struct visitedAddr                           /* Structure for Hashmap of visited/observed addresses */
 {
@@ -161,6 +164,7 @@ struct                                       /* Record for options, either defau
 struct
 {
     struct ITMDecoder i;                               /* The decoders and the packets from them */
+    struct ITMSeq    d;
     struct ITMPacket h;
     struct TPIUDecoder t;
     struct TPIUPacket p;
@@ -177,6 +181,11 @@ struct
 
     uint64_t lastReportmS;                             /* Last time an output report was generated, in milliseconds */
     uint64_t lastReportTicks;                          /* Last time an output report was generated, in ticks */
+    uint32_t ITMoverflows;                             /* Has an ITM overflow been detected? */
+    uint32_t SWPkt;                                    /* Number of SW Packets received */
+    uint32_t TSPkt;                                    /* Number of TS Packets received */
+    uint32_t HWPkt;                                    /* Number of HW Packets received */
+
     uint32_t interrupts;
     uint32_t sleeps;
     uint32_t notFound;
@@ -299,6 +308,15 @@ void _handleException( struct ITMDecoder *i, struct ITMPacket *p )
     switch ( eventType )
     {
         case EXEVENT_ENTER:
+            if ( _r.er[exceptionNumber].entryTime != 0 )
+            {
+                /* We beleive we are already in this exception. This can happen when we've lost
+                 * messages due to ITM overflow. Don't process the enter. Everything will get
+                 * fixed up in the next EXEXIT_RESUME which will reset everything.
+                 */
+                break;
+            }
+
             if ( _r.currentException != NO_EXCEPTION )
             {
                 /* Already in an exception ... account for time until now */
@@ -316,11 +334,12 @@ void _handleException( struct ITMDecoder *i, struct ITMPacket *p )
             break;
 
         case EXEVENT_RESUME: /* Unwind all levels of exception (deals with tail chaining) */
-            while ( _r.currentException != NO_EXCEPTION )
+            while ( ( _r.currentException != NO_EXCEPTION ) && ( _r.erDepth ) )
             {
                 _exitEx( ts );
             }
 
+            _r.currentException = NO_EXCEPTION;
             break;
 
         case EXEVENT_EXIT: /* Exit single level of exception */
@@ -340,7 +359,7 @@ void _handleDWTEvent( struct ITMDecoder *i, struct ITMPacket *p )
 
 }
 // ====================================================================================================
-void _handleSW( struct ITMDecoder *i )
+void _handleSW( struct ITMDecoder *i, struct ITMPacket *p )
 
 {
 
@@ -425,23 +444,146 @@ uint32_t _consolodateReport( struct reportLine **returnReport, uint32_t *returnR
     return total;
 }
 // ====================================================================================================
-static void _outputTop( void )
+static void _outputJson( uint32_t total, uint32_t reportLines, struct reportLine *report )
 
-/* Produce the output */
+/* Produce the output to JSON */
 
 {
-    /* Returned materials from report generation */
-    uint32_t reportLines = 0;
-    struct reportLine *report = NULL;
-    uint32_t total = 0;
-
     /* JSON output constructor */
     cJSON *jsonStore;
     cJSON *jsonElement;
     cJSON *jsonTopTable;
+    cJSON *jsonStatsTable;
     cJSON *jsonTableEntry;
+    cJSON *jsonIntTable;
     char *opString;
 
+    uint64_t ts = _timestamp();
+
+    /* Start of frame  ====================================================== */
+    jsonStore = cJSON_CreateObject();
+    assert( jsonStore );
+    jsonElement = cJSON_CreateNumber( ts );
+    assert( jsonElement );
+    cJSON_AddItemToObject( jsonStore, "timestamp", jsonElement );
+    jsonElement = cJSON_CreateNumber( total );
+    assert( jsonElement );
+    cJSON_AddItemToObject( jsonStore, "elements", jsonElement );
+    jsonElement = cJSON_CreateNumber( ts - _r.lastReportmS );
+    assert( jsonElement );
+    cJSON_AddItemToObject( jsonStore, "interval", jsonElement );
+
+    /* Create stats ========================================================= */
+    jsonStatsTable = cJSON_CreateObject();
+    assert( jsonStatsTable );
+    cJSON_AddItemToObject( jsonStore, "stats", jsonStatsTable );
+
+    jsonElement = cJSON_CreateNumber( ITMDecoderGetStats( &_r.i )->overflow );
+    assert( jsonElement );
+    cJSON_AddItemToObject( jsonStatsTable, "overflow", jsonElement );
+
+    jsonElement = cJSON_CreateNumber( ITMDecoderGetStats( &_r.i )->syncCount );
+    assert( jsonElement );
+    cJSON_AddItemToObject( jsonStatsTable, "itmsync", jsonElement );
+    jsonElement = cJSON_CreateNumber( TPIUDecoderGetStats( &_r.t )->syncCount );
+    assert( jsonElement );
+    cJSON_AddItemToObject( jsonStatsTable, "tpiusync", jsonElement );
+    jsonElement = cJSON_CreateNumber( ITMDecoderGetStats( &_r.i )->ErrorPkt );
+    assert( jsonElement );
+    cJSON_AddItemToObject( jsonStatsTable, "error", jsonElement );
+
+
+    /* Create top table ====================================================== */
+    jsonTopTable = cJSON_CreateArray();
+    assert( jsonTopTable );
+    cJSON_AddItemToObject( jsonStore, "toptable", jsonTopTable );
+
+    for ( uint32_t n = 0; n < reportLines; n++ )
+    {
+        if ( report[n].count )
+        {
+            char *d = NULL;
+
+            if ( ( options.demangle ) && ( !options.reportFilenames ) )
+            {
+                d = cplus_demangle( report[n].n->function, DMGL_AUTO );
+            }
+
+            /* Output in JSON Format */
+            jsonTableEntry = cJSON_CreateObject();
+            assert( jsonTableEntry );
+
+            jsonElement = cJSON_CreateNumber( report[n].count );
+            assert( jsonElement );
+            cJSON_AddItemToObject( jsonTableEntry, "count", jsonElement );
+            jsonElement = cJSON_CreateString( report[n].n->filename ? report[n].n->filename : "" );
+            assert( jsonElement );
+            cJSON_AddItemToObject( jsonTableEntry, "filename", jsonElement );
+            jsonElement = cJSON_CreateString(  d ? d : report[n].n->function );
+            assert( jsonElement );
+            cJSON_AddItemToObject( jsonTableEntry, "function", jsonElement );
+
+            if ( options.lineDisaggregation )
+            {
+                jsonElement = cJSON_CreateNumber( report[n].n->line ? report[n].n->line : 0 );
+                assert( jsonElement );
+                cJSON_AddItemToObject( jsonTableEntry, "line", jsonElement );
+            }
+
+            cJSON_AddItemToObject( jsonTopTable, "top", jsonTableEntry );
+        }
+    }
+
+    /* Now add the interrupt metrics ================================================ */
+    jsonIntTable = cJSON_CreateArray();
+    assert( jsonIntTable );
+    cJSON_AddItemToObject( jsonStore, "exceptions", jsonIntTable );
+
+    for ( uint32_t e = 0; e < MAX_EXCEPTIONS; e++ )
+    {
+        if ( _r.er[e].visits )
+        {
+            jsonTableEntry = cJSON_CreateObject();
+            assert( jsonTableEntry );
+            cJSON_AddItemToObject( jsonIntTable, "exceptions", jsonTableEntry );
+            jsonElement = cJSON_CreateNumber( e );
+            assert( jsonElement );
+            cJSON_AddItemToObject( jsonTableEntry, "ex", jsonElement );
+            jsonElement = cJSON_CreateNumber( _r.er[e].visits );
+            assert( jsonElement );
+            cJSON_AddItemToObject( jsonTableEntry, "count", jsonElement );
+            jsonElement = cJSON_CreateNumber( _r.er[e].maxDepth );
+            assert( jsonElement );
+            cJSON_AddItemToObject( jsonTableEntry, "maxd", jsonElement );
+            jsonElement = cJSON_CreateNumber( _r.er[e].totalTime );
+            assert( jsonElement );
+            cJSON_AddItemToObject( jsonTableEntry, "totalt", jsonElement );
+            jsonElement = cJSON_CreateNumber( _r.er[e].minTime );
+            assert( jsonElement );
+            cJSON_AddItemToObject( jsonTableEntry, "mint", jsonElement );
+            jsonElement = cJSON_CreateNumber( _r.er[e].maxTime );
+            assert( jsonElement );
+            cJSON_AddItemToObject( jsonTableEntry, "maxt", jsonElement );
+        }
+
+        _r.er[e].visits = _r.er[e].maxDepth = _r.er[e].totalTime = _r.er[e].minTime = _r.er[e].maxTime = 0;
+    }
+
+    /* Close off JSON report - if you want your printing pretty then use the first line */
+    //opString=cJSON_Print(jsonStore);
+
+    opString = cJSON_PrintUnformatted( jsonStore );
+    cJSON_Delete( jsonStore );
+    fprintf( stdout, "%s" EOL, opString );
+    free( opString );
+}
+
+// ====================================================================================================
+static void _outputTop( uint32_t total, uint32_t reportLines, struct reportLine *report )
+
+/* Produce the output */
+
+{
     uint64_t samples = 0;
     uint64_t dispSamples = 0;
     uint32_t percentage;
@@ -450,11 +592,7 @@ static void _outputTop( void )
     FILE *p = NULL;
     FILE *q = NULL;
     uint32_t printed = 0;
-
-    uint64_t ts = _timestamp();
-
-    /* Create the report that we will output */
-    total = _consolodateReport( &report, &reportLines );
+    uint64_t lastTime = _timestamp();
 
     /* This is the file retaining the current samples */
     if ( options.outfile )
@@ -470,29 +608,7 @@ static void _outputTop( void )
 
     if ( total )
     {
-        if ( !options.json )
-        {
-            fprintf( stdout, "\033[2J\033[;H" );
-        }
-        else
-        {
-            /* Start of frame in JSON format */
-            jsonStore = cJSON_CreateObject();
-            assert( jsonStore );
-            jsonElement = cJSON_CreateNumber( ts );
-            assert( jsonElement );
-            cJSON_AddItemToObject( jsonStore, "timestamp", jsonElement );
-            jsonElement = cJSON_CreateNumber( total );
-            assert( jsonElement );
-            cJSON_AddItemToObject( jsonStore, "elements", jsonElement );
-            jsonElement = cJSON_CreateNumber( ts - _r.lastReportmS );
-            assert( jsonElement );
-            cJSON_AddItemToObject( jsonStore, "interval", jsonElement );
-
-            jsonTopTable = cJSON_CreateArray();
-            assert( jsonTopTable );
-            cJSON_AddItemToObject( jsonStore, "toptable", jsonTopTable );
-        }
+        fprintf( stdout, "\033[2J\033[;H" );
 
 
         for ( uint32_t n = 0; n < reportLines; n++ )
@@ -509,57 +625,29 @@ static void _outputTop( void )
                     d = cplus_demangle( report[n].n->function, DMGL_AUTO );
                 }
 
-                if ( !options.json )
+                if ( ( percentage >= CUTOFF ) && ( ( !options.cutscreen ) || ( n < options.cutscreen ) ) )
                 {
-                    if ( ( percentage >= CUTOFF ) && ( ( !options.cutscreen ) || ( n < options.cutscreen ) ) )
+                    dispSamples += report[n].count;
+                    totPercent += percentage;
+
+                    fprintf( stdout, "%3d.%02d%% %8ld ", percentage / 100, percentage % 100, report[n].count );
+
+
+                    if ( ( options.reportFilenames ) && ( report[n].n->filename ) )
                     {
-                        dispSamples += report[n].count;
-                        totPercent += percentage;
-
-                        fprintf( stdout, "%3d.%02d%% %8ld ", percentage / 100, percentage % 100, report[n].count );
-
-
-                        if ( ( options.reportFilenames ) && ( report[n].n->filename ) )
-                        {
-                            fprintf( stdout, "%s::", report[n].n->filename );
-                        }
-
-                        if ( ( options.lineDisaggregation ) && ( report[n].n->line ) )
-                        {
-                            fprintf( stdout, "%s::%d" EOL, d ? d : report[n].n->function, report[n].n->line );
-                        }
-                        else
-                        {
-                            fprintf( stdout, "%s" EOL, d ? d : report[n].n->function );
-                        }
-
-                        printed++;
-                    }
-                }
-                else
-                {
-                    /* Output in JSON Format */
-                    jsonTableEntry = cJSON_CreateObject();
-                    assert( jsonTableEntry );
-
-                    jsonElement = cJSON_CreateNumber( report[n].count );
-                    assert( jsonElement );
-                    cJSON_AddItemToObject( jsonTableEntry, "count", jsonElement );
-                    jsonElement = cJSON_CreateString( report[n].n->filename ? report[n].n->filename : "" );
-                    assert( jsonElement );
-                    cJSON_AddItemToObject( jsonTableEntry, "filename", jsonElement );
-                    jsonElement = cJSON_CreateString(  d ? d : report[n].n->function );
-                    assert( jsonElement );
-                    cJSON_AddItemToObject( jsonTableEntry, "function", jsonElement );
-
-                    if ( options.lineDisaggregation )
-                    {
-                        jsonElement = cJSON_CreateNumber( report[n].n->line ? report[n].n->line : 0 );
-                        assert( jsonElement );
-                        cJSON_AddItemToObject( jsonTableEntry, "line", jsonElement );
+                        fprintf( stdout, "%s::", report[n].n->filename );
                     }
 
-                    cJSON_AddItemToObject( jsonTopTable, "top", jsonTableEntry );
+                    if ( ( options.lineDisaggregation ) && ( report[n].n->line ) )
+                    {
+                        fprintf( stdout, "%s::%d" EOL, d ? d : report[n].n->function, report[n].n->line );
+                    }
+                    else
+                    {
+                        fprintf( stdout, "%s" EOL, d ? d : report[n].n->function );
+                    }
+
+                    printed++;
                 }
 
                 /* Write to current and historical data files if appropriate */
@@ -596,19 +684,15 @@ static void _outputTop( void )
         }
     }
 
-    if ( !options.json )
+    fprintf( stdout, "-----------------" EOL );
+
+    if ( samples == dispSamples )
     {
-        fprintf( stdout, "-----------------" EOL );
-
-        if ( samples == dispSamples )
-        {
-            fprintf( stdout, "%3d.%02d%% %8ld Samples" EOL, totPercent / 100, totPercent % 100, samples );
-        }
-        else
-        {
-            fprintf( stdout, "%3d.%02d%% %8ld of %ld Samples" EOL, totPercent / 100, totPercent % 100, dispSamples, samples );
-        }
-
+        fprintf( stdout, "%3d.%02d%% %8ld Samples" EOL, totPercent / 100, totPercent % 100, samples );
+    }
+    else
+    {
+        fprintf( stdout, "%3d.%02d%% %8ld of %ld Samples" EOL, totPercent / 100, totPercent % 100, dispSamples, samples );
     }
 
     if ( p )
@@ -623,41 +707,42 @@ static void _outputTop( void )
     }
 
 
-    if ( !options.json )
+    if ( options.outputExceptions )
     {
-        if ( options.outputExceptions )
+        /* Tidy up screen output */
+        while ( printed++ <= options.cutscreen )
         {
-            /* Tidy up screen output */
-            while ( printed++ <= options.cutscreen )
+            fprintf( stdout, EOL );
+        }
+
+        fprintf( stdout, EOL " Ex |   Count  |  MaxD | TotalTicks  |  AveTicks  |  minTicks  |  maxTicks " EOL );
+        fprintf( stdout, "----+----------+-------+-------------+------------+------------+------------" EOL );
+
+        for ( uint32_t e = 0; e < MAX_EXCEPTIONS; e++ )
+        {
+
+            if ( _r.er[e].visits )
             {
-                fprintf( stdout, EOL );
+                fprintf( stdout, "%3" PRIu32 " | %8" PRIu64 " | %5" PRIu32 " |  %9" PRIu64 "  |  %9" PRIu64 " | %9" PRIu64 "  | %9" PRIu64 EOL,
+                         e, _r.er[e].visits, _r.er[e].maxDepth, _r.er[e].totalTime, _r.er[e].totalTime / _r.er[e].visits, _r.er[e].minTime, _r.er[e].maxTime );
             }
 
-            fprintf( stdout, EOL " Ex |   Count  |  MaxD | TotalTicks  |  AveTicks  |  minTicks  |  maxTicks " EOL );
-            fprintf( stdout, "----+----------+-------+-------------+------------+------------+------------" EOL );
-
-            for ( uint32_t e = 0; e < MAX_EXCEPTIONS; e++ )
-            {
-
-                if ( _r.er[e].visits )
-                {
-                    fprintf( stdout, "%3" PRIu32 " | %8" PRIu64 " | %5" PRIu32 " |  %9" PRIu64 "  |  %9" PRIu64 " | %9" PRIu64 "  | %9" PRIu64 EOL,
-                             e, _r.er[e].visits, _r.er[e].maxDepth, _r.er[e].totalTime, _r.er[e].totalTime / _r.er[e].visits, _r.er[e].minTime, _r.er[e].maxTime );
-                }
-
-                _r.er[e].visits = _r.er[e].maxDepth = _r.er[e].totalTime = _r.er[e].minTime = _r.er[e].maxTime = 0;
-            }
+            _r.er[e].visits = _r.er[e].maxDepth = _r.er[e].totalTime = _r.er[e].minTime = _r.er[e].maxTime = 0;
         }
     }
+
+    fprintf( stdout, EOL "[%c%c%c%c] ",
+             ( _r.ITMoverflows != ITMDecoderGetStats( &_r.i )->overflow ) ? 'V' : '-',
+             ( _r.SWPkt != ITMDecoderGetStats( &_r.i )->SWPkt ) ? 'S' : '-',
+             ( _r.TSPkt != ITMDecoderGetStats( &_r.i )->TSPkt ) ? 'T' : '-',
+             ( _r.HWPkt != ITMDecoderGetStats( &_r.i )->HWPkt ) ? 'H' : '-' );
+
+    if ( _r.lastReportTicks )
+        fprintf( stdout, "Interval = %" PRIu64 "mS / %" PRIu64 " (~%" PRIu64 " Ticks/mS)" EOL, lastTime - _r.lastReportmS, _r.i.timeStamp - _r.lastReportTicks,
+                 ( _r.i.timeStamp - _r.lastReportTicks ) / ( lastTime - _r.lastReportmS ) );
     else
     {
-        /* Close off JSON report - if you want your printing pretty then use the first line */
-        //opString=cJSON_Print(jsonStore);
-
-        opString = cJSON_PrintUnformatted( jsonStore );
-        cJSON_Delete( jsonStore );
-        fprintf( stdout, "%s" EOL, opString );
-        free( opString );
+        fprintf( stdout, "Interval = %" PRIu64 "mS" EOL, lastTime - _r.lastReportmS );
     }
 
     genericsReport( V_INFO, "         Ovf=%3d  ITMSync=%3d TPIUSync=%3d ITMErrors=%3d" EOL,
@@ -666,51 +751,8 @@ static void _outputTop( void )
                     TPIUDecoderGetStats( &_r.t )->syncCount,
                     ITMDecoderGetStats( &_r.i )->ErrorPkt );
 
-    /* ... and we are done with the report now, get rid of it */
-    free( report );
 }
 
-// ====================================================================================================
-void _handleTS( struct ITMDecoder *i )
-
-/* ... a timestamp */
-
-{
-    struct ITMPacket p;
-    uint32_t stamp = 0;
-
-    if ( ITMGetPacket( i, &p ) )
-    {
-        if ( !( p.d[0] & 0x80 ) )
-        {
-            /* This is packet format 2 ... just a simple increment */
-            stamp = p.d[0] >> 4;
-        }
-        else
-        {
-            /* This is packet format 1 ... full decode needed */
-            i->timeStatus = ( p.d[0] & 0x30 ) >> 4;
-            stamp = ( p.d[1] ) & 0x7f;
-
-            if ( p.len > 2 )
-            {
-                stamp |= ( p.d[2] ) << 7;
-
-                if ( p.len > 3 )
-                {
-                    stamp |= ( p.d[3] & 0x7F ) << 14;
-
-                    if ( p.len > 4 )
-                    {
-                        stamp |= ( p.d[4] & 0x7f ) << 21;
-                    }
-                }
-            }
-        }
-
-        i->timeStamp += stamp;
-    }
-}
 // ====================================================================================================
 void _handlePCSample( struct ITMDecoder *i, struct ITMPacket *p )
 
@@ -767,13 +809,10 @@ void _flushHash( void )
     _r.addresses = NULL;
 }
 // ====================================================================================================
-void _handleHW( struct ITMDecoder *i )
+void _handleHW( struct ITMDecoder *i, struct ITMPacket *p )
 
 {
-    struct ITMPacket p;
-    ITMGetPacket( i, &p );
-
-    switch ( p.srcAddr )
+    switch ( p->srcAddr )
     {
         // --------------
         case 0: /* DWT Event */
@@ -781,12 +820,12 @@ void _handleHW( struct ITMDecoder *i )
 
         // --------------
         case 1: /* Exception */
-            _handleException( i, &p );
+            _handleException( i, p );
             break;
 
         // --------------
         case 2: /* PC Counter Sample */
-            _handlePCSample( i, &p );
+            _handlePCSample( i, p );
             break;
 
         // --------------
@@ -796,65 +835,47 @@ void _handleHW( struct ITMDecoder *i )
     }
 }
 // ====================================================================================================
-void _itmPumpProcess( char c )
-
-/* Handle individual characters into the itm decoder */
+// Pump characters into the itm decoder
+// ====================================================================================================
+void _itmPumpProcess( uint8_t c )
 
 {
-    switch ( ITMPump( &_r.i, c ) )
+    struct ITMPacket *p;
+
+    if ( !ITMSeqPump( &_r.d, c ) )
     {
-        // ------------------------------------
-        case ITM_EV_NONE:
-            break;
-
-        // ------------------------------------
-        case ITM_EV_UNSYNCED:
-            genericsReport( V_WARN, "ITM Lost Sync (%d)" EOL, ITMDecoderGetStats( &_r.i )->lostSyncCount );
-            break;
-
-        // ------------------------------------
-        case ITM_EV_SYNCED:
-            genericsReport( V_WARN, "ITM In Sync (%d)" EOL, ITMDecoderGetStats( &_r.i )->syncCount );
-            break;
-
-        // ------------------------------------
-        case ITM_EV_OVERFLOW:
-            genericsReport( V_WARN, "ITM Overflow (%d)" EOL, ITMDecoderGetStats( &_r.i )->overflow );
-            break;
-
-        // ------------------------------------
-        case ITM_EV_RESERVED_PACKET_RXED:
-            genericsReport( V_INFO, "Reserved Packet Received" EOL );
-            break;
-
-        // ------------------------------------
-        case ITM_EV_XTN_PACKET_RXED:
-            genericsReport( V_INFO, "Unknown Extension Packet Received" EOL );
-            break;
-
-        // ------------------------------------
-        case ITM_EV_ERROR:
-            genericsReport( V_WARN, "ITM Error" EOL );
-            break;
-
-        // ------------------------------------
-        case ITM_EV_TS_PACKET_RXED:
-            _handleTS( &_r.i );
-            break;
-
-        // ------------------------------------
-        case ITM_EV_SW_PACKET_RXED:
-            _handleSW( &_r.i );
-            break;
-
-        // ------------------------------------
-        case ITM_EV_HW_PACKET_RXED:
-            _handleHW( &_r.i );
-            break;
-
-            // ------------------------------------
+        return;
     }
+
+    /* We are synced timewise, so empty anything that has been waiting */
+    while ( 1 )
+    {
+        p = ITMSeqGetPacket( &_r.d );
+
+        if ( !p )
+        {
+            break;
+        }
+
+        switch ( p->type )
+        {
+            case ITM_PT_SW:
+                _handleSW( &_r.i, p );
+                break;
+
+            case ITM_PT_HW:
+                _handleHW( &_r.i, p );
+                break;
+
+            default:
+                genericsReport( V_WARN, "Unrecognised packet in buffer type %d" EOL, p->type );
+                break;
+        }
+    }
+
+    return;
 }
+
 // ====================================================================================================
 // ====================================================================================================
 // Protocol pump for decoding messages
@@ -1127,6 +1148,11 @@ int main( int argc, char *argv[] )
     uint8_t cbw[TRANSFER_SIZE];
     uint64_t lastTime;
 
+    /* Output variables for interval report */
+    uint32_t total;
+    uint32_t reportLines = 0;
+    struct reportLine *report;
+
     ssize_t t;
     int flag = 1;
 
@@ -1149,6 +1175,7 @@ int main( int argc, char *argv[] )
     /* Reset the TPIU handler before we start */
     TPIUDecoderInit( &_r.t );
     ITMDecoderInit( &_r.i, options.forceITMSync );
+    ITMSeqInit( &_r.d, &_r.i, ITM_REORDER_BUFLEN );
 
     sockfd = socket( AF_INET, SOCK_STREAM, 0 );
     setsockopt( sockfd, SOL_SOCKET, SO_REUSEPORT, &flag, sizeof( flag ) );
@@ -1197,19 +1224,28 @@ int main( int argc, char *argv[] )
         if ( ( _timestamp() - lastTime ) > options.displayInterval )
         {
             lastTime = _timestamp();
-            _outputTop();
 
-            if ( _r.lastReportTicks )
-                fprintf( stdout, EOL "Interval = %" PRIu64 "mS / %" PRIu64 "(~%" PRIu64 " Ticks/mS)" EOL, lastTime - _r.lastReportmS, _r.i.timeStamp - _r.lastReportTicks,
-                         ( _r.i.timeStamp - _r.lastReportTicks ) / ( lastTime - _r.lastReportmS ) );
+            /* Create the report that we will output */
+            total = _consolodateReport( &report, &reportLines );
+
+            if ( options.json )
+            {
+                _outputJson( total, reportLines, report );
+            }
             else
             {
-                fprintf( stdout, EOL "Interval = %" PRIu64 "mS" EOL, lastTime - _r.lastReportmS );
+                _outputTop( total, reportLines, report );
             }
 
+            /* ... and we are done with the report now, get rid of it */
+            free( report );
+
             /* It's safe to update these here because the ticks won't be updated until more
-                 * records arrive.
-                 */
+             * records arrive. */
+            _r.ITMoverflows = ITMDecoderGetStats( &_r.i )->overflow;
+            _r.SWPkt = ITMDecoderGetStats( &_r.i )->SWPkt;
+            _r.TSPkt = ITMDecoderGetStats( &_r.i )->TSPkt;
+            _r.HWPkt = ITMDecoderGetStats( &_r.i )->HWPkt;
             _r.lastReportmS = lastTime;
             _r.lastReportTicks = _r.i.timeStamp;
 
@@ -1224,7 +1260,8 @@ int main( int argc, char *argv[] )
                 }
                 else
                 {
-                    /* Its possible the file was in the process of being written, so wait before testing again */
+                    /* Its possible the file was in the process of being written, *
+                     *so wait before testing again */
                     usleep( 1000000 );
                     genericsReport( V_WARN, "Attempt second reload of %s" EOL, options.elffile );
 
