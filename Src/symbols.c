@@ -143,7 +143,7 @@ bool SymbolLookup( struct SymbolSet *s, uint32_t addr, struct nameEntry *n, char
         {
 
             /* Remove any frontmatter off filename string that matches */
-	  if (( deleteMaterial ) && ( filename ))
+            if ( ( deleteMaterial ) && ( filename ) )
             {
                 char *m = deleteMaterial;
 

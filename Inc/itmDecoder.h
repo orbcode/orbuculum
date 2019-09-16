@@ -66,6 +66,14 @@ enum hwEvents
     HWEVENT_TIMESTAMP
 };
 
+enum ExceptionEvents
+{
+    EXEVENT_UNKNOWN,
+    EXEVENT_ENTER,
+    EXEVENT_EXIT,
+    EXEVENT_RESUME
+};
+
 enum _protoState
 {
     ITM_UNSYNCED,
