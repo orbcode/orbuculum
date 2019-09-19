@@ -121,7 +121,6 @@ struct exceptionRecord                       /* Record of exception activity */
 struct                                       /* Record for options, either defaults or from command line */
 {
     bool useTPIU;                            /* Are we decoding via the TPIU? */
-    bool json;                               /* Output in JSON format rather than human readable */
     bool reportFilenames;                    /* Report filenames for each routine? -- not presented via UI, intended for debug */
     bool outputExceptions;                   /* Set to include exceptions in output flow */
     uint32_t tpiuITMChannel;                 /* What channel? */
@@ -133,6 +132,7 @@ struct                                       /* Record for options, either defau
 
     char *elffile;                           /* Target program config */
 
+    char *json;                              /* Output in JSON format rather than human readable, either '-' for screen or filename */
     char *outfile;                           /* File to output current information */
     char *logfile;                           /* File to output historic information */
 
@@ -186,6 +186,7 @@ struct
     uint32_t TSPkt;                                    /* Number of TS Packets received */
     uint32_t HWPkt;                                    /* Number of HW Packets received */
 
+    FILE *jsonfile;                                    /* File where json output is being dumped */
     uint32_t interrupts;
     uint32_t sleeps;
     uint32_t notFound;
@@ -259,7 +260,11 @@ int _report_sort_fn( const void *a, const void *b )
 void _exitEx( uint64_t ts )
 
 {
-    assert( _r.currentException != NO_EXCEPTION );
+    if ( _r.currentException == NO_EXCEPTION )
+    {
+        /* This can happen under startup and overflow conditions */
+        return;
+    }
 
     /* Calculate total time for this exception as we're leaving it */
     _r.er[_r.currentException].thisTime += ts - _r.er[_r.currentException].entryTime;
@@ -444,7 +449,7 @@ uint32_t _consolodateReport( struct reportLine **returnReport, uint32_t *returnR
     return total;
 }
 // ====================================================================================================
-static void _outputJson( uint32_t total, uint32_t reportLines, struct reportLine *report )
+static void _outputJson( FILE *f, uint32_t total, uint32_t reportLines, struct reportLine *report )
 
 /* Produce the output to JSON */
 
@@ -565,8 +570,6 @@ static void _outputJson( uint32_t total, uint32_t reportLines, struct reportLine
             assert( jsonElement );
             cJSON_AddItemToObject( jsonTableEntry, "maxt", jsonElement );
         }
-
-        _r.er[e].visits = _r.er[e].maxDepth = _r.er[e].totalTime = _r.er[e].minTime = _r.er[e].maxTime = 0;
     }
 
     /* Close off JSON report - if you want your printing pretty then use the first line */
@@ -574,7 +577,7 @@ static void _outputJson( uint32_t total, uint32_t reportLines, struct reportLine
 
     opString = cJSON_PrintUnformatted( jsonStore );
     cJSON_Delete( jsonStore );
-    fprintf( stdout, "%s" EOL, opString );
+    fprintf( f, "%s" EOL, opString );
     free( opString );
 }
 
@@ -686,14 +689,7 @@ static void _outputTop( uint32_t total, uint32_t reportLines, struct reportLine 
 
     fprintf( stdout, "-----------------" EOL );
 
-    if ( samples == dispSamples )
-    {
-        fprintf( stdout, "%3d.%02d%% %8ld Samples" EOL, totPercent / 100, totPercent % 100, samples );
-    }
-    else
-    {
-        fprintf( stdout, "%3d.%02d%% %8ld of %ld Samples" EOL, totPercent / 100, totPercent % 100, dispSamples, samples );
-    }
+    fprintf( stdout, "%3d.%02d%% %8ld of %ld Samples" EOL, totPercent / 100, totPercent % 100, dispSamples, samples );
 
     if ( p )
     {
@@ -726,8 +722,6 @@ static void _outputTop( uint32_t total, uint32_t reportLines, struct reportLine 
                 fprintf( stdout, "%3" PRIu32 " | %8" PRIu64 " | %5" PRIu32 " |  %9" PRIu64 "  |  %9" PRIu64 " | %9" PRIu64 "  | %9" PRIu64 EOL,
                          e, _r.er[e].visits, _r.er[e].maxDepth, _r.er[e].totalTime, _r.er[e].totalTime / _r.er[e].visits, _r.er[e].minTime, _r.er[e].maxTime );
             }
-
-            _r.er[e].visits = _r.er[e].maxDepth = _r.er[e].totalTime = _r.er[e].minTime = _r.er[e].maxTime = 0;
         }
     }
 
@@ -959,7 +953,7 @@ void _printHelp( char *progName )
     fprintf( stdout, "        h: This help" EOL );
     fprintf( stdout, "        i: <channel> Set ITM Channel in TPIU decode (defaults to 1)" EOL );
     fprintf( stdout, "        I: <interval> Display interval in milliseconds (defaults to %d mS)" EOL, TOP_UPDATE_INTERVAL );
-    fprintf( stdout, "        j: Output in JSON format" EOL );
+    fprintf( stdout, "        j: <filename> Output to file in JSON format (or screen if <filename> is '-')" EOL );
     fprintf( stdout, "        l: Aggregate per line rather than per function" EOL );
     fprintf( stdout, "        n: Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
     fprintf( stdout, "        o: <filename> to be used for output live file" EOL );
@@ -974,7 +968,7 @@ int _processOptions( int argc, char *argv[] )
 {
     int c;
 
-    while ( ( c = getopt ( argc, argv, "c:d:DEe:g:hi:I:jlm:no:r:s:tv:" ) ) != -1 )
+    while ( ( c = getopt ( argc, argv, "c:d:DEe:g:hi:I:j:lm:no:r:s:tv:" ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -1014,7 +1008,7 @@ int _processOptions( int argc, char *argv[] )
 
             // ------------------------------------
             case 'j':
-                options.json = true;
+                options.json = optarg;
                 break;
 
             // ------------------------------------
@@ -1212,6 +1206,25 @@ int main( int argc, char *argv[] )
     _r.lastReportmS = _timestamp();
     _r.currentException = NO_EXCEPTION;
 
+    /* Open file for JSON output if we have one */
+    if ( options.json )
+    {
+        if ( options.json[0] == '-' )
+        {
+            _r.jsonfile = stdout;
+        }
+        else
+        {
+            _r.jsonfile = fopen( options.json, "w" );
+
+            if ( !_r.jsonfile )
+            {
+                perror( "Couldn't open json output file" );
+                return -1;
+            }
+        }
+    }
+
     while ( ( t = read( sockfd, cbw, TRANSFER_SIZE ) ) > 0 )
     {
         uint8_t *c = cbw;
@@ -1230,15 +1243,23 @@ int main( int argc, char *argv[] )
 
             if ( options.json )
             {
-                _outputJson( total, reportLines, report );
+                _outputJson( _r.jsonfile, total, reportLines, report );
             }
-            else
+
+            if ( ( !options.json ) || ( options.json[0] != '-' ) )
             {
                 _outputTop( total, reportLines, report );
             }
 
             /* ... and we are done with the report now, get rid of it */
             free( report );
+
+            /* ...and zero the exception records */
+            for ( uint32_t e = 0; e < MAX_EXCEPTIONS; e++ )
+            {
+                _r.er[e].visits = _r.er[e].maxDepth = _r.er[e].totalTime = _r.er[e].minTime = _r.er[e].maxTime = 0;
+            }
+
 
             /* It's safe to update these here because the ticks won't be updated until more
              * records arrive. */

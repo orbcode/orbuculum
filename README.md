@@ -408,7 +408,7 @@ Command line options for orbtop are;
 
  `-I [Interval]`: Set integration and display interval in milliseconds (defaults to 1000 mS)
 
- `-j`: Output in JSON, rather than human-readable, form
+ `-j [filename]`: Output to file in JSON format (or screen if <filename> is '-')
 
  `-l`: Aggregate per line rather than per function
 
