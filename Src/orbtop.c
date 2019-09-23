@@ -107,14 +107,14 @@ struct exceptionRecord                       /* Record of exception activity */
 
 {
     uint64_t visits;
-    uint64_t totalTime;
-    uint64_t minTime;
-    uint64_t maxTime;
+    int64_t totalTime;
+    int64_t minTime;
+    int64_t maxTime;
     uint32_t maxDepth;
 
     /* Elements used in calcuation */
-    uint64_t entryTime;
-    uint64_t thisTime;
+    int64_t entryTime;
+    int64_t thisTime;
     uint32_t prev;
 };
 
@@ -142,7 +142,7 @@ struct                                       /* Record for options, either defau
     uint32_t maxRoutines;                    /* Historic information to emit */
     bool lineDisaggregation;                 /* Aggregate per line or per function? */
     bool demangle;                           /* Do we want to demangle any C++ we come across? */
-    uint64_t displayInterval;                /* What is the display interval? */
+    int64_t displayInterval;                 /* What is the display interval? */
 
     int port;                                /* Source information */
     char *server;
@@ -181,8 +181,8 @@ struct
     uint32_t erDepth;                                  /* Current depth of exception stack */
     char *depthList;                                   /* Record of maximum depth of exceptions */
 
-    uint64_t lastReportmS;                             /* Last time an output report was generated, in milliseconds */
-    uint64_t lastReportTicks;                          /* Last time an output report was generated, in ticks */
+    int64_t lastReportmS;                              /* Last time an output report was generated, in milliseconds */
+    int64_t lastReportTicks;                           /* Last time an output report was generated, in ticks */
     uint32_t ITMoverflows;                             /* Has an ITM overflow been detected? */
     uint32_t SWPkt;                                    /* Number of SW Packets received */
     uint32_t TSPkt;                                    /* Number of TS Packets received */
@@ -201,12 +201,12 @@ struct
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
-uint64_t _timestamp( void )
+int64_t _timestamp( void )
 
 {
     struct timeval te;
     gettimeofday( &te, NULL ); // get current time
-    uint64_t milliseconds = te.tv_sec * 1000LL + te.tv_usec / 1000; // caculate milliseconds
+    int64_t milliseconds = te.tv_sec * 1000LL + ( te.tv_usec + 500 ) / 1000; // caculate milliseconds
     return milliseconds;
 }
 // ====================================================================================================
@@ -264,7 +264,7 @@ int _report_sort_fn( const void *a, const void *b )
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
-void _exitEx( uint64_t ts )
+void _exitEx( int64_t ts )
 
 {
     if ( _r.currentException == NO_EXCEPTION )
@@ -456,7 +456,7 @@ uint32_t _consolodateReport( struct reportLine **returnReport, uint32_t *returnR
     return total;
 }
 // ====================================================================================================
-static void _outputJson( FILE *f, uint32_t total, uint32_t reportLines, struct reportLine *report, uint64_t timeStamp )
+static void _outputJson( FILE *f, uint32_t total, uint32_t reportLines, struct reportLine *report, int64_t timeStamp )
 
 /* Produce the output to JSON */
 
@@ -587,7 +587,7 @@ static void _outputJson( FILE *f, uint32_t total, uint32_t reportLines, struct r
 }
 
 // ====================================================================================================
-static void _outputTop( uint32_t total, uint32_t reportLines, struct reportLine *report, uint64_t lastTime )
+static void _outputTop( uint32_t total, uint32_t reportLines, struct reportLine *report, int64_t lastTime )
 
 /* Produce the output */
 
@@ -1006,7 +1006,7 @@ int _processOptions( int argc, char *argv[] )
 
             // ------------------------------------
             case 'I':
-                options.displayInterval = ( uint64_t ) ( atof( optarg ) );
+                options.displayInterval = ( int64_t ) ( atof( optarg ) );
                 break;
 
             // ------------------------------------
@@ -1143,7 +1143,7 @@ int main( int argc, char *argv[] )
     struct sockaddr_in serv_addr;
     struct hostent *server;
     uint8_t cbw[TRANSFER_SIZE];
-    uint64_t lastTime;
+    int64_t lastTime;
 
     /* Output variables for interval report */
     uint32_t total;
@@ -1152,6 +1152,10 @@ int main( int argc, char *argv[] )
 
     ssize_t t;
     int flag = 1;
+    int r;
+    int64_t remainTime;
+    struct timeval tv;
+    fd_set readfds;
 
     /* Fill in a time to start from */
     lastTime = _timestamp();
@@ -1233,12 +1237,37 @@ int main( int argc, char *argv[] )
             fprintf( stdout, CLEAR_SCREEN "Connected..." EOL );
         }
 
-
         /* ...just in case we have any readings from a previous incantation */
         _flushHash( );
 
-        while ( ( t = read( sockfd, cbw, TRANSFER_SIZE ) ) > 0 )
+        lastTime = _timestamp();
+
+        while ( 1 )
         {
+            remainTime = ( ( lastTime + options.displayInterval - _timestamp() ) * 1000 ) - 500;
+            r = t = 0;
+
+            if ( remainTime > 0 )
+            {
+                tv.tv_sec = remainTime / 1000000;
+                tv.tv_usec  = remainTime % 1000000;
+
+                FD_ZERO( &readfds );
+                FD_SET( sockfd, &readfds );
+                r = select( sockfd + 1, &readfds, NULL, NULL, &tv );
+            }
+
+            if ( r > 0 )
+            {
+                t = read( sockfd, cbw, TRANSFER_SIZE );
+
+                if ( t <= 0 )
+                {
+                    /* We are at EOF (Probably the descriptor closed) */
+                    break;
+                }
+            }
+
             if ( !SymbolSetCheckValidity( &_r.s, options.elffile ) )
             {
                 /* Make sure old references are invalidated */
@@ -1272,12 +1301,12 @@ int main( int argc, char *argv[] )
             }
 
             /* See if its time to post-process it */
-            if ( ( _timestamp() - lastTime ) > options.displayInterval )
+            if ( r <= 0 )
             {
-                lastTime = _timestamp();
-
                 /* Create the report that we will output */
                 total = _consolodateReport( &report, &reportLines );
+
+                lastTime = _timestamp();
 
                 if ( options.json )
                 {
@@ -1297,7 +1326,6 @@ int main( int argc, char *argv[] )
                 {
                     _r.er[e].visits = _r.er[e].maxDepth = _r.er[e].totalTime = _r.er[e].minTime = _r.er[e].maxTime = 0;
                 }
-
 
                 /* It's safe to update these here because the ticks won't be updated until more
                  * records arrive. */
