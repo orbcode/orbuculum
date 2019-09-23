@@ -33,7 +33,7 @@ endif
 # Overall system defines for compilation
 ifdef DEBUG
 GCC_DEFINE= -DDEBUG
-DEBUG_OPTS = -g3 -gdwarf-2 -ggdb
+DEBUG_OPTS = -g3 -gdwarf-2 -ggdb3
 OPT_LEVEL = 
 else
 GCC_DEFINE=

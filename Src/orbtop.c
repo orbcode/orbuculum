@@ -86,6 +86,8 @@
 
 #define ITM_REORDER_BUFLEN  (10)             /* Maximum number of samples to re-order for timekeeping */
 
+#define CLEAR_SCREEN        "\033[2J\033[;H" /* ASCII Sequence for clear screen */
+
 struct visitedAddr                           /* Structure for Hashmap of visited/observed addresses */
 {
     uint64_t visits;
@@ -227,11 +229,16 @@ int _addresses_sort_fn( void *a, void *b )
 int _routines_sort_fn( void *a, void *b )
 
 {
-    int r = strcmp( ( ( struct visitedAddr * )a )->n->filename, ( ( struct visitedAddr * )b )->n->filename );
+    int r;
 
-    if ( r )
+    if ( ( ( ( struct visitedAddr * )a )->n->filename ) &&   ( ( ( struct visitedAddr * )b )->n->filename ) )
     {
-        return r;
+        r = strcmp( ( ( struct visitedAddr * )a )->n->filename, ( ( struct visitedAddr * )b )->n->filename );
+
+        if ( r )
+        {
+            return r;
+        }
     }
 
 
@@ -449,7 +456,7 @@ uint32_t _consolodateReport( struct reportLine **returnReport, uint32_t *returnR
     return total;
 }
 // ====================================================================================================
-static void _outputJson( FILE *f, uint32_t total, uint32_t reportLines, struct reportLine *report )
+static void _outputJson( FILE *f, uint32_t total, uint32_t reportLines, struct reportLine *report, uint64_t timeStamp )
 
 /* Produce the output to JSON */
 
@@ -463,18 +470,16 @@ static void _outputJson( FILE *f, uint32_t total, uint32_t reportLines, struct r
     cJSON *jsonIntTable;
     char *opString;
 
-    uint64_t ts = _timestamp();
-
     /* Start of frame  ====================================================== */
     jsonStore = cJSON_CreateObject();
     assert( jsonStore );
-    jsonElement = cJSON_CreateNumber( ts );
+    jsonElement = cJSON_CreateNumber( timeStamp );
     assert( jsonElement );
     cJSON_AddItemToObject( jsonStore, "timestamp", jsonElement );
     jsonElement = cJSON_CreateNumber( total );
     assert( jsonElement );
     cJSON_AddItemToObject( jsonStore, "elements", jsonElement );
-    jsonElement = cJSON_CreateNumber( ts - _r.lastReportmS );
+    jsonElement = cJSON_CreateNumber( timeStamp - _r.lastReportmS );
     assert( jsonElement );
     cJSON_AddItemToObject( jsonStore, "interval", jsonElement );
 
@@ -582,7 +587,7 @@ static void _outputJson( FILE *f, uint32_t total, uint32_t reportLines, struct r
 }
 
 // ====================================================================================================
-static void _outputTop( uint32_t total, uint32_t reportLines, struct reportLine *report )
+static void _outputTop( uint32_t total, uint32_t reportLines, struct reportLine *report, uint64_t lastTime )
 
 /* Produce the output */
 
@@ -595,7 +600,6 @@ static void _outputTop( uint32_t total, uint32_t reportLines, struct reportLine 
     FILE *p = NULL;
     FILE *q = NULL;
     uint32_t printed = 0;
-    uint64_t lastTime = _timestamp();
 
     /* This is the file retaining the current samples */
     if ( options.outfile )
@@ -609,11 +613,10 @@ static void _outputTop( uint32_t total, uint32_t reportLines, struct reportLine 
         q = fopen( options.logfile, "a" );
     }
 
+    fprintf( stdout, CLEAR_SCREEN );
+
     if ( total )
     {
-        fprintf( stdout, "\033[2J\033[;H" );
-
-
         for ( uint32_t n = 0; n < reportLines; n++ )
         {
             percentage = ( report[n].count * 10000 ) / total;
@@ -1158,49 +1161,10 @@ int main( int argc, char *argv[] )
         exit( -1 );
     }
 
-    /* Get the symbols from file */
-    _r.s = SymbolSetCreate( options.elffile );
-
-    if ( !_r.s )
-    {
-        exit( -3 );
-    }
-
     /* Reset the TPIU handler before we start */
     TPIUDecoderInit( &_r.t );
     ITMDecoderInit( &_r.i, options.forceITMSync );
     ITMSeqInit( &_r.d, &_r.i, ITM_REORDER_BUFLEN );
-
-    sockfd = socket( AF_INET, SOCK_STREAM, 0 );
-    setsockopt( sockfd, SOL_SOCKET, SO_REUSEPORT, &flag, sizeof( flag ) );
-
-    if ( sockfd < 0 )
-    {
-        perror( "Error creating socket\n" );
-        return -1;
-    }
-
-    /* Now open the network connection */
-    bzero( ( char * ) &serv_addr, sizeof( serv_addr ) );
-    server = gethostbyname( options.server );
-
-    if ( !server )
-    {
-        perror( "Cannot find host" );
-        return -1;
-    }
-
-    serv_addr.sin_family = AF_INET;
-    bcopy( ( char * )server->h_addr,
-           ( char * )&serv_addr.sin_addr.s_addr,
-           server->h_length );
-    serv_addr.sin_port = htons( options.port );
-
-    if ( connect( sockfd, ( struct sockaddr * ) &serv_addr, sizeof( serv_addr ) ) < 0 )
-    {
-        perror( "Could not connect" );
-        return -1;
-    }
 
     /* First interval will be from startup to first packet arriving */
     _r.lastReportmS = _timestamp();
@@ -1225,51 +1189,56 @@ int main( int argc, char *argv[] )
         }
     }
 
-    while ( ( t = read( sockfd, cbw, TRANSFER_SIZE ) ) > 0 )
+    while ( 1 )
     {
-        uint8_t *c = cbw;
+        /* Get the socket open */
+        sockfd = socket( AF_INET, SOCK_STREAM, 0 );
+        setsockopt( sockfd, SOL_SOCKET, SO_REUSEPORT, &flag, sizeof( flag ) );
 
-        while ( t-- )
+        if ( sockfd < 0 )
         {
-            _protocolPump( *c++ );
+            perror( "Error creating socket\n" );
+            return -1;
         }
 
-        if ( ( _timestamp() - lastTime ) > options.displayInterval )
+        /* Now open the network connection */
+        bzero( ( char * ) &serv_addr, sizeof( serv_addr ) );
+        server = gethostbyname( options.server );
+
+        if ( !server )
         {
-            lastTime = _timestamp();
+            perror( "Cannot find host" );
+            return -1;
+        }
 
-            /* Create the report that we will output */
-            total = _consolodateReport( &report, &reportLines );
+        serv_addr.sin_family = AF_INET;
+        bcopy( ( char * )server->h_addr,
+               ( char * )&serv_addr.sin_addr.s_addr,
+               server->h_length );
+        serv_addr.sin_port = htons( options.port );
 
-            if ( options.json )
-            {
-                _outputJson( _r.jsonfile, total, reportLines, report );
-            }
-
+        while ( connect( sockfd, ( struct sockaddr * ) &serv_addr, sizeof( serv_addr ) ) < 0 )
+        {
             if ( ( !options.json ) || ( options.json[0] != '-' ) )
             {
-                _outputTop( total, reportLines, report );
+                fprintf( stdout, CLEAR_SCREEN EOL );
             }
 
-            /* ... and we are done with the report now, get rid of it */
-            free( report );
+            perror( "Could not connect" );
+            usleep( 1000000 );
+        }
 
-            /* ...and zero the exception records */
-            for ( uint32_t e = 0; e < MAX_EXCEPTIONS; e++ )
-            {
-                _r.er[e].visits = _r.er[e].maxDepth = _r.er[e].totalTime = _r.er[e].minTime = _r.er[e].maxTime = 0;
-            }
+        if ( ( !options.json ) || ( options.json[0] != '-' ) )
+        {
+            fprintf( stdout, CLEAR_SCREEN "Connected..." EOL );
+        }
 
 
-            /* It's safe to update these here because the ticks won't be updated until more
-             * records arrive. */
-            _r.ITMoverflows = ITMDecoderGetStats( &_r.i )->overflow;
-            _r.SWPkt = ITMDecoderGetStats( &_r.i )->SWPkt;
-            _r.TSPkt = ITMDecoderGetStats( &_r.i )->TSPkt;
-            _r.HWPkt = ITMDecoderGetStats( &_r.i )->HWPkt;
-            _r.lastReportmS = lastTime;
-            _r.lastReportTicks = _r.i.timeStamp;
+        /* ...just in case we have any readings from a previous incantation */
+        _flushHash( );
 
+        while ( ( t = read( sockfd, cbw, TRANSFER_SIZE ) ) > 0 )
+        {
             if ( !SymbolSetCheckValidity( &_r.s, options.elffile ) )
             {
                 /* Make sure old references are invalidated */
@@ -1277,7 +1246,7 @@ int main( int argc, char *argv[] )
 
                 if ( _r.s )
                 {
-                    genericsReport( V_WARN, "Reloaded %s" EOL, options.elffile );
+                    genericsReport( V_WARN, "Loaded %s" EOL, options.elffile );
                 }
                 else
                 {
@@ -1289,18 +1258,67 @@ int main( int argc, char *argv[] )
                     if ( !SymbolSetCheckValidity( &_r.s, options.elffile ) )
                     {
                         genericsReport( V_ERROR, "Elf file was lost" EOL );
-                        return -1;
+                        break;
                     }
                 }
             }
+
+            /* Pump all of the data through the protocol handler */
+            uint8_t *c = cbw;
+
+            while ( t-- )
+            {
+                _protocolPump( *c++ );
+            }
+
+            /* See if its time to post-process it */
+            if ( ( _timestamp() - lastTime ) > options.displayInterval )
+            {
+                lastTime = _timestamp();
+
+                /* Create the report that we will output */
+                total = _consolodateReport( &report, &reportLines );
+
+                if ( options.json )
+                {
+                    _outputJson( _r.jsonfile, total, reportLines, report, lastTime );
+                }
+
+                if ( ( !options.json ) || ( options.json[0] != '-' ) )
+                {
+                    _outputTop( total, reportLines, report, lastTime );
+                }
+
+                /* ... and we are done with the report now, get rid of it */
+                free( report );
+
+                /* ...and zero the exception records */
+                for ( uint32_t e = 0; e < MAX_EXCEPTIONS; e++ )
+                {
+                    _r.er[e].visits = _r.er[e].maxDepth = _r.er[e].totalTime = _r.er[e].minTime = _r.er[e].maxTime = 0;
+                }
+
+
+                /* It's safe to update these here because the ticks won't be updated until more
+                 * records arrive. */
+                _r.ITMoverflows = ITMDecoderGetStats( &_r.i )->overflow;
+                _r.SWPkt = ITMDecoderGetStats( &_r.i )->SWPkt;
+                _r.TSPkt = ITMDecoderGetStats( &_r.i )->TSPkt;
+                _r.HWPkt = ITMDecoderGetStats( &_r.i )->HWPkt;
+                _r.lastReportmS = lastTime;
+                _r.lastReportTicks = _r.i.timeStamp;
+
+            }
+
+            /* Check to make sure there's not an unexpected TPIU in here */
+            if ( ITMDecoderGetStats( &_r.i )->tpiuSyncCount )
+            {
+                genericsReport( V_WARN, "Got a TPIU sync while decoding ITM...did you miss a -t option?" EOL );
+                break;
+            }
         }
 
-        /* Check to make sure there's not an unexpected TPIU in here */
-        if ( ITMDecoderGetStats( &_r.i )->tpiuSyncCount )
-        {
-            genericsReport( V_WARN, "Got a TPIU sync while decoding ITM...did you miss a -t option?" EOL );
-            break;
-        }
+        close( sockfd );
     }
 
     if ( ( !ITMDecoderGetStats( &_r.i )->tpiuSyncCount ) )
@@ -1308,7 +1326,6 @@ int main( int argc, char *argv[] )
         genericsReport( V_ERROR, "Read failed" EOL );
     }
 
-    close( sockfd );
     return -2;
 }
 // ====================================================================================================
