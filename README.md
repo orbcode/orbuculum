@@ -153,15 +153,19 @@ also in the Support directory. Generically, it looks like this;
     
     start                                   <---- and get to main
 
+    # ---------- Using Stm32F1 as debuggee---------------------------
     enableSTM32SWO                          <*--- turn on SWO output pin on CPU
+    # ----------ALTERNATIVELY, for Stm32F4 as debugge----------------
+    enableSTM32SWO 4                        <*--- turn on SWO output pin on CPU
+    # ----------END OF ALTERNATIVE-----------------------------------
 
     # ---------- EITHER, IF USING A BLUEPILL-------------------------
     monitor traceswo 2250000                <*--- wakeup tracing on the probe
-    prepareSWD SystemCoreClock 2250000 1 0  <*--- Setup SWO timing (Bluepill case)
+    prepareSWO SystemCoreClock 2250000 1 0  <*--- Setup SWO timing (Bluepill case)
 
     # ----------ALTERNATIVELY, FOR GENUINE BMP-----------------------
     monitor traceswo                        <*--- Enable BMP traceswo output
-    prepareSWD ConfigCoreClock 200000 0 1   <*--- Setup SWO timing (BMP case)
+    prepareSWO ConfigCoreClock 200000 0 1   <*--- Setup SWO timing (BMP case)
     # ----------END OF ALTERNATIVE-----------------------------------
     
     dwtSamplePC 1                           <-
@@ -222,7 +226,7 @@ orbuculum with the -h option.
 
 A typical command line would be;
 
->orbuculum -b swo/ -c 0,text,"%c" -v
+>orbuculum -b swo/ -c 0,text,"%c" -v 1
 
 The directory 'swo/' is expected to already exist, into which will be placed
 a file 'text' which delivers the output from swo channel 0 in character
