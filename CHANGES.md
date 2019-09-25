@@ -1,3 +1,7 @@
+25th Sept 2019 (Version 1.00, no functional change)
+
+* Updates to README.md to fix bitrot, kindly provided by Uwe Bonnes
+
 9th September 2019 (Version 1.00)
 
 * Change to BSD from GPL License
