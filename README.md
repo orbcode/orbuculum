@@ -199,7 +199,12 @@ Dependencies
 * libusb-1.0
 * libbfd (binutils-devel)
 * libelf (elfutils-libelf)
+* libiberty (libiberty-devel)
 * libftdi (For FPGA support only)
+
+On Ubuntu/Debian something like this should sort you out;
+
+```sudo apt install libiberty-dev libelf-dev binutils-dev libusb-1.0-0-dev```
 
 The command line to build the Orbuculum tool suite is;
 
