@@ -1,5 +1,8 @@
 ![Screenshot](https://raw.githubusercontent.com/orbcode/orbuculum/master/Docs/title.png)
 
+*** STOP PRESS ***
+There is now a book by Thiadmer Riemersma (compuphase) about the Black Magic Probe available at https://github.com/compuphase/Black-Magic-Probe-Book .... it includes quite a bit of material about SWO too which is useful even if you're not using BMP for debug access. Go take a look.
+
 * Latest Changes:
 
 Upissue to V1.00. The number doesn't really mean anything, but it does represent a change from GPL to BSD licence. See the CONTRIBUTORS file for details on all authors agreement to this change.
