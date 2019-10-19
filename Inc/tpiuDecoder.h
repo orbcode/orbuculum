@@ -34,7 +34,8 @@
 #ifndef _TPIU_DECODER_
 #define _TPIU_DECODER_
 
-#include "generics.h"
+#include <stdint.h>
+#include <stdbool.h>
 
 #ifdef __cplusplus
 extern "C" {

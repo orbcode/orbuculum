@@ -44,9 +44,9 @@
 
 enum fwState { FW_STATE_CLOSED, FW_STATE_GETNAMEA, FW_STATE_GETNAMEE, FW_STATE_UNLINK, FW_STATE_OPEN };
 
-#define MAX_CONCAT_FILENAMELEN 4096
 #define MAX_FILENAMELEN 1024
 #define MAX_STRLEN 4096
+#define MAX_CONCAT_FILENAMELEN (MAX_STRLEN)
 
 static struct
 {
@@ -78,12 +78,12 @@ void _processCompleteName( uint32_t n )
     /* Concat strings */
     if ( _f.basedir )
     {
-        strncpy( workingName, _f.basedir, MAX_CONCAT_FILENAMELEN );
-        strncat( workingName, _f.file[n].name, MAX_CONCAT_FILENAMELEN );
+        strncpy( workingName, _f.basedir, MAX_CONCAT_FILENAMELEN-1 );
+        strncat( workingName, _f.file[n].name, MAX_CONCAT_FILENAMELEN-1 );
     }
     else
     {
-        strncpy( workingName, _f.file[n].name, MAX_CONCAT_FILENAMELEN );
+        strncpy( workingName, _f.file[n].name, MAX_CONCAT_FILENAMELEN-1 );
     }
 
     genericsReport( V_DEBUG, "Complete name to work with is [%s]" EOL, workingName );

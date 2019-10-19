@@ -1,5 +1,5 @@
 #VERBOSE=1
-DEBUG=1
+#DEBUG=1
 WITH_FPGA?=1
 
 CFLAGS=-DVERSION="\"1.00\""
@@ -55,7 +55,11 @@ CFILES =
 SFILES =
 OLOC = ofiles
 INCLUDE_PATHS += -I/usr/local/include/libusb-1.0 -I/usr/include/libiberty
-LDLIBS = -L. -L/usr/local/lib -L$(OLOC) -l$(ORBLIB) -lusb-1.0 -lelf -lbfd -lz -ldl -liberty
+LDLIBS = -L. -L/usr/local/lib -lusb-1.0 -lelf -lbfd -lz -ldl -liberty
+
+#ifdef DEBUG
+LDLIBS += -L$(OLOC) -l$(ORBLIB)
+#endif
 
 #ifdef LINUX
 LDLIBS += -lpthread

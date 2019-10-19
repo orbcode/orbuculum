@@ -1599,7 +1599,8 @@ int serialFeeder( void )
 int fpgaFeeder( void )
 
 {
-    int f, t;
+  int f;
+  int t=0;
     uint8_t cbw[FTDI_HS_TRANSFER_SIZE];
     uint8_t scratchBuffer[FTDI_HS_TRANSFER_SIZE - FTDI_NUM_FRAMES];
     uint8_t *c;

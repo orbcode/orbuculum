@@ -43,7 +43,13 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+
+#ifdef DEBUG
 #include "generics.h"
+#else
+#define genericsReport(x...)
+#endif
+
 #include "itmDecoder.h"
 
 #ifdef __cplusplus

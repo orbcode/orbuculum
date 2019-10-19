@@ -34,7 +34,11 @@
 #include <stdio.h>
 #include <sys/time.h>
 #include <string.h>
+#ifdef DEBUG
 #include "generics.h"
+#else
+#define genericsReport(x...)
+#endif
 #include "tpiuDecoder.h"
 
 #define SYNCPATTERN 0xFFFFFF7F

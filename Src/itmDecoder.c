@@ -36,11 +36,17 @@
  * of the ARMv7-M Architecture Refrence Manual document available
  * from https://static.docs.arm.com/ddi0403/e/DDI0403E_B_armv7m_arm.pdf
  */
-#include <stdio.h>
 #include <sys/time.h>
 #include <string.h>
-#include "generics.h"
 #include "itmDecoder.h"
+
+#ifdef DEBUG
+#include <stdio.h>
+#include "generics.h"
+#else
+#define genericsReport(x...)
+#endif
+
 #define SYNCMASK              0xFFFFFFFFFFFF
 #define SYNCPATTERN           0x000000000080
 #define TPIU_SYNCMASK         0xFFFFFFFF
@@ -124,8 +130,9 @@ bool ITMGetPacket( struct ITMDecoder *i, struct ITMPacket *p )
 }
 // ====================================================================================================
 
+#ifdef DEBUG
 static char *_protoNames[] = {PROTO_NAME_LIST};
-
+#endif
 
 enum ITMPumpEvent ITMPump( struct ITMDecoder *i, uint8_t c )
 
@@ -313,7 +320,9 @@ enum ITMPumpEvent ITMPump( struct ITMDecoder *i, uint8_t c )
                 /* This is a reserved encoding we don't know how to handle */
                 /* ...assume it's line noise and wait for sync again */
                 i->stats.ErrorPkt++;
+#ifdef DEBUG
                 fprintf( stderr, EOL "%02X " EOL, c );
+#endif
                 retVal = ITM_EV_ERROR;
                 genericsReport( V_DEBUG, "General error for packet type %02x" EOL, c );
                 break;
