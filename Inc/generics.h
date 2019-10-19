@@ -42,7 +42,9 @@
 #else
     #define EOL "\n\r"
 #endif
-
+#ifdef __cplusplus
+extern "C" {
+#endif
 // ====================================================================================================
 enum verbLevel {V_ERROR, V_WARN, V_INFO, V_DEBUG};
 
@@ -54,4 +56,8 @@ void genericsSetReportLevel( enum verbLevel lset );
 void genericsReport( enum verbLevel l, const char *fmt, ... );
 void genericsExit( int status, const char *fmt, ... );
 // ====================================================================================================
+#ifdef __cplusplus
+}
+#endif
+
 #endif

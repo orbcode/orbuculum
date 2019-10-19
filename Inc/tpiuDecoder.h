@@ -36,6 +36,10 @@
 
 #include "generics.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 enum TPIUPumpEvent
 {
     TPIU_EV_NONE,
@@ -97,4 +101,7 @@ enum TPIUPumpEvent TPIUPump( struct TPIUDecoder *t, uint8_t d );
 
 void TPIUDecoderInit( struct TPIUDecoder *t );
 // ====================================================================================================
+#ifdef __cplusplus
+}
+#endif
 #endif

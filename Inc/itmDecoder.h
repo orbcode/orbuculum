@@ -40,6 +40,10 @@
 #define ITM_MAX_PACKET  (5)  // This length can only happen for a timestamp
 #define ITM_DATA_PACKET (4)  // This is the maximum length of everything else
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+  
 enum ITMPacketType
 
 {
@@ -156,4 +160,7 @@ enum ITMPumpEvent ITMPump( struct ITMDecoder *i, uint8_t c );
 
 void ITMDecoderInit( struct ITMDecoder *i, bool startSynced );
 // ====================================================================================================
+#ifdef __cplusplus
+}
+#endif
 #endif

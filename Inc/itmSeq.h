@@ -46,6 +46,9 @@
 #include "generics.h"
 #include "itmDecoder.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 struct ITMSeq
 
 {
@@ -65,4 +68,7 @@ struct ITMPacket *ITMSeqGetPacket( struct ITMSeq *d );
 bool ITMSeqPump( struct ITMSeq *d, uint8_t c );
 
 // ====================================================================================================
+#ifdef __cplusplus
+}
+#endif
 #endif
