@@ -4,6 +4,7 @@
 
 This is V1.10 in progress.
 
+* Core parsing routines have been moved into a library, liborb.a...for now see orbuculum.c for examples of how to use them.
 * JSON output has been added into orbtop.
 * Interrupt measurements have been added into orbtop.
 
