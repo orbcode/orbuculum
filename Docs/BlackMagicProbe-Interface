@@ -23,8 +23,8 @@ automatically grab packets and publish them to its fifos.
 
 BMP SWO capture speed is constrained by both the capabilities of the
 STM32F103 USART and the ability to get the packets back out over the
-USB link.  The UART baudrate is set by b=(72x10^6)/(16*d)...so for d=1
-that means a maximum speed of 4.5Mbps. For continious streaming that
+USB link.  The UART baudrate is set by b=(72x10^6)/(d)... for d > 16.
+That means a maximum speed of 4.5Mbps. For continious streaming that
 turns out to be _too_ fast for the USB link, so the next available
 option is the 2.25Mbps that we use. ....you can safely use the 4.5Mbps
 setting if your debug data  is bursty, or if you're using a different
@@ -34,14 +34,18 @@ cannot flush in time (there's a 12K buffer, so the it is a pretty long
 run before it becomes a problem).
 
 Note that the baudrate equation means there are only certain speeds
-available. The highest half dozen are;
+available. Some baudrate for small divisors:
 
-1    	   4.50  Mbps
-2	   2.25  Mbps
-3	   1.50  Mbps
-4	   1.125 Mbps
-5	   0.900 Mbps
-6          0.750 Mbps
+Divisor    Baudrate @ 72 MHz
+16    	   4.50  Mbps
+17	   4.23...  Mbps
+18	   4.0   Mbps
+24	   3.0   Mbps
+32	   2.25  Mbps
+36         2.0   Mbps
+48         1.5   Mbps
+64	   1.125 Mbps
+72         1.00  Mbps
 
 ...the USART will cope with some timing slip, but it's advisible to
 stay as close to these values as you can. As the speed comes down the
