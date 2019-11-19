@@ -1,5 +1,5 @@
 # Optional components of the build
-NO_FIFOS?=1
+WITH_FIFOS?=1
 WITH_FPGA?=1
 
 # Build configuration
@@ -46,8 +46,8 @@ DEBUG_OPTS =
 OPT_LEVEL = -O2
 endif
 
-ifeq ($(NO_FIFOS),1)
-CFLAGS += -DNO_FIFOS
+ifeq ($(WITH_FIFOS),1)
+CFLAGS += -DWITH_FIFOS
 endif
 
 # Directories for sources
@@ -82,7 +82,7 @@ endif
 
 ORBLIB_CFILES = $(App_DIR)/itmDecoder.c $(App_DIR)/tpiuDecoder.c $(App_DIR)/itmSeq.c
 ORBUCULUM_CFILES = $(App_DIR)/$(ORBUCULUM).c $(App_DIR)/filewriter.c $(FPGA_CFILES)
-ifneq ($(NO_FIFOS),1)
+ifeq ($(WITH_FIFOS),1)
 ORBUCULUM_CFILES += $(App_DIR)/fifos.c
 endif
 ORBCAT_CFILES = $(App_DIR)/$(ORBCAT).c 

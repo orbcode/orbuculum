@@ -212,7 +212,7 @@ make
 or
 
 make WITH_FPGA=0 if you don't need the fpga trace capture support.
-make NO_FIFOS=1 if you don't want fifos in orbuculum itself.
+make WITH_FIFOS=0 if you don't want fifos in orbuculum itself.
 
 ...you may need to change the paths to your libusb files, depending on
 how well your build environment is set up.

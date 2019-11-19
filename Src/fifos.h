@@ -34,7 +34,7 @@
 #ifndef _FIFOS_
 #define _FIFOS_
 
-#ifndef NO_FIFOS
+#ifdef WITH_FIFOS
 #include "tpiuDecoder.h"
 #include "itmDecoder.h"
 

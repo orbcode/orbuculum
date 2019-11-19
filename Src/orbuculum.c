@@ -498,23 +498,23 @@ void _printHelp( char *progName )
 
 {
 
-#ifndef NO_FIFOS
+#ifdef WITH_FIFOS
     fprintf( stdout, "Usage: %s <hntv> <s name:number> <b basedir> <f filename>  <i channel> <p port> <a speed>" EOL, progName );
 #else
     fprintf( stdout, "Usage: %s <hv> <s name:number> <f filename>  <p port> <a speed>" EOL, progName );    
 #endif
     fprintf( stdout, "        a: <serialSpeed> to use" EOL );
-#ifndef NO_FIFOS
+#ifdef WITH_FIFOS
     fprintf( stdout, "        b: <basedir> for channels" EOL );
     fprintf( stdout, "        c: <Number>,<Name>,<Format> of channel to populate (repeat per channel)" EOL );
 #endif
     fprintf( stdout, "        f: <filename> Take input from specified file" EOL );
     fprintf( stdout, "        h: This help" EOL );
-#ifndef NO_FIFOS
+#ifdef WITH_FIFOS
     fprintf( stdout, "        i: <channel> Set ITM Channel in TPIU decode (defaults to 1)" EOL );
 #endif
     fprintf( stdout, "        l: <port> Listen port for the incoming connections (defaults to %d)" EOL, SERVER_PORT );
-#ifndef NO_FIFOS
+#ifdef WITH_FIFOS
     fprintf( stdout, "        n: Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
 #endif
 #ifdef INCLUDE_FPGA_SUPPORT
@@ -522,12 +522,12 @@ void _printHelp( char *progName )
 #endif
     fprintf( stdout, "        p: <serialPort> to use" EOL );
     fprintf( stdout, "        s: <address>:<port> Set address for SEGGER JLink connection (default none:%d)" EOL, SEGGER_PORT );
-#ifndef NO_FIFOS
+#ifdef WITH_FIFOS
     fprintf( stdout, "        t: Use TPIU decoder" EOL );
 #endif
     fprintf( stdout, "        v: <level> Verbose mode 0(errors)..3(debug)" EOL );
 
-#ifndef NO_FIFOS
+#ifdef WITH_FIFOS
     fprintf( stdout, "        (Built with fifo support)" EOL );
 #else
     fprintf( stdout, "        (Built without fifo support)" EOL );
@@ -540,7 +540,7 @@ int _processOptions( int argc, char *argv[] )
     int c;
 #define DELIMITER ','
 
-#ifndef NO_FIFOS
+#ifdef WITH_FIFOS
     char *chanConfig;
     char *chanName;
     uint chan;
@@ -558,7 +558,7 @@ int _processOptions( int argc, char *argv[] )
                 break;
 
                 // ------------------------------------
-#ifndef NO_FIFOS
+#ifdef WITH_FIFOS
 
             case 'b':
                 fifoSetChanPath( _r.f, optarg );
@@ -576,7 +576,7 @@ int _processOptions( int argc, char *argv[] )
                 return false;
 
                 // ------------------------------------
-#ifndef NO_FIFOS
+#ifdef WITH_FIFOS
 
             case 'i':
                 fifoSettpiuITMChannel( _r.f, atoi( optarg ) );
@@ -589,7 +589,7 @@ int _processOptions( int argc, char *argv[] )
                 break;
 
                 // ------------------------------------
-#ifndef NO_FIFOS
+#ifdef WITH_FIFOS
 
             case 'n':
                 fifoSetForceITMSync( _r.f, false );
@@ -600,7 +600,7 @@ int _processOptions( int argc, char *argv[] )
 
             case 'o':
                 // Generally you need TPIU for orbtrace
-#ifndef NO_FIFOS
+#ifdef WITH_FIFOS
                 fifoSetUseTPIU( _r.f, true );
 #endif
                 options.orbtrace = true;
@@ -615,7 +615,7 @@ int _processOptions( int argc, char *argv[] )
 
             // ------------------------------------
             case 's':
-#ifndef NO_FIFOS
+#ifdef WITH_FIFOS
                 fifoSetForceITMSync( _r.f, true );
 #endif
                 options.seggerHost = optarg;
@@ -643,7 +643,7 @@ int _processOptions( int argc, char *argv[] )
 
             // ------------------------------------
             case 't':
-#ifndef NO_FIFOS
+#ifdef WITH_FIFOS
                 fifoSetUseTPIU( _r.f, true );
                 break;
 #endif
@@ -654,7 +654,7 @@ int _processOptions( int argc, char *argv[] )
                 break;
 
                 // ------------------------------------
-#ifndef NO_FIFOS
+#ifdef WITH_FIFOS
 
             /* Individual channel setup */
             case 'c':
@@ -721,7 +721,7 @@ int _processOptions( int argc, char *argv[] )
                 // ------------------------------------
         }
 
-#ifndef NO_FIFOS
+#ifdef WITH_FIFOS
 
     /* Now perform sanity checks.... */
     if ( fifoGetUseTPIU( _r.f ) && ( !fifoGettpiuITMChannel( _r.f ) ) )
@@ -744,7 +744,7 @@ int _processOptions( int argc, char *argv[] )
 
     /* ... and dump the config if we're being verbose */
     genericsReport( V_INFO, "Orbuculum V" VERSION " (Git %08X %s, Built " BUILD_DATE ")" EOL, GIT_HASH, ( GIT_DIRTY ? "Dirty" : "Clean" ) );
-#ifndef NO_FIFOS
+#ifdef WITH_FIFOS
     genericsReport( V_INFO, "BasePath   : %s" EOL, fifoGetChanPath( _r.f ) );
     genericsReport( V_INFO, "ForceSync  : %s" EOL, fifoGetForceITMSync( _r.f ) ? "true" : "false" );
 #endif
@@ -768,7 +768,7 @@ int _processOptions( int argc, char *argv[] )
 
 #endif
 
-#ifndef NO_FIFOS
+#ifdef WITH_FIFOS
 
     if ( fifoGetUseTPIU( _r.f ) )
     {
@@ -782,7 +782,7 @@ int _processOptions( int argc, char *argv[] )
         genericsReport( V_INFO, "Input File : %s" EOL, options.file );
     }
 
-#ifndef NO_FIFOS
+#ifdef WITH_FIFOS
     genericsReport( V_INFO, "Channels   :" EOL );
 
     for ( int g = 0; g < NUM_CHANNELS; g++ )
@@ -819,7 +819,7 @@ static void _processBlock( int s, unsigned char *cbw )
     _sendToClients( s, cbw );
     genericsReport( V_DEBUG, "RXED Packet of %d bytes" EOL, s );
 
-#ifndef NO_FIFOS
+#ifdef WITH_FIFOS
     unsigned char *c = cbw;
 
     while ( s-- )
@@ -938,7 +938,7 @@ int seggerFeeder( void )
 
         genericsReport( V_INFO, "Established Segger Link" EOL );
 
-#ifndef NO_FIFOS
+#ifdef WITH_FIFOS
         fifoForceSync( _r.f, true );
 #endif
 
@@ -1073,7 +1073,7 @@ int fpgaFeeder( void )
 
         genericsReport( V_INFO, "All parameters configured" EOL );
 
-#ifndef NO_FIFOS
+#ifdef WITH_FIFOS
         fifoForceSync( _r.f, true );
 #endif
 
@@ -1101,7 +1101,7 @@ int fpgaFeeder( void )
 #ifdef DUMP_FTDI_BYTES
                         printf( "%02X ", c[e] );
 #endif
-#ifndef NO_FIFOS
+#ifdef WITH_FIFOS
                         fifoProtocolPump( _r.f, c[e] );
 #endif
                     }
@@ -1173,7 +1173,7 @@ int fileFeeder( void )
 static void _doExit( void )
 
 {
-#ifndef NO_FIFOS
+#ifdef WITH_FIFOS
 
     if ( _r.f )
     {
@@ -1189,7 +1189,7 @@ int main( int argc, char *argv[] )
     sigset_t set;
     struct sigaction sa;
 
-#ifndef NO_FIFOS
+#ifdef WITH_FIFOS
     _r.f = fifoInit( );
     assert( _r.f );
 #endif
@@ -1224,7 +1224,7 @@ int main( int argc, char *argv[] )
         genericsExit( -1, "Failed to establish Int handler" EOL );
     }
 
-#ifndef NO_FIFOS
+#ifdef WITH_FIFOS
 
     if ( ! ( fifoCreate( _r.f ) ) )
     {
