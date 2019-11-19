@@ -1,8 +1,12 @@
-#VERBOSE=1
-#DEBUG=1
+# Optional components of the build
+NO_FIFOS?=1
 WITH_FPGA?=1
 
-CFLAGS=-DVERSION="\"1.00\""
+# Build configuration
+#VERBOSE=1
+#DEBUG=1
+
+CFLAGS=-DVERSION="\"1.10 InProgress\""
 
 CROSS_COMPILE=
 # Output Files
@@ -42,6 +46,10 @@ DEBUG_OPTS =
 OPT_LEVEL = -O2
 endif
 
+ifeq ($(NO_FIFOS),1)
+CFLAGS += -DNO_FIFOS
+endif
+
 # Directories for sources
 App_DIR=Src
 Inc_DIR=Inc
@@ -55,15 +63,11 @@ CFILES =
 SFILES =
 OLOC = ofiles
 INCLUDE_PATHS += -I/usr/local/include/libusb-1.0 -I/usr/include/libiberty
-LDLIBS = -L. -L/usr/local/lib -lusb-1.0 -lelf -lbfd -lz -ldl -liberty
+LDLIBS = -L. -L/usr/local/lib -lusb-1.0 -lelf -lbfd -lz -ldl -liberty -L$(OLOC) -l$(ORBLIB)
 
-#ifdef DEBUG
-LDLIBS += -L$(OLOC) -l$(ORBLIB)
-#endif
-
-#ifdef LINUX
+ifdef LINUX
 LDLIBS += -lpthread
-#endif
+endif
 
 ##########################################################################
 # Generic multi-project files 
@@ -78,6 +82,9 @@ LDLIBS += -lpthread
 
 ORBLIB_CFILES = $(App_DIR)/itmDecoder.c $(App_DIR)/tpiuDecoder.c $(App_DIR)/itmSeq.c
 ORBUCULUM_CFILES = $(App_DIR)/$(ORBUCULUM).c $(App_DIR)/filewriter.c $(FPGA_CFILES)
+ifneq ($(NO_FIFOS),1)
+ORBUCULUM_CFILES += $(App_DIR)/fifos.c
+endif
 ORBCAT_CFILES = $(App_DIR)/$(ORBCAT).c 
 ORBTOP_CFILES = $(App_DIR)/$(ORBTOP).c $(App_DIR)/symbols.c $(EXT)/cJSON.c
 ORBDUMP_CFILES = $(App_DIR)/$(ORBDUMP).c

@@ -41,6 +41,7 @@
 #include <sys/stat.h>
 #include <stdio.h>
 #include <string.h>
+#include <assert.h>
 #include <semaphore.h>
 #if defined OSX
     #include <sys/ioctl.h>
@@ -74,9 +75,8 @@
 
 #include "git_version_info.h"
 #include "generics.h"
-#include "tpiuDecoder.h"
-#include "itmDecoder.h"
 #include "fileWriter.h"
+#include "fifos.h"
 
 #ifdef INCLUDE_FPGA_SUPPORT
     #include <libftdi1/ftdi.h>
@@ -105,54 +105,31 @@
 #define ENDPOINT  (0x85)
 
 #define TRANSFER_SIZE (4096)
-#define NUM_CHANNELS  32
-#define HW_CHANNEL    (NUM_CHANNELS)         /* Make the hardware fifo on the end of the software ones */
-
-#define MAX_STRING_LENGTH (100)              /* Maximum length that will be output from a fifo for a single event */
-
-/* Information for an individual channel */
-struct Channel
-{
-    char *chanName;                          /* Filename to be used for the fifo */
-    char *presFormat;                        /* Format of data presentation to be used */
-};
-
-#define HWFIFO_NAME "hwevent"
 
 /* Record for options, either defaults or from command line */
 struct
 {
     /* Config information */
-    bool useTPIU;
-    bool segger;
-    bool forceITMSync;
-    char *fwbasedir;
+    bool segger;                              /* Using a segger debugger */
 
 #ifdef INCLUDE_FPGA_SUPPORT
-    bool orbtrace;
-    uint32_t orbtraceWidth;
+    char *fwbasedir;                          /* Where the firmware is stored */
+    bool orbtrace;                            /* In trace mode? */
+    uint32_t orbtraceWidth;                   /* Trace pin width */
+
 #endif
-    char *seggerHost;
-    int32_t seggerPort;
-
-    uint32_t tpiuITMChannel;
-
-    /* Sink information */
-    struct Channel channel[NUM_CHANNELS + 1];
-    char *chanPath;
-
     /* Source information */
-    char *port;
-    char *file;
-    int speed;
-    int listenPort;
+    char *seggerHost;                         /* Segger host connection */
+    int32_t seggerPort;                       /* ...and port */
+    char *port;                               /* Serial host connection */
+    int speed;                                /* Speed of serial link */
+    char *file;                               /* File host connection */
+
+    /* Network link */
+    int listenPort;                           /* Listening port for network */
 } options =
 {
-    .forceITMSync = true,
-    .chanPath = "",
     .speed = 115200,
-    .useTPIU = false,
-    .tpiuITMChannel = 1,
     .listenPort = SERVER_PORT,
     .seggerHost = SEGGER_HOST
 #ifdef INCLUDE_FPGA_SUPPORT
@@ -161,21 +138,12 @@ struct
 #endif
 };
 
-
-/* Runtime state */
-struct channelRuntime
-{
-    int handle;
-    pthread_t thread;
-    char *fifoName;
-};
-
 /* List of any connected network clients */
 struct nwClient
 
 {
-    int handle;
-    pthread_t thread;
+    int handle;                               /* Handle to client */
+    pthread_t thread;                         /* Execution thread */
     struct nwClient *nextClient;
     struct nwClient *prevClient;
 };
@@ -184,243 +152,36 @@ struct nwClient
 struct nwClientParams
 
 {
-    struct nwClient *client;
-    int portNo;
-    int listenHandle;
+    struct nwClient *client;                  /* Information about the client */
+    int portNo;                               /* Port of connection */
+    int listenHandle;                         /* Handle for listener */
 };
 
 struct
 {
-    struct channelRuntime c[NUM_CHANNELS + 1];   /* Output for each channel */
-    struct nwClient *firstClient;                /* Head of linked list of network clients */
-    sem_t clientList;                              /* Locking semaphore for list of network clients */
+    struct nwClient *firstClient;             /* Head of linked list of network clients */
+    sem_t clientList;                         /* Locking semaphore for list of network clients */
 
-    pthread_t ipThread;                          /* The listening thread for n/w clients */
+    pthread_t ipThread;                       /* The listening thread for n/w clients */
 
-    /* Timestamp info */
-    uint64_t lastHWExceptionTS;
-
-    /* The decoders and the packets from them */
-    struct ITMDecoder i;
-    struct ITMPacket h;
-    struct TPIUDecoder t;
-    struct TPIUPacket p;
+    /* Link to the fifo subsystem */
+    struct fifosHandle *f;
 
 #ifdef INCLUDE_FPGA_SUPPORT
-    bool feederExit;
-    struct ftdi_context *ftdi;
+    bool feederExit;                          /* Do we need to leave now? */
+    struct ftdi_context *ftdi;                /* Connection materials for ftdi fpga interface */
     struct ftdispi_context ftdifsc;
 #endif
 } _r;
 
-/* Structure for parameters passed to a software task thread */
-struct _runThreadParams
-
-{
-    int portNo;
-    int listenHandle;
-};
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
-// Mechanism for handling the set of Fifos
-// ====================================================================================================
-// ====================================================================================================
-// ====================================================================================================
-static void *_runFifo( void *arg )
-
-/* This is the control loop for the channel fifos (for each software port) */
-
-{
-    struct _runThreadParams *params = ( struct _runThreadParams * )arg;
-    struct ITMPacket p;
-    uint32_t w;
-
-    char constructString[MAX_STRING_LENGTH];
-    int fifo;
-    int readDataLen, writeDataLen;
-
-    if ( mkfifo( _r.c[params->portNo].fifoName, 0666 ) < 0 )
-    {
-        return NULL;
-    }
-
-    while ( 1 )
-    {
-        /* This is the child */
-        fifo = open( _r.c[params->portNo].fifoName, O_WRONLY );
-
-        while ( 1 )
-        {
-            /* ....get the packet */
-            readDataLen = read( params->listenHandle, &p, sizeof( struct ITMPacket ) );
-
-            if ( readDataLen != sizeof( struct ITMPacket ) )
-            {
-                return NULL;
-            }
-
-            /* Build 32 value the long way around to avoid type-punning issues */
-            w = ( p.d[3] << 24 ) | ( p.d[2] << 16 ) | ( p.d[1] << 8 ) | ( p.d[0] );
-
-            if ( options.channel[params->portNo].presFormat )
-            {
-                // formatted output.
-                writeDataLen = snprintf( constructString, MAX_STRING_LENGTH, options.channel[params->portNo].presFormat, w );
-
-                if ( write( fifo, constructString, ( writeDataLen < MAX_STRING_LENGTH ) ? writeDataLen : MAX_STRING_LENGTH ) <= 0 )
-                {
-                    break;
-                }
-            }
-            else
-            {
-                // raw output.
-                if ( write( fifo, &w, sizeof ( w ) ) <= 0 )
-                {
-                    break;
-                }
-            }
-        }
-
-        close( fifo );
-    }
-
-    return NULL;
-}
-// ====================================================================================================
-static void *_runHWFifo( void *arg )
-
-/* This is the control loop for the hardware fifo */
-
-{
-    struct _runThreadParams *params = ( struct _runThreadParams * )arg;
-    int fifo;
-    int readDataLen;
-    uint8_t p[MAX_STRING_LENGTH];
-
-    if ( mkfifo( _r.c[params->portNo].fifoName, 0666 ) < 0 )
-    {
-        return NULL;
-    }
-
-    while ( 1 )
-    {
-        /* This is the child */
-        fifo = open( _r.c[params->portNo].fifoName, O_WRONLY );
-
-        while ( 1 )
-        {
-            /* ....get the packet */
-            readDataLen = read( params->listenHandle, p, MAX_STRING_LENGTH );
-
-            if ( write( fifo, p, readDataLen ) <= 0 )
-            {
-                break;
-            }
-        }
-
-        close( fifo );
-    }
-
-    return NULL;
-}
-// ====================================================================================================
-static bool _makeFifoTasks( void )
-
-/* Create each sub-process that will handle a port */
-
-{
-    struct _runThreadParams *params;
-    int f[2];
-
-    /* Cycle through channels and create a fifo for each one that is enabled */
-    for ( int t = 0; t < ( NUM_CHANNELS + 1 ); t++ )
-    {
-        if ( t < NUM_CHANNELS )
-        {
-            if ( options.channel[t].chanName )
-            {
-                /* This is a live software channel fifo */
-                if ( pipe( f ) < 0 )
-                {
-                    return false;
-                }
-
-                fcntl( f[1], F_SETFL, O_NONBLOCK );
-                _r.c[t].handle = f[1];
-
-                params = ( struct _runThreadParams * )malloc( sizeof( struct _runThreadParams ) );
-                params->listenHandle = f[0];
-                params->portNo = t;
-
-                _r.c[t].fifoName = ( char * )malloc( strlen( options.channel[t].chanName ) + strlen( options.chanPath ) + 2 );
-                strcpy( _r.c[t].fifoName, options.chanPath );
-                strcat( _r.c[t].fifoName, options.channel[t].chanName );
-
-                if ( pthread_create( &( _r.c[t].thread ), NULL, &_runFifo, params ) )
-                {
-                    return false;
-                }
-            }
-        }
-        else
-        {
-            /* This is the hardware fifo channel */
-            if ( pipe( f ) < 0 )
-            {
-                return false;
-            }
-
-            fcntl( f[1], F_SETFL, O_NONBLOCK );
-            _r.c[t].handle = f[1];
-
-            params = ( struct _runThreadParams * )malloc( sizeof( struct _runThreadParams ) );
-            params->listenHandle = f[0];
-            params->portNo = t;
-
-            _r.c[t].fifoName = ( char * )malloc( strlen( HWFIFO_NAME ) + strlen( options.chanPath ) + 2 );
-            strcpy( _r.c[t].fifoName, options.chanPath );
-            strcat( _r.c[t].fifoName, HWFIFO_NAME );
-
-            if ( pthread_create( &( _r.c[t].thread ), NULL, &_runHWFifo, params ) )
-            {
-                return false;
-            }
-        }
-    }
-
-    return true;
-}
-// ====================================================================================================
-static void _removeFifoTasks( void )
-
-/* Destroy the per-port sub-processes */
-
-{
-    for ( int t = 0; t < NUM_CHANNELS + 1; t++ )
-    {
-        if ( _r.c[t].handle > 0 )
-        {
-            close( _r.c[t].handle );
-            unlink( _r.c[t].fifoName );
-        }
-    }
-}
-// ====================================================================================================
-uint64_t _timestampuS( void )
-
-{
-    struct timeval te;
-    gettimeofday( &te, NULL ); // get current time
-    return ( te.tv_sec * 1000000LL + te.tv_usec ); // caculate microseconds
-}
+// Private routines
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
 // Network server implementation for raw SWO feed
-// ====================================================================================================
-// ====================================================================================================
 // ====================================================================================================
 static void *_client( void *args )
 
@@ -467,7 +228,6 @@ static void *_client( void *args )
         }
     }
 }
-
 // ====================================================================================================
 static void *_listenTask( void *arg )
 
@@ -589,406 +349,6 @@ static void _sendToClients( uint32_t len, uint8_t *buffer )
     sem_post( &_r.clientList );
 }
 // ====================================================================================================
-void _handleException( struct ITMDecoder *i, struct ITMPacket *p )
-
-{
-    uint64_t ts = _timestampuS(); /* Stamp as early as possible */
-    char outputString[MAX_STRING_LENGTH];
-    int opLen;
-    uint32_t exceptionNumber = ( ( p->d[1] & 0x01 ) << 8 ) | p->d[0];
-    uint32_t eventType = p->d[1] >> 4;
-    uint64_t eventdifftS = ts - _r.lastHWExceptionTS;
-
-
-    const char *exNames[] = {"Thread", "Reset", "NMI", "HardFault", "MemManage", "BusFault", "UsageFault", "UNKNOWN_7",
-                             "UNKNOWN_8", "UNKNOWN_9", "UNKNOWN_10", "SVCall", "Debug Monitor", "UNKNOWN_13", "PendSV", "SysTick"
-                            };
-    const char *exEvent[] = {"Unknown", "Enter", "Exit", "Resume"};
-
-    _r.lastHWExceptionTS = ts;
-
-    if ( exceptionNumber < 16 )
-    {
-        /* This is a system based exception */
-        opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%ld,%s,%s" EOL, HWEVENT_EXCEPTION, eventdifftS, exEvent[eventType & 0x03], exNames[exceptionNumber & 0x0F] );
-    }
-    else
-    {
-        /* This is a CPU defined exception */
-        opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%ld,%s,External,%d" EOL, HWEVENT_EXCEPTION, eventdifftS, exEvent[eventType & 0x03], exceptionNumber - 16 );
-    }
-
-    write( _r.c[HW_CHANNEL].handle, outputString, opLen );
-}
-// ====================================================================================================
-void _handleDWTEvent( struct ITMDecoder *i, struct ITMPacket *p )
-
-{
-    uint64_t ts = _timestampuS(); /* Stamp as early as possible */
-    char outputString[MAX_STRING_LENGTH];
-    int opLen;
-    uint32_t event = p->d[1] & 0x2F;
-    const char *evName[] = {"CPI", "Exc", "Sleep", "LSU", "Fold", "Cyc"};
-    uint64_t eventdifftS = ts - _r.lastHWExceptionTS;
-
-    _r.lastHWExceptionTS = ts;
-
-    for ( uint32_t i = 0; i < 6; i++ )
-    {
-        if ( event & ( 1 << i ) )
-        {
-            opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%ld,%s" EOL, HWEVENT_DWT, eventdifftS, evName[event] );
-            write( _r.c[HW_CHANNEL].handle, outputString, opLen );
-        }
-    }
-}
-// ====================================================================================================
-void _handlePCSample( struct ITMDecoder *i, struct ITMPacket *p )
-
-/* We got a sample of the PC */
-
-{
-    uint64_t ts = _timestampuS(); /* Stamp as early as possible */
-    char outputString[MAX_STRING_LENGTH];
-    int opLen;
-    uint64_t eventdifftS = ts - _r.lastHWExceptionTS;
-
-    _r.lastHWExceptionTS = ts;
-
-    if ( p->len == 1 )
-    {
-        /* This is a sleep packet */
-        opLen = snprintf( outputString, ( MAX_STRING_LENGTH - 1 ), "%d,%ld,**SLEEP**" EOL, HWEVENT_PCSample, eventdifftS );
-    }
-    else
-    {
-        uint32_t pc = ( p->d[3] << 24 ) | ( p->d[2] << 16 ) | ( p->d[1] << 8 ) | ( p->d[0] );
-        opLen = snprintf( outputString, ( MAX_STRING_LENGTH - 1 ), "%d,%ld,0x%08x" EOL, HWEVENT_PCSample, eventdifftS, pc );
-    }
-
-    write( _r.c[HW_CHANNEL].handle, outputString, opLen );
-}
-// ====================================================================================================
-void _handleDataRWWP( struct ITMDecoder *i, struct ITMPacket *p )
-
-/* We got an alert due to a watch pointer */
-
-{
-    uint64_t ts = _timestampuS(); /* Stamp as early as possible */
-    uint8_t comp = ( p->srcAddr >> 1 ) & 0x3;
-    bool isWrite = ( ( p->srcAddr & 0x01 ) != 0 );
-    uint32_t data;
-    char outputString[MAX_STRING_LENGTH];
-    int opLen;
-    uint64_t eventdifftS = ts - _r.lastHWExceptionTS;
-
-    _r.lastHWExceptionTS = ts;
-
-    switch ( p->len )
-    {
-        case 1:
-            data = p->d[0];
-            break;
-
-        case 2:
-            data = ( p->d[0] ) | ( ( p->d[1] ) << 8 );
-            break;
-
-        default:
-            data = ( p->d[0] ) | ( ( p->d[1] ) << 8 ) | ( ( p->d[2] ) << 16 ) | ( ( p->d[3] ) << 24 );
-            break;
-    }
-
-    opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%ld,%d,%s,0x%x" EOL, HWEVENT_RWWT, eventdifftS, comp, isWrite ? "Write" : "Read", data );
-    write( _r.c[HW_CHANNEL].handle, outputString, opLen );
-}
-// ====================================================================================================
-void _handleDataAccessWP( struct ITMDecoder *i, struct ITMPacket *p )
-
-/* We got an alert due to a watchpoint */
-
-{
-    uint64_t ts = _timestampuS(); /* Stamp as early as possible */
-    uint8_t comp = ( p->srcAddr >> 1 ) & 0x3;
-    uint32_t data = ( p->d[0] ) | ( ( p->d[1] ) << 8 ) | ( ( p->d[2] ) << 16 ) | ( ( p->d[3] ) << 24 );
-    char outputString[MAX_STRING_LENGTH];
-    int opLen;
-
-    uint64_t eventdifftS = ts - _r.lastHWExceptionTS;
-
-    _r.lastHWExceptionTS = ts;
-    opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%ld,%d,0x%08x" EOL, HWEVENT_AWP, eventdifftS, comp, data );
-    write( _r.c[HW_CHANNEL].handle, outputString, opLen );
-}
-// ====================================================================================================
-void _handleDataOffsetWP( struct ITMDecoder *i, struct ITMPacket *p )
-
-/* We got an alert due to an offset write event */
-
-{
-    uint64_t ts = _timestampuS(); /* Stamp as early as possible */
-    uint8_t comp = ( p->srcAddr >> 1 ) & 0x3;
-    uint32_t offset = ( p->d[0] ) | ( ( p->d[1] ) << 8 );
-    char outputString[MAX_STRING_LENGTH];
-    int opLen;
-    uint64_t eventdifftS = ts - _r.lastHWExceptionTS;
-
-    _r.lastHWExceptionTS = ts;
-    opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%ld,%d,0x%04x" EOL, HWEVENT_OFS, eventdifftS, comp, offset );
-    write( _r.c[HW_CHANNEL].handle, outputString, opLen );
-}
-// ====================================================================================================
-// ====================================================================================================
-// ====================================================================================================
-// Handlers for each message type
-// ====================================================================================================
-// ====================================================================================================
-// ====================================================================================================
-void _handleSW( struct ITMDecoder *i )
-
-{
-    struct ITMPacket p;
-
-    if ( ITMGetPacket( i, &p ) )
-    {
-        /* Filter off filewriter packets and let the filewriter module deal with those */
-        if ( p.srcAddr == FW_CHANNEL )
-        {
-            filewriterProcess( &p );
-        }
-        else
-        {
-            if ( ( p.srcAddr < NUM_CHANNELS ) && ( _r.c[p.srcAddr].handle ) )
-            {
-                write( _r.c[p.srcAddr].handle, &p, sizeof( struct ITMPacket ) );
-            }
-        }
-    }
-}
-// ====================================================================================================
-void _handleHW( struct ITMDecoder *i )
-
-/* ... a hardware event has been received, dispatch it */
-
-{
-    struct ITMPacket p;
-    ITMGetPacket( i, &p );
-
-    switch ( p.srcAddr )
-    {
-        // --------------
-        case 0: /* DWT Event */
-            break;
-
-        // --------------
-        case 1: /* Exception */
-            _handleException( i, &p );
-            break;
-
-        // --------------
-        case 2: /* PC Counter Sample */
-            _handlePCSample( i, &p );
-            break;
-
-        // --------------
-        default:
-            if ( ( p.srcAddr & 0x19 ) == 0x11 )
-            {
-                _handleDataRWWP( i, &p );
-            }
-            else if ( ( p.srcAddr & 0x19 ) == 0x08 )
-            {
-                _handleDataAccessWP( i, &p );
-            }
-            else if ( ( p.srcAddr & 0x19 ) == 0x09 )
-            {
-                _handleDataOffsetWP( i, &p );
-            }
-
-            break;
-            // --------------
-    }
-}
-// ====================================================================================================
-void _handleTS( struct ITMDecoder *i )
-
-/* ... a timestamp */
-
-{
-    char outputString[MAX_STRING_LENGTH];
-    int opLen;
-    struct ITMPacket p;
-    uint32_t stamp = 0;
-
-    if ( ITMGetPacket( i, &p ) )
-    {
-        if ( !( p.d[0] & 0x80 ) )
-        {
-            /* This is packet format 2 ... just a simple increment */
-            stamp = p.d[0] >> 4;
-        }
-        else
-        {
-            /* This is packet format 1 ... full decode needed */
-            i->timeStatus = ( p.d[0] & 0x30 ) >> 4;
-            stamp = ( p.d[1] ) & 0x7f;
-
-            if ( p.len > 2 )
-            {
-                stamp |= ( p.d[2] ) << 7;
-
-                if ( p.len > 3 )
-                {
-                    stamp |= ( p.d[3] & 0x7F ) << 14;
-
-                    if ( p.len > 4 )
-                    {
-                        stamp |= ( p.d[4] & 0x7f ) << 21;
-                    }
-                }
-            }
-        }
-
-        i->timeStamp += stamp;
-    }
-
-    opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%d,%" PRIu64 EOL, HWEVENT_TS, i->timeStatus, i->timeStamp );
-    write( _r.c[HW_CHANNEL].handle, outputString, opLen );
-}
-// ====================================================================================================
-void _itmPumpProcess( char c )
-
-/* Handle individual characters into the itm decoder */
-
-{
-    switch ( ITMPump( &_r.i, c ) )
-    {
-        // ------------------------------------
-        case ITM_EV_NONE:
-            break;
-
-        // ------------------------------------
-        case ITM_EV_UNSYNCED:
-            genericsReport( V_WARN, "ITM Lost Sync (%d)" EOL, ITMDecoderGetStats( &_r.i )->lostSyncCount );
-            break;
-
-        // ------------------------------------
-        case ITM_EV_SYNCED:
-            genericsReport( V_INFO, "ITM In Sync (%d)" EOL, ITMDecoderGetStats( &_r.i )->syncCount );
-            break;
-
-        // ------------------------------------
-        case ITM_EV_OVERFLOW:
-            genericsReport( V_WARN, "ITM Overflow (%d)" EOL, ITMDecoderGetStats( &_r.i )->overflow );
-            break;
-
-        // ------------------------------------
-        case ITM_EV_ERROR:
-            genericsReport( V_WARN, "ITM Error" EOL );
-            break;
-
-        // ------------------------------------
-        case ITM_EV_TS_PACKET_RXED:
-            _handleTS( &_r.i );
-            break;
-
-        // ------------------------------------
-        case ITM_EV_SW_PACKET_RXED:
-            _handleSW( &_r.i );
-            break;
-
-        // ------------------------------------
-        case ITM_EV_HW_PACKET_RXED:
-            _handleHW( &_r.i );
-            break;
-
-        // ------------------------------------
-        case ITM_EV_RESERVED_PACKET_RXED:
-            genericsReport( V_INFO, "Reserved Packet Received" EOL );
-            break;
-
-        // ------------------------------------
-        case ITM_EV_XTN_PACKET_RXED:
-            genericsReport( V_INFO, "Unknown Extension Packet Received" EOL );
-            break;
-
-            // ------------------------------------
-    }
-}
-// ====================================================================================================
-// ====================================================================================================
-// ====================================================================================================
-// Protocol pump for decoding messages
-// ====================================================================================================
-// ====================================================================================================
-// ====================================================================================================
-void _protocolPump( uint8_t c )
-
-/* Top level protocol pump */
-
-{
-    if ( options.useTPIU )
-    {
-        switch ( TPIUPump( &_r.t, c ) )
-        {
-            // ------------------------------------
-            case TPIU_EV_NEWSYNC:
-                genericsReport( V_INFO, "TPIU In Sync (%d)" EOL, TPIUDecoderGetStats( &_r.t )->syncCount );
-
-            // This fall-through is deliberate
-            case TPIU_EV_SYNCED:
-
-                ITMDecoderForceSync( &_r.i, true );
-                break;
-
-            // ------------------------------------
-            case TPIU_EV_RXING:
-            case TPIU_EV_NONE:
-                break;
-
-            // ------------------------------------
-            case TPIU_EV_UNSYNCED:
-                genericsReport( V_INFO, "TPIU Lost Sync (%d)" EOL, TPIUDecoderGetStats( &_r.t )->lostSync );
-                ITMDecoderForceSync( &_r.i, false );
-                break;
-
-            // ------------------------------------
-            case TPIU_EV_RXEDPACKET:
-                if ( !TPIUGetPacket( &_r.t, &_r.p ) )
-                {
-                    genericsReport( V_WARN, "TPIUGetPacket fell over" EOL );
-                }
-
-                for ( uint32_t g = 0; g < _r.p.len; g++ )
-                {
-                    if ( _r.p.packet[g].s == options.tpiuITMChannel )
-                    {
-                        _itmPumpProcess( _r.p.packet[g].d );
-                        continue;
-                    }
-
-                    if ( ( _r.p.packet[g].s != 0 ) && ( _r.p.packet[g].s != 0x7f ) )
-                    {
-                        genericsReport( V_INFO, "Unknown TPIU channel %02x" EOL, _r.p.packet[g].s );
-                    }
-                }
-
-                break;
-
-            // ------------------------------------
-            case TPIU_EV_ERROR:
-                genericsReport( V_ERROR, "****ERROR****" EOL );
-                break;
-                // ------------------------------------
-        }
-    }
-    else
-    {
-        /* There's no TPIU in use, so this goes straight to the ITM layer */
-        _itmPumpProcess( c );
-    }
-}
-// ====================================================================================================
 static void _intHandler( int sig, siginfo_t *si, void *unused )
 
 {
@@ -996,408 +356,8 @@ static void _intHandler( int sig, siginfo_t *si, void *unused )
     exit( 0 );
 }
 // ====================================================================================================
-void _printHelp( char *progName )
-
-{
-    fprintf( stdout, "Usage: %s <hntv> <s name:number> <b basedir> <f filename>  <i channel> <p port> <a speed>" EOL, progName );
-    fprintf( stdout, "        a: <serialSpeed> to use" EOL );
-    fprintf( stdout, "        b: <basedir> for channels" EOL );
-    fprintf( stdout, "        c: <Number>,<Name>,<Format> of channel to populate (repeat per channel)" EOL );
-    fprintf( stdout, "        f: <filename> Take input from specified file" EOL );
-    fprintf( stdout, "        h: This help" EOL );
-    fprintf( stdout, "        i: <channel> Set ITM Channel in TPIU decode (defaults to 1)" EOL );
-    fprintf( stdout, "        l: <port> Listen port for the incoming connections (defaults to %d)" EOL, SERVER_PORT );
-    fprintf( stdout, "        n: Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
-#ifdef INCLUDE_FPGA_SUPPORT
-    fprintf( stdout, "        o: <num> Use traceport FPGA custom interface with 1, 2 or 4 bits width" EOL );
-#endif
-    fprintf( stdout, "        p: <serialPort> to use" EOL );
-    fprintf( stdout, "        s: <address>:<port> Set address for SEGGER JLink connection (default none:%d)" EOL, SEGGER_PORT );
-    fprintf( stdout, "        t: Use TPIU decoder" EOL );
-    fprintf( stdout, "        v: <level> Verbose mode 0(errors)..3(debug)" EOL );
-}
-// ====================================================================================================
-int _processOptions( int argc, char *argv[] )
-
-{
-    int c;
-    char *chanConfig;
-    uint chan;
-    char *chanIndex;
-#define DELIMITER ','
-
-    while ( ( c = getopt ( argc, argv, "a:b:c:f:hi:l:no:p:s:tv:" ) ) != -1 )
-        switch ( c )
-        {
-            // ------------------------------------
-            case 'a':
-                options.speed = atoi( optarg );
-                break;
-
-            // ------------------------------------
-            case 'b':
-                options.chanPath = optarg;
-                break;
-
-            // ------------------------------------
-            case 'f':
-                options.file = optarg;
-                break;
-
-            // ------------------------------------
-            case 'h':
-                _printHelp( argv[0] );
-                return false;
-
-            // ------------------------------------
-            case 'i':
-                options.tpiuITMChannel = atoi( optarg );
-                break;
-
-            case 'l':
-                options.listenPort = atoi( optarg );
-                break;
-
-            // ------------------------------------
-            case 'n':
-                options.forceITMSync = false;
-                break;
-                // ------------------------------------
-#ifdef INCLUDE_FPGA_SUPPORT
-
-            case 'o':
-                // Generally you need TPIU for orbtrace
-                options.useTPIU = true;
-                options.orbtrace = true;
-                options.orbtraceWidth = atoi( optarg );
-                break;
-#endif
-
-            // ------------------------------------
-            case 'p':
-                options.port = optarg;
-                break;
-
-            // ------------------------------------
-            case 's':
-                options.forceITMSync = true;
-                options.seggerHost = optarg;
-
-                // See if we have an optional port number too
-                char *a = optarg;
-
-                while ( ( *a ) && ( *a != ':' ) )
-                {
-                    a++;
-                }
-
-                if ( *a == ':' )
-                {
-                    *a = 0;
-                    options.seggerPort = atoi( ++a );
-                }
-
-                if ( !options.seggerPort )
-                {
-                    options.seggerPort = SEGGER_PORT;
-                }
-
-                break;
-
-            // ------------------------------------
-            case 't':
-                options.useTPIU = true;
-                break;
-
-            // ------------------------------------
-            case 'v':
-                genericsSetReportLevel( atoi( optarg ) );
-                break;
-
-            // ------------------------------------
-            /* Individual channel setup */
-            case 'c':
-                chanIndex = chanConfig = strdup( optarg );
-                chan = atoi( optarg );
-
-                if ( chan >= NUM_CHANNELS )
-                {
-                    genericsReport( V_ERROR, "Channel index out of range" EOL );
-                    return false;
-                }
-
-                /* Scan for start of filename */
-                while ( ( *chanIndex ) && ( *chanIndex != DELIMITER ) )
-                {
-                    chanIndex++;
-                }
-
-                if ( !*chanIndex )
-                {
-                    genericsReport( V_ERROR, "No filename for channel %d" EOL, chan );
-                    return false;
-                }
-
-                options.channel[chan].chanName = ++chanIndex;
-
-                /* Scan for format */
-                while ( ( *chanIndex ) && ( *chanIndex != DELIMITER ) )
-                {
-                    chanIndex++;
-                }
-
-                if ( !*chanIndex )
-                {
-                    genericsReport( V_WARN, "No output format for channel %d, output raw!" EOL, chan );
-                    options.channel[chan].presFormat = NULL;
-                    break;
-                }
-
-                *chanIndex++ = 0;
-                options.channel[chan].presFormat = strdup( GenericsUnescape( chanIndex ) );
-                break;
-
-            // ------------------------------------
-
-
-            case '?':
-                if ( optopt == 'b' )
-                {
-                    genericsReport( V_ERROR, "Option '%c' requires an argument." EOL, optopt );
-                }
-                else if ( !isprint ( optopt ) )
-                {
-                    genericsReport( V_ERROR, "Unknown option character `\\x%x'." EOL, optopt );
-                }
-
-                return false;
-
-            // ------------------------------------
-            default:
-                genericsReport( V_ERROR, "%c" EOL, c );
-                return false;
-                // ------------------------------------
-        }
-
-    /* Now perform sanity checks.... */
-    if ( ( options.useTPIU ) && ( !options.tpiuITMChannel ) )
-    {
-        genericsReport( V_ERROR, "TPIU set for use but no channel set for ITM output" EOL );
-        return false;
-    }
-
-#ifdef INCLUDE_FPGA_SUPPORT
-
-    if ( ( options.orbtrace ) && !( ( options.orbtraceWidth == 1 ) || ( options.orbtraceWidth == 2 ) || ( options.orbtraceWidth == 4 ) ) )
-    {
-        genericsReport( V_ERROR, "Orbtrace interface illegal port width" EOL );
-        return false;
-    }
-
-#endif
-
-    /* ... and dump the config if we're being verbose */
-    genericsReport( V_INFO, "Orbuculum V" VERSION " (Git %08X %s, Built " BUILD_DATE ")" EOL, GIT_HASH, ( GIT_DIRTY ? "Dirty" : "Clean" ) );
-
-    genericsReport( V_INFO, "BasePath   : %s" EOL, options.chanPath );
-    genericsReport( V_INFO, "ForceSync  : %s" EOL, options.forceITMSync ? "true" : "false" );
-
-    if ( options.port )
-    {
-        genericsReport( V_INFO, "Serial Port : %s" EOL "Serial Speed: %d" EOL, options.port, options.speed );
-    }
-
-    if ( options.seggerPort )
-    {
-        genericsReport( V_INFO, "SEGGER H&P : %s:%d" EOL, options.seggerHost, options.seggerPort );
-    }
-
-#ifdef INCLUDE_FPGA_SUPPORT
-
-    if ( options.orbtrace )
-    {
-        genericsReport( V_INFO, "Orbtrace   : %d bits width" EOL, options.orbtraceWidth );
-    }
-
-#endif
-
-    if ( options.useTPIU )
-    {
-        genericsReport( V_INFO, "Using TPIU : true (ITM on channel %d)" EOL, options.tpiuITMChannel );
-    }
-
-    if ( options.file )
-    {
-        genericsReport( V_INFO, "Input File : %s" EOL, options.file );
-    }
-
-    genericsReport( V_INFO, "Channels   :" EOL );
-
-    for ( int g = 0; g < NUM_CHANNELS; g++ )
-    {
-        if ( options.channel[g].chanName )
-        {
-            genericsReport( V_INFO, "         %02d [%s] [%s]" EOL, g, GenericsEscape( options.channel[g].presFormat ? : "RAW" ), options.channel[g].chanName );
-        }
-    }
-
-    genericsReport( V_INFO, "         HW [Predefined] [" HWFIFO_NAME "]" EOL );
-
-    if ( ( options.file ) && ( ( options.port ) || ( options.seggerPort ) ) )
-    {
-        genericsReport( V_ERROR, "Cannot specify file and port or Segger at same time" EOL );
-        return false;
-    }
-
-    if ( ( options.port ) && ( options.seggerPort ) )
-    {
-        genericsReport( V_ERROR, "Cannot specify port and Segger at same time" EOL );
-        return false;
-    }
-
-    return true;
-}
-// ====================================================================================================
-int usbFeeder( void )
-
-{
-
-    unsigned char cbw[TRANSFER_SIZE];
-    libusb_device_handle *handle;
-    libusb_device *dev;
-    int size;
-    int32_t err;
-
-    while ( 1 )
-    {
-        if ( libusb_init( NULL ) < 0 )
-        {
-            genericsReport( V_ERROR, "Failed to initalise USB interface" EOL );
-            return ( -1 );
-        }
-
-        genericsReport( V_INFO, "Opening USB Device" EOL );
-
-        /* Snooze waiting for the device to appear .... this is useful for when they come and go */
-        while ( !( handle = libusb_open_device_with_vid_pid( NULL, VID, PID ) ) )
-        {
-            usleep( 500000 );
-        }
-
-        genericsReport( V_INFO, "USB Device opened" EOL );
-
-        if ( !( dev = libusb_get_device( handle ) ) )
-        {
-            /* We didn't get the device, so try again in a while */
-            continue;
-        }
-
-        if ( ( err = libusb_claim_interface ( handle, INTERFACE ) ) < 0 )
-        {
-            genericsReport( V_ERROR, "Failed to claim interface (%d)" EOL, err );
-            return 0;
-        }
-
-        int32_t r;
-
-        genericsReport( V_INFO, "USB Interface claimed, ready for data" EOL );
-
-        while ( true )
-        {
-            r = libusb_bulk_transfer( handle, ENDPOINT, cbw, TRANSFER_SIZE, &size, 10 );
-
-            if ( ( r < 0 ) && ( r != LIBUSB_ERROR_TIMEOUT ) )
-            {
-                genericsReport( V_INFO, "USB data collection failed with error %d" EOL, r );
-                break;
-            }
-
-            _sendToClients( size, cbw );
-            unsigned char *c = cbw;
-
-            genericsReport( V_DEBUG, "RXED Packet of %d bytes" EOL, size );
-
-            while ( size-- )
-            {
-                _protocolPump( *c++ );
-            }
-        }
-
-        libusb_close( handle );
-        genericsReport( V_INFO, "USB Interface closed" EOL );
-    }
-
-    return 0;
-}
-// ====================================================================================================
-int seggerFeeder( void )
-
-{
-    int sockfd;
-    struct sockaddr_in serv_addr;
-    struct hostent *server;
-    uint8_t cbw[TRANSFER_SIZE];
-
-    ssize_t t;
-    int flag = 1;
-
-    bzero( ( char * ) &serv_addr, sizeof( serv_addr ) );
-    server = gethostbyname( options.seggerHost );
-
-    if ( !server )
-    {
-        genericsReport( V_ERROR, "Cannot find host" EOL );
-        return -1;
-    }
-
-    serv_addr.sin_family = AF_INET;
-    bcopy( ( char * )server->h_addr,
-           ( char * )&serv_addr.sin_addr.s_addr,
-           server->h_length );
-    serv_addr.sin_port = htons( options.seggerPort );
-
-    while ( 1 )
-    {
-        sockfd = socket( AF_INET, SOCK_STREAM, 0 );
-        setsockopt( sockfd, SOL_SOCKET, SO_REUSEPORT, &flag, sizeof( flag ) );
-
-        if ( sockfd < 0 )
-        {
-            genericsReport( V_ERROR, "Error creating socket" EOL );
-            return -1;
-        }
-
-        while ( connect( sockfd, ( struct sockaddr * ) &serv_addr, sizeof( serv_addr ) ) < 0 )
-        {
-            usleep( 500000 );
-        }
-
-        genericsReport( V_INFO, "Established Segger Link" EOL );
-
-        TPIUDecoderForceSync( &_r.t, 0 );
-        ITMDecoderForceSync( &_r.i, true );
-
-        while ( ( t = read( sockfd, cbw, TRANSFER_SIZE ) ) > 0 )
-        {
-            _sendToClients( t, cbw );
-            uint8_t *c = cbw;
-
-            while ( t-- )
-            {
-                _protocolPump( *c++ );
-            }
-        }
-
-        close( sockfd );
-
-        genericsReport( V_INFO, "Lost Segger Link" EOL );
-    }
-
-    return -2;
-}
-// ====================================================================================================
 #if defined(LINUX) && defined (TCGETS2)
-int setSerialConfig ( int f, speed_t speed )
+static int _setSerialConfig ( int f, speed_t speed )
 {
     // Use Linux specific termios2.
     struct termios2 settings;
@@ -1499,7 +459,7 @@ int setSerialConfig ( int f, speed_t speed )
     return 0;
 }
 #else
-int setSerialConfig ( int f, speed_t speed )
+static int _setSerialConfig ( int f, speed_t speed )
 {
     struct termios settings;
 
@@ -1533,6 +493,467 @@ int setSerialConfig ( int f, speed_t speed )
     return 0;
 }
 #endif
+// ====================================================================================================
+void _printHelp( char *progName )
+
+{
+
+#ifndef NO_FIFOS
+    fprintf( stdout, "Usage: %s <hntv> <s name:number> <b basedir> <f filename>  <i channel> <p port> <a speed>" EOL, progName );
+#else
+    fprintf( stdout, "Usage: %s <hv> <s name:number> <f filename>  <p port> <a speed>" EOL, progName );    
+#endif
+    fprintf( stdout, "        a: <serialSpeed> to use" EOL );
+#ifndef NO_FIFOS
+    fprintf( stdout, "        b: <basedir> for channels" EOL );
+    fprintf( stdout, "        c: <Number>,<Name>,<Format> of channel to populate (repeat per channel)" EOL );
+#endif
+    fprintf( stdout, "        f: <filename> Take input from specified file" EOL );
+    fprintf( stdout, "        h: This help" EOL );
+#ifndef NO_FIFOS
+    fprintf( stdout, "        i: <channel> Set ITM Channel in TPIU decode (defaults to 1)" EOL );
+#endif
+    fprintf( stdout, "        l: <port> Listen port for the incoming connections (defaults to %d)" EOL, SERVER_PORT );
+#ifndef NO_FIFOS
+    fprintf( stdout, "        n: Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
+#endif
+#ifdef INCLUDE_FPGA_SUPPORT
+    fprintf( stdout, "        o: <num> Use traceport FPGA custom interface with 1, 2 or 4 bits width" EOL );
+#endif
+    fprintf( stdout, "        p: <serialPort> to use" EOL );
+    fprintf( stdout, "        s: <address>:<port> Set address for SEGGER JLink connection (default none:%d)" EOL, SEGGER_PORT );
+#ifndef NO_FIFOS
+    fprintf( stdout, "        t: Use TPIU decoder" EOL );
+#endif
+    fprintf( stdout, "        v: <level> Verbose mode 0(errors)..3(debug)" EOL );
+
+#ifndef NO_FIFOS
+    fprintf( stdout, "        (Built with fifo support)" EOL );
+#else
+    fprintf( stdout, "        (Built without fifo support)" EOL );
+#endif
+}
+// ====================================================================================================
+int _processOptions( int argc, char *argv[] )
+
+{
+    int c;
+#define DELIMITER ','
+
+#ifndef NO_FIFOS
+    char *chanConfig;
+    char *chanName;
+    uint chan;
+    char *chanIndex;
+
+    while ( ( c = getopt ( argc, argv, "a:b:c:f:hl:o:p:s:v:" ) ) != -1 )
+#else
+    while ( ( c = getopt ( argc, argv, "a:f:hi:l:no:p:s:tv:" ) ) != -1 )
+#endif
+        switch ( c )
+        {
+            // ------------------------------------
+            case 'a':
+                options.speed = atoi( optarg );
+                break;
+
+                // ------------------------------------
+#ifndef NO_FIFOS
+
+            case 'b':
+                fifoSetChanPath( _r.f, optarg );
+                break;
+#endif
+
+            // ------------------------------------
+            case 'f':
+                options.file = optarg;
+                break;
+
+            // ------------------------------------
+            case 'h':
+                _printHelp( argv[0] );
+                return false;
+
+                // ------------------------------------
+#ifndef NO_FIFOS
+
+            case 'i':
+                fifoSettpiuITMChannel( _r.f, atoi( optarg ) );
+                break;
+#endif
+
+            // ------------------------------------
+            case 'l':
+                options.listenPort = atoi( optarg );
+                break;
+
+                // ------------------------------------
+#ifndef NO_FIFOS
+
+            case 'n':
+                fifoSetForceITMSync( _r.f, false );
+                break;
+#endif
+                // ------------------------------------
+#ifdef INCLUDE_FPGA_SUPPORT
+
+            case 'o':
+                // Generally you need TPIU for orbtrace
+#ifndef NO_FIFOS
+                fifoSetUseTPIU( _r.f, true );
+#endif
+                options.orbtrace = true;
+                options.orbtraceWidth = atoi( optarg );
+                break;
+#endif
+
+            // ------------------------------------
+            case 'p':
+                options.port = optarg;
+                break;
+
+            // ------------------------------------
+            case 's':
+#ifndef NO_FIFOS
+                fifoSetForceITMSync( _r.f, true );
+#endif
+                options.seggerHost = optarg;
+
+                // See if we have an optional port number too
+                char *a = optarg;
+
+                while ( ( *a ) && ( *a != ':' ) )
+                {
+                    a++;
+                }
+
+                if ( *a == ':' )
+                {
+                    *a = 0;
+                    options.seggerPort = atoi( ++a );
+                }
+
+                if ( !options.seggerPort )
+                {
+                    options.seggerPort = SEGGER_PORT;
+                }
+
+                break;
+
+            // ------------------------------------
+            case 't':
+#ifndef NO_FIFOS
+                fifoSetUseTPIU( _r.f, true );
+                break;
+#endif
+
+            // ------------------------------------
+            case 'v':
+                genericsSetReportLevel( atoi( optarg ) );
+                break;
+
+                // ------------------------------------
+#ifndef NO_FIFOS
+
+            /* Individual channel setup */
+            case 'c':
+                chanIndex = chanConfig = strdup( optarg );
+                chan = atoi( optarg );
+
+                if ( chan >= NUM_CHANNELS )
+                {
+                    genericsReport( V_ERROR, "Channel index out of range" EOL );
+                    return false;
+                }
+
+                /* Scan for start of filename */
+                while ( ( *chanIndex ) && ( *chanIndex != DELIMITER ) )
+                {
+                    chanIndex++;
+                }
+
+                if ( !*chanIndex )
+                {
+                    genericsReport( V_ERROR, "No filename for channel %d" EOL, chan );
+                    return false;
+                }
+
+                chanName = ++chanIndex;
+
+                /* Scan for format */
+                while ( ( *chanIndex ) && ( *chanIndex != DELIMITER ) )
+                {
+                    chanIndex++;
+                }
+
+                if ( !*chanIndex )
+                {
+                    genericsReport( V_WARN, "No output format for channel %d, output raw!" EOL, chan );
+                    fifoSetChannel( _r.f, chan, chanName, NULL );
+                    break;
+                }
+
+                *chanIndex++ = 0;
+                fifoSetChannel( _r.f, chan, chanName, GenericsUnescape( chanIndex ) );
+                break;
+#endif
+
+            // ------------------------------------
+
+
+            case '?':
+                if ( optopt == 'b' )
+                {
+                    genericsReport( V_ERROR, "Option '%c' requires an argument." EOL, optopt );
+                }
+                else if ( !isprint ( optopt ) )
+                {
+                    genericsReport( V_ERROR, "Unknown option character `\\x%x'." EOL, optopt );
+                }
+
+                return false;
+
+            // ------------------------------------
+            default:
+                genericsReport( V_ERROR, "%c" EOL, c );
+                return false;
+                // ------------------------------------
+        }
+
+#ifndef NO_FIFOS
+
+    /* Now perform sanity checks.... */
+    if ( fifoGetUseTPIU( _r.f ) && ( !fifoGettpiuITMChannel( _r.f ) ) )
+    {
+        genericsReport( V_ERROR, "TPIU set for use but no channel set for ITM output" EOL );
+        return false;
+    }
+
+#endif
+
+#ifdef INCLUDE_FPGA_SUPPORT
+
+    if ( ( options.orbtrace ) && !( ( options.orbtraceWidth == 1 ) || ( options.orbtraceWidth == 2 ) || ( options.orbtraceWidth == 4 ) ) )
+    {
+        genericsReport( V_ERROR, "Orbtrace interface illegal port width" EOL );
+        return false;
+    }
+
+#endif
+
+    /* ... and dump the config if we're being verbose */
+    genericsReport( V_INFO, "Orbuculum V" VERSION " (Git %08X %s, Built " BUILD_DATE ")" EOL, GIT_HASH, ( GIT_DIRTY ? "Dirty" : "Clean" ) );
+#ifndef NO_FIFOS
+    genericsReport( V_INFO, "BasePath   : %s" EOL, fifoGetChanPath( _r.f ) );
+    genericsReport( V_INFO, "ForceSync  : %s" EOL, fifoGetForceITMSync( _r.f ) ? "true" : "false" );
+#endif
+
+    if ( options.port )
+    {
+        genericsReport( V_INFO, "Serial Port : %s" EOL "Serial Speed: %d" EOL, options.port, options.speed );
+    }
+
+    if ( options.seggerPort )
+    {
+        genericsReport( V_INFO, "SEGGER H&P : %s:%d" EOL, options.seggerHost, options.seggerPort );
+    }
+
+#ifdef INCLUDE_FPGA_SUPPORT
+
+    if ( options.orbtrace )
+    {
+        genericsReport( V_INFO, "Orbtrace   : %d bits width" EOL, options.orbtraceWidth );
+    }
+
+#endif
+
+#ifndef NO_FIFOS
+
+    if ( fifoGetUseTPIU( _r.f ) )
+    {
+        genericsReport( V_INFO, "Using TPIU : true (ITM on channel %d)" EOL, fifoGettpiuITMChannel( _r.f ) );
+    }
+
+#endif
+
+    if ( options.file )
+    {
+        genericsReport( V_INFO, "Input File : %s" EOL, options.file );
+    }
+
+#ifndef NO_FIFOS
+    genericsReport( V_INFO, "Channels   :" EOL );
+
+    for ( int g = 0; g < NUM_CHANNELS; g++ )
+    {
+        if ( fifoGetChannelName( _r.f, g ) )
+        {
+            genericsReport( V_INFO, "         %02d [%s] [%s]" EOL, g, GenericsEscape( fifoGetChannelFormat( _r.f, g ) ? : "RAW" ), fifoGetChannelName( _r.f, g ) );
+        }
+    }
+
+    genericsReport( V_INFO, "         HW [Predefined] [" HWFIFO_NAME "]" EOL );
+#endif
+
+    if ( ( options.file ) && ( ( options.port ) || ( options.seggerPort ) ) )
+    {
+        genericsReport( V_ERROR, "Cannot specify file and port or Segger at same time" EOL );
+        return false;
+    }
+
+    if ( ( options.port ) && ( options.seggerPort ) )
+    {
+        genericsReport( V_ERROR, "Cannot specify port and Segger at same time" EOL );
+        return false;
+    }
+
+    return true;
+}
+// ====================================================================================================
+static void _processBlock( int s, unsigned char *cbw )
+
+/* Generic block processor for received data */
+
+{
+    _sendToClients( s, cbw );
+    genericsReport( V_DEBUG, "RXED Packet of %d bytes" EOL, s );
+
+#ifndef NO_FIFOS
+    unsigned char *c = cbw;
+
+    while ( s-- )
+    {
+        fifoProtocolPump( _r.f, *c++ );
+    }
+
+#endif
+}
+// ====================================================================================================
+int usbFeeder( void )
+
+{
+
+    unsigned char cbw[TRANSFER_SIZE];
+    libusb_device_handle *handle;
+    libusb_device *dev;
+    int size;
+    int32_t err;
+
+    while ( 1 )
+    {
+        if ( libusb_init( NULL ) < 0 )
+        {
+            genericsReport( V_ERROR, "Failed to initalise USB interface" EOL );
+            return ( -1 );
+        }
+
+        genericsReport( V_INFO, "Opening USB Device" EOL );
+
+        /* Snooze waiting for the device to appear .... this is useful for when they come and go */
+        while ( !( handle = libusb_open_device_with_vid_pid( NULL, VID, PID ) ) )
+        {
+            usleep( 500000 );
+        }
+
+        genericsReport( V_INFO, "USB Device opened" EOL );
+
+        if ( !( dev = libusb_get_device( handle ) ) )
+        {
+            /* We didn't get the device, so try again in a while */
+            continue;
+        }
+
+        if ( ( err = libusb_claim_interface ( handle, INTERFACE ) ) < 0 )
+        {
+            genericsReport( V_ERROR, "Failed to claim interface (%d)" EOL, err );
+            return 0;
+        }
+
+        int32_t r;
+
+        genericsReport( V_INFO, "USB Interface claimed, ready for data" EOL );
+
+        while ( true )
+        {
+            r = libusb_bulk_transfer( handle, ENDPOINT, cbw, TRANSFER_SIZE, &size, 10 );
+
+            if ( ( r < 0 ) && ( r != LIBUSB_ERROR_TIMEOUT ) )
+            {
+                genericsReport( V_INFO, "USB data collection failed with error %d" EOL, r );
+                break;
+            }
+
+            _processBlock( size, cbw );
+        }
+
+        libusb_close( handle );
+        genericsReport( V_INFO, "USB Interface closed" EOL );
+    }
+
+    return 0;
+}
+// ====================================================================================================
+int seggerFeeder( void )
+
+{
+    int sockfd;
+    struct sockaddr_in serv_addr;
+    struct hostent *server;
+    uint8_t cbw[TRANSFER_SIZE];
+
+    ssize_t t;
+    int flag = 1;
+
+    bzero( ( char * ) &serv_addr, sizeof( serv_addr ) );
+    server = gethostbyname( options.seggerHost );
+
+    if ( !server )
+    {
+        genericsReport( V_ERROR, "Cannot find host" EOL );
+        return -1;
+    }
+
+    serv_addr.sin_family = AF_INET;
+    bcopy( ( char * )server->h_addr,
+           ( char * )&serv_addr.sin_addr.s_addr,
+           server->h_length );
+    serv_addr.sin_port = htons( options.seggerPort );
+
+    while ( 1 )
+    {
+        sockfd = socket( AF_INET, SOCK_STREAM, 0 );
+        setsockopt( sockfd, SOL_SOCKET, SO_REUSEPORT, &flag, sizeof( flag ) );
+
+        if ( sockfd < 0 )
+        {
+            genericsReport( V_ERROR, "Error creating socket" EOL );
+            return -1;
+        }
+
+        while ( connect( sockfd, ( struct sockaddr * ) &serv_addr, sizeof( serv_addr ) ) < 0 )
+        {
+            usleep( 500000 );
+        }
+
+        genericsReport( V_INFO, "Established Segger Link" EOL );
+
+#ifndef NO_FIFOS
+        fifoForceSync( _r.f, true );
+#endif
+
+        while ( ( t = read( sockfd, cbw, TRANSFER_SIZE ) ) > 0 )
+        {
+            _processBlock( t, cbw );
+        }
+
+        close( sockfd );
+
+        genericsReport( V_INFO, "Lost Segger Link" EOL );
+    }
+
+    return -2;
+}
 // ====================================================================================================
 int serialFeeder( void )
 {
@@ -1572,20 +993,14 @@ int serialFeeder( void )
 
 #endif
 
-        if ( ( ret = setSerialConfig ( f, options.speed ) ) < 0 )
+        if ( ( ret = _setSerialConfig ( f, options.speed ) ) < 0 )
         {
             genericsExit( ret, "setSerialConfig failed" EOL );
         }
 
         while ( ( t = read( f, cbw, TRANSFER_SIZE ) ) > 0 )
         {
-            _sendToClients( t, cbw );
-            unsigned char *c = cbw;
-
-            while ( t-- )
-            {
-                _protocolPump( *c++ );
-            }
+            _processBlock( t, cbw );
         }
 
         genericsReport( V_INFO, "Read failed" EOL );
@@ -1599,8 +1014,8 @@ int serialFeeder( void )
 int fpgaFeeder( void )
 
 {
-  int f;
-  int t=0;
+    int f;
+    int t = 0;
     uint8_t cbw[FTDI_HS_TRANSFER_SIZE];
     uint8_t scratchBuffer[FTDI_HS_TRANSFER_SIZE - FTDI_NUM_FRAMES];
     uint8_t *c;
@@ -1622,7 +1037,6 @@ int fpgaFeeder( void )
     {
         _r.ftdi = ftdi_new();
         ftdi_set_interface( _r.ftdi, FTDI_INTERFACE );
-
 
         do
         {
@@ -1659,8 +1073,9 @@ int fpgaFeeder( void )
 
         genericsReport( V_INFO, "All parameters configured" EOL );
 
-
-        TPIUDecoderForceSync( &_r.t, 0 );
+#ifndef NO_FIFOS
+        fifoForceSync( _r.f, true );
+#endif
 
         while ( ( !_r.feederExit ) && ( ( t = ftdispi_write_read( &_r.ftdifsc, initSequence, 2, cbw, FTDI_HS_TRANSFER_SIZE, FPGA_AWAKE ) ) >= 0 ) )
         {
@@ -1686,7 +1101,9 @@ int fpgaFeeder( void )
 #ifdef DUMP_FTDI_BYTES
                         printf( "%02X ", c[e] );
 #endif
-                        _protocolPump( c[e] );
+#ifndef NO_FIFOS
+                        fifoProtocolPump( _r.f, c[e] );
+#endif
                     }
 
                     c += FTDI_PACKET_SIZE;
@@ -1744,13 +1161,7 @@ int fileFeeder( void )
             continue;
         }
 
-        _sendToClients( t, cbw );
-        unsigned char *c = cbw;
-
-        while ( t-- )
-        {
-            _protocolPump( *c++ );
-        }
+        _processBlock( t, cbw );
     }
 
     genericsReport( V_INFO, "File read error" EOL );
@@ -1759,24 +1170,40 @@ int fileFeeder( void )
     return true;
 }
 // ====================================================================================================
+static void _doExit( void )
+
+{
+#ifndef NO_FIFOS
+
+    if ( _r.f )
+    {
+        fifoRemove( _r.f );
+    }
+
+#endif
+}
+// ====================================================================================================
 int main( int argc, char *argv[] )
 
 {
     sigset_t set;
     struct sigaction sa;
 
+#ifndef NO_FIFOS
+    _r.f = fifoInit( );
+    assert( _r.f );
+#endif
+
     if ( !_processOptions( argc, argv ) )
     {
-        genericsExit( -1, "processOptions failed" EOL );
+        /* processOptions generates its own error messages */
+        genericsExit( -1, "" EOL );
     }
 
-    atexit( _removeFifoTasks );
+    /* Make sure the fifos get removed at the end */
+    atexit( _doExit );
 
     sem_init( &_r.clientList, 0, 1 );
-
-    /* Reset the TPIU handler before we start */
-    TPIUDecoderInit( &_r.t );
-    ITMDecoderInit( &_r.i, options.forceITMSync );
 
     /* This ensures the atexit gets called */
     sa.sa_flags = SA_SIGINFO;
@@ -1797,24 +1224,25 @@ int main( int argc, char *argv[] )
         genericsExit( -1, "Failed to establish Int handler" EOL );
     }
 
-    if ( !_makeFifoTasks() )
+#ifndef NO_FIFOS
+
+    if ( ! ( fifoCreate( _r.f ) ) )
     {
         genericsExit( -1, "Failed to make channel devices" EOL );
     }
+
+#endif
 
     if ( !_makeServerTask( options.listenPort ) )
     {
         genericsExit( -1, "Failed to make network server" EOL );
     }
 
-    /* Make sure there's an initial timestamp to work with */
-
-    _r.lastHWExceptionTS = _timestampuS();
-
     /* Start the filewriter */
     filewriterInit( options.fwbasedir );
 
     /* Using the exit construct rather than return ensures any atexit gets called */
+
 #ifdef INCLUDE_FPGA_SUPPORT
 
     if ( options.orbtrace )

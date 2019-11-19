@@ -45,9 +45,9 @@
 #include <stdint.h>
 
 #ifdef DEBUG
-#include "generics.h"
+    #include "generics.h"
 #else
-#define genericsReport(x...)
+    #define genericsReport(x...)
 #endif
 
 #include "itmDecoder.h"

@@ -35,9 +35,9 @@
 #include <sys/time.h>
 #include <string.h>
 #ifdef DEBUG
-#include "generics.h"
+    #include "generics.h"
 #else
-#define genericsReport(x...)
+    #define genericsReport(x...)
 #endif
 #include "tpiuDecoder.h"
 

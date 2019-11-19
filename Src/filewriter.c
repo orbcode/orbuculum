@@ -78,12 +78,12 @@ void _processCompleteName( uint32_t n )
     /* Concat strings */
     if ( _f.basedir )
     {
-        strncpy( workingName, _f.basedir, MAX_CONCAT_FILENAMELEN-1 );
-        strncat( workingName, _f.file[n].name, MAX_CONCAT_FILENAMELEN-1 );
+        strncpy( workingName, _f.basedir, MAX_CONCAT_FILENAMELEN - 1 );
+        strncat( workingName, _f.file[n].name, MAX_CONCAT_FILENAMELEN - 1 );
     }
     else
     {
-        strncpy( workingName, _f.file[n].name, MAX_CONCAT_FILENAMELEN-1 );
+        strncpy( workingName, _f.file[n].name, MAX_CONCAT_FILENAMELEN - 1 );
     }
 
     genericsReport( V_DEBUG, "Complete name to work with is [%s]" EOL, workingName );

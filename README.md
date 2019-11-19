@@ -7,6 +7,7 @@ This is V1.10 in progress.
 * Core parsing routines have been moved into a library, liborb.a...for now see orbuculum.c for examples of how to use them.
 * JSON output has been added into orbtop.
 * Interrupt measurements have been added into orbtop.
+* FIFOs are now an optional part of orbuculum.c
 
 The CHANGES file now tells you what's been done when.
 
@@ -211,6 +212,7 @@ make
 or
 
 make WITH_FPGA=0 if you don't need the fpga trace capture support.
+make NO_FIFOS=1 if you don't want fifos in orbuculum itself.
 
 ...you may need to change the paths to your libusb files, depending on
 how well your build environment is set up.
@@ -223,7 +225,10 @@ Using
 =====
 
 The command line options for Orbuculum are available by running
-orbuculum with the -h option.
+orbuculum with the -h option. Note that if Orbuculum was built with no
+fifo support then it can only be used as a multiplexer and the fifos
+described in this section will not appear.  You can see if your version
+was built with or without fifo support from the output of the -h option.
 
 A typical command line would be;
 

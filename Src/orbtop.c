@@ -1205,6 +1205,15 @@ int main( int argc, char *argv[] )
             return -1;
         }
 
+        if ( setsockopt( sockfd, SOL_SOCKET, SO_REUSEADDR, &( int )
+    {
+        1
+    }, sizeof( int ) ) < 0 )
+        {
+            perror( "setsockopt(SO_REUSEADDR) failed" );
+            return -1;
+        }
+
         /* Now open the network connection */
         bzero( ( char * ) &serv_addr, sizeof( serv_addr ) );
         server = gethostbyname( options.server );

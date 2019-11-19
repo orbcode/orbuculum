@@ -43,7 +43,7 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-  
+
 enum ITMPacketType
 
 {

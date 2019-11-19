@@ -41,10 +41,10 @@
 #include "itmDecoder.h"
 
 #ifdef DEBUG
-#include <stdio.h>
-#include "generics.h"
+    #include <stdio.h>
+    #include "generics.h"
 #else
-#define genericsReport(x...)
+    #define genericsReport(x...)
 #endif
 
 #define SYNCMASK              0xFFFFFFFFFFFF
