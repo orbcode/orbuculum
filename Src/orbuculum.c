@@ -37,12 +37,14 @@
 #include <stdbool.h>
 #include <ctype.h>
 #include <sys/socket.h>
+#include <netdb.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <stdio.h>
 #include <string.h>
 #include <assert.h>
-#include <semaphore.h>
 #if defined OSX
     #include <sys/ioctl.h>
     #include <libusb.h>
@@ -66,17 +68,17 @@
 #include <stdint.h>
 #include <inttypes.h>
 #include <limits.h>
-#include <pthread.h>
-#include <sys/socket.h>
-#include <netdb.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
 #include <signal.h>
 
 #include "git_version_info.h"
 #include "generics.h"
 #include "fileWriter.h"
-#include "fifos.h"
+#ifdef WITH_FIFOS
+    #include "fifos.h"
+#endif
+#ifdef WITH_NWCLIENT
+    #include "nwclient.h"
+#endif
 
 #ifdef INCLUDE_FPGA_SUPPORT
     #include <libftdi1/ftdi.h>
@@ -94,7 +96,6 @@
     // #define DUMP_FTDI_BYTES // Uncomment to get data dump of bytes from FTDI transfer
 #endif
 
-#define SERVER_PORT 3443                      /* Server port definition */
 #define SEGGER_HOST "localhost"               /* Address to connect to SEGGER */
 #define SEGGER_PORT (2332)
 
@@ -104,7 +105,9 @@
 #define INTERFACE (5)
 #define ENDPOINT  (0x85)
 
-#define TRANSFER_SIZE (4096)
+#ifndef TRANSFER_SIZE
+    #define TRANSFER_SIZE (4096)
+#endif
 
 /* Record for options, either defaults or from command line */
 struct
@@ -116,8 +119,8 @@ struct
     char *fwbasedir;                          /* Where the firmware is stored */
     bool orbtrace;                            /* In trace mode? */
     uint32_t orbtraceWidth;                   /* Trace pin width */
-
 #endif
+
     /* Source information */
     char *seggerHost;                         /* Segger host connection */
     int32_t seggerPort;                       /* ...and port */
@@ -125,12 +128,16 @@ struct
     int speed;                                /* Speed of serial link */
     char *file;                               /* File host connection */
 
+#ifdef WITH_NWCLIENT
     /* Network link */
     int listenPort;                           /* Listening port for network */
+#endif
 } options =
 {
     .speed = 115200,
-    .listenPort = SERVER_PORT,
+#ifdef WITH_NWCLIENT
+    .listenPort = NWCLIENT_SERVER_PORT,
+#endif
     .seggerHost = SEGGER_HOST
 #ifdef INCLUDE_FPGA_SUPPORT
     ,
@@ -138,34 +145,17 @@ struct
 #endif
 };
 
-/* List of any connected network clients */
-struct nwClient
-
-{
-    int handle;                               /* Handle to client */
-    pthread_t thread;                         /* Execution thread */
-    struct nwClient *nextClient;
-    struct nwClient *prevClient;
-};
-
-/* Informtation about each individual network client */
-struct nwClientParams
-
-{
-    struct nwClient *client;                  /* Information about the client */
-    int portNo;                               /* Port of connection */
-    int listenHandle;                         /* Handle for listener */
-};
-
 struct
 {
-    struct nwClient *firstClient;             /* Head of linked list of network clients */
-    sem_t clientList;                         /* Locking semaphore for list of network clients */
-
-    pthread_t ipThread;                       /* The listening thread for n/w clients */
-
+#ifdef WITH_FIFOS
     /* Link to the fifo subsystem */
     struct fifosHandle *f;
+#endif
+
+#ifdef WITH_NWCLIENT
+    /* Link to the network client subsystem */
+    struct nwclientHandle *n;
+#endif
 
 #ifdef INCLUDE_FPGA_SUPPORT
     bool feederExit;                          /* Do we need to leave now? */
@@ -180,174 +170,6 @@ struct
 // Private routines
 // ====================================================================================================
 // ====================================================================================================
-// ====================================================================================================
-// Network server implementation for raw SWO feed
-// ====================================================================================================
-static void *_client( void *args )
-
-/* Handle an individual network client account */
-
-{
-    struct nwClientParams *params = ( struct nwClientParams * )args;
-    int readDataLen;
-    uint8_t maxTransitPacket[TRANSFER_SIZE];
-
-    while ( 1 )
-    {
-        readDataLen = read( params->listenHandle, maxTransitPacket, TRANSFER_SIZE );
-
-        if ( ( readDataLen <= 0 ) || ( write( params->portNo, maxTransitPacket, readDataLen ) < 0 ) )
-        {
-            /* This port went away, so remove it */
-            genericsReport( V_INFO, "Connection dropped" EOL );
-
-            close( params->portNo );
-            close( params->listenHandle );
-
-            /* First of all, make sure we can get access to the client list */
-            sem_wait( &_r.clientList );
-
-            if ( params->client->prevClient )
-            {
-                params->client->prevClient->nextClient = params->client->nextClient;
-            }
-            else
-            {
-                _r.firstClient = params->client->nextClient;
-            }
-
-            if ( params->client->nextClient )
-            {
-                params->client->nextClient->prevClient = params->client->prevClient;
-            }
-
-            /* OK, we made our modifications */
-            sem_post( &_r.clientList );
-
-            return NULL;
-        }
-    }
-}
-// ====================================================================================================
-static void *_listenTask( void *arg )
-
-{
-    int sockfd = *( ( int * )arg );
-    int newsockfd;
-    socklen_t clilen;
-    struct sockaddr_in cli_addr;
-    int f[2];                               /* File descriptor set for pipe */
-    struct nwClientParams *params;
-    char s[100];
-
-    while ( 1 )
-    {
-        listen( sockfd, 5 );
-        clilen = sizeof( cli_addr );
-        newsockfd = accept( sockfd, ( struct sockaddr * ) &cli_addr, &clilen );
-
-        inet_ntop( AF_INET, &cli_addr.sin_addr, s, 99 );
-        genericsReport( V_INFO, "New connection from %s" EOL, s );
-
-        /* We got a new connection - spawn a thread to handle it */
-        if ( !pipe( f ) )
-        {
-            params = ( struct nwClientParams * )malloc( sizeof( struct nwClientParams ) );
-
-            params->client = ( struct nwClient * )malloc( sizeof( struct nwClient ) );
-            params->client->handle = f[1];
-            params->listenHandle = f[0];
-            params->portNo = newsockfd;
-
-            if ( !pthread_create( &( params->client->thread ), NULL, &_client, params ) )
-            {
-                /* Auto-cleanup for this thread */
-                pthread_detach( params->client->thread );
-
-                /* Hook into linked list */
-                sem_wait( &_r.clientList );
-
-                params->client->nextClient = _r.firstClient;
-                params->client->prevClient = NULL;
-
-                if ( params->client->nextClient )
-                {
-                    params->client->nextClient->prevClient = params->client;
-                }
-
-                _r.firstClient = params->client;
-
-                sem_post( &_r.clientList );
-            }
-        }
-    }
-
-    return NULL;
-}
-// ====================================================================================================
-static bool _makeServerTask( int port )
-
-/* Creating the listening server thread */
-
-{
-    static int sockfd;  /* This needs to be static to keep it available for the inferior */
-    struct sockaddr_in serv_addr;
-    int flag = 1;
-
-    sockfd = socket( AF_INET, SOCK_STREAM, 0 );
-    setsockopt( sockfd, SOL_SOCKET, SO_REUSEPORT, &flag, sizeof( flag ) );
-
-    if ( sockfd < 0 )
-    {
-        genericsReport( V_ERROR, "Error opening socket" EOL );
-        return false;
-    }
-
-    bzero( ( char * ) &serv_addr, sizeof( serv_addr ) );
-    serv_addr.sin_family = AF_INET;
-    serv_addr.sin_addr.s_addr = INADDR_ANY;
-    serv_addr.sin_port = htons( port );
-
-    if ( setsockopt( sockfd, SOL_SOCKET, SO_REUSEADDR, &( int )
-{
-    1
-}, sizeof( int ) ) < 0 )
-    {
-        genericsReport( V_ERROR, "setsockopt(SO_REUSEADDR) failed" );
-        return false;
-    }
-
-    if ( bind( sockfd, ( struct sockaddr * ) &serv_addr, sizeof( serv_addr ) ) < 0 )
-    {
-        genericsReport( V_ERROR, "Error on binding" EOL );
-        return false;
-    }
-
-    /* We have the listening socket - spawn a thread to handle it */
-    if ( pthread_create( &( _r.ipThread ), NULL, &_listenTask, &sockfd ) )
-    {
-        genericsReport( V_ERROR, "Failed to create listening thread" EOL );
-        return false;
-    }
-
-    return true;
-}
-// ====================================================================================================
-static void _sendToClients( uint32_t len, uint8_t *buffer )
-
-{
-    struct nwClient *n = _r.firstClient;
-
-    sem_wait( &_r.clientList );
-
-    while ( n )
-    {
-        write( n->handle, buffer, len );
-        n = n->nextClient;
-    }
-
-    sem_post( &_r.clientList );
-}
 // ====================================================================================================
 static void _intHandler( int sig, siginfo_t *si, void *unused )
 
@@ -501,7 +323,7 @@ void _printHelp( char *progName )
 #ifdef WITH_FIFOS
     fprintf( stdout, "Usage: %s <hntv> <s name:number> <b basedir> <f filename>  <i channel> <p port> <a speed>" EOL, progName );
 #else
-    fprintf( stdout, "Usage: %s <hv> <s name:number> <f filename>  <p port> <a speed>" EOL, progName );    
+    fprintf( stdout, "Usage: %s <hv> <s name:number> <f filename>  <p port> <a speed>" EOL, progName );
 #endif
     fprintf( stdout, "        a: <serialSpeed> to use" EOL );
 #ifdef WITH_FIFOS
@@ -513,7 +335,9 @@ void _printHelp( char *progName )
 #ifdef WITH_FIFOS
     fprintf( stdout, "        i: <channel> Set ITM Channel in TPIU decode (defaults to 1)" EOL );
 #endif
-    fprintf( stdout, "        l: <port> Listen port for the incoming connections (defaults to %d)" EOL, SERVER_PORT );
+#ifdef WITH_NWCLIENT
+    fprintf( stdout, "        l: <port> Listen port for the incoming connections (defaults to %d)" EOL, NWCLIENT_SERVER_PORT );
+#endif
 #ifdef WITH_FIFOS
     fprintf( stdout, "        n: Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
 #endif
@@ -545,10 +369,18 @@ int _processOptions( int argc, char *argv[] )
     char *chanName;
     uint chan;
     char *chanIndex;
+#ifdef WITH_NWCLIENT
 
     while ( ( c = getopt ( argc, argv, "a:b:c:f:hl:o:p:s:v:" ) ) != -1 )
 #else
+    while ( ( c = getopt ( argc, argv, "a:b:c:f:ho:p:s:v:" ) ) != -1 )
+#endif
+#else
+#ifdef WITH_NWCLIENT
     while ( ( c = getopt ( argc, argv, "a:f:hi:l:no:p:s:tv:" ) ) != -1 )
+#else
+    while ( ( c = getopt ( argc, argv, "a:f:hi:no:p:s:tv:" ) ) != -1 )
+#endif
 #endif
         switch ( c )
         {
@@ -583,11 +415,13 @@ int _processOptions( int argc, char *argv[] )
                 break;
 #endif
 
-            // ------------------------------------
+                // ------------------------------------
+#if WITH_NWCLIENT
+
             case 'l':
                 options.listenPort = atoi( optarg );
                 break;
-
+#endif
                 // ------------------------------------
 #ifdef WITH_FIFOS
 
@@ -609,6 +443,7 @@ int _processOptions( int argc, char *argv[] )
 #endif
 
             // ------------------------------------
+
             case 'p':
                 options.port = optarg;
                 break;
@@ -816,8 +651,11 @@ static void _processBlock( int s, unsigned char *cbw )
 /* Generic block processor for received data */
 
 {
-    _sendToClients( s, cbw );
     genericsReport( V_DEBUG, "RXED Packet of %d bytes" EOL, s );
+
+#ifdef WITH_NWCLIENT
+    nwclientSend( _r.n, s, cbw );
+#endif
 
 #ifdef WITH_FIFOS
     unsigned char *c = cbw;
@@ -828,6 +666,7 @@ static void _processBlock( int s, unsigned char *cbw )
     }
 
 #endif
+
 }
 // ====================================================================================================
 int usbFeeder( void )
@@ -1116,7 +955,9 @@ int fpgaFeeder( void )
             genericsReport( V_WARN, "RXED frame of %d/%d full packets (%3d%%)    \r",
                             ( d - scratchBuffer ) / ( FTDI_PACKET_SIZE - 1 ), FTDI_NUM_FRAMES, ( ( d - scratchBuffer ) * 100 ) / ( FTDI_HS_TRANSFER_SIZE - FTDI_NUM_FRAMES ) );
 
-            _sendToClients( ( d - scratchBuffer ), scratchBuffer );
+#ifdef WITH_NWCLIENT
+            nwclientSend( _r.n, ( d - scratchBuffer ), scratchBuffer );
+#endif
         }
 
         genericsReport( V_WARN, "Exit Requested (%d, %s)" EOL, t, ftdi_get_error_string( _r.ftdi ) );
@@ -1194,6 +1035,11 @@ int main( int argc, char *argv[] )
     assert( _r.f );
 #endif
 
+#ifdef WITH_NWCLIENT
+    _r.n = nwclientInit( );
+    assert( _r.n );
+#endif
+
     if ( !_processOptions( argc, argv ) )
     {
         /* processOptions generates its own error messages */
@@ -1202,8 +1048,6 @@ int main( int argc, char *argv[] )
 
     /* Make sure the fifos get removed at the end */
     atexit( _doExit );
-
-    sem_init( &_r.clientList, 0, 1 );
 
     /* This ensures the atexit gets called */
     sa.sa_flags = SA_SIGINFO;
@@ -1233,10 +1077,14 @@ int main( int argc, char *argv[] )
 
 #endif
 
-    if ( !_makeServerTask( options.listenPort ) )
+#ifdef WITH_NWCLIENT
+
+    if ( !nwclientStart( _r.n, options.listenPort ) )
     {
         genericsExit( -1, "Failed to make network server" EOL );
     }
+
+#endif
 
     /* Start the filewriter */
     filewriterInit( options.fwbasedir );

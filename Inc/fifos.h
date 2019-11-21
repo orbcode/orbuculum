@@ -34,7 +34,6 @@
 #ifndef _FIFOS_
 #define _FIFOS_
 
-#ifdef WITH_FIFOS
 #include "tpiuDecoder.h"
 #include "itmDecoder.h"
 
@@ -104,5 +103,7 @@ struct fifosHandle
   void fifoRemove( struct fifosHandle *f );                                  /* Destroy the fifo set */
   struct fifosHandle *fifoInit( void );                                      /* Create an instance */
 // ====================================================================================================
+#ifdef __cplusplus
+}
 #endif
 #endif

@@ -1,4 +1,5 @@
 # Optional components of the build
+WITH_NWCLIENT?=1
 WITH_FIFOS?=1
 WITH_FPGA?=1
 
@@ -50,6 +51,10 @@ ifeq ($(WITH_FIFOS),1)
 CFLAGS += -DWITH_FIFOS
 endif
 
+ifeq ($(WITH_NWCLIENT),1)
+CFLAGS += -DWITH_NWCLIENT
+endif
+
 # Directories for sources
 App_DIR=Src
 Inc_DIR=Inc
@@ -84,6 +89,9 @@ ORBLIB_CFILES = $(App_DIR)/itmDecoder.c $(App_DIR)/tpiuDecoder.c $(App_DIR)/itmS
 ORBUCULUM_CFILES = $(App_DIR)/$(ORBUCULUM).c $(App_DIR)/filewriter.c $(FPGA_CFILES)
 ifeq ($(WITH_FIFOS),1)
 ORBUCULUM_CFILES += $(App_DIR)/fifos.c
+endif
+ifeq ($(WITH_NWCLIENT),1)
+ORBUCULUM_CFILES += $(App_DIR)/nwclient.c
 endif
 ORBCAT_CFILES = $(App_DIR)/$(ORBCAT).c 
 ORBTOP_CFILES = $(App_DIR)/$(ORBTOP).c $(App_DIR)/symbols.c $(EXT)/cJSON.c
