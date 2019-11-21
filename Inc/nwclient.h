@@ -41,12 +41,12 @@ extern "C" {
 #endif
 
 #include <semaphore.h>
-  
+
 // ====================================================================================================
 
 #define NWCLIENT_SERVER_PORT (3443)           /* Server port definition */
 #define TRANSFER_SIZE (4096)
-  
+
 struct nwclientHandle
 
 {

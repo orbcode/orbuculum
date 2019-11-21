@@ -73,16 +73,29 @@
 #include "git_version_info.h"
 #include "generics.h"
 #include "fileWriter.h"
+
 #ifdef WITH_FIFOS
     #include "fifos.h"
+    #define IF_WITH_FIFOS(...) __VA_ARGS__
+    #define IF_NOT_WITH_FIFOS(...)
+#else
+    #define IF_WITH_FIFOS(...)
+    #define IF_NOT_WITH_FIFOS(...) __VA_ARGS__
 #endif
+
 #ifdef WITH_NWCLIENT
     #include "nwclient.h"
+    #define IF_WITH_NWCLIENT(...) __VA_ARGS__
+    #define IF_NOT_WITH_NWCLIENT(...)
+#else
+    #define IF_WITH_NWCLIENT(...)
+    #define IF_NOT_WITH_NWCLIENT(...) __VA_ARGS__
 #endif
 
 #ifdef INCLUDE_FPGA_SUPPORT
     #include <libftdi1/ftdi.h>
     #include "ftdispi.h"
+    #define IF_INCLUDE_FPGA_SUPPORT(...) __VA_ARGS__
     #define FTDI_VID  (0x0403)
     #define FTDI_PID  (0x6010)
     #define FTDI_INTERFACE (INTERFACE_A)
@@ -94,6 +107,8 @@
     #define FPGA_AWAKE (0x80)
     #define FPGA_ASLEEP (0x90)
     // #define DUMP_FTDI_BYTES // Uncomment to get data dump of bytes from FTDI transfer
+#else
+    #define IF_INCLUDE_FPGA_SUPPORT(...)
 #endif
 
 #define SEGGER_HOST "localhost"               /* Address to connect to SEGGER */
@@ -113,55 +128,44 @@
 struct
 {
     /* Config information */
-    bool segger;                              /* Using a segger debugger */
+    bool segger;                                         /* Using a segger debugger */
 
-#ifdef INCLUDE_FPGA_SUPPORT
-    char *fwbasedir;                          /* Where the firmware is stored */
-    bool orbtrace;                            /* In trace mode? */
-    uint32_t orbtraceWidth;                   /* Trace pin width */
-#endif
+    /* FPGA Information */
+    IF_INCLUDE_FPGA_SUPPORT( char *fwbasedir );          /* Where the firmware is stored */
+    IF_INCLUDE_FPGA_SUPPORT( bool orbtrace; )            /* In trace mode? */
+    IF_INCLUDE_FPGA_SUPPORT( uint32_t orbtraceWidth; )   /* Trace pin width */
 
     /* Source information */
-    char *seggerHost;                         /* Segger host connection */
-    int32_t seggerPort;                       /* ...and port */
-    char *port;                               /* Serial host connection */
-    int speed;                                /* Speed of serial link */
-    char *file;                               /* File host connection */
+    char *seggerHost;                                    /* Segger host connection */
+    int32_t seggerPort;                                  /* ...and port */
+    char *port;                                          /* Serial host connection */
+    int speed;                                           /* Speed of serial link */
+    char *file;                                          /* File host connection */
 
-#ifdef WITH_NWCLIENT
     /* Network link */
-    int listenPort;                           /* Listening port for network */
-#endif
+    IF_WITH_NWCLIENT( int listenPort );                  /* Listening port for network */
 } options =
 {
     .speed = 115200,
-#ifdef WITH_NWCLIENT
-    .listenPort = NWCLIENT_SERVER_PORT,
-#endif
-    .seggerHost = SEGGER_HOST
+    IF_WITH_NWCLIENT( .listenPort = NWCLIENT_SERVER_PORT, )
+    .seggerHost = SEGGER_HOST,
 #ifdef INCLUDE_FPGA_SUPPORT
-    ,
     .orbtraceWidth = 4
 #endif
 };
 
 struct
 {
-#ifdef WITH_FIFOS
     /* Link to the fifo subsystem */
-    struct fifosHandle *f;
-#endif
+    IF_WITH_FIFOS( struct fifosHandle *f );
 
-#ifdef WITH_NWCLIENT
     /* Link to the network client subsystem */
-    struct nwclientHandle *n;
-#endif
+    IF_WITH_NWCLIENT( struct nwclientHandle *n );
 
-#ifdef INCLUDE_FPGA_SUPPORT
-    bool feederExit;                          /* Do we need to leave now? */
-    struct ftdi_context *ftdi;                /* Connection materials for ftdi fpga interface */
-    struct ftdispi_context ftdifsc;
-#endif
+    /* Link to the FPGA subsystem */
+    IF_INCLUDE_FPGA_SUPPORT( bool feederExit );                        /* Do we need to leave now? */
+    IF_INCLUDE_FPGA_SUPPORT( struct ftdi_context *ftdi );              /* Connection materials for ftdi fpga interface */
+    IF_INCLUDE_FPGA_SUPPORT( struct ftdispi_context ftdifsc );
 } _r;
 
 // ====================================================================================================
@@ -320,42 +324,23 @@ void _printHelp( char *progName )
 
 {
 
-#ifdef WITH_FIFOS
-    fprintf( stdout, "Usage: %s <hntv> <s name:number> <b basedir> <f filename>  <i channel> <p port> <a speed>" EOL, progName );
-#else
-    fprintf( stdout, "Usage: %s <hv> <s name:number> <f filename>  <p port> <a speed>" EOL, progName );
-#endif
+    IF_WITH_FIFOS( fprintf( stdout, "Usage: %s <hntv> <s name:number> <b basedir> <f filename>  <i channel> <p port> <a speed>" EOL, progName ) );
+    IF_NOT_WITH_FIFOS( fprintf( stdout, "Usage: %s <hv> <s name:number> <f filename>  <p port> <a speed>" EOL, progName ) );
     fprintf( stdout, "        a: <serialSpeed> to use" EOL );
-#ifdef WITH_FIFOS
-    fprintf( stdout, "        b: <basedir> for channels" EOL );
-    fprintf( stdout, "        c: <Number>,<Name>,<Format> of channel to populate (repeat per channel)" EOL );
-#endif
+    IF_WITH_FIFOS( fprintf( stdout, "        b: <basedir> for channels" EOL ) );
+    IF_WITH_FIFOS( fprintf( stdout, "        c: <Number>,<Name>,<Format> of channel to populate (repeat per channel)" EOL ) );
     fprintf( stdout, "        f: <filename> Take input from specified file" EOL );
     fprintf( stdout, "        h: This help" EOL );
-#ifdef WITH_FIFOS
-    fprintf( stdout, "        i: <channel> Set ITM Channel in TPIU decode (defaults to 1)" EOL );
-#endif
-#ifdef WITH_NWCLIENT
-    fprintf( stdout, "        l: <port> Listen port for the incoming connections (defaults to %d)" EOL, NWCLIENT_SERVER_PORT );
-#endif
-#ifdef WITH_FIFOS
-    fprintf( stdout, "        n: Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
-#endif
-#ifdef INCLUDE_FPGA_SUPPORT
-    fprintf( stdout, "        o: <num> Use traceport FPGA custom interface with 1, 2 or 4 bits width" EOL );
-#endif
+    IF_WITH_FIFOS( fprintf( stdout, "        i: <channel> Set ITM Channel in TPIU decode (defaults to 1)" EOL ) );
+    IF_WITH_NWCLIENT( fprintf( stdout, "        l: <port> Listen port for the incoming connections (defaults to %d)" EOL, NWCLIENT_SERVER_PORT ) );
+    IF_WITH_FIFOS( fprintf( stdout, "        n: Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL ) );
+    IF_INCLUDE_FPGA_SUPPORT( fprintf( stdout, "        o: <num> Use traceport FPGA custom interface with 1, 2 or 4 bits width" EOL ) );
     fprintf( stdout, "        p: <serialPort> to use" EOL );
     fprintf( stdout, "        s: <address>:<port> Set address for SEGGER JLink connection (default none:%d)" EOL, SEGGER_PORT );
-#ifdef WITH_FIFOS
-    fprintf( stdout, "        t: Use TPIU decoder" EOL );
-#endif
+    IF_WITH_FIFOS( fprintf( stdout, "        t: Use TPIU decoder" EOL ) );
     fprintf( stdout, "        v: <level> Verbose mode 0(errors)..3(debug)" EOL );
-
-#ifdef WITH_FIFOS
-    fprintf( stdout, "        (Built with fifo support)" EOL );
-#else
-    fprintf( stdout, "        (Built without fifo support)" EOL );
-#endif
+    IF_WITH_FIFOS( fprintf( stdout, "        (Built with fifo support)" EOL ) );
+    IF_NOT_WITH_FIFOS( fprintf( stdout, "        (Built without fifo support)" EOL ) );
 }
 // ====================================================================================================
 int _processOptions( int argc, char *argv[] )
@@ -364,197 +349,188 @@ int _processOptions( int argc, char *argv[] )
     int c;
 #define DELIMITER ','
 
+    IF_WITH_FIFOS( char *chanConfig );
+    IF_WITH_FIFOS( char *chanName );
+    IF_WITH_FIFOS( uint chan );
+    IF_WITH_FIFOS( char *chanIndex );
+
 #ifdef WITH_FIFOS
-    char *chanConfig;
-    char *chanName;
-    uint chan;
-    char *chanIndex;
-#ifdef WITH_NWCLIENT
 
-    while ( ( c = getopt ( argc, argv, "a:b:c:f:hl:o:p:s:v:" ) ) != -1 )
+    IF_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:b:c:f:hl:o:p:s:v:" ) ) != -1 ) )
+        IF_NOT_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:b:c:f:ho:p:s:v:" ) ) != -1 ) )
 #else
-    while ( ( c = getopt ( argc, argv, "a:b:c:f:ho:p:s:v:" ) ) != -1 )
+    IF_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:f:hi:l:no:p:s:tv:" ) ) != -1 ) )
+        IF_NOT_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:f:hi:no:p:s:tv:" ) ) != -1 ) )
 #endif
-#else
-#ifdef WITH_NWCLIENT
-    while ( ( c = getopt ( argc, argv, "a:f:hi:l:no:p:s:tv:" ) ) != -1 )
-#else
-    while ( ( c = getopt ( argc, argv, "a:f:hi:no:p:s:tv:" ) ) != -1 )
-#endif
-#endif
-        switch ( c )
-        {
-            // ------------------------------------
-            case 'a':
-                options.speed = atoi( optarg );
-                break;
-
+            switch ( c )
+            {
                 // ------------------------------------
+                case 'a':
+                    options.speed = atoi( optarg );
+                    break;
+
+                    // ------------------------------------
 #ifdef WITH_FIFOS
 
-            case 'b':
-                fifoSetChanPath( _r.f, optarg );
-                break;
-#endif
-
-            // ------------------------------------
-            case 'f':
-                options.file = optarg;
-                break;
-
-            // ------------------------------------
-            case 'h':
-                _printHelp( argv[0] );
-                return false;
-
-                // ------------------------------------
-#ifdef WITH_FIFOS
-
-            case 'i':
-                fifoSettpiuITMChannel( _r.f, atoi( optarg ) );
-                break;
+                case 'b':
+                    fifoSetChanPath( _r.f, optarg );
+                    break;
 #endif
 
                 // ------------------------------------
+                case 'f':
+                    options.file = optarg;
+                    break;
+
+                // ------------------------------------
+                case 'h':
+                    _printHelp( argv[0] );
+                    return false;
+
+                    // ------------------------------------
+#ifdef WITH_FIFOS
+
+                case 'i':
+                    fifoSettpiuITMChannel( _r.f, atoi( optarg ) );
+                    break;
+#endif
+                    // ------------------------------------
 #if WITH_NWCLIENT
 
-            case 'l':
-                options.listenPort = atoi( optarg );
-                break;
+                case 'l':
+                    options.listenPort = atoi( optarg );
+                    break;
 #endif
-                // ------------------------------------
+                    // ------------------------------------
 #ifdef WITH_FIFOS
 
-            case 'n':
-                fifoSetForceITMSync( _r.f, false );
-                break;
+                case 'n':
+                    fifoSetForceITMSync( _r.f, false );
+                    break;
 #endif
-                // ------------------------------------
+                    // ------------------------------------
 #ifdef INCLUDE_FPGA_SUPPORT
 
-            case 'o':
-                // Generally you need TPIU for orbtrace
-#ifdef WITH_FIFOS
-                fifoSetUseTPIU( _r.f, true );
-#endif
-                options.orbtrace = true;
-                options.orbtraceWidth = atoi( optarg );
-                break;
-#endif
-
-            // ------------------------------------
-
-            case 'p':
-                options.port = optarg;
-                break;
-
-            // ------------------------------------
-            case 's':
-#ifdef WITH_FIFOS
-                fifoSetForceITMSync( _r.f, true );
-#endif
-                options.seggerHost = optarg;
-
-                // See if we have an optional port number too
-                char *a = optarg;
-
-                while ( ( *a ) && ( *a != ':' ) )
-                {
-                    a++;
-                }
-
-                if ( *a == ':' )
-                {
-                    *a = 0;
-                    options.seggerPort = atoi( ++a );
-                }
-
-                if ( !options.seggerPort )
-                {
-                    options.seggerPort = SEGGER_PORT;
-                }
-
-                break;
-
-            // ------------------------------------
-            case 't':
-#ifdef WITH_FIFOS
-                fifoSetUseTPIU( _r.f, true );
-                break;
-#endif
-
-            // ------------------------------------
-            case 'v':
-                genericsSetReportLevel( atoi( optarg ) );
-                break;
-
-                // ------------------------------------
-#ifdef WITH_FIFOS
-
-            /* Individual channel setup */
-            case 'c':
-                chanIndex = chanConfig = strdup( optarg );
-                chan = atoi( optarg );
-
-                if ( chan >= NUM_CHANNELS )
-                {
-                    genericsReport( V_ERROR, "Channel index out of range" EOL );
-                    return false;
-                }
-
-                /* Scan for start of filename */
-                while ( ( *chanIndex ) && ( *chanIndex != DELIMITER ) )
-                {
-                    chanIndex++;
-                }
-
-                if ( !*chanIndex )
-                {
-                    genericsReport( V_ERROR, "No filename for channel %d" EOL, chan );
-                    return false;
-                }
-
-                chanName = ++chanIndex;
-
-                /* Scan for format */
-                while ( ( *chanIndex ) && ( *chanIndex != DELIMITER ) )
-                {
-                    chanIndex++;
-                }
-
-                if ( !*chanIndex )
-                {
-                    genericsReport( V_WARN, "No output format for channel %d, output raw!" EOL, chan );
-                    fifoSetChannel( _r.f, chan, chanName, NULL );
+                case 'o':
+                    // Generally you need TPIU for orbtrace
+                    IF_WITH_FIFOS( fifoSetUseTPIU( _r.f, true ) );
+                    options.orbtrace = true;
+                    options.orbtraceWidth = atoi( optarg );
                     break;
-                }
-
-                *chanIndex++ = 0;
-                fifoSetChannel( _r.f, chan, chanName, GenericsUnescape( chanIndex ) );
-                break;
 #endif
 
-            // ------------------------------------
-
-
-            case '?':
-                if ( optopt == 'b' )
-                {
-                    genericsReport( V_ERROR, "Option '%c' requires an argument." EOL, optopt );
-                }
-                else if ( !isprint ( optopt ) )
-                {
-                    genericsReport( V_ERROR, "Unknown option character `\\x%x'." EOL, optopt );
-                }
-
-                return false;
-
-            // ------------------------------------
-            default:
-                genericsReport( V_ERROR, "%c" EOL, c );
-                return false;
                 // ------------------------------------
-        }
+
+                case 'p':
+                    options.port = optarg;
+                    break;
+
+                // ------------------------------------
+                case 's':
+                    IF_WITH_FIFOS( fifoSetForceITMSync( _r.f, true ) );
+                    options.seggerHost = optarg;
+
+                    // See if we have an optional port number too
+                    char *a = optarg;
+
+                    while ( ( *a ) && ( *a != ':' ) )
+                    {
+                        a++;
+                    }
+
+                    if ( *a == ':' )
+                    {
+                        *a = 0;
+                        options.seggerPort = atoi( ++a );
+                    }
+
+                    if ( !options.seggerPort )
+                    {
+                        options.seggerPort = SEGGER_PORT;
+                    }
+
+                    break;
+
+                    // ------------------------------------
+#ifdef WITH_FIFOS
+
+                case 't':
+                    fifoSetUseTPIU( _r.f, true );
+                    break;
+#endif
+
+                // ------------------------------------
+                case 'v':
+                    genericsSetReportLevel( atoi( optarg ) );
+                    break;
+
+                    // ------------------------------------
+#ifdef WITH_FIFOS
+
+                /* Individual channel setup */
+                case 'c':
+                    chanIndex = chanConfig = strdup( optarg );
+                    chan = atoi( optarg );
+
+                    if ( chan >= NUM_CHANNELS )
+                    {
+                        genericsReport( V_ERROR, "Channel index out of range" EOL );
+                        return false;
+                    }
+
+                    /* Scan for start of filename */
+                    while ( ( *chanIndex ) && ( *chanIndex != DELIMITER ) )
+                    {
+                        chanIndex++;
+                    }
+
+                    if ( !*chanIndex )
+                    {
+                        genericsReport( V_ERROR, "No filename for channel %d" EOL, chan );
+                        return false;
+                    }
+
+                    chanName = ++chanIndex;
+
+                    /* Scan for format */
+                    while ( ( *chanIndex ) && ( *chanIndex != DELIMITER ) )
+                    {
+                        chanIndex++;
+                    }
+
+                    if ( !*chanIndex )
+                    {
+                        genericsReport( V_WARN, "No output format for channel %d, output raw!" EOL, chan );
+                        fifoSetChannel( _r.f, chan, chanName, NULL );
+                        break;
+                    }
+
+                    *chanIndex++ = 0;
+                    fifoSetChannel( _r.f, chan, chanName, GenericsUnescape( chanIndex ) );
+                    break;
+#endif
+
+                // ------------------------------------
+
+
+                case '?':
+                    if ( optopt == 'b' )
+                    {
+                        genericsReport( V_ERROR, "Option '%c' requires an argument." EOL, optopt );
+                    }
+                    else if ( !isprint ( optopt ) )
+                    {
+                        genericsReport( V_ERROR, "Unknown option character `\\x%x'." EOL, optopt );
+                    }
+
+                    return false;
+
+                // ------------------------------------
+                default:
+                    genericsReport( V_ERROR, "%c" EOL, c );
+                    return false;
+                    // ------------------------------------
+            }
 
 #ifdef WITH_FIFOS
 
@@ -579,10 +555,8 @@ int _processOptions( int argc, char *argv[] )
 
     /* ... and dump the config if we're being verbose */
     genericsReport( V_INFO, "Orbuculum V" VERSION " (Git %08X %s, Built " BUILD_DATE ")" EOL, GIT_HASH, ( GIT_DIRTY ? "Dirty" : "Clean" ) );
-#ifdef WITH_FIFOS
-    genericsReport( V_INFO, "BasePath   : %s" EOL, fifoGetChanPath( _r.f ) );
-    genericsReport( V_INFO, "ForceSync  : %s" EOL, fifoGetForceITMSync( _r.f ) ? "true" : "false" );
-#endif
+    IF_WITH_FIFOS( genericsReport( V_INFO, "BasePath   : %s" EOL, fifoGetChanPath( _r.f ) ) );
+    IF_WITH_FIFOS( genericsReport( V_INFO, "ForceSync  : %s" EOL, fifoGetForceITMSync( _r.f ) ? "true" : "false" ) );
 
     if ( options.port )
     {
@@ -653,9 +627,7 @@ static void _processBlock( int s, unsigned char *cbw )
 {
     genericsReport( V_DEBUG, "RXED Packet of %d bytes" EOL, s );
 
-#ifdef WITH_NWCLIENT
-    nwclientSend( _r.n, s, cbw );
-#endif
+    IF_WITH_NWCLIENT( nwclientSend( _r.n, s, cbw ) );
 
 #ifdef WITH_FIFOS
     unsigned char *c = cbw;
@@ -777,9 +749,7 @@ int seggerFeeder( void )
 
         genericsReport( V_INFO, "Established Segger Link" EOL );
 
-#ifdef WITH_FIFOS
-        fifoForceSync( _r.f, true );
-#endif
+        IF_WITH_FIFOS( fifoForceSync( _r.f, true ) );
 
         while ( ( t = read( sockfd, cbw, TRANSFER_SIZE ) ) > 0 )
         {
@@ -912,9 +882,7 @@ int fpgaFeeder( void )
 
         genericsReport( V_INFO, "All parameters configured" EOL );
 
-#ifdef WITH_FIFOS
-        fifoForceSync( _r.f, true );
-#endif
+        IF_WITH_FIFOS( fifoForceSync( _r.f, true ) );
 
         while ( ( !_r.feederExit ) && ( ( t = ftdispi_write_read( &_r.ftdifsc, initSequence, 2, cbw, FTDI_HS_TRANSFER_SIZE, FPGA_AWAKE ) ) >= 0 ) )
         {
@@ -940,9 +908,7 @@ int fpgaFeeder( void )
 #ifdef DUMP_FTDI_BYTES
                         printf( "%02X ", c[e] );
 #endif
-#ifdef WITH_FIFOS
-                        fifoProtocolPump( _r.f, c[e] );
-#endif
+                        IF_WITH_FIFOS( fifoProtocolPump( _r.f, c[e] ) );
                     }
 
                     c += FTDI_PACKET_SIZE;
@@ -955,9 +921,7 @@ int fpgaFeeder( void )
             genericsReport( V_WARN, "RXED frame of %d/%d full packets (%3d%%)    \r",
                             ( d - scratchBuffer ) / ( FTDI_PACKET_SIZE - 1 ), FTDI_NUM_FRAMES, ( ( d - scratchBuffer ) * 100 ) / ( FTDI_HS_TRANSFER_SIZE - FTDI_NUM_FRAMES ) );
 
-#ifdef WITH_NWCLIENT
-            nwclientSend( _r.n, ( d - scratchBuffer ), scratchBuffer );
-#endif
+            IF_WITH_NWCLIENT( nwclientSend( _r.n, ( d - scratchBuffer ), scratchBuffer ) );
         }
 
         genericsReport( V_WARN, "Exit Requested (%d, %s)" EOL, t, ftdi_get_error_string( _r.ftdi ) );
@@ -1030,15 +994,11 @@ int main( int argc, char *argv[] )
     sigset_t set;
     struct sigaction sa;
 
-#ifdef WITH_FIFOS
-    _r.f = fifoInit( );
-    assert( _r.f );
-#endif
+    IF_WITH_FIFOS( _r.f = fifoInit( ) );
+    IF_WITH_FIFOS( assert( _r.f ) );
 
-#ifdef WITH_NWCLIENT
-    _r.n = nwclientInit( );
-    assert( _r.n );
-#endif
+    IF_WITH_NWCLIENT( _r.n = nwclientInit( ) );
+    IF_WITH_NWCLIENT( assert( _r.n ) );
 
     if ( !_processOptions( argc, argv ) )
     {
@@ -1086,12 +1046,9 @@ int main( int argc, char *argv[] )
 
 #endif
 
+#ifdef INCLUDE_FPGA_SUPPORT
     /* Start the filewriter */
     filewriterInit( options.fwbasedir );
-
-    /* Using the exit construct rather than return ensures any atexit gets called */
-
-#ifdef INCLUDE_FPGA_SUPPORT
 
     if ( options.orbtrace )
     {

@@ -50,14 +50,14 @@ extern "C" {
 
 struct Channel                             /* Information for an individual channel */
 {
-  char *chanName;                          /* Filename to be used for the fifo */
-  char *presFormat;                        /* Format of data presentation to be used */
+    char *chanName;                          /* Filename to be used for the fifo */
+    char *presFormat;                        /* Format of data presentation to be used */
 
-  /* Runtime state */
-  int handle;                              /* Handle to the fifo */
-  pthread_t thread;                        /* Thread on which it's running */
-  
-  char *fifoName;                          /* Constructed fifo name (from chanPath and name) */
+    /* Runtime state */
+    int handle;                              /* Handle to the fifo */
+    pthread_t thread;                        /* Thread on which it's running */
+
+    char *fifoName;                          /* Constructed fifo name (from chanPath and name) */
 };
 
 struct fifosHandle
@@ -69,39 +69,39 @@ struct fifosHandle
     struct TPIUDecoder t;
     struct TPIUPacket p;
 
-  /* Timestamp info */
+    /* Timestamp info */
     uint64_t lastHWExceptionTS;
 
-  /* Configuration information */
-  char *chanPath;                               /* Path to where to put the fifos */
-  bool useTPIU;                                 /* Is the TPIU active? */
-  bool forceITMSync;                            /* Is ITM to be forced into sync? */
-  int tpiuITMChannel;                           /* TPIU channel on which ITM appears */
+    /* Configuration information */
+    char *chanPath;                               /* Path to where to put the fifos */
+    bool useTPIU;                                 /* Is the TPIU active? */
+    bool forceITMSync;                            /* Is ITM to be forced into sync? */
+    int tpiuITMChannel;                           /* TPIU channel on which ITM appears */
 
-  struct Channel c[NUM_CHANNELS + 1];           /* Output for each channel */
+    struct Channel c[NUM_CHANNELS + 1];           /* Output for each channel */
 };
 
-  /* Fifos running */
-  void fifoForceSync( struct fifosHandle *f, bool synced );                  /* Force sync status */
-  void fifoProtocolPump( struct fifosHandle *f, uint8_t c );                 /* Send undecoded data to the fifo */
+/* Fifos running */
+void fifoForceSync( struct fifosHandle *f, bool synced );                  /* Force sync status */
+void fifoProtocolPump( struct fifosHandle *f, uint8_t c );                 /* Send undecoded data to the fifo */
 
-  /* Getters and setters */
-  void fifoSetChannel( struct fifosHandle *f, int chan, char *n, char *s );
-  void fifoSetChanPath( struct fifosHandle *f, char *s );
-  void fifoSetUseTPIU(struct fifosHandle *f, bool s );
-  void fifoSetForceITMSync(struct fifosHandle *f, bool s );
-  void fifoSettpiuITMChannel(struct fifosHandle *f, int channel );
-  char *fifoGetChannelName( struct fifosHandle *f, int chan );  
-  char *fifoGetChannelFormat( struct fifosHandle *f, int chan );
-  char *fifoGetChanPath( struct fifosHandle *f );
-  bool fifoGetUseTPIU(struct fifosHandle *f );
-  bool fifoGetForceITMSync(struct fifosHandle *f );
-  int fifoGettpiuITMChannel(struct fifosHandle *f );
+/* Getters and setters */
+void fifoSetChannel( struct fifosHandle *f, int chan, char *n, char *s );
+void fifoSetChanPath( struct fifosHandle *f, char *s );
+void fifoSetUseTPIU( struct fifosHandle *f, bool s );
+void fifoSetForceITMSync( struct fifosHandle *f, bool s );
+void fifoSettpiuITMChannel( struct fifosHandle *f, int channel );
+char *fifoGetChannelName( struct fifosHandle *f, int chan );
+char *fifoGetChannelFormat( struct fifosHandle *f, int chan );
+char *fifoGetChanPath( struct fifosHandle *f );
+bool fifoGetUseTPIU( struct fifosHandle *f );
+bool fifoGetForceITMSync( struct fifosHandle *f );
+int fifoGettpiuITMChannel( struct fifosHandle *f );
 
-  /* Fifos management */
-  bool fifoCreate( struct fifosHandle *f );                                  /* Create the fifo set */
-  void fifoRemove( struct fifosHandle *f );                                  /* Destroy the fifo set */
-  struct fifosHandle *fifoInit( void );                                      /* Create an instance */
+/* Fifos management */
+bool fifoCreate( struct fifosHandle *f );                                  /* Create the fifo set */
+void fifoRemove( struct fifosHandle *f );                                  /* Destroy the fifo set */
+struct fifosHandle *fifoInit( void );                                      /* Create an instance */
 // ====================================================================================================
 #ifdef __cplusplus
 }
