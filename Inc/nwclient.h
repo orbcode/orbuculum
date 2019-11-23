@@ -47,7 +47,7 @@ extern "C" {
 #define NWCLIENT_SERVER_PORT (3443)           /* Server port definition */
 #define TRANSFER_SIZE (4096)
 
-struct nwclientHandle
+struct nwclientsHandle
 
 {
     struct nwClient *firstClient;             /* Head of linked list of network clients */
@@ -59,11 +59,11 @@ struct nwclientHandle
 
 // ====================================================================================================
 
-void nwclientSend( struct nwclientHandle *h, uint32_t len, uint8_t *buffer );
+void nwclientSend( struct nwclientsHandle *h, uint32_t len, uint8_t *buffer );
 
-bool nwclientStop( struct nwclientHandle *h );
-bool nwclientStart( struct nwclientHandle *h, int port );
-struct nwclientHandle *nwclientInit( void );
+void nwclientShutdown( struct nwclientsHandle *h );
+bool nwclientShutdownComplete( struct nwclientsHandle *h );
+struct nwclientsHandle *nwclientStart( int port );
 
 // ====================================================================================================
 #ifdef __cplusplus

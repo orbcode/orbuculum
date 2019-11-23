@@ -746,6 +746,7 @@ bool fifoCreate( struct fifosHandle *f )
                 params = ( struct _runThreadParams * )malloc( sizeof( struct _runThreadParams ) );
                 params->listenHandle = fd[0];
                 params->portNo = t;
+                params->c = &f->c[t];
 
                 f->c[t].fifoName = ( char * )malloc( strlen( f->c[t].chanName ) + strlen( f->chanPath ) + 2 );
                 strcpy( f->c[t].fifoName, f->chanPath );
@@ -771,6 +772,7 @@ bool fifoCreate( struct fifosHandle *f )
             params = ( struct _runThreadParams * )malloc( sizeof( struct _runThreadParams ) );
             params->listenHandle = fd[0];
             params->portNo = t;
+            params->c = &f->c[t];
 
             f->c[t].fifoName = ( char * )malloc( strlen( HWFIFO_NAME ) + strlen( f->chanPath ) + 2 );
             strcpy( f->c[t].fifoName, f->chanPath );
@@ -786,7 +788,7 @@ bool fifoCreate( struct fifosHandle *f )
     return true;
 }
 // ====================================================================================================
-void fifoRemove( struct fifosHandle *f )
+void fifoShutdown( struct fifosHandle *f )
 
 /* Destroy the per-port sub-processes */
 
@@ -812,6 +814,9 @@ void fifoRemove( struct fifosHandle *f )
 struct fifosHandle *fifoInit( void )
 
 {
-    return ( struct fifosHandle * )calloc( 1, sizeof( struct fifosHandle ) );
+    struct fifosHandle *f = ( struct fifosHandle * )calloc( 1, sizeof( struct fifosHandle  ) );
+    f->chanPath = strdup( "" );
+
+    return f;
 }
 // ====================================================================================================

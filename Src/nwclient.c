@@ -43,84 +43,95 @@
 #include "generics.h"
 #include "nwclient.h"
 
+
+#define CLIENT_TERM_INTERVAL_US (10000)       /* Interval to check for all clients lost */
+
 /* List of any connected network clients */
 struct nwClient
 
 {
     int handle;                               /* Handle to client */
     pthread_t thread;                         /* Execution thread */
-    struct nwclientHandle *parent;            /* Who owns this list */
+    struct nwclientsHandle *parent;           /* Who owns this list */
     struct nwClient *nextClient;
     struct nwClient *prevClient;
-};
+    bool finish;                              /* Flag indicating it's time to cease operation */
 
-/* Informtation about each individual network client */
-struct nwClientParams
-
-{
-    struct nwClient *client;                  /* Information about the client */
+    /* Parameters used to run the client */
     int portNo;                               /* Port of connection */
     int listenHandle;                         /* Handle for listener */
+
 };
 
 // ====================================================================================================
 // Network server implementation for raw SWO feed
+// ====================================================================================================
+static void _clientRemove( struct nwClient *c )
+
+{
+    close( c->portNo );
+    close( c->listenHandle );
+
+    /* First of all, make sure we can get access to the client list */
+    sem_wait( &c->parent->clientList );
+
+    if ( c->prevClient )
+    {
+        c->prevClient->nextClient = c->nextClient;
+    }
+    else
+    {
+        c->parent->firstClient = c->nextClient;
+    }
+
+    if ( c->nextClient )
+    {
+        c->nextClient->prevClient = c->prevClient;
+    }
+
+    /* OK, we made our modifications */
+    sem_post( &c->parent->clientList );
+
+    /* Remove the memory that was allocated for this client */
+    free( c );
+}
 // ====================================================================================================
 static void *_client( void *args )
 
 /* Handle an individual network client account */
 
 {
-    struct nwClientParams *params = ( struct nwClientParams * )args;
+    struct nwClient *c = ( struct nwClient * )args;
     int readDataLen;
     uint8_t maxTransitPacket[TRANSFER_SIZE];
 
-    while ( 1 )
+    while ( !c->finish )
     {
-        readDataLen = read( params->listenHandle, maxTransitPacket, TRANSFER_SIZE );
+        readDataLen = read( c->listenHandle, maxTransitPacket, TRANSFER_SIZE );
 
-        if ( ( readDataLen <= 0 ) || ( write( params->portNo, maxTransitPacket, readDataLen ) < 0 ) )
+        if ( ( c->finish ) || ( readDataLen <= 0 ) || ( write( c->portNo, maxTransitPacket, readDataLen ) < 0 ) )
         {
             /* This port went away, so remove it */
             genericsReport( V_INFO, "Connection dropped" EOL );
-
-            close( params->portNo );
-            close( params->listenHandle );
-
-            /* First of all, make sure we can get access to the client list */
-            sem_wait( &params->client->parent->clientList );
-
-            if ( params->client->prevClient )
-            {
-                params->client->prevClient->nextClient = params->client->nextClient;
-            }
-            else
-            {
-                params->client->parent->firstClient = params->client->nextClient;
-            }
-
-            if ( params->client->nextClient )
-            {
-                params->client->nextClient->prevClient = params->client->prevClient;
-            }
-
-            /* OK, we made our modifications */
-            sem_post( &params->client->parent->clientList );
-
-            return NULL;
+            c->finish = true;
         }
     }
+
+    close( c->listenHandle );
+
+    _clientRemove( c );
+    return NULL;
 }
 // ====================================================================================================
 static void *_listenTask( void *arg )
 
 {
-    struct nwclientHandle *h = ( struct nwclientHandle * )arg;
+    struct nwclientsHandle *h = ( struct nwclientsHandle * )arg;
     int newsockfd;
     socklen_t clilen;
     struct sockaddr_in cli_addr;
     int f[2];                               /* File descriptor set for pipe */
-    struct nwClientParams *params;
+    struct nwClient *client;
     char s[100];
 
     while ( 1 )
@@ -135,32 +146,29 @@ static void *_listenTask( void *arg )
         /* We got a new connection - spawn a thread to handle it */
         if ( !pipe( f ) )
         {
-            params = ( struct nwClientParams * )malloc( sizeof( struct nwClientParams ) );
+            client = ( struct nwClient * )calloc( 1, sizeof( struct nwClient ) );
+            client->handle = f[1];
+            client->parent = h;
+            client->listenHandle = f[0];
+            client->portNo = newsockfd;
 
-            params->client = ( struct nwClient * )malloc( sizeof( struct nwClient ) );
-            params->client->handle = f[1];
-            params->client->parent = h;
-            params->listenHandle = f[0];
-            params->portNo = newsockfd;
-
-
-            if ( !pthread_create( &( params->client->thread ), NULL, &_client, params ) )
+            if ( !pthread_create( &( client->thread ), NULL, &_client, client ) )
             {
                 /* Auto-cleanup for this thread */
-                pthread_detach( params->client->thread );
+                pthread_detach( client->thread );
 
                 /* Hook into linked list */
                 sem_wait( &h->clientList );
 
-                params->client->nextClient = h->firstClient;
-                params->client->prevClient = NULL;
+                client->nextClient = h->firstClient;
+                client->prevClient = NULL;
 
-                if ( params->client->nextClient )
+                if ( client->nextClient )
                 {
-                    params->client->nextClient->prevClient = params->client;
+                    client->nextClient->prevClient = client;
                 }
 
-                h->firstClient = params->client;
+                h->firstClient = client;
 
                 sem_post( &h->clientList );
             }
@@ -176,7 +184,7 @@ static void *_listenTask( void *arg )
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
-void nwclientSend( struct nwclientHandle *h, uint32_t len, uint8_t *buffer )
+void nwclientSend( struct nwclientsHandle *h, uint32_t len, uint8_t *buffer )
 
 {
     assert( h );
@@ -193,22 +201,19 @@ void nwclientSend( struct nwclientHandle *h, uint32_t len, uint8_t *buffer )
     sem_post( &h->clientList );
 }
 // ====================================================================================================
-bool nwclientStop( struct nwclientHandle *h )
-
-{
-
-    return true;
-}
-// ====================================================================================================
-bool nwclientStart( struct nwclientHandle *h, int port )
+struct nwclientsHandle *nwclientStart( int port )
 
 /* Creating the listening server thread */
 
 {
     struct sockaddr_in serv_addr;
     int flag = 1;
+    struct nwclientsHandle *h = ( struct nwclientsHandle * )calloc( 1, sizeof( struct nwclientsHandle ) );
 
-    assert( h );
+    if ( !h )
+    {
+        return NULL;
+    }
 
     h->sockfd = socket( AF_INET, SOCK_STREAM, 0 );
     setsockopt( h->sockfd, SOL_SOCKET, SO_REUSEPORT, &flag, sizeof( flag ) );
@@ -216,7 +221,7 @@ bool nwclientStart( struct nwclientHandle *h, int port )
     if ( h->sockfd < 0 )
     {
         genericsReport( V_ERROR, "Error opening socket" EOL );
-        return false;
+        goto free_and_return;
     }
 
     bzero( ( char * ) &serv_addr, sizeof( serv_addr ) );
@@ -230,13 +235,13 @@ bool nwclientStart( struct nwclientHandle *h, int port )
 }, sizeof( int ) ) < 0 )
     {
         genericsReport( V_ERROR, "setsockopt(SO_REUSEADDR) failed" );
-        return false;
+        goto free_and_return;
     }
 
     if ( bind( h->sockfd, ( struct sockaddr * ) &serv_addr, sizeof( serv_addr ) ) < 0 )
     {
         genericsReport( V_ERROR, "Error on binding" EOL );
-        return false;
+        goto free_and_return;
     }
 
     /* Create a semaphore to lock the client list */
@@ -246,15 +251,48 @@ bool nwclientStart( struct nwclientHandle *h, int port )
     if ( pthread_create( &( h->ipThread ), NULL, &_listenTask, h ) )
     {
         genericsReport( V_ERROR, "Failed to create listening thread" EOL );
-        return false;
+        goto free_and_return;
     }
 
-    return true;
+    return h;
+
+free_and_return:
+    free( h );
+    return NULL;
 }
 // ====================================================================================================
-struct nwclientHandle *nwclientInit( )
+void nwclientShutdown( struct nwclientsHandle *h )
 
 {
-    return ( struct nwclientHandle * )calloc( 1, sizeof( struct nwclientHandle ) );
+    sem_wait( &h->clientList );
+
+    struct nwClient *c = h->firstClient;
+
+    /* Tell all the clients to terminate */
+    while ( c )
+    {
+        c->finish = true;
+
+        /* Closing both ends of the connection will kill the client */
+        close( c->handle );
+        close( c->listenHandle );
+
+        /* This is safe because we are locked by the semaphore */
+        c = c->nextClient;
+    }
+
+    sem_post( &h->clientList );
+}
+// ====================================================================================================
+bool nwclientShutdownComplete( struct nwclientsHandle *h )
+
+{
+    if ( ! h->firstClient )
+    {
+        free( h );
+        return true;
+    }
+
+    return false;
 }
 // ====================================================================================================

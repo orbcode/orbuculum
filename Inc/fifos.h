@@ -100,7 +100,7 @@ int fifoGettpiuITMChannel( struct fifosHandle *f );
 
 /* Fifos management */
 bool fifoCreate( struct fifosHandle *f );                                  /* Create the fifo set */
-void fifoRemove( struct fifosHandle *f );                                  /* Destroy the fifo set */
+void fifoShutdown( struct fifosHandle *f );                                /* Destroy the fifo set */
 struct fifosHandle *fifoInit( void );                                      /* Create an instance */
 // ====================================================================================================
 #ifdef __cplusplus

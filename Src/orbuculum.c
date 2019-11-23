@@ -160,7 +160,7 @@ struct
     IF_WITH_FIFOS( struct fifosHandle *f );
 
     /* Link to the network client subsystem */
-    IF_WITH_NWCLIENT( struct nwclientHandle *n );
+    IF_WITH_NWCLIENT( struct nwclientsHandle *n );
 
     /* Link to the FPGA subsystem */
     IF_INCLUDE_FPGA_SUPPORT( bool feederExit );                        /* Do we need to leave now? */
@@ -978,11 +978,15 @@ int fileFeeder( void )
 static void _doExit( void )
 
 {
-#ifdef WITH_FIFOS
+    IF_WITH_FIFOS( fifoShutdown( _r.f ) );
 
-    if ( _r.f )
+#ifdef WITH_NWCLIENT
+    nwclientShutdown( _r.n );
+
+    while ( !nwclientShutdownComplete( _r.n ) )
     {
-        fifoRemove( _r.f );
+        genericsReport( V_WARN, "Waiting for clients to exit" EOL );
+        usleep( 100 );
     }
 
 #endif
@@ -996,9 +1000,6 @@ int main( int argc, char *argv[] )
 
     IF_WITH_FIFOS( _r.f = fifoInit( ) );
     IF_WITH_FIFOS( assert( _r.f ) );
-
-    IF_WITH_NWCLIENT( _r.n = nwclientInit( ) );
-    IF_WITH_NWCLIENT( assert( _r.n ) );
 
     if ( !_processOptions( argc, argv ) )
     {
@@ -1039,7 +1040,7 @@ int main( int argc, char *argv[] )
 
 #ifdef WITH_NWCLIENT
 
-    if ( !nwclientStart( _r.n, options.listenPort ) )
+    if ( !( _r.n = nwclientStart( options.listenPort ) ) )
     {
         genericsExit( -1, "Failed to make network server" EOL );
     }
