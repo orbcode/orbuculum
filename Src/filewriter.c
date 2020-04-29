@@ -37,6 +37,8 @@
 #include <stdarg.h>
 #include <string.h>
 #include <unistd.h>
+#include <stdlib.h>
+#include <libgen.h>
 
 #include "itmDecoder.h"
 #include "generics.h"
@@ -74,6 +76,8 @@ void _processCompleteName( uint32_t n )
 
 {
     char workingName[MAX_CONCAT_FILENAMELEN] = { 0 };
+    char *resolvedName;
+    char *compareName;
 
     /* Concat strings */
     if ( _f.basedir )
@@ -86,6 +90,30 @@ void _processCompleteName( uint32_t n )
         strncpy( workingName, _f.file[n].name, MAX_CONCAT_FILENAMELEN );
     }
 
+    /* Make sure we haven't broken out of the current directory          */
+    /* Start by getting both the real path of the requested file and the */
+    /* real path of the current directory.                               */
+    resolvedName = realpath(dirname(workingName),NULL);
+    if ( _f.basedir )
+      {
+        compareName = realpath(_f.basedir, NULL );
+      }
+    else
+      {
+        compareName = realpath(dirname(""), NULL );
+      }
+    
+    /* Now check that the first part matches, up to the length of the comparison Name */
+    bool goodDirectory = ((compareName!=NULL) && (0 ==strncmp(resolvedName, compareName, strlen(compareName) )));
+    free( resolvedName );
+    free( compareName );
+
+    if (!goodDirectory)
+      {
+        genericsReport( V_WARN, "Path to [%s] is not in or below current directory" EOL, workingName );
+        return;
+      }
+    
     genericsReport( V_DEBUG, "Complete name to work with is [%s]" EOL, workingName );
 
     /* OK, now decide what to do... */

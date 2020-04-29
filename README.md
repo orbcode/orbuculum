@@ -5,7 +5,7 @@ There is now a book by Thiadmer Riemersma (compuphase) about the Black Magic Pro
 
 * Latest Changes:
 
-Upissue to V1.00. The number doesn't really mean anything, but it does represent a change from GPL to BSD licence. See the CONTRIBUTORS file for details on all authors agreement to this change.
+Upissue to V1.01. Switch filewriter functionality off by default, and add code to prevent directory breakout in the filewriter.
 
 The CHANGES file now tells you what's been done when.
 
@@ -318,6 +318,8 @@ Specific command line options of note are;
      packets in that case.
 
   `-v`: Verbose mode 0==Errors only, 1=Warnings (Default) 2=Info, 3=Full Debug.
+
+  `-w`: Enable filewriter functionality.
 
 
 Using orbuculum with Other info Sources

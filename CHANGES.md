@@ -1,3 +1,8 @@
+29th April 2020 (Version 1.01)
+
+* Switch off filewriter functionality in orbuculum by default (turn on using -w))
+* Add code to prevent directory breakout in filewriter
+
 25th Sept 2019 (Version 1.00, no functional change)
 
 * Updates to README.md to fix bitrot, kindly provided by Uwe Bonnes

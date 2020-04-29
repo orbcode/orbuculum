@@ -126,6 +126,7 @@ struct
     bool useTPIU;
     bool segger;
     bool forceITMSync;
+    bool filewriter;
     char *fwbasedir;
 
 #ifdef INCLUDE_FPGA_SUPPORT
@@ -750,7 +751,7 @@ void _handleSW( struct ITMDecoder *i )
     if ( ITMGetPacket( i, &p ) )
     {
         /* Filter off filewriter packets and let the filewriter module deal with those */
-        if ( p.srcAddr == FW_CHANNEL )
+      if (( p.srcAddr == FW_CHANNEL ) && ( options.filewriter ))
         {
             filewriterProcess( &p );
         }
@@ -1013,7 +1014,9 @@ void _printHelp( char *progName )
     fprintf( stdout, "        s: <address>:<port> Set address for SEGGER JLink connection (default none:%d)" EOL, SEGGER_PORT );
     fprintf( stdout, "        t: Use TPIU decoder" EOL );
     fprintf( stdout, "        v: <level> Verbose mode 0(errors)..3(debug)" EOL );
+    fprintf( stdout, "        w: Enable filewriter functionality" EOL );    
 }
+
 // ====================================================================================================
 int _processOptions( int argc, char *argv[] )
 
@@ -1024,7 +1027,7 @@ int _processOptions( int argc, char *argv[] )
     char *chanIndex;
 #define DELIMITER ','
 
-    while ( ( c = getopt ( argc, argv, "a:b:c:f:hi:l:no:p:s:tv:" ) ) != -1 )
+    while ( ( c = getopt ( argc, argv, "a:b:c:f:hi:l:no:p:s:tv:w" ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -1074,6 +1077,11 @@ int _processOptions( int argc, char *argv[] )
             // ------------------------------------
             case 'p':
                 options.port = optarg;
+                break;
+
+            // ------------------------------------
+            case 'w':
+                options.filewriter = true;
                 break;
 
             // ------------------------------------
