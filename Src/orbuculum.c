@@ -998,8 +998,8 @@ int main( int argc, char *argv[] )
     sigset_t set;
     struct sigaction sa;
 
-    IF_WITH_FIFOS( _r.f = fifoInit( ) );
-    IF_WITH_FIFOS( fifoSetForceITMSync( _r.f, true ) );
+    /* Setup fifos with forced ITM sync, no TPIU and TPIU on channel 1 if its engaged later */
+    IF_WITH_FIFOS( _r.f = fifoInit( true, false, 1 ) );
     IF_WITH_FIFOS( assert( _r.f ) );
 
     if ( !_processOptions( argc, argv ) )

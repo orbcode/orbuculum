@@ -811,11 +811,14 @@ void fifoShutdown( struct fifosHandle *f )
     free( f );
 }
 // ====================================================================================================
-struct fifosHandle *fifoInit( void )
+struct fifosHandle *fifoInit( bool forceITMSyncSet, bool useTPIUSet, int TPIUchannelSet )
 
 {
     struct fifosHandle *f = ( struct fifosHandle * )calloc( 1, sizeof( struct fifosHandle  ) );
     f->chanPath = strdup( "" );
+    f->useTPIU = useTPIUSet;
+    f->forceITMSync = forceITMSyncSet;
+    f->tpiuITMChannel = TPIUchannelSet;
 
     return f;
 }

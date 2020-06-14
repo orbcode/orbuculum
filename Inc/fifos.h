@@ -101,7 +101,8 @@ int fifoGettpiuITMChannel( struct fifosHandle *f );
 /* Fifos management */
 bool fifoCreate( struct fifosHandle *f );                                  /* Create the fifo set */
 void fifoShutdown( struct fifosHandle *f );                                /* Destroy the fifo set */
-struct fifosHandle *fifoInit( void );                                      /* Create an instance */
+struct fifosHandle *fifoInit( bool forceITMSyncSet,
+                              bool useTPIUSet, int TPIUchannelSet );       /* Create an instance */
 // ====================================================================================================
 #ifdef __cplusplus
 }
