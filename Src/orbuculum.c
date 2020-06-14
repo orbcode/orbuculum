@@ -356,7 +356,7 @@ int _processOptions( int argc, char *argv[] )
 
 #ifdef WITH_FIFOS
 
-    IF_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:b:c:f:hl:o:p:s:v:" ) ) != -1 ) )
+    IF_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:b:c:f:hl:no:p:s:v:" ) ) != -1 ) )
         IF_NOT_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:b:c:f:ho:p:s:v:" ) ) != -1 ) )
 #else
     IF_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:f:hi:l:no:p:s:tv:" ) ) != -1 ) )
@@ -999,6 +999,7 @@ int main( int argc, char *argv[] )
     struct sigaction sa;
 
     IF_WITH_FIFOS( _r.f = fifoInit( ) );
+    IF_WITH_FIFOS( fifoSetForceITMSync( _r.f, true ) );
     IF_WITH_FIFOS( assert( _r.f ) );
 
     if ( !_processOptions( argc, argv ) )

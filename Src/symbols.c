@@ -135,9 +135,15 @@ bool SymbolLookup( struct SymbolSet *s, uint32_t addr, struct nameEntry *n, char
     uint32_t line;
 
     assert( s );
+    // Work around for changes in binutils 2.34
+#ifdef bfd_get_section_vma
     uint32_t workingAddr = addr - bfd_get_section_vma( s->abfd, s->sect );
-
     if ( workingAddr <= bfd_section_size( s->abfd, s->sect ) )
+#else
+    uint32_t workingAddr = addr - bfd_section_vma( s->sect );
+    if ( workingAddr <= bfd_section_size( s->sect ) )
+#endif
+
     {
         if ( bfd_find_nearest_line( s->abfd, s->sect, s->syms, workingAddr, &filename, &function, &line ) )
         {
