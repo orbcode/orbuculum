@@ -12,8 +12,9 @@ STM32;
   enableSTM32SWO  : Enable SWO on STM32 pins (for STM32F4 if 4 is passed as first argument)
   enableSTM32TRACE: Start TRACE on STM32 pins
 
-IMXRT1021;
-  enableIMXRT1021SWO : Enable SWO on IMXRT pins
+IMXRT;
+  enableIMXRT102XSWO : Enable SWO on IMXRT102X series pins (AD_B0_04)
+  enableIMXRT106XSWO : Enable SWO on IMXRT106X series pins (AD_B0_10)
 
 All;
   prepareSWO      : Prepare SWO output in specified format
@@ -62,8 +63,9 @@ set $TPIUBASE=0xE0040000
 set $ETMBASE=0xE0041000
 
 # Definitions for the CPU types we currently support
-set $CPU_IMXRT1021=1
+set $CPU_IMXRT102X=1
 set $CPU_STM32=2
+set $CPU_IMXRT106X=1
 
 # Legacy fixups...lets avoid upsetting anyone too much
 
@@ -141,9 +143,9 @@ prepareSWO <ClockSpd> <Speed> <UseTPIU> <UseMan>: Prepare output trace data port
 end
 
 # ====================================================================
-define enableIMXRT1021SWO
+define enableIMXRT102XSWO
   # Store the CPU we are using
-  set $CPU=$CPU_IMXRT1021
+  set $CPU=$CPU_IMXRT102X
 
   # Enable Trace Clocks
   set *0x400FC068|=(3<<22)
@@ -160,7 +162,30 @@ define enableIMXRT1021SWO
   set *0x401F80E8=6
   set *0x401F825C=0x6020
 end
-document enableIMXRT1021SWO
+document enableIMXRT102XSWO
+enableIMXRT102XSWO Configure output pin on IMXRT102X for SWO use.
+end
+
+define enableIMXRT1021SWO
+       enableIMXRT102XSWO
+end
+# ====================================================================
+define enableIMXRT106XSWO
+  # Store the CPU we are using
+  set $CPU=$CPU_IMXRT106X
+
+  # Enable Trace Clocks
+  set *0x400FC068|=(3<<22)
+
+  # Set Trace clock input to be from PLL2 PFD0
+  set *0x400Fc018&=~(3<<14)
+  set *0x400Fc018|=(2<<14)
+
+  # Set AD_B0_10 to be SWO, with specific output characteristics (MUX_CTL & PAD_CTL)
+  set *0x401F80E4=9
+  set *0x401F82D4=0xB0A0
+end
+document enableIMXRT106XSWO
 enableIMXRT1021SWO Configure output pin on IMXRT1021 for SWO use.
 end
 # ====================================================================
