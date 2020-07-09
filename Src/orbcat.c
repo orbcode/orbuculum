@@ -90,6 +90,7 @@ struct
     int port;
     char *server;
 
+    char *file;                                          /* File host connection */
 } options = {.forceITMSync = true, .tpiuITMChannel = 1, .port = SERVER_PORT, .server = "localhost"};
 
 struct
@@ -430,6 +431,7 @@ void _printHelp( char *progName )
 {
     fprintf( stdout, "Usage: %s <htv> <-i channel> <-p port> <-s server>" EOL, progName );
     fprintf( stdout, "       c: <Number>,<Format> of channel to add into output stream (repeat per channel)" EOL );
+    fprintf( stdout, "       f: <filename> Take input from specified file" EOL );
     fprintf( stdout, "       h: This help" EOL );
     fprintf( stdout, "       i: <channel> Set ITM Channel in TPIU decode (defaults to 1)" EOL );
     fprintf( stdout, "       n: Enforce sync requirement for ITM (i.e. ITM needsd to issue syncs)" EOL );
@@ -447,13 +449,18 @@ int _processOptions( int argc, char *argv[] )
     char *chanIndex;
 #define DELIMITER ','
 
-    while ( ( c = getopt ( argc, argv, "c:hi:ns:tv" ) ) != -1 )
+    while ( ( c = getopt ( argc, argv, "c:f:hi:ns:tv:" ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
             case 'h':
                 _printHelp( argv[0] );
                 return false;
+
+            // ------------------------------------
+            case 'f':
+                options.file = optarg;
+                break;
 
             // ------------------------------------
             case 'i':
@@ -580,6 +587,46 @@ int _processOptions( int argc, char *argv[] )
     return true;
 }
 // ====================================================================================================
+
+int fileFeeder( void )
+
+{
+    int f;
+    unsigned char cbw[TRANSFER_SIZE];
+    ssize_t t;
+
+    if ( ( f = open( options.file, O_RDONLY ) ) < 0 )
+    {
+        genericsExit( -4, "Can't open file %s" EOL, options.file );
+    }
+
+    genericsReport( V_INFO, "Reading from file" EOL );
+
+    while ( ( t = read( f, cbw, TRANSFER_SIZE ) ) >= 0 )
+    {
+
+        if ( !t )
+        {
+            // Just spin for a while to avoid clogging the CPU
+            usleep( 100000 );
+            continue;
+        }
+
+        unsigned char *c = cbw;
+
+        while ( t-- )
+        {
+            _protocolPump( *c++ );
+        }
+    }
+
+    genericsReport( V_INFO, "File read error" EOL );
+
+    close( f );
+    return true;
+}
+
+// ====================================================================================================
 int main( int argc, char *argv[] )
 
 {
@@ -606,6 +653,11 @@ int main( int argc, char *argv[] )
     {
         genericsReport( V_ERROR, "Error creating socket" EOL );
         return -1;
+    }
+
+    if ( options.file )
+    {
+        exit( fileFeeder() );
     }
 
     /* Now open the network connection */
