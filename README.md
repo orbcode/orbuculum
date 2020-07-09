@@ -298,7 +298,7 @@ Specific command line options of note are;
 
  `-c [Number],[Name],[Format]`: of channel to populate (repeat per channel) using printf formatting.
 
- `-e` : When reading from file, terminate when file exhausts, rather than waiting for more data to arrive.
+ `-e`: When reading from file, terminate when file exhausts, rather than waiting for more data to arrive.
  
  `-f [filename]`: Take input from specified file (CTRL-C to abort from this).
 
@@ -323,24 +323,6 @@ Specific command line options of note are;
 
   `-v`: Verbose mode 0==Errors only, 1=Warnings (Default) 2=Info, 3=Full Debug.
 
-
-Using orbuculum with Other info Sources
-=======================================
-
-As Karl Palsson pointed out in Issue #4 on github, all of the support tools just need a stream
-of 'clean' trace data. Normally that is provided by the network connection that orbuculum exports, but you
-can also use something like netcat to generate the stream for orbuculum or its clients.
-For example, from a file that is written to via something like openocd;
-
-    > tail -f swo.dump.log | nc -v -v -l 9999 -k
-
-and then;
-
-    > ./ofiles/orbuculum -g 9999 -b md/ -c 0,text,"%c"
-
-However, that's probably over-complicated now...the orbuculum -f option supports ongoing streaming from
-a file directly.  This information is just left here to show the flexibilities you have got available.
-
 Orbcat
 ======
 
@@ -362,6 +344,10 @@ options for orbcat are;
  `-c [Number],[Format]`: of channel to populate (repeat per channel) using printf
      formatting. Note that the `Name` component is missing in this format because 
      orbcat does not create fifos.
+
+ `-e`: When reading from file, terminate when file exhausts, rather than waiting for more data to arrive.
+ 
+ `-f [filename]`: Take input from specified file (CTRL-C to abort from this).
 
  `-h`: Brief help.
 
@@ -782,3 +768,20 @@ frames.
       (Anthing < 0.01% removed)
     -----------------
                17594 Samples
+
+Using orbuculum with other info Sources
+=======================================
+
+As Karl Palsson pointed out in Issue #4 on github, all of the support tools just need a stream
+of 'clean' trace data. Normally that is provided by the network connection that orbuculum exports, but you
+can also use something like netcat to generate the stream for orbuculum or its clients.
+For example, from a file that is written to via something like openocd;
+
+    > tail -f swo.dump.log | nc -v -v -l 9999 -k
+
+and then;
+
+    > ./ofiles/orbuculum -g 9999 -b md/ -c 0,text,"%c"
+
+However, that's probably over-complicated now...the orbuculum -f option supports ongoing streaming from
+a file directly.  This information is just left here to show the flexibilities you have got available.
