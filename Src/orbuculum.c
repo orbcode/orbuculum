@@ -141,6 +141,7 @@ struct
     char *port;                                          /* Serial host connection */
     int speed;                                           /* Speed of serial link */
     char *file;                                          /* File host connection */
+    bool fileTerminate;                                  /* Terminate when file read isn't successful */
 
     /* Network link */
     IF_WITH_NWCLIENT( int listenPort );                  /* Listening port for network */
@@ -329,6 +330,7 @@ void _printHelp( char *progName )
     fprintf( stdout, "        a: <serialSpeed> to use" EOL );
     IF_WITH_FIFOS( fprintf( stdout, "        b: <basedir> for channels" EOL ) );
     IF_WITH_FIFOS( fprintf( stdout, "        c: <Number>,<Name>,<Format> of channel to populate (repeat per channel)" EOL ) );
+    fprintf( stdout, "        e: When reading from file, terminate at end of file rather than waiting for further input" EOL );
     fprintf( stdout, "        f: <filename> Take input from specified file" EOL );
     fprintf( stdout, "        h: This help" EOL );
     IF_WITH_FIFOS( fprintf( stdout, "        i: <channel> Set ITM Channel in TPIU decode (defaults to 1)" EOL ) );
@@ -356,11 +358,11 @@ int _processOptions( int argc, char *argv[] )
 
 #ifdef WITH_FIFOS
 
-    IF_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:b:c:f:hl:no:p:s:v:" ) ) != -1 ) )
-        IF_NOT_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:b:c:f:ho:p:s:v:" ) ) != -1 ) )
+    IF_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:b:c:ef:hl:no:p:s:v:" ) ) != -1 ) )
+        IF_NOT_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:b:c:ef:ho:p:s:v:" ) ) != -1 ) )
 #else
-    IF_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:f:hi:l:no:p:s:tv:" ) ) != -1 ) )
-        IF_NOT_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:f:hi:no:p:s:tv:" ) ) != -1 ) )
+    IF_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:ef:hi:l:no:p:s:tv:" ) ) != -1 ) )
+        IF_NOT_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:ef:hi:no:p:s:tv:" ) ) != -1 ) )
 #endif
             switch ( c )
             {
@@ -376,6 +378,11 @@ int _processOptions( int argc, char *argv[] )
                     fifoSetChanPath( _r.f, optarg );
                     break;
 #endif
+
+                // ------------------------------------
+                case 'e':
+                    options.fileTerminate = true;
+                    break;
 
                 // ------------------------------------
                 case 'f':
@@ -588,7 +595,16 @@ int _processOptions( int argc, char *argv[] )
 
     if ( options.file )
     {
-        genericsReport( V_INFO, "Input File : %s" EOL, options.file );
+        genericsReport( V_INFO, "Input File : %s", options.file );
+
+        if ( options.fileTerminate )
+        {
+            genericsReport( V_INFO, " (Terminate on exhaustion)" EOL );
+        }
+        else
+        {
+            genericsReport( V_INFO, " (Ongoing read)" EOL );
+        }
     }
 
 #ifdef WITH_FIFOS
@@ -954,22 +970,30 @@ int fileFeeder( void )
         genericsExit( -4, "Can't open file %s" EOL, options.file );
     }
 
-    genericsReport( V_INFO, "Reading from file" EOL );
-
     while ( ( t = read( f, cbw, TRANSFER_SIZE ) ) >= 0 )
     {
 
         if ( !t )
         {
-            // Just spin for a while to avoid clogging the CPU
-            usleep( 100000 );
-            continue;
+            if ( options.fileTerminate )
+            {
+                break;
+            }
+            else
+            {
+                // Just spin for a while to avoid clogging the CPU
+                usleep( 100000 );
+                continue;
+            }
         }
 
         _processBlock( t, cbw );
     }
 
-    genericsReport( V_INFO, "File read error" EOL );
+    if ( !options.fileTerminate )
+    {
+        genericsReport( V_INFO, "File read error" EOL );
+    }
 
     close( f );
     return true;

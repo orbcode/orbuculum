@@ -569,25 +569,40 @@ int _processOptions( int argc, char *argv[] )
 
     genericsReport( V_INFO, "orbcat V" VERSION " (Git %08X %s, Built " BUILD_DATE EOL, GIT_HASH, ( GIT_DIRTY ? "Dirty" : "Clean" ) );
 
-    genericsReport( V_INFO, "Server    : %s:%d" EOL, options.server, options.port );
-    genericsReport( V_INFO, "ForceSync : %s" EOL, options.forceITMSync ? "true" : "false" );
+    genericsReport( V_INFO, "Server     : %s:%d" EOL, options.server, options.port );
+    genericsReport( V_INFO, "ForceSync  : %s" EOL, options.forceITMSync ? "true" : "false" );
+
+    if ( options.file )
+    {
+
+        genericsReport( V_INFO, "Input File : %s", options.file );
+
+        if ( options.fileTerminate )
+        {
+            genericsReport( V_INFO, " (Terminate on exhaustion)" EOL );
+        }
+        else
+        {
+            genericsReport( V_INFO, " (Ongoing read)" EOL );
+        }
+    }
 
     if ( options.useTPIU )
     {
-        genericsReport( V_INFO, "Using TPIU: true (ITM on channel %d)" EOL, options.tpiuITMChannel );
+        genericsReport( V_INFO, "Using TPIU : true (ITM on channel %d)" EOL, options.tpiuITMChannel );
     }
     else
     {
-        genericsReport( V_INFO, "Using TPIU: false" EOL );
+        genericsReport( V_INFO, "Using TPIU : false" EOL );
     }
 
-    genericsReport( V_INFO, "Channels  :" EOL );
+    genericsReport( V_INFO, "Channels   :" EOL );
 
     for ( int g = 0; g < NUM_CHANNELS; g++ )
     {
         if ( options.presFormat[g] )
         {
-            genericsReport( V_INFO, "        %02d [%s]" EOL, g, GenericsEscape( options.presFormat[g] ) );
+            genericsReport( V_INFO, "             %02d [%s]" EOL, g, GenericsEscape( options.presFormat[g] ) );
         }
     }
 
@@ -606,8 +621,6 @@ int fileFeeder( void )
     {
         genericsExit( -4, "Can't open file %s" EOL, options.file );
     }
-
-    genericsReport( V_INFO, "Reading from file" EOL );
 
     while ( ( t = read( f, cbw, TRANSFER_SIZE ) ) >= 0 )
     {
@@ -634,7 +647,10 @@ int fileFeeder( void )
         }
     }
 
-    genericsReport( V_INFO, "File read error" EOL );
+    if ( !options.fileTerminate )
+    {
+        genericsReport( V_INFO, "File read error" EOL );
+    }
 
     close( f );
     return true;

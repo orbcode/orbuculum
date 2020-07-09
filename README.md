@@ -4,6 +4,8 @@
 
 This is V1.10 in progress.
 
+* ocbcat can now read directly from a file.
+* orbcat and orbuculum can both terminate reading from a file when it's exhaused with the `-e` option.
 * Core parsing routines have been moved into a library, liborb.a...for now see orbuculum.c for examples of how to use them.
 * JSON output has been added into orbtop.
 * Interrupt measurements have been added into orbtop.
@@ -296,7 +298,9 @@ Specific command line options of note are;
 
  `-c [Number],[Name],[Format]`: of channel to populate (repeat per channel) using printf formatting.
 
- `-f [filename]`: Take input from specified file. (CTRL-C to abort from this)
+ `-e` : When reading from file, terminate when file exhausts, rather than waiting for more data to arrive.
+ 
+ `-f [filename]`: Take input from specified file (CTRL-C to abort from this).
 
  `-h`: Brief help.
 
