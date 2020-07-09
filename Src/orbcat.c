@@ -91,6 +91,7 @@ struct
     char *server;
 
     char *file;                                          /* File host connection */
+    bool fileTerminate;                                  /* Terminate when file read isn't successful */
 } options = {.forceITMSync = true, .tpiuITMChannel = 1, .port = SERVER_PORT, .server = "localhost"};
 
 struct
@@ -431,6 +432,7 @@ void _printHelp( char *progName )
 {
     fprintf( stdout, "Usage: %s <htv> <-i channel> <-p port> <-s server>" EOL, progName );
     fprintf( stdout, "       c: <Number>,<Format> of channel to add into output stream (repeat per channel)" EOL );
+    fprintf( stdout, "       e: When reading from file, terminate at end of file rather than waiting for further input" EOL );
     fprintf( stdout, "       f: <filename> Take input from specified file" EOL );
     fprintf( stdout, "       h: This help" EOL );
     fprintf( stdout, "       i: <channel> Set ITM Channel in TPIU decode (defaults to 1)" EOL );
@@ -449,13 +451,18 @@ int _processOptions( int argc, char *argv[] )
     char *chanIndex;
 #define DELIMITER ','
 
-    while ( ( c = getopt ( argc, argv, "c:f:hi:ns:tv:" ) ) != -1 )
+    while ( ( c = getopt ( argc, argv, "c:ef:hi:ns:tv:" ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
             case 'h':
                 _printHelp( argv[0] );
                 return false;
+
+            // ------------------------------------
+            case 'e':
+                options.fileTerminate = true;
+                break;
 
             // ------------------------------------
             case 'f':
@@ -607,9 +614,16 @@ int fileFeeder( void )
 
         if ( !t )
         {
-            // Just spin for a while to avoid clogging the CPU
-            usleep( 100000 );
-            continue;
+            if ( options.fileTerminate )
+            {
+                break;
+            }
+            else
+            {
+                // Just spin for a while to avoid clogging the CPU
+                usleep( 100000 );
+                continue;
+            }
         }
 
         unsigned char *c = cbw;
