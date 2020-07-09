@@ -1,5 +1,7 @@
 V1.10 Under construction
 
+* ocbcat can now read directly from a file.
+* orbcat and orbuculum can both terminate reading from a file when it's exhaused with the `-e` option.
 * Addition of JSON output for orbtop
 * Interrupt measurements have been added into orbtop
 * Per interval status reporting (overflow, sync etc) has been
