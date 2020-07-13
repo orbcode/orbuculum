@@ -1,7 +1,10 @@
 ![Screenshot](https://raw.githubusercontent.com/orbcode/orbuculum/master/Docs/title.png)
 
 *** STOP PRESS ***
-There is now a book by Thiadmer Riemersma (compuphase) about the Black Magic Probe available at https://github.com/compuphase/Black-Magic-Probe-Book .... it includes quite a bit of material about SWO too which is useful even if you're not using BMP for debug access. Go take a look.
+
+Orbuculum now has a user forum at https://forum.1bitsquared.com/c/projects/orbuculum/19 which is the place to go for help. There is also an active Discord channel at https://discord.gg/P7FYThy . Go there for interactive help.
+
+The book by Thiadmer Riemersma (compuphase) about the Black Magic Probe available at https://github.com/compuphase/Black-Magic-Probe-Book includes quite a bit of material about SWO too which is useful even if you're not using BMP for debug access. Go take a look.
 
 * Latest Changes:
 
@@ -9,7 +12,6 @@ Upissue to V1.01. Switch filewriter functionality off by default, and add code t
 
 The CHANGES file now tells you what's been done when.
 
-Orbuculum now has an active Discord channel at https://discord.gg/P7FYThy . Thats the place to go if you need interactive help.
 
 An Orbuculum is a Crystal Ball, used for seeing things that would 
  be otherwise invisible. A  nodding reference to (the) BlackMagic
