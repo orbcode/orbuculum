@@ -75,6 +75,7 @@ struct fifosHandle
     /* Configuration information */
     char *chanPath;                               /* Path to where to put the fifos */
     bool useTPIU;                                 /* Is the TPIU active? */
+    bool filewriter;                              /* Is the filewriter in use? */
     bool forceITMSync;                            /* Is ITM to be forced into sync? */
     int tpiuITMChannel;                           /* TPIU channel on which ITM appears */
 
@@ -98,11 +99,15 @@ bool fifoGetUseTPIU( struct fifosHandle *f );
 bool fifoGetForceITMSync( struct fifosHandle *f );
 int fifoGettpiuITMChannel( struct fifosHandle *f );
 
+/* Filewriting */
+void fifoFilewriter( struct fifosHandle *f, bool useFilewriter, char *workingPath );
+
 /* Fifos management */
 bool fifoCreate( struct fifosHandle *f );                                  /* Create the fifo set */
 void fifoShutdown( struct fifosHandle *f );                                /* Destroy the fifo set */
 struct fifosHandle *fifoInit( bool forceITMSyncSet,
-                              bool useTPIUSet, int TPIUchannelSet );       /* Create an instance */
+                              bool useTPIUSet,
+                              int TPIUchannelSet );                        /* Create an instance */
 // ====================================================================================================
 #ifdef __cplusplus
 }

@@ -129,6 +129,7 @@ struct
 {
     /* Config information */
     bool segger;                                         /* Using a segger debugger */
+    IF_WITH_FIFOS( bool filewriter; )                    /* Supporting filewriter functionality */
 
     /* FPGA Information */
     IF_INCLUDE_FPGA_SUPPORT( char *fwbasedir );          /* Where the firmware is stored */
@@ -341,6 +342,7 @@ void _printHelp( char *progName )
     fprintf( stdout, "        s: <address>:<port> Set address for SEGGER JLink connection (default none:%d)" EOL, SEGGER_PORT );
     IF_WITH_FIFOS( fprintf( stdout, "        t: Use TPIU decoder" EOL ) );
     fprintf( stdout, "        v: <level> Verbose mode 0(errors)..3(debug)" EOL );
+    IF_WITH_FIFOS( fprintf( stdout, "        w: Enable filewriter functionality" EOL ) );
     IF_WITH_FIFOS( fprintf( stdout, "        (Built with fifo support)" EOL ) );
     IF_NOT_WITH_FIFOS( fprintf( stdout, "        (Built without fifo support)" EOL ) );
 }
@@ -358,8 +360,8 @@ int _processOptions( int argc, char *argv[] )
 
 #ifdef WITH_FIFOS
 
-    IF_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:b:c:ef:hl:no:p:s:v:" ) ) != -1 ) )
-        IF_NOT_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:b:c:ef:ho:p:s:v:" ) ) != -1 ) )
+    IF_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:b:c:ef:hl:no:p:s:v:w" ) ) != -1 ) )
+        IF_NOT_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:b:c:ef:ho:p:s:v:w" ) ) != -1 ) )
 #else
     IF_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:ef:hi:l:no:p:s:tv:" ) ) != -1 ) )
         IF_NOT_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:ef:hi:no:p:s:tv:" ) ) != -1 ) )
@@ -472,7 +474,14 @@ int _processOptions( int argc, char *argv[] )
                     break;
 
                     // ------------------------------------
+
 #ifdef WITH_FIFOS
+
+                case 'w':
+                    options.filewriter = true;
+                    break;
+
+                // ------------------------------------
 
                 /* Individual channel setup */
                 case 'c':
@@ -1072,9 +1081,10 @@ int main( int argc, char *argv[] )
 
 #endif
 
-#ifdef INCLUDE_FPGA_SUPPORT
     /* Start the filewriter */
-    filewriterInit( options.fwbasedir );
+    IF_WITH_FIFOS( fifoFilewriter( _r.f, options.filewriter, options.fwbasedir ) );
+
+#ifdef INCLUDE_FPGA_SUPPORT
 
     if ( options.orbtrace )
     {

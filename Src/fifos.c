@@ -370,7 +370,7 @@ void _handleSW( struct fifosHandle *f, struct ITMDecoder *i )
     if ( ITMGetPacket( i, &p ) )
     {
         /* Filter off filewriter packets and let the filewriter module deal with those */
-        if ( p.srcAddr == FW_CHANNEL )
+        if ( ( p.srcAddr == FW_CHANNEL ) && ( f->filewriter ) )
         {
             filewriterProcess( &p );
         }
@@ -810,6 +810,19 @@ void fifoShutdown( struct fifosHandle *f )
 
     free( f );
 }
+// ====================================================================================================
+
+void fifoFilewriter( struct fifosHandle *f, bool useFilewriter, char *workingPath )
+
+{
+    f->filewriter = useFilewriter;
+
+    if ( f->filewriter )
+    {
+        filewriterInit( workingPath );
+    }
+}
+
 // ====================================================================================================
 struct fifosHandle *fifoInit( bool forceITMSyncSet, bool useTPIUSet, int TPIUchannelSet )
 
