@@ -168,7 +168,7 @@ bool ITMSeqPump( struct ITMSeq *d, uint8_t c )
 
         // ------------------------------------
         case ITM_EV_SYNCED:
-            genericsReport( V_WARN, "ITM In Sync (%d)" EOL, ITMDecoderGetStats( d->i )->syncCount );
+            genericsReport( V_INFO, "ITM In Sync (%d)" EOL, ITMDecoderGetStats( d->i )->syncCount );
             break;
 
         // ------------------------------------

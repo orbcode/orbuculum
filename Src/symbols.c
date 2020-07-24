@@ -120,9 +120,62 @@ bool _symbolsLoad( struct SymbolSet *s )
         s->symcount = bfd_canonicalize_symtab ( s->abfd, s->syms );
     }
 
-    s->sect = bfd_get_section_by_name( s->abfd, TEXT_SEGMENT );
     return true;
 }
+// ====================================================================================================
+// ====================================================================================================
+// I'm not a fan of globals used for this kind of thing, but this is a library so we don't get a
+// say in the matter. Lets at least hide what is going on in one place...access via _find_symbol.
+
+static bool _found;
+static uint32_t _searchaddr;
+static const char **_function;
+static const char **_filename;
+static uint32_t *_line;
+static asymbol **_syms;
+
+static void _find_in_section( bfd *abfd, asection *section, void *data )
+
+{
+    /* If we already found it, or this section isn't memory-resident, then don't look further */
+    if ( ( _found ) || ( !( ( bfd_section_flags( section ) & SEC_ALLOC ) ) ) )
+    {
+        return;
+    }
+
+    // Work around for changes in binutils 2.34
+#ifdef bfd_get_section_vma
+    bfd_vma vma = addr - bfd_get_section_vma( abfd, section );
+    bfd_size_type size = bfd_section_size( abfd, section );
+#else
+    bfd_vma vma = bfd_section_vma( section );
+    bfd_size_type size = bfd_section_size( section );
+#endif
+
+
+    /* If address falls outside this section then don't look further */
+    if ( ( _searchaddr < vma ) || ( _searchaddr > vma + size ) )
+    {
+        return;
+    }
+
+    _found = bfd_find_nearest_line( abfd, section, _syms, _searchaddr - vma, _filename, _function, _line );
+}
+
+static bool _find_symbol( struct SymbolSet *s, uint32_t workingAddr, const char **pfilename, const char **pfunction, uint32_t *pline )
+
+{
+    _syms = s->syms;
+    _searchaddr = workingAddr;
+    _filename = pfilename;
+    _function = pfunction;
+    _line = pline;
+    _found = false;
+
+    bfd_map_over_sections( s->abfd, _find_in_section, NULL );
+    return _found;
+}
+// ====================================================================================================
 // ====================================================================================================
 bool SymbolLookup( struct SymbolSet *s, uint32_t addr, struct nameEntry *n, char *deleteMaterial )
 
@@ -131,53 +184,65 @@ bool SymbolLookup( struct SymbolSet *s, uint32_t addr, struct nameEntry *n, char
 {
     const char *function = NULL;
     const char *filename = NULL;
-
     uint32_t line;
 
     assert( s );
-    // Work around for changes in binutils 2.34
-#ifdef bfd_get_section_vma
-    uint32_t workingAddr = addr - bfd_get_section_vma( s->abfd, s->sect );
 
-    if ( workingAddr <= bfd_section_size( s->abfd, s->sect ) )
-#else
-    uint32_t workingAddr = addr - bfd_section_vma( s->sect );
-
-    if ( workingAddr <= bfd_section_size( s->sect ) )
-#endif
-
+    if ( ( addr & EXC_RETURN_MASK ) == EXC_RETURN )
     {
-        if ( bfd_find_nearest_line( s->abfd, s->sect, s->syms, workingAddr, &filename, &function, &line ) )
-        {
-
-            /* Remove any frontmatter off filename string that matches */
-            if ( ( deleteMaterial ) && ( filename ) )
-            {
-                char *m = deleteMaterial;
-
-                while ( ( *m ) && ( *filename ) && ( *filename == *m ) )
-                {
-                    m++;
-                    filename++;
-                }
-            }
-
-            n->filename = filename ? filename : "";
-            n->function = function ? function : "";
-            n->addr = addr;
-            n->line = line;
-            return true;
-        }
-    }
-
-    if ( addr >= INT_ORIGIN )
-    {
+        /* Address is some sort of interrupt - see */
         n->filename = "";
-        n->function = "INTERRUPT";
-        n->addr = INTERRUPT;
         n->line = 0;
+
+        switch ( addr & INT_ORIGIN_MASK )
+        {
+            case INT_ORIGIN_HANDLER:
+                n->addr = INTERRUPT_HANDLER;
+                n->function = "INT_FROM_HANDLER";
+                break;
+
+            case INT_ORIGIN_MAIN_STACK:
+                n->addr = INTERRUPT_MAIN;
+                n->function = "INT_FROM_MAIN_STACK";
+                break;
+
+            case INT_ORIGIN_PROC_STACK:
+                n->addr = INTERRUPT_PROC;
+                n->function = "INT_FROM_PROC_STACK";
+                break;
+
+            default:
+                n->addr = INTERRUPT_UNKNOWN;
+                n->function = "INT_FROM_UNKNOWN";
+                break;
+
+        }
+
         return false;
     }
+
+    if ( _find_symbol( s, addr, &filename, &function, &line ) )
+    {
+
+        /* Remove any frontmatter off filename string that matches */
+        if ( ( deleteMaterial ) && ( filename ) )
+        {
+            char *m = deleteMaterial;
+
+            while ( ( *m ) && ( *filename ) && ( *filename == *m ) )
+            {
+                m++;
+                filename++;
+            }
+        }
+
+        n->filename = filename ? filename : "";
+        n->function = function ? function : "";
+        n->addr = addr;
+        n->line = line;
+        return true;
+    }
+
 
     n->filename = "Unknown";
     n->function = "Unknown";

@@ -38,7 +38,6 @@
 #include <ctype.h>
 #include <sys/socket.h>
 #include <sys/types.h>
-#include <sys/ioctl.h>
 #include <sys/stat.h>
 #include <stdio.h>
 #include <string.h>
@@ -49,18 +48,29 @@
 #include <inttypes.h>
 
 #include "bfd_wrapper.h"
+
 #if defined OSX
+    #include <sys/ioctl.h>
     #include <libusb.h>
+    #include <termios.h>
 #else
     #if defined LINUX
         #include <libusb-1.0/libusb.h>
+        #include <asm/ioctls.h>
+        #if defined TCGETS2
+            #include <asm/termios.h>
+            /* Manual declaration to avoid conflict. */
+            extern int ioctl ( int __fd, unsigned long int __request, ... ) __THROW;
+        #else
+            #include <sys/ioctl.h>
+            #include <termios.h>
+        #endif
     #else
         #error "Unknown OS"
     #endif
 #endif
 #include <stdint.h>
 #include <limits.h>
-#include <termios.h>
 #include <pthread.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -127,6 +137,8 @@ struct                                       /* Record for options, either defau
     bool outputExceptions;                   /* Set to include exceptions in output flow */
     uint32_t tpiuITMChannel;                 /* What channel? */
     bool forceITMSync;                       /* Must ITM start synced? */
+    int speed;                               /* Speed (for case of a serial link) */
+    char *file;                              /* File host connection */
 
     uint32_t hwOutputs;                      /* What hardware outputs are enabled */
 
@@ -200,6 +212,144 @@ struct
 // Internally available routines
 // ====================================================================================================
 // ====================================================================================================
+#if defined(LINUX) && defined (TCGETS2)
+static int _setSerialConfig ( int f, speed_t speed )
+{
+    // Use Linux specific termios2.
+    struct termios2 settings;
+    int ret = ioctl( f, TCGETS2, &settings );
+
+    if ( ret < 0 )
+    {
+        return ( -3 );
+    }
+
+    settings.c_iflag &= ~( ISTRIP | INLCR | IGNCR | ICRNL | IXON | IXOFF );
+    settings.c_lflag &= ~( ICANON | ECHO | ECHOE | ISIG );
+    settings.c_cflag &= ~PARENB; /* no parity */
+    settings.c_cflag &= ~CSTOPB; /* 1 stop bit */
+    settings.c_cflag &= ~CSIZE;
+    settings.c_cflag &= ~( CBAUD | CIBAUD );
+    settings.c_cflag |= CS8 | CLOCAL; /* 8 bits */
+    settings.c_oflag &= ~OPOST; /* raw output */
+
+
+    const unsigned int speed1[] =
+    {
+        B115200, B230400, 0, B460800, B576000,
+        0, 0, B921600, 0, B1152000
+    };
+    const unsigned int speed2[] =
+    {
+        B500000,  B1000000, B1500000, B2000000,
+        B2500000, B3000000, B3500000, B4000000
+    };
+    int speed_ok = 0;
+
+    if ( ( speed % 500000 ) == 0 )
+    {
+        // speed is multiple of 500000, use speed2 table.
+        int i = speed / 500000;
+
+        if ( i <= 8 )
+        {
+            speed_ok = speed2[i - 1];
+        }
+    }
+    else if ( ( speed % 115200 ) == 0 )
+    {
+        int i = speed / 115200;
+
+        if ( i <= 10 && speed1[i - 1] )
+        {
+            speed_ok = speed2[i - 1];
+        }
+    }
+
+    if ( speed_ok )
+    {
+        settings.c_cflag |= speed_ok;
+    }
+    else
+    {
+        settings.c_cflag |= BOTHER;
+        settings.c_ispeed = speed;
+        settings.c_ospeed = speed;
+    }
+
+    // Ensure input baud is same than output.
+    settings.c_cflag |= ( settings.c_cflag & CBAUD ) << IBSHIFT;
+    // Now configure port.
+    ret = ioctl( f, TCSETS2, &settings );
+
+    if ( ret < 0 )
+    {
+        genericsReport( V_ERROR, "Unsupported baudrate" EOL );
+        return ( -3 );
+    }
+
+    // Check configuration is ok.
+    ret = ioctl( f, TCGETS2, &settings );
+
+    if ( ret < 0 )
+    {
+        return ( -3 );
+    }
+
+    if ( speed_ok )
+    {
+        if ( ( settings.c_cflag & CBAUD ) != speed_ok )
+        {
+            genericsReport( V_WARN, "Fail to set baudrate" EOL );
+        }
+    }
+    else
+    {
+        if ( ( settings.c_ispeed != speed ) || ( settings.c_ospeed != speed ) )
+        {
+            genericsReport( V_WARN, "Fail to set baudrate" EOL );
+        }
+    }
+
+    // Flush port.
+    ioctl( f, TCFLSH, TCIOFLUSH );
+    return 0;
+}
+#else
+static int _setSerialConfig ( int f, speed_t speed )
+{
+    struct termios settings;
+
+    if ( tcgetattr( f, &settings ) < 0 )
+    {
+        perror( "tcgetattr" );
+        return ( -3 );
+    }
+
+    if ( cfsetspeed( &settings, speed ) < 0 )
+    {
+        genericsReport( V_ERROR, "Error Setting input speed" EOL );
+        return ( -3 );
+    }
+
+    settings.c_iflag &= ~( ISTRIP | INLCR | IGNCR | ICRNL | IXON | IXOFF );
+    settings.c_lflag &= ~( ICANON | ECHO | ECHOE | ISIG );
+    settings.c_cflag &= ~PARENB; /* no parity */
+    settings.c_cflag &= ~CSTOPB; /* 1 stop bit */
+    settings.c_cflag &= ~CSIZE;
+    settings.c_cflag |= CS8 | CLOCAL; /* 8 bits */
+    settings.c_oflag &= ~OPOST; /* raw output */
+
+    if ( tcsetattr( f, TCSANOW, &settings ) < 0 )
+    {
+        genericsReport( V_ERROR, "Unsupported baudrate" EOL );
+        return ( -3 );
+    }
+
+    tcflush( f, TCOFLUSH );
+    return 0;
+}
+#endif
 // ====================================================================================================
 int64_t _timestamp( void )
 
@@ -947,11 +1097,13 @@ void _printHelp( char *progName )
 
 {
     fprintf( stdout, "Usage: %s <htv> <-e ElfFile> <-g filename> <-o filename> -r <routines> <-i channel> <-p port> <-s server>" EOL, progName );
+    fprintf( stdout, "        a: <serialSpeed> to use" EOL );
     fprintf( stdout, "        c: <num> Cut screen output after number of lines" EOL );
     fprintf( stdout, "        d: <DeleteMaterial> to take off front of filenames" EOL );
     fprintf( stdout, "        D: Switch off C++ symbol demangling" EOL );
     fprintf( stdout, "        e: <ElfFile> to use for symbols" EOL );
     fprintf( stdout, "        E: Include exceptions in output report" EOL );
+    fprintf( stdout, "        f: <filename> Take input from specified file" EOL );
     fprintf( stdout, "        g: <LogFile> append historic records to specified file" EOL );
     fprintf( stdout, "        h: This help" EOL );
     fprintf( stdout, "        i: <channel> Set ITM Channel in TPIU decode (defaults to 1)" EOL );
@@ -971,9 +1123,14 @@ int _processOptions( int argc, char *argv[] )
 {
     int c;
 
-    while ( ( c = getopt ( argc, argv, "c:d:DEe:g:hi:I:j:lm:no:r:s:tv:" ) ) != -1 )
+    while ( ( c = getopt ( argc, argv, "a:c:d:DEe:f:g:hi:I:j:lm:no:r:s:tv:" ) ) != -1 )
         switch ( c )
         {
+            // ------------------------------------
+            case 'a':
+                options.speed = atoi( optarg );
+                break;
+
             // ------------------------------------
             case 'c':
                 options.cutscreen = atoi( optarg );
@@ -987,6 +1144,11 @@ int _processOptions( int argc, char *argv[] )
             // ------------------------------------
             case 'E':
                 options.outputExceptions = true;
+                break;
+
+            // ------------------------------------
+            case 'f':
+                options.file = optarg;
                 break;
 
             // ------------------------------------
@@ -1114,7 +1276,15 @@ int _processOptions( int argc, char *argv[] )
 
     genericsReport( V_INFO, "orbtop V" VERSION " (Git %08X %s, Built " BUILD_DATE ")" EOL, GIT_HASH, ( GIT_DIRTY ? "Dirty" : "Clean" ) );
 
-    genericsReport( V_INFO, "Server           : %s:%d" EOL, options.server, options.port );
+    if ( options.file )
+    {
+        genericsReport( V_INFO, "Input File       : %s", options.file );
+    }
+    else
+    {
+        genericsReport( V_INFO, "Server           : %s:%d" EOL, options.server, options.port );
+    }
+
     genericsReport( V_INFO, "Delete Mat       : %s" EOL, options.deleteMaterial ? options.deleteMaterial : "None" );
     genericsReport( V_INFO, "Elf File         : %s" EOL, options.elffile );
     genericsReport( V_INFO, "ForceSync        : %s" EOL, options.forceITMSync ? "true" : "false" );
@@ -1139,7 +1309,8 @@ int _processOptions( int argc, char *argv[] )
 int main( int argc, char *argv[] )
 
 {
-    int sockfd;
+    int ret;
+    int sourcefd;
     struct sockaddr_in serv_addr;
     struct hostent *server;
     uint8_t cbw[TRANSFER_SIZE];
@@ -1193,52 +1364,68 @@ int main( int argc, char *argv[] )
         }
     }
 
-    while ( 1 )
+    //    while ( 1 )
     {
-        /* Get the socket open */
-        sockfd = socket( AF_INET, SOCK_STREAM, 0 );
-        setsockopt( sockfd, SOL_SOCKET, SO_REUSEPORT, &flag, sizeof( flag ) );
-
-        if ( sockfd < 0 )
+        if ( !options.file )
         {
-            perror( "Error creating socket\n" );
-            return -1;
-        }
+            /* Get the socket open */
+            sourcefd = socket( AF_INET, SOCK_STREAM, 0 );
+            setsockopt( sourcefd, SOL_SOCKET, SO_REUSEPORT, &flag, sizeof( flag ) );
 
-        if ( setsockopt( sockfd, SOL_SOCKET, SO_REUSEADDR, &( int )
-    {
-        1
-    }, sizeof( int ) ) < 0 )
-        {
-            perror( "setsockopt(SO_REUSEADDR) failed" );
-            return -1;
-        }
-
-        /* Now open the network connection */
-        bzero( ( char * ) &serv_addr, sizeof( serv_addr ) );
-        server = gethostbyname( options.server );
-
-        if ( !server )
-        {
-            perror( "Cannot find host" );
-            return -1;
-        }
-
-        serv_addr.sin_family = AF_INET;
-        bcopy( ( char * )server->h_addr,
-               ( char * )&serv_addr.sin_addr.s_addr,
-               server->h_length );
-        serv_addr.sin_port = htons( options.port );
-
-        while ( connect( sockfd, ( struct sockaddr * ) &serv_addr, sizeof( serv_addr ) ) < 0 )
-        {
-            if ( ( !options.json ) || ( options.json[0] != '-' ) )
+            if ( sourcefd < 0 )
             {
-                fprintf( stdout, CLEAR_SCREEN EOL );
+                perror( "Error creating socket\n" );
+                return -1;
             }
 
-            perror( "Could not connect" );
-            usleep( 1000000 );
+            if ( setsockopt( sourcefd, SOL_SOCKET, SO_REUSEADDR, &( int )
+        {
+            1
+        }, sizeof( int ) ) < 0 )
+            {
+                perror( "setsockopt(SO_REUSEADDR) failed" );
+                return -1;
+            }
+
+            /* Now open the network connection */
+            bzero( ( char * ) &serv_addr, sizeof( serv_addr ) );
+            server = gethostbyname( options.server );
+
+            if ( !server )
+            {
+                perror( "Cannot find host" );
+                return -1;
+            }
+
+            serv_addr.sin_family = AF_INET;
+            bcopy( ( char * )server->h_addr,
+                   ( char * )&serv_addr.sin_addr.s_addr,
+                   server->h_length );
+            serv_addr.sin_port = htons( options.port );
+
+            while ( connect( sourcefd, ( struct sockaddr * ) &serv_addr, sizeof( serv_addr ) ) < 0 )
+            {
+                if ( ( !options.json ) || ( options.json[0] != '-' ) )
+                {
+                    fprintf( stdout, CLEAR_SCREEN EOL );
+                }
+
+                perror( "Could not connect" );
+                usleep( 1000000 );
+            }
+        }
+        else
+        {
+            if ( ( sourcefd = open( options.file, O_RDONLY ) ) < 0 )
+            {
+                genericsExit( sourcefd, "Can't open file %s" EOL, options.file );
+            }
+
+            if ( ( ret = _setSerialConfig ( sourcefd, options.speed ) ) < 0 )
+            {
+                genericsExit( ret, "setSerialConfig failed" EOL );
+            }
+
         }
 
         if ( ( !options.json ) || ( options.json[0] != '-' ) )
@@ -1262,13 +1449,13 @@ int main( int argc, char *argv[] )
                 tv.tv_usec  = remainTime % 1000000;
 
                 FD_ZERO( &readfds );
-                FD_SET( sockfd, &readfds );
-                r = select( sockfd + 1, &readfds, NULL, NULL, &tv );
+                FD_SET( sourcefd, &readfds );
+                r = select( sourcefd + 1, &readfds, NULL, NULL, &tv );
             }
 
             if ( r > 0 )
             {
-                t = read( sockfd, cbw, TRANSFER_SIZE );
+                t = read( sourcefd, cbw, TRANSFER_SIZE );
 
                 if ( t <= 0 )
                 {
@@ -1295,7 +1482,8 @@ int main( int argc, char *argv[] )
 
                     if ( !SymbolSetCheckValidity( &_r.s, options.elffile ) )
                     {
-                        genericsReport( V_ERROR, "Elf file was lost" EOL );
+                        genericsReport( V_ERROR, "Elf file or symbols in it not found" EOL );
+                        usleep( 1000000 );
                         break;
                     }
                 }
@@ -1355,7 +1543,7 @@ int main( int argc, char *argv[] )
             }
         }
 
-        close( sockfd );
+        close( sourcefd );
     }
 
     if ( ( !ITMDecoderGetStats( &_r.i )->tpiuSyncCount ) )
