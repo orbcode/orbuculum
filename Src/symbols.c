@@ -137,17 +137,30 @@ static asymbol **_syms;
 static void _find_in_section( bfd *abfd, asection *section, void *data )
 
 {
-    /* If we already found it, or this section isn't memory-resident, then don't look further */
-    if ( ( _found ) || ( !( ( bfd_section_flags( section ) & SEC_ALLOC ) ) ) )
+    /* If we already found it then return */
+    if ( _found )
     {
         return;
     }
 
-    // Work around for changes in binutils 2.34
+    /* If this section isn't memory-resident, then don't look further, otherwise get section base and size */
+    /* (Ifdef is a work around for changes in binutils 2.34.                                               */
 #ifdef bfd_get_section_vma
-    bfd_vma vma = addr - bfd_get_section_vma( abfd, section );
+
+    if ( !( ( bfd_get_section_flags( abfd, section ) & SEC_ALLOC ) ) )
+    {
+        return;
+    }
+
+    bfd_vma vma = bfd_get_section_vma( abfd, section );
     bfd_size_type size = bfd_section_size( abfd, section );
 #else
+
+    if ( !( ( bfd_section_flags( section ) & SEC_ALLOC ) ) )
+    {
+        return;
+    }
+
     bfd_vma vma = bfd_section_vma( section );
     bfd_size_type size = bfd_section_size( section );
 #endif
