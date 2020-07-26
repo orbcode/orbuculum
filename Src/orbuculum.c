@@ -360,11 +360,11 @@ int _processOptions( int argc, char *argv[] )
 
 #ifdef WITH_FIFOS
 
-    IF_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:b:c:ef:hl:no:p:s:v:w" ) ) != -1 ) )
-        IF_NOT_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:b:c:ef:ho:p:s:v:w" ) ) != -1 ) )
+    IF_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:b:c:ef:hl:no:p:s:tv:w" ) ) != -1 ) )
+        IF_NOT_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:b:c:ef:ho:p:s:tv:w" ) ) != -1 ) )
 #else
-    IF_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:ef:hi:l:no:p:s:tv:" ) ) != -1 ) )
-        IF_NOT_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:ef:hi:no:p:s:tv:" ) ) != -1 ) )
+    IF_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:ef:hi:l:no:p:s:v:" ) ) != -1 ) )
+        IF_NOT_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:ef:hi:no:p:s:v:" ) ) != -1 ) )
 #endif
             switch ( c )
             {
