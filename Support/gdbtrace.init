@@ -373,7 +373,7 @@ document dwtSLEEPEVT
 dwtSLEEPEVT <0|1> Enable Sleep counter overflow event packet generation
 end
 # ====================================================================
-define dwtCEVEVT
+define dwtDEVEVT
   if ($argc!=1)
     help dwtCEVEVT
   else
@@ -385,7 +385,7 @@ define dwtCEVEVT
     end
   end
 end
-document dwtCEVEVT
+document dwtDEVEVT
 dwtDEVEVT <0|1> Enable Exception counter overflow event packet generation
 end
 # ====================================================================
