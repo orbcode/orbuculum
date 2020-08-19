@@ -395,10 +395,9 @@ void _handleNISYNC( struct fifosHandle *f, struct ITMDecoder *i )
 
     if ( ITMGetPacket( i, &p ) )
     {
-        addr = p.d[1] | ( p.d[2] << 8 ) | ( p.d[3] << 16 ) | ( p.d[4] << 24 );
+        addr = ( p.d[1] & 0xFE ) | ( p.d[2] << 8 ) | ( p.d[3] << 16 ) | ( p.d[4] << 24 );
         opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%02x,%08x" EOL, HWEVENT_NISYNC, p.d[0], addr );
         write( f->c[HW_CHANNEL].handle, outputString, opLen );
-        genericsReport( V_ERROR, "%s", outputString );
     }
 }
 
