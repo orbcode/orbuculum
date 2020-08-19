@@ -384,6 +384,25 @@ void _handleSW( struct fifosHandle *f, struct ITMDecoder *i )
     }
 }
 // ====================================================================================================
+void _handleNISYNC( struct fifosHandle *f, struct ITMDecoder *i )
+
+{
+    uint32_t opLen;
+    uint32_t addr;
+    char outputString[MAX_STRING_LENGTH];
+
+    struct ITMPacket p;
+
+    if ( ITMGetPacket( i, &p ) )
+    {
+        addr = p.d[1] | ( p.d[2] << 8 ) | ( p.d[3] << 16 ) | ( p.d[4] << 24 );
+        opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%02x,%08x" EOL, HWEVENT_NISYNC, p.d[0], addr );
+        write( f->c[HW_CHANNEL].handle, outputString, opLen );
+        genericsReport( V_ERROR, "%s", outputString );
+    }
+}
+
+// ====================================================================================================
 void _handleHW( struct fifosHandle *f, struct ITMDecoder *i )
 
 /* ... a hardware event has been received, dispatch it */
@@ -528,6 +547,11 @@ void _itmPumpProcess( struct fifosHandle *f, char c )
         // ------------------------------------
         case ITM_EV_XTN_PACKET_RXED:
             genericsReport( V_INFO, "Unknown Extension Packet Received" EOL );
+            break;
+
+        // ------------------------------------
+        case ITM_EV_NISYNC_PACKET_RXED:
+            _handleNISYNC( f, &f->i );
             break;
 
             // ------------------------------------

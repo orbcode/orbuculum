@@ -37,7 +37,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define ITM_MAX_PACKET  (5)  // This length can only happen for a timestamp
+#define ITM_MAX_PACKET  (14) // This length can only happen for a timestamp or some SYNC packets
 #define ITM_DATA_PACKET (4)  // This is the maximum length of everything else
 
 #ifdef __cplusplus
@@ -52,7 +52,8 @@ enum ITMPacketType
     ITM_PT_SW,
     ITM_PT_HW,
     ITM_PT_XTN,
-    ITM_PT_RSRVD
+    ITM_PT_RSRVD,
+    ITM_PT_NISYNC
 };
 
 enum ITMPumpEvent
@@ -63,6 +64,7 @@ enum ITMPumpEvent
     ITM_EV_HW_PACKET_RXED = ITM_PT_HW,
     ITM_EV_XTN_PACKET_RXED = ITM_PT_XTN,
     ITM_EV_RESERVED_PACKET_RXED = ITM_PT_RSRVD,
+    ITM_EV_NISYNC_PACKET_RXED = ITM_PT_NISYNC,
     ITM_EV_UNSYNCED,
     ITM_EV_SYNCED,
     ITM_EV_OVERFLOW,
@@ -78,7 +80,8 @@ enum hwEvents
     HWEVENT_RWWT,
     HWEVENT_AWP,
     HWEVENT_OFS,
-    HWEVENT_TIMESTAMP
+    HWEVENT_TIMESTAMP,
+    HWEVENT_NISYNC
 };
 
 enum ExceptionEvents
@@ -99,9 +102,10 @@ enum _protoState
     ITM_GTS1,
     ITM_GTS2,
     ITM_RSVD,
-    ITM_XTN
+    ITM_XTN,
+    ITM_NISYNC
 };
-#define PROTO_NAME_LIST "UNSYNCED", "IDLE", "TS", "SW", "HW", "GTS1", "GTS2", "RSVD", "XTN"
+#define PROTO_NAME_LIST "UNSYNCED", "IDLE", "TS", "SW", "HW", "GTS1", "GTS2", "RSVD", "XTN", "ISYNC"
 
 /* Type of the packet received over the link */
 struct ITMPacket
@@ -138,7 +142,7 @@ struct ITMDecoder
 {
     enum timeDelay timeStatus;           /* Indicator of if this time is exact */
     uint64_t timeStamp;                  /* Latest received time */
-
+    uint8_t contextIDlen;                /* Number of octets in a contextID (zero for no contextID) */
     int targetCount;                     /* Number of bytes to be collected */
     int currentCount;                    /* Number of bytes that have been collected */
     uint8_t rxPacket[ITM_MAX_PACKET];    /* Packet in reception */

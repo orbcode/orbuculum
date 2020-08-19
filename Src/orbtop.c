@@ -510,7 +510,7 @@ void _handleException( struct ITMDecoder *i, struct ITMPacket *p )
 
         default:
         case EXEVENT_UNKNOWN:
-            genericsReport( V_ERROR, "Unrecognised exception event" EOL );
+            genericsReport( V_ERROR, "Unrecognised exception event (%d,%d)" EOL, eventType, exceptionNumber );
             break;
     };
 }
@@ -1413,17 +1413,17 @@ int main( int argc, char *argv[] )
                 perror( "Could not connect" );
                 usleep( 1000000 );
             }
+
+            if ( ( ret = _setSerialConfig ( sourcefd, options.speed ) ) < 0 )
+            {
+                genericsExit( ret, "setSerialConfig failed" EOL );
+            }
         }
         else
         {
             if ( ( sourcefd = open( options.file, O_RDONLY ) ) < 0 )
             {
                 genericsExit( sourcefd, "Can't open file %s" EOL, options.file );
-            }
-
-            if ( ( ret = _setSerialConfig ( sourcefd, options.speed ) ) < 0 )
-            {
-                genericsExit( ret, "setSerialConfig failed" EOL );
             }
 
         }

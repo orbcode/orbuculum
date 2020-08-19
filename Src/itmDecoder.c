@@ -63,6 +63,7 @@ void ITMDecoderInit( struct ITMDecoder *i, bool startSynced )
 {
     i->syncStat = SYNCMASK;
     i->currentCount = 0;
+    i->contextIDlen = 0;
     i->pageRegister = DEFAULT_PAGE_REGISTER;
     ITMDecoderForceSync( i, startSynced );
     ITMDecoderZeroStats( i );
@@ -265,6 +266,16 @@ enum ITMPumpEvent ITMPump( struct ITMDecoder *i, uint8_t c )
                 }
 
                 // ***********************************************
+                if ( c == 0b00001000 )
+                {
+                    /* This is a normal I-sync packet */
+                    newState = ITM_NISYNC;
+                    i->currentCount = 0;
+                    i->targetCount = MAX_PACKET + i->contextIDlen;
+                    break;
+                }
+
+                // ***********************************************
                 if ( ( c & 0b00001000 ) == 0b00001000 )
                 {
                     /* Extension Packet */
@@ -416,6 +427,19 @@ enum ITMPumpEvent ITMPump( struct ITMDecoder *i, uint8_t c )
 
                 break;
 
+            // -----------------------------------------------------
+            case ITM_NISYNC:
+                i->rxPacket[i->currentCount++] = c;
+
+                if ( i->currentCount >= i->targetCount )
+                {
+                    newState = ITM_IDLE;
+                    retVal = ITM_EV_NISYNC_PACKET_RXED;
+                    break;
+                }
+
+                retVal = ITM_EV_NONE;
+                break;
                 // -----------------------------------------------------
         }
     }
