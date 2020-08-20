@@ -431,7 +431,7 @@ enum ITMPumpEvent ITMPump( struct ITMDecoder *i, uint8_t c )
             case ITM_NISYNC:
                 i->rxPacket[i->currentCount++] = c;
 
-                if ( i->currentCount >= i->targetCount )
+                if ( i->currentCount > i->targetCount )
                 {
                     newState = ITM_IDLE;
                     retVal = ITM_EV_NISYNC_PACKET_RXED;
