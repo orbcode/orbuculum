@@ -282,7 +282,7 @@ void _handleTS( struct ITMDecoder *i )
     struct ITMPacket p;
     uint32_t stamp = 0;
 
-    if ( !( options.hwOutputs & ( 1 << HWEVENT_TIMESTAMP ) ) )
+    if ( !( options.hwOutputs & ( 1 << HWEVENT_TS ) ) )
     {
         return;
     }
@@ -364,6 +364,10 @@ void _itmPumpProcess( char c )
 
         case ITM_EV_HW_PACKET_RXED:
             _handleHW( &_r.i );
+            break;
+
+        case ITM_EV_NISYNC_PACKET_RXED:
+            /* We don't process these here */
             break;
     }
 }

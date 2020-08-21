@@ -752,6 +752,10 @@ void _itmPumpProcess( char c )
             _handleHW( &_r.i );
             break;
 
+        // ------------------------------------
+        case ITM_EV_NISYNC_PACKET_RXED:
+            break;
+
             // ------------------------------------
     }
 }

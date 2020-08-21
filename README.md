@@ -4,6 +4,7 @@
 
 This is V1.10 in progress.
 
+* orbuculum now processes simple ISYNC messages, reporting them as type 8 in the hwevent fifo.
 * ocbcat can now read directly from a file.
 * orbcat and orbuculum can both terminate reading from a file when it's exhaused with the `-e` option.
 * Core parsing routines have been moved into a library, liborb.a...for now see orbuculum.c for examples of how to use them.
@@ -276,6 +277,8 @@ events from the hardware, one event per line as follows;
 * `4,[Comp],[RW],[Data]` : Report Read/Write event.
 * `5,[Comp],[Addr]` : Report data access watchpoint event.
 * `6,[Comp],[Ofs]` : Report data offset event.
+* `7` : Currently unused.
+* `8,[Status],[Address]` : ISYNC event.
 
 In addition to the direct fifos, Orbuculum exposes TCP port 3443 to which 
 network clients can connect. This port delivers raw TPIU frames to any

@@ -1,5 +1,6 @@
 V1.10 Under construction
 
+* orbuculum now processes simple ISYNC messages, reporting them as type 8 in the hwevent fifo.
 * ocbcat can now read directly from a file.
 * orbcat and orbuculum can both terminate reading from a file when it's exhaused with the `-e` option.
 * Addition of JSON output for orbtop

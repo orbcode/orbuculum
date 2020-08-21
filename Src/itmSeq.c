@@ -207,6 +207,10 @@ bool ITMSeqPump( struct ITMSeq *d, uint8_t c )
             r = _bufferPacket( d, ITM_PT_HW );
             break;
 
+        // ------------------------------------
+        case ITM_EV_NISYNC_PACKET_RXED:
+            break;
+
             // ------------------------------------
     }
 
