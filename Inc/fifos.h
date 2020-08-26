@@ -48,39 +48,8 @@ extern "C" {
 #define HW_CHANNEL    (NUM_CHANNELS)         /* Make the hardware fifo on the end of the software ones */
 #define HWFIFO_NAME "hwevent"                /* Name for the hardware channel */
 
-struct Channel                             /* Information for an individual channel */
-{
-    char *chanName;                          /* Filename to be used for the fifo */
-    char *presFormat;                        /* Format of data presentation to be used */
-
-    /* Runtime state */
-    int handle;                              /* Handle to the fifo */
-    pthread_t thread;                        /* Thread on which it's running */
-
-    char *fifoName;                          /* Constructed fifo name (from chanPath and name) */
-};
-
-struct fifosHandle
-
-{
-    /* The decoders and the packets from them */
-    struct ITMDecoder i;
-    struct ITMPacket h;
-    struct TPIUDecoder t;
-    struct TPIUPacket p;
-
-    /* Timestamp info */
-    uint64_t lastHWExceptionTS;
-
-    /* Configuration information */
-    char *chanPath;                               /* Path to where to put the fifos */
-    bool useTPIU;                                 /* Is the TPIU active? */
-    bool filewriter;                              /* Is the filewriter in use? */
-    bool forceITMSync;                            /* Is ITM to be forced into sync? */
-    int tpiuITMChannel;                           /* TPIU channel on which ITM appears */
-
-    struct Channel c[NUM_CHANNELS + 1];           /* Output for each channel */
-};
+struct Channel;
+struct fifosHandle;
 
 /* Fifos running */
 void fifoForceSync( struct fifosHandle *f, bool synced );                  /* Force sync status */
@@ -98,6 +67,7 @@ char *fifoGetChanPath( struct fifosHandle *f );
 bool fifoGetUseTPIU( struct fifosHandle *f );
 bool fifoGetForceITMSync( struct fifosHandle *f );
 int fifoGettpiuITMChannel( struct fifosHandle *f );
+void fifoUsePermafiles( struct fifosHandle *f, bool usePermafilesSet );
 
 /* Filewriting */
 void fifoFilewriter( struct fifosHandle *f, bool useFilewriter, char *workingPath );

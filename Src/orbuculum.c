@@ -130,6 +130,7 @@ struct
     /* Config information */
     bool segger;                                         /* Using a segger debugger */
     IF_WITH_FIFOS( bool filewriter; )                    /* Supporting filewriter functionality */
+    IF_WITH_FIFOS( bool permafile; )                     /* Use permanent files rather than fifos */
 
     /* FPGA Information */
     IF_INCLUDE_FPGA_SUPPORT( char *fwbasedir );          /* Where the firmware is stored */
@@ -339,6 +340,7 @@ void _printHelp( char *progName )
     IF_WITH_FIFOS( fprintf( stdout, "        n: Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL ) );
     IF_INCLUDE_FPGA_SUPPORT( fprintf( stdout, "        o: <num> Use traceport FPGA custom interface with 1, 2 or 4 bits width" EOL ) );
     fprintf( stdout, "        p: <serialPort> to use" EOL );
+    IF_WITH_FIFOS( fprintf( stdout, "        P: Create permanent files rather than fifos" EOL ) );
     fprintf( stdout, "        s: <address>:<port> Set address for SEGGER JLink connection (default none:%d)" EOL, SEGGER_PORT );
     IF_WITH_FIFOS( fprintf( stdout, "        t: Use TPIU decoder" EOL ) );
     fprintf( stdout, "        v: <level> Verbose mode 0(errors)..3(debug)" EOL );
@@ -360,8 +362,8 @@ int _processOptions( int argc, char *argv[] )
 
 #ifdef WITH_FIFOS
 
-    IF_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:b:c:ef:hl:no:p:s:tv:w" ) ) != -1 ) )
-        IF_NOT_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:b:c:ef:ho:p:s:tv:w" ) ) != -1 ) )
+    IF_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:b:c:ef:hl:no:p:Ps:tv:w" ) ) != -1 ) )
+        IF_NOT_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:b:c:ef:ho:p:Ps:tv:w" ) ) != -1 ) )
 #else
     IF_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:ef:hi:l:no:p:s:v:" ) ) != -1 ) )
         IF_NOT_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:ef:hi:no:p:s:v:" ) ) != -1 ) )
@@ -433,6 +435,15 @@ int _processOptions( int argc, char *argv[] )
                 case 'p':
                     options.port = optarg;
                     break;
+
+                    // ------------------------------------
+
+#ifdef WITH_FIFOS
+
+                case 'P':
+                    options.permafile = true;
+                    break;
+#endif
 
                 // ------------------------------------
                 case 's':
@@ -573,6 +584,7 @@ int _processOptions( int argc, char *argv[] )
     genericsReport( V_INFO, "Orbuculum V" VERSION " (Git %08X %s, Built " BUILD_DATE ")" EOL, GIT_HASH, ( GIT_DIRTY ? "Dirty" : "Clean" ) );
     IF_WITH_FIFOS( genericsReport( V_INFO, "BasePath   : %s" EOL, fifoGetChanPath( _r.f ) ) );
     IF_WITH_FIFOS( genericsReport( V_INFO, "ForceSync  : %s" EOL, fifoGetForceITMSync( _r.f ) ? "true" : "false" ) );
+    IF_WITH_FIFOS( genericsReport( V_INFO, "Permafile  : %s" EOL, options.permafile ? "true" : "false" ) );
 
     if ( options.port )
     {
@@ -1040,6 +1052,8 @@ int main( int argc, char *argv[] )
         /* processOptions generates its own error messages */
         genericsExit( -1, "" EOL );
     }
+
+    IF_WITH_FIFOS( fifoUsePermafiles( _r.f, options.permafile ) );
 
     /* Make sure the fifos get removed at the end */
     atexit( _doExit );

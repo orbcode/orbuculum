@@ -82,10 +82,46 @@
 
 #define MAX_STRING_LENGTH (100)              /* Maximum length that will be output from a fifo for a single event */
 
+struct Channel                               /* Information for an individual channel */
+{
+    char *chanName;                          /* Filename to be used for the fifo */
+    char *presFormat;                        /* Format of data presentation to be used */
+
+    /* Runtime state */
+    int handle;                              /* Handle to the fifo */
+    pthread_t thread;                        /* Thread on which it's running */
+
+    char *fifoName;                          /* Constructed fifo name (from chanPath and name) */
+};
+
+struct fifosHandle
+
+{
+    /* The decoders and the packets from them */
+    struct ITMDecoder i;
+    struct ITMPacket h;
+    struct TPIUDecoder t;
+    struct TPIUPacket p;
+
+    /* Timestamp info */
+    uint64_t lastHWExceptionTS;
+
+    /* Configuration information */
+    char *chanPath;                               /* Path to where to put the fifos */
+    bool useTPIU;                                 /* Is the TPIU active? */
+    bool filewriter;                              /* Is the filewriter in use? */
+    bool forceITMSync;                            /* Is ITM to be forced into sync? */
+    bool permafile;                               /* Use permanent files rather than fifos */
+    int tpiuITMChannel;                           /* TPIU channel on which ITM appears */
+
+    struct Channel c[NUM_CHANNELS + 1];           /* Output for each channel */
+};
+
 struct _runThreadParams                   /* Structure for parameters passed to a software task thread */
 {
     int portNo;
     int listenHandle;
+    bool permafile;
     struct Channel *c;
 };
 
@@ -117,18 +153,34 @@ static void *_runFifo( void *arg )
     uint32_t w;
 
     char constructString[MAX_STRING_LENGTH];
-    int fifo;
+    int opfile;
     int readDataLen, writeDataLen;
 
-    if ( mkfifo( c->fifoName, 0666 ) < 0 )
+    if ( !params->permafile )
     {
-        return NULL;
+        /* This is a 'conventional' fifo, so it must be created */
+        if ( mkfifo( c->fifoName, 0666 ) < 0 )
+        {
+            return NULL;
+        }
+    }
+    else
+    {
+        /* Otherwise, remove the file if it exists */
+        unlink( c->fifoName );
     }
 
     while ( 1 )
     {
         /* This is the child */
-        fifo = open( c->fifoName, O_WRONLY );
+        if ( !params->permafile )
+        {
+            opfile = open( c->fifoName, O_WRONLY );
+        }
+        else
+        {
+            opfile = open( c->fifoName, O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP );
+        }
 
         while ( 1 )
         {
@@ -148,22 +200,24 @@ static void *_runFifo( void *arg )
                 // formatted output.
                 writeDataLen = snprintf( constructString, MAX_STRING_LENGTH, c->presFormat, w );
 
-                if ( write( fifo, constructString, ( writeDataLen < MAX_STRING_LENGTH ) ? writeDataLen : MAX_STRING_LENGTH ) <= 0 )
+                if ( writeDataLen != write( opfile, constructString, ( writeDataLen < MAX_STRING_LENGTH ) ? writeDataLen : MAX_STRING_LENGTH ) )
                 {
+                    genericsReport( V_ERROR, "Failed to write formatted data" EOL );
                     break;
                 }
             }
             else
             {
                 // raw output.
-                if ( write( fifo, &w, sizeof ( w ) ) <= 0 )
+                if ( sizeof( w ) != write( opfile, &w, sizeof ( w ) ) )
                 {
+                    genericsReport( V_ERROR, "Failed to write unformatted data" EOL );
                     break;
                 }
             }
         }
 
-        close( fifo );
+        close( opfile );
     }
 
     return NULL;
@@ -176,36 +230,40 @@ static void *_runHWFifo( void *arg )
 {
     struct _runThreadParams *params = ( struct _runThreadParams * )arg;
     struct Channel *c = params->c;
-    int fifo;
+    int opfile;
     int readDataLen;
     uint8_t p[MAX_STRING_LENGTH];
-
-    if ( mkfifo( c->fifoName, 0666 ) < 0 )
-    {
-        return NULL;
-    }
 
     while ( 1 )
     {
         /* This is the child */
-        fifo = open( c->fifoName, O_WRONLY );
+        if ( !params->permafile )
+        {
+            opfile = open( c->fifoName, O_WRONLY );
+        }
+        else
+        {
+            opfile = open( c->fifoName, O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP );
+        }
 
         while ( 1 )
         {
             /* ....get the packet */
             readDataLen = read( params->listenHandle, p, MAX_STRING_LENGTH );
 
-            if ( write( fifo, p, readDataLen ) <= 0 )
+            if ( readDataLen != write( opfile, p, readDataLen ) )
             {
+                genericsReport( V_ERROR, "Failed to write correct length to HW fifo" EOL );
                 break;
             }
         }
 
-        close( fifo );
+        close( opfile );
     }
 
     return NULL;
 }
+
 // ====================================================================================================
 // Decoders for each message
 // ====================================================================================================
@@ -286,7 +344,10 @@ void _handlePCSample( struct fifosHandle *f, struct ITMDecoder *i, struct ITMPac
         opLen = snprintf( outputString, ( MAX_STRING_LENGTH - 1 ), "%d,%ld,0x%08x" EOL, HWEVENT_PCSample, eventdifftS, pc );
     }
 
-    write( f->c[HW_CHANNEL].handle, outputString, opLen );
+    if ( opLen != write( f->c[HW_CHANNEL].handle, outputString, opLen ) )
+    {
+        genericsReport( V_ERROR, "Failed to write PCSample" EOL );
+    }
 }
 // ====================================================================================================
 void _handleDataRWWP( struct fifosHandle *f, struct ITMDecoder *i, struct ITMPacket *p )
@@ -763,12 +824,18 @@ bool fifoCreate( struct fifosHandle *f )
                     return false;
                 }
 
-                fcntl( fd[1], F_SETFL, O_NONBLOCK );
+                if ( !f->permafile )
+                {
+                    /* If this is not a permanent file then some data is allowed to get lost */
+                    fcntl( fd[1], F_SETFL, O_NONBLOCK );
+                }
+
                 f->c[t].handle = fd[1];
 
                 params = ( struct _runThreadParams * )malloc( sizeof( struct _runThreadParams ) );
                 params->listenHandle = fd[0];
                 params->portNo = t;
+                params->permafile = f->permafile;
                 params->c = &f->c[t];
 
                 f->c[t].fifoName = ( char * )malloc( strlen( f->c[t].chanName ) + strlen( f->chanPath ) + 2 );
@@ -789,17 +856,25 @@ bool fifoCreate( struct fifosHandle *f )
                 return false;
             }
 
-            fcntl( fd[1], F_SETFL, O_NONBLOCK );
+            if ( !f->permafile )
+            {
+                /* If this is not a permanent file then some data is allowed to get lost */
+                fcntl( fd[1], F_SETFL, O_NONBLOCK );
+            }
+
             f->c[t].handle = fd[1];
 
             params = ( struct _runThreadParams * )malloc( sizeof( struct _runThreadParams ) );
             params->listenHandle = fd[0];
             params->portNo = t;
+            params->permafile = f->permafile;
             params->c = &f->c[t];
 
             f->c[t].fifoName = ( char * )malloc( strlen( HWFIFO_NAME ) + strlen( f->chanPath ) + 2 );
             strcpy( f->c[t].fifoName, f->chanPath );
             strcat( f->c[t].fifoName, HWFIFO_NAME );
+
+
 
             if ( pthread_create( &( f->c[t].thread ), NULL, &_runHWFifo, params ) )
             {
@@ -821,7 +896,11 @@ void fifoShutdown( struct fifosHandle *f )
         if ( f->c[t].handle > 0 )
         {
             close( f->c[t].handle );
-            unlink( f->c[t].fifoName );
+
+            if ( ! f->permafile )
+            {
+                unlink( f->c[t].fifoName );
+            }
         }
 
         /* Remove the name string too */
@@ -847,6 +926,13 @@ void fifoFilewriter( struct fifosHandle *f, bool useFilewriter, char *workingPat
 }
 
 // ====================================================================================================
+void fifoUsePermafiles( struct fifosHandle *f, bool usePermafilesSet )
+
+{
+    f->permafile = usePermafilesSet;
+}
+// ====================================================================================================
+
 struct fifosHandle *fifoInit( bool forceITMSyncSet, bool useTPIUSet, int TPIUchannelSet )
 
 {
