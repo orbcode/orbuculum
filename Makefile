@@ -5,7 +5,7 @@ WITH_FPGA?=1
 
 # Build configuration
 #VERBOSE=1
-#DEBUG=1
+DEBUG=1
 
 CFLAGS=-DVERSION="\"1.10 InProgress\""
 
@@ -24,7 +24,7 @@ ORBSTAT = orbstat
 
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Linux)
-  CFLAGS += -DLINUX
+  CFLAGS += -DLINUX -D_GNU_SOURCE
   LINUX=1
 endif
 ifeq ($(UNAME_S),Darwin)

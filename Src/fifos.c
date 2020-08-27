@@ -154,43 +154,36 @@ static void *_runFifo( void *arg )
 
     char constructString[MAX_STRING_LENGTH];
     int opfile;
-    int readDataLen, writeDataLen;
+    size_t readDataLen, writeDataLen, written;
+
+    /* Remove the file if it exists */
+    unlink( c->fifoName );
 
     if ( !params->permafile )
     {
         /* This is a 'conventional' fifo, so it must be created */
         if ( mkfifo( c->fifoName, 0666 ) < 0 )
         {
-            return NULL;
+            pthread_exit( NULL );
         }
     }
-    else
-    {
-        /* Otherwise, remove the file if it exists */
-        unlink( c->fifoName );
-    }
 
-    while ( 1 )
+    do
     {
-        /* This is the child */
+        /* Keep on opening the file (in case the fifo is opened/closed multiple times */
         if ( !params->permafile )
         {
             opfile = open( c->fifoName, O_WRONLY );
         }
         else
         {
-            opfile = open( c->fifoName, O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP );
+            opfile = open( c->fifoName, O_WRONLY | O_CREAT, 0666 );
         }
 
-        while ( 1 )
+        do
         {
             /* ....get the packet */
             readDataLen = read( params->listenHandle, &p, sizeof( struct ITMPacket ) );
-
-            if ( readDataLen != sizeof( struct ITMPacket ) )
-            {
-                return NULL;
-            }
 
             /* Build 32 value the long way around to avoid type-punning issues */
             w = ( p.d[3] << 24 ) | ( p.d[2] << 16 ) | ( p.d[1] << 8 ) | ( p.d[0] );
@@ -200,27 +193,21 @@ static void *_runFifo( void *arg )
                 // formatted output.
                 writeDataLen = snprintf( constructString, MAX_STRING_LENGTH, c->presFormat, w );
 
-                if ( writeDataLen != write( opfile, constructString, ( writeDataLen < MAX_STRING_LENGTH ) ? writeDataLen : MAX_STRING_LENGTH ) )
-                {
-                    genericsReport( V_ERROR, "Failed to write formatted data" EOL );
-                    break;
-                }
+                written = write( opfile, constructString, ( writeDataLen < MAX_STRING_LENGTH ) ? writeDataLen : MAX_STRING_LENGTH );
             }
             else
             {
                 // raw output.
-                if ( sizeof( w ) != write( opfile, &w, sizeof ( w ) ) )
-                {
-                    genericsReport( V_ERROR, "Failed to write unformatted data" EOL );
-                    break;
-                }
+                written = write( opfile, &w, sizeof ( w ) );
             }
         }
+        while ( ( readDataLen > 0 ) && ( written > 0 ) );
 
         close( opfile );
     }
+    while ( readDataLen >= 0 );
 
-    return NULL;
+    pthread_exit( NULL );
 }
 // ====================================================================================================
 static void *_runHWFifo( void *arg )
@@ -231,37 +218,49 @@ static void *_runHWFifo( void *arg )
     struct _runThreadParams *params = ( struct _runThreadParams * )arg;
     struct Channel *c = params->c;
     int opfile;
-    int readDataLen;
+    size_t readDataLen, writeDataLen = 0;
     uint8_t p[MAX_STRING_LENGTH];
 
-    while ( 1 )
+    /* Remove the file if it exists */
+    unlink( c->fifoName );
+
+    if ( !params->permafile )
     {
-        /* This is the child */
+        /* This is a 'conventional' fifo, so it must be created */
+        if ( mkfifo( c->fifoName, 0666 ) < 0 )
+        {
+            pthread_exit( NULL );
+        }
+    }
+
+    do
+    {
         if ( !params->permafile )
         {
             opfile = open( c->fifoName, O_WRONLY );
         }
         else
         {
-            opfile = open( c->fifoName, O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP );
+            opfile = open( c->fifoName, O_WRONLY | O_CREAT, 0666 );
         }
 
-        while ( 1 )
+        do
         {
-            /* ....get the packet */
+            /* ....get the packet, don't worry if it can't be written */
             readDataLen = read( params->listenHandle, p, MAX_STRING_LENGTH );
 
-            if ( readDataLen != write( opfile, p, readDataLen ) )
+            if ( readDataLen )
             {
-                genericsReport( V_ERROR, "Failed to write correct length to HW fifo" EOL );
-                break;
+                writeDataLen = write( opfile, p, readDataLen );
             }
         }
+        while ( ( readDataLen > 0 ) && ( writeDataLen > 0 ) );
 
         close( opfile );
     }
+    while ( readDataLen > 0 );
 
-    return NULL;
+    pthread_exit( NULL );
 }
 
 // ====================================================================================================
@@ -344,10 +343,8 @@ void _handlePCSample( struct fifosHandle *f, struct ITMDecoder *i, struct ITMPac
         opLen = snprintf( outputString, ( MAX_STRING_LENGTH - 1 ), "%d,%ld,0x%08x" EOL, HWEVENT_PCSample, eventdifftS, pc );
     }
 
-    if ( opLen != write( f->c[HW_CHANNEL].handle, outputString, opLen ) )
-    {
-        genericsReport( V_ERROR, "Failed to write PCSample" EOL );
-    }
+    /* We don't need to worry if this write does not succeed, it just means there is no other side of the fifo */
+    write( f->c[HW_CHANNEL].handle, outputString, opLen );
 }
 // ====================================================================================================
 void _handleDataRWWP( struct fifosHandle *f, struct ITMDecoder *i, struct ITMPacket *p )
@@ -457,7 +454,7 @@ void _handleNISYNC( struct fifosHandle *f, struct ITMDecoder *i )
     if ( ITMGetPacket( i, &p ) )
     {
         addr = ( p.d[1] & 0xFE ) | ( p.d[2] << 8 ) | ( p.d[3] << 16 ) | ( p.d[4] << 24 );
-        opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%02x,%08x" EOL, HWEVENT_NISYNC, p.d[0], addr );
+        opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%02x,0x%08x" EOL, HWEVENT_NISYNC, p.d[0], addr );
         write( f->c[HW_CHANNEL].handle, outputString, opLen );
     }
 }
@@ -874,8 +871,6 @@ bool fifoCreate( struct fifosHandle *f )
             strcpy( f->c[t].fifoName, f->chanPath );
             strcat( f->c[t].fifoName, HWFIFO_NAME );
 
-
-
             if ( pthread_create( &( f->c[t].thread ), NULL, &_runHWFifo, params ) )
             {
                 return false;
@@ -888,14 +883,22 @@ bool fifoCreate( struct fifosHandle *f )
 // ====================================================================================================
 void fifoShutdown( struct fifosHandle *f )
 
-/* Destroy the per-port sub-processes */
+/* Destroy the per-port sub-processes. These will terminate when the fifos close */
 
 {
+    struct timespec ts;
+
     for ( int t = 0; t < NUM_CHANNELS + 1; t++ )
     {
         if ( f->c[t].handle > 0 )
         {
             close( f->c[t].handle );
+
+            clock_gettime( CLOCK_REALTIME, &ts );
+            /* Wait a max of one second for the thread to exit */
+            ts.tv_sec += 1;
+
+            pthread_timedjoin_np( f->c[t].thread, NULL, &ts );
 
             if ( ! f->permafile )
             {
@@ -908,6 +911,7 @@ void fifoShutdown( struct fifosHandle *f )
         {
             free( f->c[t].presFormat );
         }
+
     }
 
     free( f );
