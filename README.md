@@ -4,6 +4,7 @@
 
 This is V1.10 in progress.
 
+* Permanent output files are now supported in addition to fifos. These can be useful for postprocessing.
 * orbuculum now processes simple ISYNC messages, reporting them as type 8 in the hwevent fifo.
 * ocbcat can now read directly from a file.
 * orbcat and orbuculum can both terminate reading from a file when it's exhaused with the `-e` option.
@@ -319,12 +320,16 @@ Specific command line options of note are;
 
   `-p [serialPort]`: to use. If not specified then the program defaults to Blackmagic probe.
 
+  `-P`: Create permanent files rather than fifos - useful when you want to use the processed data later.
+
   `-s [address]:[port]`: Set address for SEGGER JLink connection, (default none:2332)
 
   `-t`: Use TPIU decoder.  This will not sync if TPIU is not configured, so you won't see
      packets in that case.
 
   `-v`: Verbose mode 0==Errors only, 1=Warnings (Default) 2=Info, 3=Full Debug.
+
+  `-w`: Enable filewriter functionality (disabled by default).
 
 Orbcat
 ======
