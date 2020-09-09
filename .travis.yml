@@ -1,0 +1,17 @@
+language: c
+env:
+  - WITH_FPGA=0
+  - WITH_FPGA=1
+script:
+  - make
+
+addons:
+  apt:
+    packages:
+    - libusb-1.0-0-dev
+    - binutils-dev
+    - libelf-dev
+    - libiberty-dev
+
+before_install:
+  - if [ "$WITH_FPGA" = 1 ]; then sudo apt install -y libftdi1-dev; fi
