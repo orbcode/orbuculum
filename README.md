@@ -331,7 +331,7 @@ Specific command line options of note are;
 
   `-v`: Verbose mode 0==Errors only, 1=Warnings (Default) 2=Info, 3=Full Debug.
 
-  `-w`: Enable filewriter functionality (disabled by default).
+  `-w [path]` : Enable filewriter functionality with output in specified directory (disabled by default).
 
 Orbcat
 ======

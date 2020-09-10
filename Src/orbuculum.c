@@ -130,10 +130,10 @@ struct
     /* Config information */
     bool segger;                                         /* Using a segger debugger */
     IF_WITH_FIFOS( bool filewriter; )                    /* Supporting filewriter functionality */
+    IF_WITH_FIFOS( char *fwbasedir; )                    /* Base directory for filewriter output */
     IF_WITH_FIFOS( bool permafile; )                     /* Use permanent files rather than fifos */
 
     /* FPGA Information */
-    IF_INCLUDE_FPGA_SUPPORT( char *fwbasedir );          /* Where the firmware is stored */
     IF_INCLUDE_FPGA_SUPPORT( bool orbtrace; )            /* In trace mode? */
     IF_INCLUDE_FPGA_SUPPORT( uint32_t orbtraceWidth; )   /* Trace pin width */
 
@@ -344,7 +344,7 @@ void _printHelp( char *progName )
     fprintf( stdout, "        s: <address>:<port> Set address for SEGGER JLink connection (default none:%d)" EOL, SEGGER_PORT );
     IF_WITH_FIFOS( fprintf( stdout, "        t: Use TPIU decoder" EOL ) );
     fprintf( stdout, "        v: <level> Verbose mode 0(errors)..3(debug)" EOL );
-    IF_WITH_FIFOS( fprintf( stdout, "        w: Enable filewriter functionality" EOL ) );
+    IF_WITH_FIFOS( fprintf( stdout, "        w: <path> Enable filewriter functionality using specified base path" EOL ) );
     IF_WITH_FIFOS( fprintf( stdout, "        (Built with fifo support)" EOL ) );
     IF_NOT_WITH_FIFOS( fprintf( stdout, "        (Built without fifo support)" EOL ) );
 }
@@ -362,8 +362,8 @@ int _processOptions( int argc, char *argv[] )
 
 #ifdef WITH_FIFOS
 
-    IF_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:b:c:ef:hl:no:p:Ps:tv:w" ) ) != -1 ) )
-        IF_NOT_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:b:c:ef:ho:p:Ps:tv:w" ) ) != -1 ) )
+    IF_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:b:c:ef:hl:no:p:Ps:tv:w:" ) ) != -1 ) )
+        IF_NOT_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:b:c:ef:ho:p:Ps:tv:w:" ) ) != -1 ) )
 #else
     IF_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:ef:hi:l:no:p:s:v:" ) ) != -1 ) )
         IF_NOT_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:ef:hi:no:p:s:v:" ) ) != -1 ) )
@@ -490,6 +490,7 @@ int _processOptions( int argc, char *argv[] )
 
                 case 'w':
                     options.filewriter = true;
+                    options.fwbasedir = optarg;
                     break;
 
                 // ------------------------------------
