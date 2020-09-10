@@ -46,35 +46,15 @@
 #include <demangle.h>
 #include <assert.h>
 #include <inttypes.h>
-
-#include "bfd_wrapper.h"
-
-#if defined OSX
-    #include <sys/ioctl.h>
-    #include <libusb.h>
-    #include <termios.h>
-#else
-    #if defined LINUX
-        #include <libusb-1.0/libusb.h>
-        #include <asm/ioctls.h>
-        #if defined TCGETS2
-            #include <asm/termios.h>
-            /* Manual declaration to avoid conflict. */
-            extern int ioctl ( int __fd, unsigned long int __request, ... ) __THROW;
-        #else
-            #include <sys/ioctl.h>
-            #include <termios.h>
-        #endif
-    #else
-        #error "Unknown OS"
-    #endif
-#endif
+#include <sys/time.h>
 #include <stdint.h>
 #include <limits.h>
 #include <pthread.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netdb.h>
+
+#include "bfd_wrapper.h"
 
 #include "cJSON.h"
 #include "generics.h"
@@ -137,7 +117,6 @@ struct                                       /* Record for options, either defau
     bool outputExceptions;                   /* Set to include exceptions in output flow */
     uint32_t tpiuITMChannel;                 /* What channel? */
     bool forceITMSync;                       /* Must ITM start synced? */
-    int speed;                               /* Speed (for case of a serial link) */
     char *file;                              /* File host connection */
 
     uint32_t hwOutputs;                      /* What hardware outputs are enabled */
@@ -212,144 +191,6 @@ struct
 // Internally available routines
 // ====================================================================================================
 // ====================================================================================================
-#if defined(LINUX) && defined (TCGETS2)
-static int _setSerialConfig ( int f, speed_t speed )
-{
-    // Use Linux specific termios2.
-    struct termios2 settings;
-    int ret = ioctl( f, TCGETS2, &settings );
-
-    if ( ret < 0 )
-    {
-        return ( -3 );
-    }
-
-    settings.c_iflag &= ~( ISTRIP | INLCR | IGNCR | ICRNL | IXON | IXOFF );
-    settings.c_lflag &= ~( ICANON | ECHO | ECHOE | ISIG );
-    settings.c_cflag &= ~PARENB; /* no parity */
-    settings.c_cflag &= ~CSTOPB; /* 1 stop bit */
-    settings.c_cflag &= ~CSIZE;
-    settings.c_cflag &= ~( CBAUD | CIBAUD );
-    settings.c_cflag |= CS8 | CLOCAL; /* 8 bits */
-    settings.c_oflag &= ~OPOST; /* raw output */
-
-
-    const unsigned int speed1[] =
-    {
-        B115200, B230400, 0, B460800, B576000,
-        0, 0, B921600, 0, B1152000
-    };
-    const unsigned int speed2[] =
-    {
-        B500000,  B1000000, B1500000, B2000000,
-        B2500000, B3000000, B3500000, B4000000
-    };
-    int speed_ok = 0;
-
-    if ( ( speed % 500000 ) == 0 )
-    {
-        // speed is multiple of 500000, use speed2 table.
-        int i = speed / 500000;
-
-        if ( i <= 8 )
-        {
-            speed_ok = speed2[i - 1];
-        }
-    }
-    else if ( ( speed % 115200 ) == 0 )
-    {
-        int i = speed / 115200;
-
-        if ( i <= 10 && speed1[i - 1] )
-        {
-            speed_ok = speed2[i - 1];
-        }
-    }
-
-    if ( speed_ok )
-    {
-        settings.c_cflag |= speed_ok;
-    }
-    else
-    {
-        settings.c_cflag |= BOTHER;
-        settings.c_ispeed = speed;
-        settings.c_ospeed = speed;
-    }
-
-    // Ensure input baud is same than output.
-    settings.c_cflag |= ( settings.c_cflag & CBAUD ) << IBSHIFT;
-    // Now configure port.
-    ret = ioctl( f, TCSETS2, &settings );
-
-    if ( ret < 0 )
-    {
-        genericsReport( V_ERROR, "Unsupported baudrate" EOL );
-        return ( -3 );
-    }
-
-    // Check configuration is ok.
-    ret = ioctl( f, TCGETS2, &settings );
-
-    if ( ret < 0 )
-    {
-        return ( -3 );
-    }
-
-    if ( speed_ok )
-    {
-        if ( ( settings.c_cflag & CBAUD ) != speed_ok )
-        {
-            genericsReport( V_WARN, "Fail to set baudrate" EOL );
-        }
-    }
-    else
-    {
-        if ( ( settings.c_ispeed != speed ) || ( settings.c_ospeed != speed ) )
-        {
-            genericsReport( V_WARN, "Fail to set baudrate" EOL );
-        }
-    }
-
-    // Flush port.
-    ioctl( f, TCFLSH, TCIOFLUSH );
-    return 0;
-}
-#else
-static int _setSerialConfig ( int f, speed_t speed )
-{
-    struct termios settings;
-
-    if ( tcgetattr( f, &settings ) < 0 )
-    {
-        perror( "tcgetattr" );
-        return ( -3 );
-    }
-
-    if ( cfsetspeed( &settings, speed ) < 0 )
-    {
-        genericsReport( V_ERROR, "Error Setting input speed" EOL );
-        return ( -3 );
-    }
-
-    settings.c_iflag &= ~( ISTRIP | INLCR | IGNCR | ICRNL | IXON | IXOFF );
-    settings.c_lflag &= ~( ICANON | ECHO | ECHOE | ISIG );
-    settings.c_cflag &= ~PARENB; /* no parity */
-    settings.c_cflag &= ~CSTOPB; /* 1 stop bit */
-    settings.c_cflag &= ~CSIZE;
-    settings.c_cflag |= CS8 | CLOCAL; /* 8 bits */
-    settings.c_oflag &= ~OPOST; /* raw output */
-
-    if ( tcsetattr( f, TCSANOW, &settings ) < 0 )
-    {
-        genericsReport( V_ERROR, "Unsupported baudrate" EOL );
-        return ( -3 );
-    }
-
-    tcflush( f, TCOFLUSH );
-    return 0;
-}
-#endif
 // ====================================================================================================
 int64_t _timestamp( void )
 
@@ -1097,7 +938,6 @@ void _printHelp( char *progName )
 
 {
     fprintf( stdout, "Usage: %s <htv> <-e ElfFile> <-g filename> <-o filename> -r <routines> <-i channel> <-p port> <-s server>" EOL, progName );
-    fprintf( stdout, "        a: <serialSpeed> to use" EOL );
     fprintf( stdout, "        c: <num> Cut screen output after number of lines" EOL );
     fprintf( stdout, "        d: <DeleteMaterial> to take off front of filenames" EOL );
     fprintf( stdout, "        D: Switch off C++ symbol demangling" EOL );
@@ -1123,14 +963,9 @@ int _processOptions( int argc, char *argv[] )
 {
     int c;
 
-    while ( ( c = getopt ( argc, argv, "a:c:d:DEe:f:g:hi:I:j:lm:no:r:s:tv:" ) ) != -1 )
+    while ( ( c = getopt ( argc, argv, "c:d:DEe:f:g:hi:I:j:lm:no:r:s:tv:" ) ) != -1 )
         switch ( c )
         {
-            // ------------------------------------
-            case 'a':
-                options.speed = atoi( optarg );
-                break;
-
             // ------------------------------------
             case 'c':
                 options.cutscreen = atoi( optarg );
@@ -1240,7 +1075,7 @@ int _processOptions( int argc, char *argv[] )
             // ------------------------------------
             case 'h':
                 _printHelp( argv[0] );
-                return false;
+                return ERR;
 
             // ------------------------------------
             case '?':
@@ -1253,25 +1088,25 @@ int _processOptions( int argc, char *argv[] )
                     genericsReport( V_ERROR, "Unknown option character `\\x%x'." EOL, optopt );
                 }
 
-                return false;
+                return -EINVAL;
 
             // ------------------------------------
             default:
                 genericsReport( V_ERROR, "Unknown option %c" EOL, optopt );
-                return false;
+                return -EINVAL;
                 // ------------------------------------
         }
 
     if ( ( options.useTPIU ) && ( !options.tpiuITMChannel ) )
     {
         genericsReport( V_ERROR, "TPIU set for use but no channel set for ITM output" EOL );
-        return false;
+        return -EINVAL;
     }
 
     if ( !options.elffile )
     {
         genericsReport( V_ERROR, "Elf File not specified" EOL );
-        exit( -2 );
+        exit( -EBADF );
     }
 
     genericsReport( V_INFO, "orbtop V" VERSION " (Git %08X %s, Built " BUILD_DATE ")" EOL, GIT_HASH, ( GIT_DIRTY ? "Dirty" : "Clean" ) );
@@ -1297,7 +1132,7 @@ int _processOptions( int argc, char *argv[] )
         genericsReport( V_INFO, "Using TPIU  : true (ITM on channel %d)" EOL, options.tpiuITMChannel );
     }
 
-    return true;
+    return OK;
 }
 // ====================================================================================================
 // ====================================================================================================
@@ -1309,7 +1144,6 @@ int _processOptions( int argc, char *argv[] )
 int main( int argc, char *argv[] )
 
 {
-    int ret;
     int sourcefd;
     struct sockaddr_in serv_addr;
     struct hostent *server;
@@ -1331,9 +1165,9 @@ int main( int argc, char *argv[] )
     /* Fill in a time to start from */
     lastTime = _timestamp();
 
-    if ( !_processOptions( argc, argv ) )
+    if ( OK != _processOptions( argc, argv ) )
     {
-        exit( -1 );
+        exit( -EINVAL );
     }
 
     /* Reset the TPIU handler before we start */
@@ -1359,7 +1193,7 @@ int main( int argc, char *argv[] )
             if ( !_r.jsonfile )
             {
                 perror( "Couldn't open json output file" );
-                return -1;
+                return -ENOENT;
             }
         }
     }
@@ -1375,7 +1209,7 @@ int main( int argc, char *argv[] )
             if ( sourcefd < 0 )
             {
                 perror( "Error creating socket\n" );
-                return -1;
+                return -EIO;
             }
 
             if ( setsockopt( sourcefd, SOL_SOCKET, SO_REUSEADDR, &( int )
@@ -1384,7 +1218,7 @@ int main( int argc, char *argv[] )
         }, sizeof( int ) ) < 0 )
             {
                 perror( "setsockopt(SO_REUSEADDR) failed" );
-                return -1;
+                return -EIO;
             }
 
             /* Now open the network connection */
@@ -1394,7 +1228,7 @@ int main( int argc, char *argv[] )
             if ( !server )
             {
                 perror( "Cannot find host" );
-                return -1;
+                return -EIO;
             }
 
             serv_addr.sin_family = AF_INET;
@@ -1412,14 +1246,6 @@ int main( int argc, char *argv[] )
 
                 perror( "Could not connect" );
                 usleep( 1000000 );
-            }
-
-            if ( options.speed )
-            {
-                if ( ( ret = _setSerialConfig ( sourcefd, options.speed ) ) < 0 )
-                {
-                    genericsExit( ret, "setSerialConfig failed" EOL );
-                }
             }
         }
         else
@@ -1554,6 +1380,6 @@ int main( int argc, char *argv[] )
         genericsReport( V_ERROR, "Read failed" EOL );
     }
 
-    return -2;
+    return -ESRCH;
 }
 // ====================================================================================================

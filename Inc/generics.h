@@ -36,6 +36,7 @@
 #include <stdbool.h>
 #include <limits.h>
 #include <stdint.h>
+#include <errno.h>
 
 #if defined LINUX
     #define EOL "\n"
@@ -45,6 +46,11 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/* Error return codes */
+#define OK         0
+#define ERR       -1
+
 // ====================================================================================================
 enum verbLevel {V_ERROR, V_WARN, V_INFO, V_DEBUG};
 
