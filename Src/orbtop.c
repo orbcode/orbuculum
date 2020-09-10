@@ -1414,9 +1414,12 @@ int main( int argc, char *argv[] )
                 usleep( 1000000 );
             }
 
-            if ( ( ret = _setSerialConfig ( sourcefd, options.speed ) ) < 0 )
+            if ( options.speed )
             {
-                genericsExit( ret, "setSerialConfig failed" EOL );
+                if ( ( ret = _setSerialConfig ( sourcefd, options.speed ) ) < 0 )
+                {
+                    genericsExit( ret, "setSerialConfig failed" EOL );
+                }
             }
         }
         else
