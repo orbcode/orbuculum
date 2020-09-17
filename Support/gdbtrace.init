@@ -82,7 +82,7 @@ end
 define prepareSWO
   set $clockspeed=72000000
   set $speed=2250000
-  set $useTPIU=1
+  set $useTPIU=0
   set $useMan=0
 
   if $argc >= 1

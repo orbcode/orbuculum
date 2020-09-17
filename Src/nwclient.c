@@ -188,6 +188,8 @@ void nwclientSend( struct nwclientsHandle *h, uint32_t len, uint8_t *buffer )
 
 {
     assert( h );
+    assert( len );
+
     struct nwClient *n = h->firstClient;
 
     sem_wait( &h->clientList );

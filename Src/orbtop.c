@@ -1362,13 +1362,11 @@ int main( int argc, char *argv[] )
                 _r.lastReportmS = lastTime;
                 _r.lastReportTicks = _r.i.timeStamp;
 
-            }
-
-            /* Check to make sure there's not an unexpected TPIU in here */
-            if ( ITMDecoderGetStats( &_r.i )->tpiuSyncCount )
-            {
-                genericsReport( V_WARN, "Got a TPIU sync while decoding ITM...did you miss a -t option?" EOL );
-                break;
+                /* Check to make sure there's not an unexpected TPIU in here */
+                if ( ITMDecoderGetStats( &_r.i )->tpiuSyncCount )
+                {
+                    genericsReport( V_WARN, "Got a TPIU sync while decoding ITM...did you miss a -t option?" EOL );
+                }
             }
         }
 

@@ -733,7 +733,10 @@ int usbFeeder( void )
                 break;
             }
 
-            _processBlock( size, cbw );
+            if ( size )
+            {
+                _processBlock( size, cbw );
+            }
         }
 
         libusb_close( handle );
