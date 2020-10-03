@@ -229,7 +229,17 @@ void _handleSW( struct ITMDecoder *i )
         {
             /* Build 32 value the long way around to avoid type-punning issues */
             w = ( p.d[3] << 24 ) | ( p.d[2] << 16 ) | ( p.d[1] << 8 ) | ( p.d[0] );
-            fprintf( stdout, options.presFormat[p.srcAddr], w );
+            if ( strstr(options.presFormat[p.srcAddr], "%f") > 0 )
+            {
+                /* type punning on same host, after correctly building 32bit val
+                 * only unsafe on systems where u32/float have diff byte order */
+                float *nastycast = &w;
+                fprintf( stdout, options.presFormat[p.srcAddr], *nastycast );
+            }
+            else
+            {
+                fprintf( stdout, options.presFormat[p.srcAddr], w );
+	    }
         }
     }
 }
