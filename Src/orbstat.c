@@ -1083,22 +1083,14 @@ int main( int argc, char *argv[] )
             _r.calls = NULL;
             _r.cdCount = 0;
 
-            if ( !SymbolSetCheckValidity( &_r.s, options.elffile ) )
+            if ( !SymbolSetValid( &_r.s, options.elffile ) )
             {
                 _flushHash();
 
-                genericsReport( V_INFO, "Reload %s" EOL, options.elffile );
-
-                if ( !_r.s )
+                if ( !SymbolSetLoad( &_r.s, options.elffile ) )
                 {
-                    /* Its possible the file was in the process of being written, so wait before testing again */
-                    usleep( 1000000 );
-
-                    if ( !SymbolSetCheckValidity( &_r.s, options.elffile ) )
-                    {
-                        genericsReport( V_ERROR, "Elf file was lost" EOL );
-                        return -1;
-                    }
+                    genericsReport( V_ERROR, "Elf file was lost" EOL );
+                    return -1;
                 }
             }
         }

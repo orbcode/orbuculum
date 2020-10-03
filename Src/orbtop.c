@@ -1293,28 +1293,20 @@ int main( int argc, char *argv[] )
                 }
             }
 
-            if ( !SymbolSetCheckValidity( &_r.s, options.elffile ) )
+            if ( !SymbolSetValid( &_r.s, options.elffile ) )
             {
                 /* Make sure old references are invalidated */
                 _flushHash();
 
-                if ( _r.s )
+                if ( !SymbolSetLoad( &_r.s, options.elffile ) )
                 {
-                    genericsReport( V_WARN, "Loaded %s" EOL, options.elffile );
+                    genericsReport( V_ERROR, "Elf file or symbols in it not found" EOL );
+                    usleep( 1000000 );
+                    break;
                 }
                 else
                 {
-                    /* Its possible the file was in the process of being written, *
-                     *so wait before testing again */
-                    usleep( 1000000 );
-                    genericsReport( V_WARN, "Attempt second reload of %s" EOL, options.elffile );
-
-                    if ( !SymbolSetCheckValidity( &_r.s, options.elffile ) )
-                    {
-                        genericsReport( V_ERROR, "Elf file or symbols in it not found" EOL );
-                        usleep( 1000000 );
-                        break;
-                    }
+                    genericsReport( V_WARN, "Loaded %s" EOL, options.elffile );
                 }
             }
 

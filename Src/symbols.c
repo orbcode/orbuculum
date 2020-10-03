@@ -52,6 +52,7 @@
 #define TEXT_SEGMENT ".text"
 
 #define ELF_RELOAD_DELAY_TIME 1000000   /* Time before elf reload will be attempted when its been lost */
+#define ELF_CHECK_DELAY_TIME  100000    /* Time that elf file has to be stable before it's considered complete */
 
 // ====================================================================================================
 // ====================================================================================================
@@ -267,15 +268,51 @@ bool SymbolLookup( struct SymbolSet *s, uint32_t addr, struct nameEntry *n, char
 struct SymbolSet *SymbolSetCreate( char *filename )
 
 {
+    struct stat statbuf, newstatbuf;
     struct SymbolSet *s = ( struct SymbolSet * )calloc( sizeof( struct SymbolSet ), 1 );
     s->elfFile = strdup( filename );
 
-    if ( !_symbolsLoad( s ) )
+    /* Make sure this file is stable before trying to load it */
+    if ( stat( filename, &statbuf ) == 0 )
     {
-        free( s->elfFile );
-        free( s );
-        s = NULL;
+        /* There is at least a file here */
+        while ( 1 )
+        {
+            usleep( ELF_CHECK_DELAY_TIME );
+
+            if ( stat( filename, &newstatbuf ) != 0 )
+            {
+                printf( "NO FILE!!!\n" );
+                break;
+            }
+
+            /* We check filesize, modification time and status change time for any differences */
+            if (
+                        ( memcmp( &statbuf.st_size, &newstatbuf.st_size, sizeof( off_t ) ) ) ||
+                        ( memcmp( &statbuf.st_mtim, &newstatbuf.st_mtim, sizeof( struct timespec ) ) ) ||
+                        ( memcmp( &statbuf.st_ctim, &newstatbuf.st_ctim, sizeof( struct timespec ) ) )
+            )
+            {
+                /* Make this the version we check next time around */
+                memcpy( &statbuf, &newstatbuf, sizeof( struct stat ) );
+                continue;
+            }
+
+            if ( _symbolsLoad( s ) )
+            {
+                return s;
+            }
+            else
+            {
+                break;
+            }
+        }
     }
+
+    /* If we reach here we weren't successful, so delete the allocated memory */
+    free( s->elfFile );
+    free( s );
+    s = NULL;
 
     return s;
 }
@@ -292,7 +329,7 @@ void SymbolSetDelete( struct SymbolSet **s )
     }
 }
 // ====================================================================================================
-bool SymbolSetCheckValidity( struct SymbolSet **s, char *filename )
+bool SymbolSetValid( struct SymbolSet **s, char *filename )
 
 {
     struct stat n;
@@ -305,14 +342,21 @@ bool SymbolSetCheckValidity( struct SymbolSet **s, char *filename )
             ( memcmp( &n.st_ctim, &( ( *s )->st.st_ctim ), sizeof( struct timespec ) ) )
        )
     {
-        /* There was either no file, or a difference, re-create the symbol set */
         SymbolSetDelete( s );
-
-        /* Since something changed, let's wait a while before trying to reload */
-        usleep( ELF_RELOAD_DELAY_TIME );
-        *s = SymbolSetCreate( filename );
+        return false;
     }
+    else
+    {
+        return true;
+    }
+}
+// ====================================================================================================
+bool SymbolSetLoad( struct SymbolSet **s, char *filename )
 
+{
+    assert( *s == NULL );
+
+    *s = SymbolSetCreate( filename );
     return ( ( *s ) != NULL );
 }
 // ====================================================================================================
