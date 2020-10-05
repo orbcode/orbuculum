@@ -152,7 +152,6 @@ struct
     IF_WITH_NWCLIENT( int listenPort );                  /* Listening port for network */
 } options =
 {
-    //    .speed = 115200,
     IF_WITH_NWCLIENT( .listenPort = NWCLIENT_SERVER_PORT, )
     .seggerHost = SEGGER_HOST,
 #ifdef INCLUDE_FPGA_SUPPORT
@@ -173,7 +172,7 @@ struct
     IF_INCLUDE_FPGA_SUPPORT( struct ftdi_context *ftdi );              /* Connection materials for ftdi fpga interface */
     IF_INCLUDE_FPGA_SUPPORT( struct ftdispi_context ftdifsc );
 
-    uint32_t  intervalBytes;                                           /* Number of bytes transferred in current interval */
+    uint64_t  intervalBytes;                                           /* Number of bytes transferred in current interval */
     pthread_t intervalThread;                                          /* Thread reporting on intervals */
     bool      ending;                                                  /* Flag indicating app is terminating */
 } _r;
@@ -684,7 +683,7 @@ void *_checkInterval( void *params )
 /* Perform any interval reporting that may be needed */
 
 {
-    uint32_t snapInterval;
+    uint64_t snapInterval;
 
     while ( !_r.ending )
     {
