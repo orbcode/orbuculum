@@ -6,6 +6,9 @@
 
 This is V1.10 in progress.
 
+* Link Monitoring and reporting (enabled with the `-m` option to orbuculum.
+* Simple colour support (disable by commenting out `SCREEN_HANDLING` in the makefile).
+* Internal restructuring to simplify the packet decode. This will help you if you want to implement your own handlers. See `orbcat.c` for a simple example, or `orbtop.c` if timestamp ordering is important to you.
 * Permanent output files are now supported in addition to fifos. These can be useful for postprocessing.
 * orbuculum now processes simple ISYNC messages, reporting them as type 8 in the hwevent fifo.
 * ocbcat can now read directly from a file.
@@ -37,7 +40,7 @@ are patched as they are found. The parallel trace hardware using a iCE40HX-8K br
 The software runs on both Linux and OSX.
 
 The whole suite is working OK on
-regular workloads. There may be some rough edges to be discovered, so please
+regular workloads and I think most rough edges have been removed. Please
 report anything unusual you find.
 
 What is it?
@@ -316,6 +319,8 @@ Specific command line options of note are;
 
  `-l [port]`: Set listening port for the incoming connections from clients.
 
+ `-m`: Monitor interval (in mS) for reporting on state of the link. If baudrate is specified (using `-a`) then the percentage link occupancy is also reported.
+ 
   `-n`: Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)
 
   `-o [width]`: Use the custom (ice40 FPGA) based interface (if compiled with support) at specified port width. Current fpga supports 1, 2 and 4 bit parallel operation.

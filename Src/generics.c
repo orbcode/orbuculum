@@ -36,12 +36,13 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <limits.h>
+#include <sys/time.h>
 #include "generics.h"
 
 #define MAX_STRLEN (4096) // Maximum length of debug string
 
 // ====================================================================================================
-char *GenericsEscape( char *str )
+char *genericsEscape( char *str )
 
 {
     static char workingBuffer[_POSIX_ARG_MAX];
@@ -100,7 +101,7 @@ char *GenericsEscape( char *str )
     return workingBuffer;
 }
 // ====================================================================================================
-char *GenericsUnescape( char *str )
+char *genericsUnescape( char *str )
 
 {
     static char workingBuffer[_POSIX_ARG_MAX];
@@ -181,20 +182,53 @@ void genericsSetReportLevel( enum verbLevel lset )
     lstore = lset;
 }
 // ====================================================================================================
+uint64_t genericsTimestampuS( void )
+
+{
+    struct timeval te;
+    gettimeofday( &te, NULL ); // get current time
+    return ( te.tv_sec * 1000000LL + te.tv_usec ); // caculate microseconds
+}
+// ====================================================================================================
+uint32_t genericsTimestampmS( void )
+
+{
+    struct timeval te;
+    gettimeofday( &te, NULL ); // get current time
+    return ( te.tv_sec * 1000LL + ( te.tv_usec / 1000 ) );
+}
+// ====================================================================================================
+void genericsPrintf( const char *fmt, ... )
+
+/* Print to output stream */
+
+{
+    static char op[MAX_STRLEN];
+
+    va_list va;
+    va_start( va, fmt );
+    vsnprintf( op, MAX_STRLEN, fmt, va );
+    va_end( va );
+    fputs( op, stdout );
+}
+// ====================================================================================================
 void genericsReport( enum verbLevel l, const char *fmt, ... )
 
 /* Debug reporting stream */
 
 {
     static char op[MAX_STRLEN];
+    static char *colours[V_MAX_VERBLEVEL] = {C_LRED, C_YELLOW, C_LCYAN, C_LGREEN};
 
     if ( l <= lstore )
     {
+        fputs( colours[l], stderr );
         va_list va;
         va_start( va, fmt );
         vsnprintf( op, MAX_STRLEN, fmt, va );
         va_end( va );
         fputs( op, stderr );
+        fputs( C_RESET, stderr );
     }
 }
 // ====================================================================================================

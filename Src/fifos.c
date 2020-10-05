@@ -79,6 +79,7 @@
 #include "itmDecoder.h"
 #include "fileWriter.h"
 #include "fifos.h"
+#include "msgDecoder.h"
 
 #define MAX_STRING_LENGTH (100)              /* Maximum length that will be output from a fifo for a single event */
 
@@ -102,6 +103,8 @@ struct fifosHandle
     struct ITMPacket h;
     struct TPIUDecoder t;
     struct TPIUPacket p;
+    enum timeDelay timeStatus;                    /* Indicator of if this time is exact */
+    uint64_t timeStamp;                           /* Latest received time */
 
     /* Timestamp info */
     uint64_t lastHWExceptionTS;
@@ -132,13 +135,7 @@ struct _runThreadParams                   /* Structure for parameters passed to 
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
-static uint64_t _timestampuS( void )
 
-{
-    struct timeval te;
-    gettimeofday( &te, NULL ); // get current time
-    return ( te.tv_sec * 1000000LL + te.tv_usec ); // caculate microseconds
-}
 // ====================================================================================================
 // Handlers for the fifos
 // ====================================================================================================
@@ -266,287 +263,165 @@ static void *_runHWFifo( void *arg )
 // ====================================================================================================
 // Decoders for each message
 // ====================================================================================================
-void _handleException( struct fifosHandle *f, struct ITMDecoder *i, struct ITMPacket *p )
+void _handleException( struct excMsg *m, struct fifosHandle *f )
 
 {
-    uint64_t ts = _timestampuS(); /* Stamp as early as possible */
     char outputString[MAX_STRING_LENGTH];
     int opLen;
-    uint32_t exceptionNumber = ( ( p->d[1] & 0x01 ) << 8 ) | p->d[0];
-    uint32_t eventType = p->d[1] >> 4;
-    uint64_t eventdifftS = ts - f->lastHWExceptionTS;
-
+    uint64_t eventdifftS = m->ts - f->lastHWExceptionTS;
 
     const char *exNames[] = {"Thread", "Reset", "NMI", "HardFault", "MemManage", "BusFault", "UsageFault", "UNKNOWN_7",
                              "UNKNOWN_8", "UNKNOWN_9", "UNKNOWN_10", "SVCall", "Debug Monitor", "UNKNOWN_13", "PendSV", "SysTick"
                             };
     const char *exEvent[] = {"Unknown", "Enter", "Exit", "Resume"};
 
-    f->lastHWExceptionTS = ts;
+    f->lastHWExceptionTS = m->ts;
 
-    if ( exceptionNumber < 16 )
+    if ( m->exceptionNumber < 16 )
     {
         /* This is a system based exception */
-        opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%ld,%s,%s" EOL, HWEVENT_EXCEPTION, eventdifftS, exEvent[eventType & 0x03], exNames[exceptionNumber & 0x0F] );
+        opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%ld,%s,%s" EOL, HWEVENT_EXCEPTION, eventdifftS, exEvent[m->eventType & 0x03], exNames[m->exceptionNumber & 0x0F] );
     }
     else
     {
         /* This is a CPU defined exception */
-        opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%ld,%s,External,%d" EOL, HWEVENT_EXCEPTION, eventdifftS, exEvent[eventType & 0x03], exceptionNumber - 16 );
+        opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%ld,%s,External,%d" EOL, HWEVENT_EXCEPTION, eventdifftS, exEvent[m->eventType & 0x03], m->exceptionNumber - 16 );
     }
 
     write( f->c[HW_CHANNEL].handle, outputString, opLen );
 }
 // ====================================================================================================
-void _handleDWTEvent( struct fifosHandle *f, struct ITMDecoder *i, struct ITMPacket *p )
+void _handleDWTEvent( struct dwtMsg *m, struct fifosHandle *f )
 
 {
-    uint64_t ts = _timestampuS(); /* Stamp as early as possible */
     char outputString[MAX_STRING_LENGTH];
     int opLen;
-    uint32_t event = p->d[1] & 0x2F;
-    const char *evName[] = {"CPI", "Exc", "Sleep", "LSU", "Fold", "Cyc"};
-    uint64_t eventdifftS = ts - f->lastHWExceptionTS;
 
-    f->lastHWExceptionTS = ts;
+    const char *evName[] = {"CPI", "Exc", "Sleep", "LSU", "Fold", "Cyc"};
+    uint64_t eventdifftS = m->ts - f->lastHWExceptionTS;
+
+    f->lastHWExceptionTS = m->ts;
 
     for ( uint32_t i = 0; i < 6; i++ )
     {
-        if ( event & ( 1 << i ) )
+        if ( m->event & ( 1 << i ) )
         {
-            opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%ld,%s" EOL, HWEVENT_DWT, eventdifftS, evName[event] );
+            opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%ld,%s" EOL, HWEVENT_DWT, eventdifftS, evName[m->event] );
             write( f->c[HW_CHANNEL].handle, outputString, opLen );
         }
     }
 }
 // ====================================================================================================
-void _handlePCSample( struct fifosHandle *f, struct ITMDecoder *i, struct ITMPacket *p )
+void _handlePCSample( struct pcSampleMsg *m, struct fifosHandle *f )
 
 /* We got a sample of the PC */
 
 {
-    uint64_t ts = _timestampuS(); /* Stamp as early as possible */
     char outputString[MAX_STRING_LENGTH];
     int opLen;
-    uint64_t eventdifftS = ts - f->lastHWExceptionTS;
+    uint64_t eventdifftS = m->ts - f->lastHWExceptionTS;
 
-    f->lastHWExceptionTS = ts;
+    f->lastHWExceptionTS = m->ts;
 
-    if ( p->len == 1 )
+    if ( m->sleep )
     {
         /* This is a sleep packet */
         opLen = snprintf( outputString, ( MAX_STRING_LENGTH - 1 ), "%d,%ld,**SLEEP**" EOL, HWEVENT_PCSample, eventdifftS );
     }
     else
     {
-        uint32_t pc = ( p->d[3] << 24 ) | ( p->d[2] << 16 ) | ( p->d[1] << 8 ) | ( p->d[0] );
-        opLen = snprintf( outputString, ( MAX_STRING_LENGTH - 1 ), "%d,%ld,0x%08x" EOL, HWEVENT_PCSample, eventdifftS, pc );
+        opLen = snprintf( outputString, ( MAX_STRING_LENGTH - 1 ), "%d,%ld,0x%08x" EOL, HWEVENT_PCSample, eventdifftS, m->pc );
     }
 
     /* We don't need to worry if this write does not succeed, it just means there is no other side of the fifo */
     write( f->c[HW_CHANNEL].handle, outputString, opLen );
 }
 // ====================================================================================================
-void _handleDataRWWP( struct fifosHandle *f, struct ITMDecoder *i, struct ITMPacket *p )
+void _handleDataRWWP( struct watchMsg *m, struct fifosHandle *f )
 
 /* We got an alert due to a watch pointer */
 
 {
-    uint64_t ts = _timestampuS(); /* Stamp as early as possible */
-    uint8_t comp = ( p->srcAddr >> 1 ) & 0x3;
-    bool isWrite = ( ( p->srcAddr & 0x01 ) != 0 );
-    uint32_t data;
     char outputString[MAX_STRING_LENGTH];
     int opLen;
-    uint64_t eventdifftS = ts - f->lastHWExceptionTS;
+    uint64_t eventdifftS = m->ts - f->lastHWExceptionTS;
 
-    f->lastHWExceptionTS = ts;
+    f->lastHWExceptionTS = m->ts;
 
-    switch ( p->len )
-    {
-        case 1:
-            data = p->d[0];
-            break;
-
-        case 2:
-            data = ( p->d[0] ) | ( ( p->d[1] ) << 8 );
-            break;
-
-        default:
-            data = ( p->d[0] ) | ( ( p->d[1] ) << 8 ) | ( ( p->d[2] ) << 16 ) | ( ( p->d[3] ) << 24 );
-            break;
-    }
-
-    opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%ld,%d,%s,0x%x" EOL, HWEVENT_RWWT, eventdifftS, comp, isWrite ? "Write" : "Read", data );
+    opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%ld,%d,%s,0x%x" EOL, HWEVENT_RWWT, eventdifftS, m->comp, m->isWrite ? "Write" : "Read", m->data );
     write( f->c[HW_CHANNEL].handle, outputString, opLen );
 }
 // ====================================================================================================
-void _handleDataAccessWP( struct fifosHandle *f, struct ITMDecoder *i, struct ITMPacket *p )
+void _handleDataAccessWP( struct wptMsg *m, struct fifosHandle *f )
 
 /* We got an alert due to a watchpoint */
 
 {
-    uint64_t ts = _timestampuS(); /* Stamp as early as possible */
-    uint8_t comp = ( p->srcAddr >> 1 ) & 0x3;
-    uint32_t data = ( p->d[0] ) | ( ( p->d[1] ) << 8 ) | ( ( p->d[2] ) << 16 ) | ( ( p->d[3] ) << 24 );
     char outputString[MAX_STRING_LENGTH];
     int opLen;
 
-    uint64_t eventdifftS = ts - f->lastHWExceptionTS;
+    uint64_t eventdifftS = m->ts - f->lastHWExceptionTS;
 
-    f->lastHWExceptionTS = ts;
-    opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%ld,%d,0x%08x" EOL, HWEVENT_AWP, eventdifftS, comp, data );
+    f->lastHWExceptionTS = m->ts;
+    opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%ld,%d,0x%08x" EOL, HWEVENT_AWP, eventdifftS, m->comp, m->data );
     write( f->c[HW_CHANNEL].handle, outputString, opLen );
 }
 // ====================================================================================================
-void _handleDataOffsetWP( struct fifosHandle *f, struct ITMDecoder *i, struct ITMPacket *p )
+void _handleDataOffsetWP( struct oswMsg *m, struct fifosHandle *f )
 
 /* We got an alert due to an offset write event */
 
 {
-    uint64_t ts = _timestampuS(); /* Stamp as early as possible */
-    uint8_t comp = ( p->srcAddr >> 1 ) & 0x3;
-    uint32_t offset = ( p->d[0] ) | ( ( p->d[1] ) << 8 );
     char outputString[MAX_STRING_LENGTH];
     int opLen;
-    uint64_t eventdifftS = ts - f->lastHWExceptionTS;
+    uint64_t eventdifftS = m->ts - f->lastHWExceptionTS;
 
-    f->lastHWExceptionTS = ts;
-    opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%ld,%d,0x%04x" EOL, HWEVENT_OFS, eventdifftS, comp, offset );
+    f->lastHWExceptionTS = m->ts;
+    opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%ld,%d,0x%04x" EOL, HWEVENT_OFS, eventdifftS, m->comp, m->offset );
+    write( f->c[HW_CHANNEL].handle, outputString, opLen );
+}
+// ====================================================================================================
+void _handleSW( struct swMsg *m, struct fifosHandle *f )
+
+{
+    /* Filter off filewriter packets and let the filewriter module deal with those */
+    if ( ( m->srcAddr == FW_CHANNEL ) && ( f->filewriter ) )
+    {
+        filewriterProcess( m );
+    }
+    else
+    {
+        if ( ( m->srcAddr < NUM_CHANNELS ) && ( f->c[m->srcAddr].handle ) )
+        {
+            write( f->c[m->srcAddr].handle, m, sizeof( struct msg ) );
+        }
+    }
+}
+// ====================================================================================================
+void _handleNISYNC( struct nisyncMsg *m, struct fifosHandle *f )
+
+{
+    char outputString[MAX_STRING_LENGTH];
+    int opLen;
+
+    opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%02x,0x%08x" EOL, HWEVENT_NISYNC, m->type, m->addr );
     write( f->c[HW_CHANNEL].handle, outputString, opLen );
 }
 
 // ====================================================================================================
-// Handlers for each message type
-// ====================================================================================================
-
-void _handleSW( struct fifosHandle *f, struct ITMDecoder *i )
-
-{
-    struct ITMPacket p;
-
-    if ( ITMGetPacket( i, &p ) )
-    {
-        /* Filter off filewriter packets and let the filewriter module deal with those */
-        if ( ( p.srcAddr == FW_CHANNEL ) && ( f->filewriter ) )
-        {
-            filewriterProcess( &p );
-        }
-        else
-        {
-            if ( ( p.srcAddr < NUM_CHANNELS ) && ( f->c[p.srcAddr].handle ) )
-            {
-                write( f->c[p.srcAddr].handle, &p, sizeof( struct ITMPacket ) );
-            }
-        }
-    }
-}
-// ====================================================================================================
-void _handleNISYNC( struct fifosHandle *f, struct ITMDecoder *i )
-
-{
-    uint32_t opLen;
-    uint32_t addr;
-    char outputString[MAX_STRING_LENGTH];
-
-    struct ITMPacket p;
-
-    if ( ITMGetPacket( i, &p ) )
-    {
-        addr = ( p.d[1] & 0xFE ) | ( p.d[2] << 8 ) | ( p.d[3] << 16 ) | ( p.d[4] << 24 );
-        opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%02x,0x%08x" EOL, HWEVENT_NISYNC, p.d[0], addr );
-        write( f->c[HW_CHANNEL].handle, outputString, opLen );
-    }
-}
-
-// ====================================================================================================
-void _handleHW( struct fifosHandle *f, struct ITMDecoder *i )
-
-/* ... a hardware event has been received, dispatch it */
-
-{
-    struct ITMPacket p;
-    ITMGetPacket( i, &p );
-
-    switch ( p.srcAddr )
-    {
-        // --------------
-        case 0: /* DWT Event */
-            break;
-
-        // --------------
-        case 1: /* Exception */
-            _handleException( f, i, &p );
-            break;
-
-        // --------------
-        case 2: /* PC Counter Sample */
-            _handlePCSample( f, i, &p );
-            break;
-
-        // --------------
-        default:
-            if ( ( p.srcAddr & 0x19 ) == 0x11 )
-            {
-                _handleDataRWWP( f, i, &p );
-            }
-            else if ( ( p.srcAddr & 0x19 ) == 0x08 )
-            {
-                _handleDataAccessWP( f, i, &p );
-            }
-            else if ( ( p.srcAddr & 0x19 ) == 0x09 )
-            {
-                _handleDataOffsetWP( f, i, &p );
-            }
-
-            break;
-            // --------------
-    }
-}
-// ====================================================================================================
-void _handleTS( struct fifosHandle *f, struct ITMDecoder *i )
+void _handleTS( struct TSMsg *m, struct fifosHandle *f )
 
 /* ... a timestamp */
 
 {
+    assert( m->msgtype == MSG_TS );
     char outputString[MAX_STRING_LENGTH];
     int opLen;
-    struct ITMPacket p;
-    uint32_t stamp = 0;
 
-    if ( ITMGetPacket( i, &p ) )
-    {
-        if ( !( p.d[0] & 0x80 ) )
-        {
-            /* This is packet format 2 ... just a simple increment */
-            stamp = p.d[0] >> 4;
-        }
-        else
-        {
-            /* This is packet format 1 ... full decode needed */
-            i->timeStatus = ( p.d[0] & 0x30 ) >> 4;
-            stamp = ( p.d[1] ) & 0x7f;
+    f->timeStamp += m->timeInc;
+    f->timeStatus = m->timeStatus;
 
-            if ( p.len > 2 )
-            {
-                stamp |= ( p.d[2] ) << 7;
-
-                if ( p.len > 3 )
-                {
-                    stamp |= ( p.d[3] & 0x7F ) << 14;
-
-                    if ( p.len > 4 )
-                    {
-                        stamp |= ( p.d[4] & 0x7f ) << 21;
-                    }
-                }
-            }
-        }
-
-        i->timeStamp += stamp;
-    }
-
-    opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%d,%" PRIu64 EOL, HWEVENT_TS, i->timeStatus, i->timeStamp );
+    opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%d,%" PRIu32 EOL, HWEVENT_TS, m->timeStatus, m->timeInc );
     write( f->c[HW_CHANNEL].handle, outputString, opLen );
 }
 // ====================================================================================================
@@ -555,6 +430,28 @@ void _itmPumpProcess( struct fifosHandle *f, char c )
 /* Handle individual characters into the itm decoder */
 
 {
+    struct msg decoded;
+
+    typedef void ( *handlers )( void *decoded, struct fifosHandle * f );
+
+    /* Handlers for each complete message received */
+    static const handlers h[MSG_NUM_MSGS] =
+    {
+        /* MSG_UNKNOWN */         NULL,
+        /* MSG_RESERVED */        NULL,
+        /* MSG_ERROR */           NULL,
+        /* MSG_NONE */            NULL,
+        /* MSG_SOFTWARE */        ( handlers )_handleSW,
+        /* MSG_NISYNC */          NULL,
+        /* MSG_OSW */             ( handlers )_handleDataOffsetWP,
+        /* MSG_DATA_ACCESS_WP */  ( handlers )_handleDataAccessWP,
+        /* MSG_DATA_RWWP */       ( handlers )_handleDataRWWP,
+        /* MSG_PC_SAMPLE */       ( handlers )_handlePCSample,
+        /* MSG_DWT_EVENT */       ( handlers )_handleDWTEvent,
+        /* MSG_EXCEPTION */       ( handlers )_handleException,
+        /* MSG_TS */              ( handlers )_handleTS
+    };
+
     switch ( ITMPump( &f->i, c ) )
     {
         // ------------------------------------
@@ -582,33 +479,16 @@ void _itmPumpProcess( struct fifosHandle *f, char c )
             break;
 
         // ------------------------------------
-        case ITM_EV_TS_PACKET_RXED:
-            _handleTS( f, &f->i );
-            break;
+        case ITM_EV_PACKET_RXED:
+            ITMGetDecodedPacket( &f->i, &decoded );
 
-        // ------------------------------------
-        case ITM_EV_SW_PACKET_RXED:
-            _handleSW( f, &f->i );
-            break;
+            /* See if we decoded a dispatchable match. genericMsg is just used to access */
+            /* the first two members of the decoded structs in a portable way.           */
+            if ( h[decoded.genericMsg.msgtype] )
+            {
+                ( h[decoded.genericMsg.msgtype] )( &decoded, f );
+            }
 
-        // ------------------------------------
-        case ITM_EV_HW_PACKET_RXED:
-            _handleHW( f, &f->i );
-            break;
-
-        // ------------------------------------
-        case ITM_EV_RESERVED_PACKET_RXED:
-            genericsReport( V_INFO, "Reserved Packet Received" EOL );
-            break;
-
-        // ------------------------------------
-        case ITM_EV_XTN_PACKET_RXED:
-            genericsReport( V_INFO, "Unknown Extension Packet Received" EOL );
-            break;
-
-        // ------------------------------------
-        case ITM_EV_NISYNC_PACKET_RXED:
-            _handleNISYNC( f, &f->i );
             break;
 
             // ------------------------------------
@@ -802,7 +682,7 @@ bool fifoCreate( struct fifosHandle *f )
     int fd[2];
 
     /* Make sure there's an initial timestamp to work with */
-    f->lastHWExceptionTS = _timestampuS();
+    f->lastHWExceptionTS = genericsTimestampuS();
 
     /* Reset the TPIU handler before we start */
     TPIUDecoderInit( &f->t );

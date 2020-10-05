@@ -59,6 +59,7 @@
 #include <pthread.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <assert.h>
 #include <netdb.h>
 
 #include "git_version_info.h"
@@ -67,6 +68,7 @@
 #include "tpiuDecoder.h"
 #include "itmDecoder.h"
 #include "symbols.h"
+#include "msgDecoder.h"
 
 #define TEXT_SEGMENT ".text"
 #define DEFAULT_TRACE_CHANNEL  30            /* Channel that we expect trace data to arrive on */
@@ -186,65 +188,59 @@ struct
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
-void _handleSW( struct ITMDecoder *i )
+void _handleSW( struct swMsg *m, struct ITMDecoder *i )
 
 {
-    struct ITMPacket p;
-    uint32_t d;
+    assert( m->msgtype == MSG_SOFTWARE );
 
-    if ( ITMGetPacket( i, &p ) )
+    if ( m->srcAddr == options.traceChannel )
     {
-        if ( p.srcAddr == options.traceChannel )
+        switch ( _r.CDState )
         {
-            d = ( p.d[3] << 24 ) | ( p.d[2] << 16 ) | ( p.d[1] << 8 ) | p.d[0];
+            // --------------------
+            case CD_waitinout:
+                if ( ( m->value & COMMS_MASK ) == IN_EVENT )
+                {
+                    _r.callsConstruct.in = true;
+                    _r.CDState = CD_waitsrc;
+                }
 
-            switch ( _r.CDState )
-            {
+                if ( ( m->value & COMMS_MASK ) == OUT_EVENT )
+                {
+                    _r.callsConstruct.in = false;
+                    _r.CDState = CD_waitsrc;
+                }
+
+                /* Time is encoded in lowest two octets ...accomodate rollover */
+                uint32_t t = m->value & 0xFFFF;
+
+                if ( t < _r.oldt )
+                {
+                    _r.highOrdert++;
+                }
+
+                _r.oldt = t;
+                _r.callsConstruct.tstamp = ( _r.highOrdert << 16 ) | t;
+                break;
+
+            // --------------------
+            case CD_waitsrc:
+                /* Source address is the address of the _return_, so subtract 4 */
+                _r.callsConstruct.src = ( m->value - 4 );
+                _r.CDState = CD_waitdst;
+                break;
+
+            // --------------------
+            case CD_waitdst:
+                _r.callsConstruct.dst = m->value;
+                _r.CDState = CD_waitinout;
+
+                /* Now store this for later processing */
+                _r.calls = ( struct edge * )realloc( _r.calls, sizeof( struct edge ) * ( _r.cdCount + 1 ) );
+                memcpy( &_r.calls[_r.cdCount], &_r.callsConstruct, sizeof( struct edge ) );
+                _r.cdCount++;
+                break;
                 // --------------------
-                case CD_waitinout:
-                    if ( ( d & COMMS_MASK ) == IN_EVENT )
-                    {
-                        _r.callsConstruct.in = true;
-                        _r.CDState = CD_waitsrc;
-                    }
-
-                    if ( ( d & COMMS_MASK ) == OUT_EVENT )
-                    {
-                        _r.callsConstruct.in = false;
-                        _r.CDState = CD_waitsrc;
-                    }
-
-                    /* Time is encoded in lowest two octets ...accomodate rollover */
-                    uint32_t t = d & 0xFFFF;
-
-                    if ( t < _r.oldt )
-                    {
-                        _r.highOrdert++;
-                    }
-
-                    _r.oldt = t;
-                    _r.callsConstruct.tstamp = ( _r.highOrdert << 16 ) | t;
-                    break;
-
-                // --------------------
-                case CD_waitsrc:
-                    /* Source address is the address of the _return_, so subtract 4 */
-                    _r.callsConstruct.src = ( d - 4 );
-                    _r.CDState = CD_waitdst;
-                    break;
-
-                // --------------------
-                case CD_waitdst:
-                    _r.callsConstruct.dst = d;
-                    _r.CDState = CD_waitinout;
-
-                    /* Now store this for later processing */
-                    _r.calls = ( struct edge * )realloc( _r.calls, sizeof( struct edge ) * ( _r.cdCount + 1 ) );
-                    memcpy( &_r.calls[_r.cdCount], &_r.callsConstruct, sizeof( struct edge ) );
-                    _r.cdCount++;
-                    break;
-                    // --------------------
-            }
         }
     }
 }
@@ -662,45 +658,33 @@ void _outputDot( void )
     fclose( c );
 }
 // ====================================================================================================
-void _handlePCSample( struct ITMDecoder *i, struct ITMPacket *p )
-
-{
-    return;
-}
-// ====================================================================================================
-void _handleHW( struct ITMDecoder *i )
-
-{
-    struct ITMPacket p;
-    ITMGetPacket( i, &p );
-
-    switch ( p.srcAddr )
-    {
-        // --------------
-        case 0: /* DWT Event */
-            break;
-
-        // --------------
-        case 1: /* Exception */
-            break;
-
-        // --------------
-        case 2: /* PC Counter Sample */
-            _handlePCSample( i, &p );
-            break;
-
-        // --------------
-        default:
-            break;
-            // --------------
-    }
-}
-// ====================================================================================================
 void _itmPumpProcess( char c )
 
 /* Handle individual characters into the itm decoder */
 
 {
+    struct msg decoded;
+
+    typedef void ( *handlers )( void *decoded, struct ITMDecoder * i );
+
+    /* Handlers for each complete message received */
+    static const handlers h[MSG_NUM_MSGS] =
+    {
+        /* MSG_UNKNOWN */         NULL,
+        /* MSG_RESERVED */        NULL,
+        /* MSG_ERROR */           NULL,
+        /* MSG_NONE */            NULL,
+        /* MSG_SOFTWARE */        ( handlers )_handleSW,
+        /* MSG_NISYNC */          NULL,
+        /* MSG_OSW */             NULL,
+        /* MSG_DATA_ACCESS_WP */  NULL,
+        /* MSG_DATA_RWWP */       NULL,
+        /* MSG_PC_SAMPLE */       NULL,
+        /* MSG_DWT_EVENT */       NULL,
+        /* MSG_EXCEPTION */       NULL,
+        /* MSG_TS */              NULL
+    };
+
     switch ( ITMPump( &_r.i, c ) )
     {
         // ------------------------------------
@@ -718,17 +702,6 @@ void _itmPumpProcess( char c )
             break;
 
         // ------------------------------------
-        case ITM_EV_RESERVED_PACKET_RXED:
-            genericsReport( V_INFO, "Reserved Packet Received" EOL );
-            break;
-
-
-        // ------------------------------------
-        case ITM_EV_XTN_PACKET_RXED:
-            genericsReport( V_INFO, "Unknown Extension Packet Received" EOL );
-            break;
-
-        // ------------------------------------
         case ITM_EV_OVERFLOW:
             genericsReport( V_WARN, "ITM Overflow (%d)" EOL, ITMDecoderGetStats( &_r.i )->overflow );
             break;
@@ -739,21 +712,16 @@ void _itmPumpProcess( char c )
             break;
 
         // ------------------------------------
-        case ITM_EV_TS_PACKET_RXED:
-            break;
+        case ITM_EV_PACKET_RXED:
+            ITMGetDecodedPacket( &_r.i, &decoded );
 
-        // ------------------------------------
-        case ITM_EV_SW_PACKET_RXED:
-            _handleSW( &_r.i );
-            break;
+            /* See if we decoded a dispatchable match. genericMsg is just used to access */
+            /* the first two members of the decoded structs in a portable way.           */
+            if ( h[decoded.genericMsg.msgtype] )
+            {
+                ( h[decoded.genericMsg.msgtype] )( &decoded, &_r.i );
+            }
 
-        // ------------------------------------
-        case ITM_EV_HW_PACKET_RXED:
-            _handleHW( &_r.i );
-            break;
-
-        // ------------------------------------
-        case ITM_EV_NISYNC_PACKET_RXED:
             break;
 
             // ------------------------------------

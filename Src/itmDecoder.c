@@ -36,9 +36,9 @@
  * of the ARMv7-M Architecture Refrence Manual document available
  * from https://static.docs.arm.com/ddi0403/e/DDI0403E_B_armv7m_arm.pdf
  */
-#include <sys/time.h>
 #include <string.h>
 #include "itmDecoder.h"
+#include "msgDecoder.h"
 
 #ifdef DEBUG
     #include <stdio.h>
@@ -62,9 +62,9 @@ void ITMDecoderInit( struct ITMDecoder *i, bool startSynced )
 
 {
     i->syncStat = SYNCMASK;
-    i->currentCount = 0;
+    i->pk.len = 0;
     i->contextIDlen = 0;
-    i->pageRegister = DEFAULT_PAGE_REGISTER;
+    i->pk.pageRegister = DEFAULT_PAGE_REGISTER;
     ITMDecoderForceSync( i, startSynced );
     ITMDecoderZeroStats( i );
 }
@@ -97,7 +97,7 @@ void ITMDecoderForceSync( struct ITMDecoder *i, bool isSynced )
         {
             i->p = ITM_IDLE;
             i->stats.syncCount++;
-            i->currentCount = 0;
+            i->pk.len = 0;
         }
     }
     else
@@ -112,7 +112,7 @@ void ITMDecoderForceSync( struct ITMDecoder *i, bool isSynced )
 // ====================================================================================================
 bool ITMGetPacket( struct ITMDecoder *i, struct ITMPacket *p )
 
-/* Copy received packet into transfer buffer, and reset receiver */
+/* Copy raw received packet into transfer buffer */
 
 {
     /* This should have been reset in the call */
@@ -121,16 +121,18 @@ bool ITMGetPacket( struct ITMDecoder *i, struct ITMPacket *p )
         return false;
     }
 
-    p->srcAddr = i->srcAddr;
-    p->len = i->currentCount;
-    p->pageRegister = i->pageRegister;
-
-    memcpy( p->d, i->rxPacket, p->len );
-    memset( &p->d[p->len], 0, ITM_MAX_PACKET - p->len );
+    memcpy( p->d, &i->pk, sizeof( struct ITMPacket ) );
     return true;
 }
 // ====================================================================================================
+bool ITMGetDecodedPacket( struct ITMDecoder *i, struct msg *decoded )
 
+/* Decode received packet into 'decoded' buffer */
+
+{
+    return msgDecoder( &i->pk, decoded );
+}
+// ====================================================================================================
 #ifdef DEBUG
 static char *_protoNames[] = {PROTO_NAME_LIST};
 #endif
@@ -143,23 +145,22 @@ enum ITMPumpEvent ITMPump( struct ITMDecoder *i, uint8_t c )
     enum _protoState newState = i->p;
     enum ITMPumpEvent retVal = ITM_EV_NONE;
 
-    i->syncStat = ( i->syncStat << 8 ) | c;
-
     /* Just check for a TPIU sync ... this is incredibly unlikely in */
     /* ITM data, so it's an indicator that the TPIU should have been */
     /* switched in, and hasn't been. */
+    i->syncStat = ( i->syncStat << 8 ) | c;
+
     if ( ( ( i->syncStat )&TPIU_SYNCMASK ) == TPIU_SYNCPATTERN )
     {
         i->stats.tpiuSyncCount++;
     }
-
 
     if ( ( ( i->syncStat )&SYNCMASK ) == SYNCPATTERN )
     {
         i->stats.syncCount++;
 
         /* Page register is reset on a sync */
-        i->pageRegister = 0;
+        i->pk.pageRegister = 0;
         retVal = ITM_EV_SYNCED;
         newState = ITM_IDLE;
     }
@@ -174,6 +175,9 @@ enum ITMPumpEvent ITMPump( struct ITMDecoder *i, uint8_t c )
 
             // -----------------------------------------------------
             case ITM_IDLE:
+
+                /* Start off by making sure entire received packet is 0'ed */
+                memset( i->pk.d, 0, ITM_MAX_PACKET );
 
                 // *************************************************
                 // ************** SYNC PACKET **********************
@@ -195,8 +199,8 @@ enum ITMPumpEvent ITMPump( struct ITMDecoder *i, uint8_t c )
                         i->targetCount = 4;
                     }
 
-                    i->currentCount = 0;
-                    i->srcAddr = ( c & 0xF8 ) >> 3;
+                    i->pk.len = 0;
+                    i->pk.srcAddr = ( c & 0xF8 ) >> 3;
 
                     if ( !( c & 0x04 ) )
                     {
@@ -229,9 +233,9 @@ enum ITMPumpEvent ITMPump( struct ITMDecoder *i, uint8_t c )
                 // ***********************************************
                 if ( !( c & 0x0F ) )
                 {
-                    i->currentCount = 1; /* The '1' is deliberate. */
+                    i->pk.len = 1; /* The '1' is deliberate. */
                     /* This is a timestamp packet */
-                    i->rxPacket[0] = c;
+                    i->pk.d[0] = c;
                     i->stats.TSPkt++;
 
                     if ( c & 0x80 )
@@ -242,14 +246,14 @@ enum ITMPumpEvent ITMPump( struct ITMDecoder *i, uint8_t c )
                     else
                     {
                         /* This is TS packet format 2, no more to come, and no change of state */
-                        retVal = ITM_EV_TS_PACKET_RXED;
+                        i->pk.type = ITM_PT_TS;
+                        retVal = ITM_EV_PACKET_RXED;
                     }
 
                     break;
                 }
 
                 // ***********************************************
-
                 if ( ( c & 0b11011111 ) == 0b10010100 )
                 {
                     /* This is a global timestamp packet */
@@ -270,7 +274,7 @@ enum ITMPumpEvent ITMPump( struct ITMDecoder *i, uint8_t c )
                 {
                     /* This is a normal I-sync packet */
                     newState = ITM_NISYNC;
-                    i->currentCount = 0;
+                    i->pk.len = 0;
                     i->targetCount = MAX_PACKET + i->contextIDlen;
                     break;
                 }
@@ -279,16 +283,16 @@ enum ITMPumpEvent ITMPump( struct ITMDecoder *i, uint8_t c )
                 if ( ( c & 0b00001000 ) == 0b00001000 )
                 {
                     /* Extension Packet */
-                    i->currentCount = 1; /* The '1' is deliberate. */
+                    i->pk.len = 1; /* The '1' is deliberate. */
                     i->stats.XTNPkt++;
 
-                    i->rxPacket[0] = c;
+                    i->pk.d[0] = c;
 
                     if ( !( c & 0x84 ) )
                     {
                         /* This is the Stimulus Port Page Register setting ... deal with it here */
                         i->stats.PagePkt++;
-                        i->pageRegister = ( c >> 4 ) & 0x07;
+                        i->pk.pageRegister = ( c >> 4 ) & 0x07;
                     }
                     else
                     {
@@ -305,13 +309,14 @@ enum ITMPumpEvent ITMPump( struct ITMDecoder *i, uint8_t c )
                         ( ( c & 0b00000100 ) == 0b00000100 ) )
                 {
                     /* Reserved packets - we have no idea what these are */
-                    i->currentCount = 1;
+                    i->pk.len = 1;
                     i->stats.ReservedPkt++;
-                    i->rxPacket[0] = c;
+                    i->pk.d[0] = c;
 
                     if ( !( c & 0x80 ) )
                     {
-                        retVal = ITM_EV_RESERVED_PACKET_RXED;
+                        i->pk.type = ITM_PT_RSRVD;
+                        retVal = ITM_EV_PACKET_RXED;
                     }
                     else
                     {
@@ -358,87 +363,83 @@ enum ITMPumpEvent ITMPump( struct ITMDecoder *i, uint8_t c )
 
             // -----------------------------------------------------
             case ITM_SW:
-                i->rxPacket[i->currentCount++] = c;
+                i->pk.d[i->pk.len++] = c;
 
-                if ( i->currentCount >= i->targetCount )
+                if ( i->pk.len >= i->targetCount )
                 {
                     newState = ITM_IDLE;
-                    retVal = ITM_EV_SW_PACKET_RXED;
-                    break;
+                    i->pk.type = ITM_PT_SW;
+                    retVal = ITM_EV_PACKET_RXED;
                 }
 
-                retVal = ITM_EV_NONE;
                 break;
 
             // -----------------------------------------------------
             case ITM_HW:
-                i->rxPacket[i->currentCount] = c;
-                i->currentCount++;
+                i->pk.d[i->pk.len++] = c;
 
-                if ( i->currentCount >= i->targetCount )
+                if ( i->pk.len >= i->targetCount )
                 {
                     newState = ITM_IDLE;
-                    retVal = ITM_EV_HW_PACKET_RXED;
-                    break;
+                    i->pk.type = ITM_PT_HW;
+                    retVal = ITM_EV_PACKET_RXED;
                 }
 
-                retVal = ITM_EV_NONE;
                 break;
 
             // -----------------------------------------------------
             case ITM_TS:
-                i->rxPacket[i->currentCount++] = c;
+                i->pk.d[i->pk.len++] = c;
 
-                if ( ( !( c & 0x80 ) ) || ( i->currentCount >= MAX_PACKET ) )
+                if ( ( !( c & 0x80 ) ) || ( i->pk.len >= MAX_PACKET ) )
                 {
                     /* We are done */
                     newState = ITM_IDLE;
-                    retVal = ITM_EV_TS_PACKET_RXED;
-                    break;
+                    i->pk.type = ITM_PT_TS;
+                    retVal = ITM_EV_PACKET_RXED;
                 }
 
                 break;
 
             // -----------------------------------------------------
             case ITM_RSVD:
-                i->rxPacket[i->currentCount++] = c;
+                i->pk.d[i->pk.len++] = c;
 
-                if ( ( !( c & 0x80 ) ) || ( i->currentCount >= MAX_PACKET ) )
+                if ( ( !( c & 0x80 ) ) || ( i->pk.len >= MAX_PACKET ) )
                 {
                     /* We are done */
                     newState = ITM_IDLE;
-                    retVal = ITM_EV_RESERVED_PACKET_RXED;
-                    break;
+                    i->pk.type = ITM_PT_RSRVD;
+                    retVal = ITM_EV_PACKET_RXED;
                 }
 
                 break;
 
             // -----------------------------------------------------
             case ITM_XTN:
-                i->rxPacket[i->currentCount++] = c;
+                i->pk.d[i->pk.len++] = c;
 
-                if ( ( !( c & 0x80 ) ) || ( i->currentCount >= MAX_PACKET ) )
+                if ( ( !( c & 0x80 ) ) || ( i->pk.len >= MAX_PACKET ) )
                 {
                     /* We are done */
                     newState = ITM_IDLE;
-                    retVal = ITM_EV_XTN_PACKET_RXED;
-                    break;
+                    i->pk.type = ITM_PT_XTN;
+                    retVal = ITM_EV_PACKET_RXED;
                 }
 
                 break;
 
             // -----------------------------------------------------
             case ITM_NISYNC:
-                i->rxPacket[i->currentCount++] = c;
+                i->pk.d[i->pk.len++] = c;
 
-                if ( i->currentCount > i->targetCount )
+                if ( i->pk.len > i->targetCount )
                 {
                     newState = ITM_IDLE;
-                    retVal = ITM_EV_NISYNC_PACKET_RXED;
-                    break;
+                    i->pk.type = ITM_PT_NISYNC;
+                    retVal = ITM_EV_PACKET_RXED;
                 }
 
-                retVal = ITM_EV_NONE;
                 break;
                 // -----------------------------------------------------
         }

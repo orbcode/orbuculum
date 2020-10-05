@@ -38,10 +38,10 @@
 #include <stdbool.h>
 #include "generics.h"
 #include "fileWriterProtocol.h"
-#include "itmDecoder.h"
+#include "msgDecoder.h"
 
 // ====================================================================================================
-bool filewriterProcess( struct ITMPacket *p );
+bool filewriterProcess( struct swMsg *m );
 bool filewriterInit( char *basedir );
 // ====================================================================================================
 #endif

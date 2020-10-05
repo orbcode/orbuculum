@@ -32,7 +32,6 @@
  */
 
 #include <stdio.h>
-#include <sys/time.h>
 #include <string.h>
 #ifdef DEBUG
     #include "generics.h"

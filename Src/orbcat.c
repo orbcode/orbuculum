@@ -43,6 +43,7 @@
 #include <sys/stat.h>
 #include <stdio.h>
 #include <string.h>
+#include <assert.h>
 #if defined OSX
     #include <libusb.h>
 #else
@@ -65,6 +66,7 @@
 #include "generics.h"
 #include "tpiuDecoder.h"
 #include "itmDecoder.h"
+#include "msgDecoder.h"
 
 #define SERVER_PORT 3443                  /* Server port definition */
 
@@ -101,6 +103,8 @@ struct
     struct ITMPacket h;
     struct TPIUDecoder t;
     struct TPIUPacket p;
+    enum timeDelay timeStatus;           /* Indicator of if this time is exact */
+    uint64_t timeStamp;                  /* Latest received time */
 } _r;
 // ====================================================================================================
 // ====================================================================================================
@@ -109,233 +113,158 @@ struct
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
-void _handleException( struct ITMDecoder *i, struct ITMPacket *p )
+void _handleException( struct excMsg *m, struct ITMDecoder *i )
 
 {
+    assert( m->msgtype == MSG_EXCEPTION );
+
     if ( !( options.hwOutputs & ( 1 << HWEVENT_EXCEPTION ) ) )
     {
         return;
     }
 
-    uint32_t exceptionNumber = ( ( p->d[1] & 0x01 ) << 8 ) | p->d[0];
-    uint32_t eventType = p->d[1] >> 4;
-
     const char *exNames[] = {"Thread", "Reset", "NMI", "HardFault", "MemManage", "BusFault", "UsageFault", "UNKNOWN_7",
                              "UNKNOWN_8", "UNKNOWN_9", "UNKNOWN_10", "SVCall", "Debug Monitor", "UNKNOWN_13", "PendSV", "SysTick"
                             };
     const char *exEvent[] = {"Enter", "Exit", "Resume"};
-    fprintf( stdout, "%d,%s,%s" EOL, HWEVENT_EXCEPTION, exEvent[eventType], exNames[exceptionNumber] );
+    fprintf( stdout, "%d,%s,%s" EOL, HWEVENT_EXCEPTION, exEvent[m->eventType], exNames[m->exceptionNumber] );
 }
 // ====================================================================================================
-void _handleDWTEvent( struct ITMDecoder *i, struct ITMPacket *p )
+void _handleDWTEvent( struct dwtMsg *m, struct ITMDecoder *i )
 
 {
+    assert( m->msgtype == MSG_DWT_EVENT );
+
     if ( !( options.hwOutputs & ( 1 << HWEVENT_DWT ) ) )
     {
         return;
     }
 
-    uint32_t event = p->d[1] & 0x2F;
     const char *evName[] = {"CPI", "Exc", "Sleep", "LSU", "Fold", "Cyc"};
 
     for ( uint32_t i = 0; i < 6; i++ )
     {
-        if ( event & ( 1 << i ) )
+        if ( m->event & ( 1 << i ) )
         {
-            fprintf( stdout, "%d,%s" EOL, HWEVENT_DWT, evName[event] );
+            fprintf( stdout, "%d,%s" EOL, HWEVENT_DWT, evName[m->event] );
         }
     }
 }
 // ====================================================================================================
-void _handlePCSample( struct ITMDecoder *i, struct ITMPacket *p )
+void _handlePCSample( struct pcSampleMsg *m, struct ITMDecoder *i )
 
 {
+    assert( m->msgtype == MSG_PC_SAMPLE );
+
     if ( !( options.hwOutputs & ( 1 << HWEVENT_PCSample ) ) )
     {
         return;
     }
 
-    uint32_t pc = ( p->d[3] << 24 ) | ( p->d[2] << 16 ) | ( p->d[1] << 8 ) | ( p->d[0] );
-    fprintf( stdout, "%d,0x%08x" EOL, HWEVENT_PCSample, pc );
+    fprintf( stdout, "%d,0x%08x" EOL, HWEVENT_PCSample, m->pc );
 }
 // ====================================================================================================
-void _handleDataRWWP( struct ITMDecoder *i, struct ITMPacket *p )
+void _handleDataRWWP( struct watchMsg *m, struct ITMDecoder *i )
 
 {
+    assert( m->msgtype == MSG_DATA_RWWP );
+
     if ( !( options.hwOutputs & ( 1 << HWEVENT_RWWT ) ) )
     {
         return;
     }
 
-    uint32_t comp = ( p->d[0] & 0x30 ) >> 4;
-    bool isWrite = ( ( p->d[0] & 0x08 ) != 0 );
-    uint32_t data;
-
-    switch ( p->len )
-    {
-        case 1:
-            data = p->d[1];
-            break;
-
-        case 2:
-            data = ( p->d[1] ) | ( ( p->d[2] ) << 8 );
-            break;
-
-        default:
-            data = ( p->d[1] ) | ( ( p->d[2] ) << 8 ) | ( ( p->d[3] ) << 16 ) | ( ( p->d[4] ) << 24 );
-            break;
-    }
-
-    fprintf( stdout, "%d,%d,%s,0x%x" EOL, HWEVENT_RWWT, comp, isWrite ? "Write" : "Read", data );
+    fprintf( stdout, "%d,%d,%s,0x%x" EOL, HWEVENT_RWWT, m->comp, m->isWrite ? "Write" : "Read", m->data );
 }
 // ====================================================================================================
-void _handleDataAccessWP( struct ITMDecoder *i, struct ITMPacket *p )
+void _handleDataAccessWP( struct wptMsg *m, struct ITMDecoder *i )
+
 
 {
+    assert( m->msgtype == MSG_DATA_ACCESS_WP );
+
     if ( !( options.hwOutputs & ( 1 << HWEVENT_AWP ) ) )
     {
         return;
     }
 
-    uint32_t comp = ( p->d[0] & 0x30 ) >> 4;
-    uint32_t data = ( p->d[1] ) | ( ( p->d[2] ) << 8 ) | ( ( p->d[3] ) << 16 ) | ( ( p->d[4] ) << 24 );
-
-    fprintf( stdout, "%d,%d,0x%08x" EOL, HWEVENT_AWP, comp, data );
+    fprintf( stdout, "%d,%d,0x%08x" EOL, HWEVENT_AWP, m->comp, m->data );
 }
 // ====================================================================================================
-void _handleDataOffsetWP( struct ITMDecoder *i, struct ITMPacket *p )
+void _handleDataOffsetWP(  struct oswMsg *m, struct ITMDecoder *i )
 
 {
+    assert( m->msgtype == MSG_OSW );
+
     if ( !( options.hwOutputs & ( 1 << HWEVENT_OFS ) ) )
     {
         return;
     }
 
-    uint32_t comp = ( p->d[0] & 0x30 ) >> 4;
-    uint32_t offset = ( p->d[1] ) | ( ( p->d[2] ) << 8 );
-
-    fprintf( stdout, "%d,%d,0x%04x" EOL, HWEVENT_OFS, comp, offset );
+    fprintf( stdout, "%d,%d,0x%04x" EOL, HWEVENT_OFS, m->comp, m->offset );
 }
 // ====================================================================================================
-void _handleSW( struct ITMDecoder *i )
+void _handleSW( struct swMsg *m, struct ITMDecoder *i )
 
 {
-    struct ITMPacket p;
-    uint32_t w;
+    assert( m->msgtype == MSG_SOFTWARE );
 
-    if ( ITMGetPacket( i, &p ) )
+    if ( ( m->srcAddr < NUM_CHANNELS ) && ( options.presFormat[m->srcAddr] ) )
     {
-        if ( ( p.srcAddr < NUM_CHANNELS ) && ( options.presFormat[p.srcAddr] ) )
+        if ( strstr( options.presFormat[m->srcAddr], "%f" ) > 0 )
         {
-            /* Build 32 value the long way around to avoid type-punning issues */
-            w = ( p.d[3] << 24 ) | ( p.d[2] << 16 ) | ( p.d[1] << 8 ) | ( p.d[0] );
-
-            if ( strstr( options.presFormat[p.srcAddr], "%f" ) > 0 )
-            {
-                /* type punning on same host, after correctly building 32bit val
-                 * only unsafe on systems where u32/float have diff byte order */
-                float *nastycast = ( float * )&w;
-                fprintf( stdout, options.presFormat[p.srcAddr], *nastycast );
-            }
-            else
-            {
-                fprintf( stdout, options.presFormat[p.srcAddr], w );
-            }
+            /* type punning on same host, after correctly building 32bit val
+             * only unsafe on systems where u32/float have diff byte order */
+            float *nastycast = ( float * )&m->value;
+            fprintf( stdout, options.presFormat[m->srcAddr], *nastycast );
+        }
+        else
+        {
+            fprintf( stdout, options.presFormat[m->srcAddr], m->value );
         }
     }
 }
 // ====================================================================================================
-void _handleHW( struct ITMDecoder *i )
+void _handleTS( struct TSMsg *m, struct ITMDecoder *i )
 
 {
-    struct ITMPacket p;
-    ITMGetPacket( i, &p );
-
-    switch ( p.srcAddr )
-    {
-        // --------------
-        case 0: /* DWT Event */
-            break;
-
-        // --------------
-        case 1: /* Exception */
-            _handleException( i, &p );
-            break;
-
-        // --------------
-        case 2: /* PC Counter Sample */
-            _handlePCSample( i, &p );
-            break;
-
-        // --------------
-        default:
-            if ( ( p.d[0] & 0xC4 ) == 0x84 )
-            {
-                _handleDataRWWP( i, &p );
-            }
-            else if ( ( p.d[0] & 0xCF ) == 0x47 )
-            {
-                _handleDataAccessWP( i, &p );
-            }
-            else if ( ( p.d[0] & 0xCF ) == 0x4E )
-            {
-                _handleDataOffsetWP( i, &p );
-            }
-
-            break;
-            // --------------
-    }
-}
-// ====================================================================================================
-void _handleTS( struct ITMDecoder *i )
-
-{
-    struct ITMPacket p;
-    uint32_t stamp = 0;
+    assert( m->msgtype == MSG_TS );
 
     if ( !( options.hwOutputs & ( 1 << HWEVENT_TS ) ) )
     {
         return;
     }
 
-    if ( ITMGetPacket( i, &p ) )
-    {
-        if ( !( p.d[0] & 0x80 ) )
-        {
-            /* This is packet format 2 ... just a simple increment */
-            stamp = p.d[0] >> 4;
-        }
-        else
-        {
-            /* This is packet format 1 ... full decode needed */
-            i->timeStatus = ( p.d[0] & 0x30 ) >> 4;
-            stamp = ( p.d[1] ) & 0x7f;
+    _r.timeStamp += m->timeInc;
 
-            if ( p.len > 2 )
-            {
-                stamp |= ( p.d[2] ) << 7;
-
-                if ( p.len > 3 )
-                {
-                    stamp |= ( p.d[3] & 0x7F ) << 14;
-
-                    if ( p.len > 4 )
-                    {
-                        stamp |= ( p.d[4] & 0x7f ) << 21;
-                    }
-                }
-            }
-        }
-
-        i->timeStamp += stamp;
-    }
-
-    fprintf( stdout, "%d,%d,%" PRIu64 EOL, HWEVENT_TS, i->timeStatus, i->timeStamp );
+    fprintf( stdout, "%d,%d,%" PRIu64 EOL, HWEVENT_TS, _r.timeStatus, _r.timeStamp );
 }
 // ====================================================================================================
 void _itmPumpProcess( char c )
 
 {
+    struct msg decoded;
+
+    typedef void ( *handlers )( void *decoded, struct ITMDecoder * i );
+
+    /* Handlers for each complete message received */
+    static const handlers h[MSG_NUM_MSGS] =
+    {
+        /* MSG_UNKNOWN */         NULL,
+        /* MSG_RESERVED */        NULL,
+        /* MSG_ERROR */           NULL,
+        /* MSG_NONE */            NULL,
+        /* MSG_SOFTWARE */        ( handlers )_handleSW,
+        /* MSG_NISYNC */          NULL,
+        /* MSG_OSW */             ( handlers )_handleDataOffsetWP,
+        /* MSG_DATA_ACCESS_WP */  ( handlers )_handleDataAccessWP,
+        /* MSG_DATA_RWWP */       ( handlers )_handleDataRWWP,
+        /* MSG_PC_SAMPLE */       ( handlers )_handlePCSample,
+        /* MSG_DWT_EVENT */       ( handlers )_handleDWTEvent,
+        /* MSG_EXCEPTION */       ( handlers )_handleException,
+        /* MSG_TS */              ( handlers )_handleTS
+    };
+
     switch ( ITMPump( &_r.i, c ) )
     {
         case ITM_EV_NONE:
@@ -349,14 +278,6 @@ void _itmPumpProcess( char c )
             genericsReport( V_INFO, "ITM Synced" EOL );
             break;
 
-        case ITM_EV_RESERVED_PACKET_RXED:
-            genericsReport( V_INFO, "Reserved Packet Received" EOL );
-            break;
-
-        case ITM_EV_XTN_PACKET_RXED:
-            genericsReport( V_INFO, "Unknown Extension Packet Received" EOL );
-            break;
-
         case ITM_EV_OVERFLOW:
             genericsReport( V_WARN, "ITM Overflow" EOL );
             break;
@@ -365,20 +286,19 @@ void _itmPumpProcess( char c )
             genericsReport( V_WARN, "ITM Error" EOL );
             break;
 
-        case ITM_EV_TS_PACKET_RXED:
-            _handleTS( &_r.i );
+        case ITM_EV_PACKET_RXED:
+            ITMGetDecodedPacket( &_r.i, &decoded );
+
+            /* See if we decoded a dispatchable match. genericMsg is just used to access */
+            /* the first two members of the decoded structs in a portable way.           */
+            if ( h[decoded.genericMsg.msgtype] )
+            {
+                ( h[decoded.genericMsg.msgtype] )( &decoded, &_r.i );
+            }
+
             break;
 
-        case ITM_EV_SW_PACKET_RXED:
-            _handleSW( &_r.i );
-            break;
-
-        case ITM_EV_HW_PACKET_RXED:
-            _handleHW( &_r.i );
-            break;
-
-        case ITM_EV_NISYNC_PACKET_RXED:
-            /* We don't process these here */
+        default:
             break;
     }
 }
@@ -554,7 +474,7 @@ int _processOptions( int argc, char *argv[] )
                 }
 
                 *chanIndex++ = 0;
-                options.presFormat[chan] = strdup( GenericsUnescape( chanIndex ) );
+                options.presFormat[chan] = strdup( genericsUnescape( chanIndex ) );
                 break;
 
             // ------------------------------------
@@ -617,7 +537,7 @@ int _processOptions( int argc, char *argv[] )
     {
         if ( options.presFormat[g] )
         {
-            genericsReport( V_INFO, "             %02d [%s]" EOL, g, GenericsEscape( options.presFormat[g] ) );
+            genericsReport( V_INFO, "             %02d [%s]" EOL, g, genericsEscape( options.presFormat[g] ) );
         }
     }
 

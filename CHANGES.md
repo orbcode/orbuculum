@@ -1,5 +1,8 @@
 V1.10 Under construction
 
+* Link Monitoring and reporting (enabled with the `-m` option to orbuculum.
+* Simple colour support (disable by commenting out `SCREEN_HANDLING` in the makefile).
+* Internal restructuring to simplify the packet decode. This will help you if you want to implement your own handlers. See `orbcat.c` for a simple example, or `orbtop.c` if timestamp ordering is important to you.
 * orbuculum now processes simple ISYNC messages, reporting them as type 8 in the hwevent fifo.
 * ocbcat can now read directly from a file.
 * orbcat and orbuculum can both terminate reading from a file when it's exhaused with the `-e` option.

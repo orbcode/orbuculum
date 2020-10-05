@@ -1,6 +1,6 @@
 /*
- * Msg Sequencer Module
- * ====================
+ * Message Sequencer Module
+ * ========================
  *
  * Copyright (C) 2017, 2019  Dave Marples  <dave@marples.net>
  * All rights reserved.
@@ -32,23 +32,18 @@
  */
 
 /*
- * Sequencer for re-ordering decoded messages from the ITM according to timestamp
- * information in the flow.
+ * Sequencer for re-ordering messages from the ITM according to prioritize
+ * timestamp information in the flow.
  *
- * from https://static.docs.arm.com/ddi0403/e/DDI0403E_B_armv7m_arm.pdf
+ * Spec at https://static.docs.arm.com/ddi0403/e/DDI0403E_B_armv7m_arm.pdf
  */
 
-#ifndef _MSGSEQ_H_
-#define _MSGSEQ_H_
+#ifndef _ITMSEQ_H_
+#define _ITMSEQ_H_
 
 #include <stdbool.h>
 #include <stdint.h>
-
-#ifdef DEBUG
-    #include "generics.h"
-#else
-    #define genericsReport(x...)
-#endif
+#include "generics.h"
 
 #include "itmDecoder.h"
 #include "msgDecoder.h"
@@ -57,24 +52,25 @@
 extern "C" {
 #endif
 
-struct MsgSeq
+struct MSGSeq
 
 {
     struct ITMDecoder *i;
 
-    uint32_t wp;
-    uint32_t rp;
-    uint32_t pbl;
-    struct msg *pbuffer;
-    bool releaseTimeMsg;
+    uint32_t wp;             /* Write pointer */
+    uint32_t rp;             /* Read pointer */
+    uint32_t pbl;            /* Buffer length */
+    bool releaseTimeMsg;     /* Indicator to release msg at head of queue */
+
+    struct msg *pbuffer;     /* The buffer */
 };
 
 // ====================================================================================================
 
-void MsgSeqInit( struct MsgSeq *d, struct ITMDecoder *i, uint32_t maxEntries );
-struct msg *MsgSeqGetPacket( struct MsgSeq *d );
+void MSGSeqInit( struct MSGSeq *d, struct ITMDecoder *i, uint32_t maxEntries );
+struct msg *MSGSeqGetPacket( struct MSGSeq *d );
 
-bool MsgSeqPump( struct MsgSeq *d, uint8_t c );
+bool MSGSeqPump( struct MSGSeq *d, uint8_t c );
 
 // ====================================================================================================
 #ifdef __cplusplus

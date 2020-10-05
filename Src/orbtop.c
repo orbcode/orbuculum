@@ -46,7 +46,6 @@
 #include <demangle.h>
 #include <assert.h>
 #include <inttypes.h>
-#include <sys/time.h>
 #include <stdint.h>
 #include <limits.h>
 #include <pthread.h>
@@ -64,7 +63,7 @@
 #include "tpiuDecoder.h"
 #include "itmDecoder.h"
 #include "symbols.h"
-#include "itmSeq.h"
+#include "msgSeq.h"
 
 #define CUTOFF              (10)             /* Default cutoff at 0.1% */
 #define SERVER_PORT         (3443)           /* Server port definition */
@@ -74,7 +73,7 @@
 #define MAX_EXCEPTIONS      (512)            /* Maximum number of exceptions to be considered */
 #define NO_EXCEPTION        (0xFFFFFFFF)     /* Flag indicating no exception is being processed */
 
-#define ITM_REORDER_BUFLEN  (10)             /* Maximum number of samples to re-order for timekeeping */
+#define MSG_REORDER_BUFLEN  (10)             /* Maximum number of samples to re-order for timekeeping */
 
 #define CLEAR_SCREEN        "\033[2J\033[;H" /* ASCII Sequence for clear screen */
 
@@ -157,10 +156,12 @@ struct                                       /* Record for options, either defau
 struct
 {
     struct ITMDecoder i;                               /* The decoders and the packets from them */
-    struct ITMSeq    d;
+    struct MSGSeq    d;                                   /* Message (re-)sequencer */
     struct ITMPacket h;
     struct TPIUDecoder t;
     struct TPIUPacket p;
+    enum timeDelay timeStatus;                         /* Indicator of if this time is exact */
+    uint64_t timeStamp;                                /* Latest received time */
 
     struct SymbolSet *s;                               /* Symbols read from elf */
     struct nameEntry *n;                               /* Current table of recognised names */
@@ -299,19 +300,25 @@ void _exitEx( int64_t ts )
     }
 }
 // ====================================================================================================
-void _handleException( struct ITMDecoder *i, struct ITMPacket *p )
+void _handleTS( struct TSMsg *m, struct ITMDecoder *i )
 
 {
-    uint64_t ts = i->timeStamp;
-    uint32_t exceptionNumber = ( ( p->d[1] & 0x01 ) << 8 ) | p->d[0];
-    uint32_t eventType = p->d[1] >> 4;
+    assert( m->msgtype == MSG_TS );
 
-    assert( exceptionNumber < MAX_EXCEPTIONS );
+    _r.timeStatus = m->timeStatus;
+    _r.timeStamp += m->timeInc;
+}
+// ====================================================================================================
+void _handleException( struct excMsg *m, struct ITMDecoder *i )
 
-    switch ( eventType )
+{
+    assert( m->msgtype == MSG_EXCEPTION );
+    assert( m->exceptionNumber < MAX_EXCEPTIONS );
+
+    switch ( m->eventType )
     {
         case EXEVENT_ENTER:
-            if ( _r.er[exceptionNumber].entryTime != 0 )
+            if ( _r.er[m->exceptionNumber].entryTime != 0 )
             {
                 /* We beleive we are already in this exception. This can happen when we've lost
                  * messages due to ITM overflow. Don't process the enter. Everything will get
@@ -323,35 +330,35 @@ void _handleException( struct ITMDecoder *i, struct ITMPacket *p )
             if ( _r.currentException != NO_EXCEPTION )
             {
                 /* Already in an exception ... account for time until now */
-                _r.er[_r.currentException].thisTime += ts - _r.er[_r.currentException].entryTime;
+                _r.er[_r.currentException].thisTime += _r.timeStamp - _r.er[_r.currentException].entryTime;
             }
 
             /* Record however we got to this exception */
-            _r.er[exceptionNumber].prev = _r.currentException;
+            _r.er[m->exceptionNumber].prev = _r.currentException;
 
             /* Now dip into this exception */
-            _r.currentException = exceptionNumber;
-            _r.er[exceptionNumber].entryTime = ts;
-            _r.er[exceptionNumber].thisTime = 0;
+            _r.currentException = m->exceptionNumber;
+            _r.er[m->exceptionNumber].entryTime = _r.timeStamp;
+            _r.er[m->exceptionNumber].thisTime = 0;
             _r.erDepth++;
             break;
 
         case EXEVENT_RESUME: /* Unwind all levels of exception (deals with tail chaining) */
             while ( ( _r.currentException != NO_EXCEPTION ) && ( _r.erDepth ) )
             {
-                _exitEx( ts );
+                _exitEx( _r.timeStamp );
             }
 
             _r.currentException = NO_EXCEPTION;
             break;
 
         case EXEVENT_EXIT: /* Exit single level of exception */
-            _exitEx( ts );
+            _exitEx( _r.timeStamp );
             break;
 
         default:
         case EXEVENT_UNKNOWN:
-            genericsReport( V_ERROR, "Unrecognised exception event (%d,%d)" EOL, eventType, exceptionNumber );
+            genericsReport( V_ERROR, "Unrecognised exception event (%d,%d)" EOL, m->eventType, m->exceptionNumber );
             break;
     };
 }
@@ -627,21 +634,21 @@ static void _outputTop( uint32_t total, uint32_t reportLines, struct reportLine 
                     dispSamples += report[n].count;
                     totPercent += percentage;
 
-                    fprintf( stdout, "%3d.%02d%% %8ld ", percentage / 100, percentage % 100, report[n].count );
+                    fprintf( stdout, C_YELLOW "%3d.%02d%% " C_LBLUE " %8ld ", percentage / 100, percentage % 100, report[n].count );
 
 
                     if ( ( options.reportFilenames ) && ( report[n].n->filename ) )
                     {
-                        fprintf( stdout, "%s::", report[n].n->filename );
+                        fprintf( stdout, C_CYAN "%s" C_RESET "::", report[n].n->filename );
                     }
 
                     if ( ( options.lineDisaggregation ) && ( report[n].n->line ) )
                     {
-                        fprintf( stdout, "%s::%d" EOL, d ? d : report[n].n->function, report[n].n->line );
+                        fprintf( stdout, C_LCYAN "%s" C_RESET "::" C_CYAN "%d" EOL, d ? d : report[n].n->function, report[n].n->line );
                     }
                     else
                     {
-                        fprintf( stdout, "%s" EOL, d ? d : report[n].n->function );
+                        fprintf( stdout, C_LCYAN "%s" C_RESET EOL, d ? d : report[n].n->function );
                     }
 
                     printed++;
@@ -681,9 +688,9 @@ static void _outputTop( uint32_t total, uint32_t reportLines, struct reportLine 
         }
     }
 
-    fprintf( stdout, "-----------------" EOL );
+    fprintf( stdout, C_RESET "-----------------" EOL );
 
-    fprintf( stdout, "%3d.%02d%% %8ld of %ld Samples" EOL, totPercent / 100, totPercent % 100, dispSamples, samples );
+    fprintf( stdout, C_YELLOW "%3d.%02d%% " C_LBLUE " %8ld " C_RESET "of "C_YELLOW" %ld "C_RESET" Samples" EOL, totPercent / 100, totPercent % 100, dispSamples, samples );
 
     if ( p )
     {
@@ -713,24 +720,25 @@ static void _outputTop( uint32_t total, uint32_t reportLines, struct reportLine 
 
             if ( _r.er[e].visits )
             {
-                fprintf( stdout, "%3" PRIu32 " | %8" PRIu64 " | %5" PRIu32 " |  %9" PRIu64 "  |  %9" PRIu64 " | %9" PRIu64 "  | %9" PRIu64 EOL,
+                fprintf( stdout, C_YELLOW "%3" PRIu32 C_RESET " | " C_YELLOW "%8" PRIu64 C_RESET " |" C_YELLOW " %5"
+                         PRIu32 C_RESET " | "C_YELLOW " %9" PRIu64 C_RESET "  |  " C_YELLOW "%9" PRIu64 C_RESET " | " C_YELLOW "%9" PRIu64 C_RESET "  | " C_YELLOW" %9" PRIu64 C_RESET EOL,
                          e, _r.er[e].visits, _r.er[e].maxDepth, _r.er[e].totalTime, _r.er[e].totalTime / _r.er[e].visits, _r.er[e].minTime, _r.er[e].maxTime );
             }
         }
     }
 
-    fprintf( stdout, EOL "[%c%c%c%c] ",
-             ( _r.ITMoverflows != ITMDecoderGetStats( &_r.i )->overflow ) ? 'V' : '-',
-             ( _r.SWPkt != ITMDecoderGetStats( &_r.i )->SWPkt ) ? 'S' : '-',
-             ( _r.TSPkt != ITMDecoderGetStats( &_r.i )->TSPkt ) ? 'T' : '-',
-             ( _r.HWPkt != ITMDecoderGetStats( &_r.i )->HWPkt ) ? 'H' : '-' );
+    fprintf( stdout, EOL C_RESET "[%s%s%s%s" C_RESET "] ",
+             ( _r.ITMoverflows != ITMDecoderGetStats( &_r.i )->overflow ) ? C_LRED "V" : C_RESET "-",
+             ( _r.SWPkt != ITMDecoderGetStats( &_r.i )->SWPkt ) ? C_LGREEN "S" : C_RESET "-",
+             ( _r.TSPkt != ITMDecoderGetStats( &_r.i )->TSPkt ) ? C_LBLUE "T" : C_RESET "-",
+             ( _r.HWPkt != ITMDecoderGetStats( &_r.i )->HWPkt ) ? C_LCYAN "H" : C_RESET "-" );
 
     if ( _r.lastReportTicks )
-        fprintf( stdout, "Interval = %" PRIu64 "mS / %" PRIu64 " (~%" PRIu64 " Ticks/mS)" EOL, lastTime - _r.lastReportmS, _r.i.timeStamp - _r.lastReportTicks,
-                 ( _r.i.timeStamp - _r.lastReportTicks ) / ( lastTime - _r.lastReportmS ) );
+        fprintf( stdout, "Interval = " C_YELLOW "%" PRIu64 "mS " C_RESET "/ "C_YELLOW "%" PRIu64 C_RESET " (~" C_YELLOW "%" PRIu64 C_RESET " Ticks/mS)" EOL,
+                 lastTime - _r.lastReportmS, _r.timeStamp - _r.lastReportTicks, ( _r.timeStamp - _r.lastReportTicks ) / ( lastTime - _r.lastReportmS ) );
     else
     {
-        fprintf( stdout, "Interval = %" PRIu64 "mS" EOL, lastTime - _r.lastReportmS );
+        fprintf( stdout, C_RESET "Interval = " C_YELLOW "%" PRIu64 C_RESET "mS" EOL, lastTime - _r.lastReportmS );
     }
 
     genericsReport( V_INFO, "         Ovf=%3d  ITMSync=%3d TPIUSync=%3d ITMErrors=%3d" EOL,
@@ -742,22 +750,21 @@ static void _outputTop( uint32_t total, uint32_t reportLines, struct reportLine 
 }
 
 // ====================================================================================================
-void _handlePCSample( struct ITMDecoder *i, struct ITMPacket *p )
+void _handlePCSample( struct pcSampleMsg *m, struct ITMDecoder *i )
 
 {
-    struct visitedAddr *a;
-    uint32_t pc;
+    assert( m->msgtype == MSG_PC_SAMPLE );
 
-    if ( p->len == 1 )
+    struct visitedAddr *a;
+
+    if ( m->sleep )
     {
         /* This is a sleep packet */
         _r.sleeps++;
     }
     else
     {
-        pc = ( p->d[3] << 24 ) | ( p->d[2] << 16 ) | ( p->d[1] << 8 ) | ( p->d[0] );
-
-        HASH_FIND_INT( _r.addresses, &pc, a );
+        HASH_FIND_INT( _r.addresses, &m->pc, a );
 
         if ( a )
         {
@@ -768,7 +775,7 @@ void _handlePCSample( struct ITMDecoder *i, struct ITMPacket *p )
             struct nameEntry n;
 
             /* Find a matching name record if there is one */
-            SymbolLookup( _r.s, pc, &n, options.deleteMaterial );
+            SymbolLookup( _r.s, m->pc, &n, options.deleteMaterial );
 
             /* This is a new entry - record it */
 
@@ -797,40 +804,34 @@ void _flushHash( void )
     _r.addresses = NULL;
 }
 // ====================================================================================================
-void _handleHW( struct ITMDecoder *i, struct ITMPacket *p )
-
-{
-    switch ( p->srcAddr )
-    {
-        // --------------
-        case 0: /* DWT Event */
-            break;
-
-        // --------------
-        case 1: /* Exception */
-            _handleException( i, p );
-            break;
-
-        // --------------
-        case 2: /* PC Counter Sample */
-            _handlePCSample( i, p );
-            break;
-
-        // --------------
-        default:
-            break;
-            // --------------
-    }
-}
-// ====================================================================================================
 // Pump characters into the itm decoder
 // ====================================================================================================
 void _itmPumpProcess( uint8_t c )
 
 {
-    struct ITMPacket *p;
+    typedef void ( *handlers )( void *decoded, struct ITMDecoder * i );
 
-    if ( !ITMSeqPump( &_r.d, c ) )
+    /* Handlers for each complete message received */
+    static const handlers h[MSG_NUM_MSGS] =
+    {
+        /* MSG_UNKNOWN */         NULL,
+        /* MSG_RESERVED */        NULL,
+        /* MSG_ERROR */           NULL,
+        /* MSG_NONE */            NULL,
+        /* MSG_SOFTWARE */        NULL,
+        /* MSG_NISYNC */          NULL,
+        /* MSG_OSW */             NULL,
+        /* MSG_DATA_ACCESS_WP */  NULL,
+        /* MSG_DATA_RWWP */       NULL,
+        /* MSG_PC_SAMPLE */       ( handlers )_handlePCSample,
+        /* MSG_DWT_EVENT */       NULL,
+        /* MSG_EXCEPTION */       ( handlers )_handleException,
+        /* MSG_TS */              ( handlers )_handleTS
+    };
+
+    struct msg *p;
+
+    if ( !MSGSeqPump( &_r.d, c ) )
     {
         return;
     }
@@ -838,32 +839,24 @@ void _itmPumpProcess( uint8_t c )
     /* We are synced timewise, so empty anything that has been waiting */
     while ( 1 )
     {
-        p = ITMSeqGetPacket( &_r.d );
+        p = MSGSeqGetPacket( &_r.d );
 
         if ( !p )
         {
+            /* all read */
             break;
         }
 
-        switch ( p->type )
+        assert( p->genericMsg.msgtype < MSG_NUM_MSGS );
+
+        if ( h[p->genericMsg.msgtype] )
         {
-            case ITM_PT_SW:
-                _handleSW( &_r.i, p );
-                break;
-
-            case ITM_PT_HW:
-                _handleHW( &_r.i, p );
-                break;
-
-            default:
-                genericsReport( V_WARN, "Unrecognised packet in buffer type %d" EOL, p->type );
-                break;
+            ( h[p->genericMsg.msgtype] )( p, &_r.i );
         }
     }
 
     return;
 }
-
 // ====================================================================================================
 // ====================================================================================================
 // Protocol pump for decoding messages
@@ -1173,7 +1166,7 @@ int main( int argc, char *argv[] )
     /* Reset the TPIU handler before we start */
     TPIUDecoderInit( &_r.t );
     ITMDecoderInit( &_r.i, options.forceITMSync );
-    ITMSeqInit( &_r.d, &_r.i, ITM_REORDER_BUFLEN );
+    MSGSeqInit( &_r.d, &_r.i, MSG_REORDER_BUFLEN );
 
     /* First interval will be from startup to first packet arriving */
     _r.lastReportmS = _timestamp();
@@ -1352,7 +1345,7 @@ int main( int argc, char *argv[] )
                 _r.TSPkt = ITMDecoderGetStats( &_r.i )->TSPkt;
                 _r.HWPkt = ITMDecoderGetStats( &_r.i )->HWPkt;
                 _r.lastReportmS = lastTime;
-                _r.lastReportTicks = _r.i.timeStamp;
+                _r.lastReportTicks = _r.timeStamp;
 
                 /* Check to make sure there's not an unexpected TPIU in here */
                 if ( ITMDecoderGetStats( &_r.i )->tpiuSyncCount )

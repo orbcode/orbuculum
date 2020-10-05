@@ -51,14 +51,54 @@ extern "C" {
 #define OK         0
 #define ERR       -1
 
+#ifdef SCREEN_HANDLING
+#define C_PREV_LN "\033[1F"
+#define C_CLR_LN "\033[K"
+#define C_RESET   "\033[0m"
+#define C_RED     "\033[0;31m"
+#define C_GREEN   "\033[0;32m"
+#define C_BROWN   "\033[0;33m"
+#define C_BLUE    "\033[0;34m"
+#define C_PURPLE  "\033[0;35m"
+#define C_CYAN    "\033[0;36m"
+#define C_GRAY    "\033[0;37m"
+#define C_LRED    "\033[1;31m"
+#define C_LGREEN  "\033[1;32m"
+#define C_YELLOW  "\033[1;33m"
+#define C_LBLUE   "\033[1;34m"
+#define C_LPURPLE "\033[1;35m"
+#define C_LCYAN   "\033[1;36m"
+#define C_WHITE   "\033[1;37m"
+#else
+#define C_PREV_LN ""
+#define C_CLR_LN  ""
+#define C_RESET   ""
+#define C_RED     ""
+#define C_GREEN   ""
+#define C_BROWN   ""
+#define C_BLUE    ""
+#define C_PURPLE  ""
+#define C_CYAN    ""
+#define C_GRAY    ""
+#define C_LRED    ""
+#define C_LGREEN  ""
+#define C_YELLOW  ""
+#define C_LBLUE   ""
+#define C_LPURPLE ""
+#define C_LCYAN   ""
+#define C_WHITE   ""
+#endif
+
 // ====================================================================================================
-enum verbLevel {V_ERROR, V_WARN, V_INFO, V_DEBUG};
+enum verbLevel {V_ERROR, V_WARN, V_INFO, V_DEBUG, V_MAX_VERBLEVEL};
 
 
-char *GenericsEscape( char *str );
-char *GenericsUnescape( char *str );
-
+char *genericsEscape( char *str );
+char *genericsUnescape( char *str );
+uint64_t genericsTimestampuS( void );
+uint32_t genericsTimestampmS( void );
 void genericsSetReportLevel( enum verbLevel lset );
+void genericsPrintf( const char *fmt, ... );
 void genericsReport( enum verbLevel l, const char *fmt, ... );
 void genericsExit( int status, const char *fmt, ... );
 // ====================================================================================================

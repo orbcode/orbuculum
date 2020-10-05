@@ -44,33 +44,7 @@
 extern "C" {
 #endif
 
-enum ITMPacketType
-
-{
-    ITM_PT_NONE,
-    ITM_PT_TS,
-    ITM_PT_SW,
-    ITM_PT_HW,
-    ITM_PT_XTN,
-    ITM_PT_RSRVD,
-    ITM_PT_NISYNC
-};
-
-enum ITMPumpEvent
-{
-    ITM_EV_NONE = ITM_PT_NONE,
-    ITM_EV_TS_PACKET_RXED = ITM_PT_TS,
-    ITM_EV_SW_PACKET_RXED = ITM_PT_SW,
-    ITM_EV_HW_PACKET_RXED = ITM_PT_HW,
-    ITM_EV_XTN_PACKET_RXED = ITM_PT_XTN,
-    ITM_EV_RESERVED_PACKET_RXED = ITM_PT_RSRVD,
-    ITM_EV_NISYNC_PACKET_RXED = ITM_PT_NISYNC,
-    ITM_EV_UNSYNCED,
-    ITM_EV_SYNCED,
-    ITM_EV_OVERFLOW,
-    ITM_EV_ERROR
-};
-
+/* Hardware event numbers (used for the event fifo) */
 enum hwEvents
 {
     HWEVENT_TS,
@@ -84,6 +58,7 @@ enum hwEvents
     HWEVENT_NISYNC
 };
 
+/* Exception events */
 enum ExceptionEvents
 {
     EXEVENT_UNKNOWN,
@@ -92,6 +67,31 @@ enum ExceptionEvents
     EXEVENT_RESUME
 };
 
+/* The different packet types that can be identified */
+enum ITMPacketType
+
+{
+    ITM_PT_NONE,
+    ITM_PT_TS,
+    ITM_PT_SW,
+    ITM_PT_HW,
+    ITM_PT_XTN,
+    ITM_PT_RSRVD,
+    ITM_PT_NISYNC
+};
+
+/* Events from the process of pumping bytes through the ITM decoder */
+enum ITMPumpEvent
+{
+    ITM_EV_NONE,
+    ITM_EV_PACKET_RXED,
+    ITM_EV_UNSYNCED,
+    ITM_EV_SYNCED,
+    ITM_EV_OVERFLOW,
+    ITM_EV_ERROR
+};
+
+/* Internal states of the protocol machine */
 enum _protoState
 {
     ITM_UNSYNCED,
@@ -105,6 +105,7 @@ enum _protoState
     ITM_XTN,
     ITM_NISYNC
 };
+/* Textual form of the above, for debugging */
 #define PROTO_NAME_LIST "UNSYNCED", "IDLE", "TS", "SW", "HW", "GTS1", "GTS2", "RSVD", "XTN", "ISYNC"
 
 /* Type of the packet received over the link */
@@ -119,8 +120,10 @@ struct ITMPacket
     uint8_t d[ITM_MAX_PACKET];
 };
 
+/* Time conditions of a TS message */
 enum timeDelay {TIME_CURRENT, TIME_DELAYED, EVENT_DELAYED, EVENT_AND_TIME_DELAYED};
 
+/* ITM Decoder statistics */
 struct ITMDecoderStats
 
 {
@@ -137,22 +140,21 @@ struct ITMDecoderStats
     uint32_t PagePkt;                    /* Number of Packets received containing page sets */
 };
 
+/* The ITM decoder state */
 struct ITMDecoder
 
 {
-    enum timeDelay timeStatus;           /* Indicator of if this time is exact */
-    uint64_t timeStamp;                  /* Latest received time */
     uint8_t contextIDlen;                /* Number of octets in a contextID (zero for no contextID) */
     int targetCount;                     /* Number of bytes to be collected */
-    int currentCount;                    /* Number of bytes that have been collected */
-    uint8_t rxPacket[ITM_MAX_PACKET];    /* Packet in reception */
     uint64_t syncStat;                   /* Sync monitor status */
-    int srcAddr;                         /* Source address for this packet */
 
+    struct ITMPacket pk;                 /* Packet under construction */
     struct ITMDecoderStats stats;        /* Record of the statistics */
-    uint8_t pageRegister;                /* The current stimulus page register value */
     enum _protoState p;                  /* Current state of the receiver */
 };
+
+/* A fully decoded message (expanded in msgDecoder.h) */
+struct msg;
 
 // ====================================================================================================
 void ITMDecoderForceSync( struct ITMDecoder *i, bool isSynced );
@@ -160,6 +162,8 @@ void ITMDecoderZeroStats( struct ITMDecoder *i );
 bool ITMDecoderIsSynced( struct ITMDecoder *i );
 struct ITMDecoderStats *ITMDecoderGetStats( struct ITMDecoder *i );
 bool ITMGetPacket( struct ITMDecoder *i, struct ITMPacket *p );
+bool ITMGetDecodedPacket( struct ITMDecoder *i, struct msg *decoded );
+
 enum ITMPumpEvent ITMPump( struct ITMDecoder *i, uint8_t c );
 
 void ITMDecoderInit( struct ITMDecoder *i, bool startSynced );

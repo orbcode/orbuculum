@@ -215,12 +215,16 @@ void _handleNameBytes( uint32_t n, uint8_t h, uint8_t *d )
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
-bool filewriterProcess( struct ITMPacket *p )
+bool filewriterProcess( struct swMsg *m )
 
-/* Handle an ITM frame targetted at the filewriter */
+/* Handle an ITM software frame targetted at the filewriter */
 
 {
-    uint8_t c = p->d[0]; /* Extract the control word for convinience */
+    /* Split 32-bit word back into its compoenent parts without punning issues */
+
+    uint8_t d[4] = { m->value & 0xff,  ( m->value >> 8 ) & 0xff,  ( m->value >> 16 ) & 0xff,  ( m->value > 24 ) & 0xff};
+
+    uint8_t c = d[0]; /* Extract the control word for convinience */
 
     switch ( FW_MASK_COMMAND( c ) )
     {
@@ -251,7 +255,7 @@ bool filewriterProcess( struct ITMPacket *p )
                 _f.file[FW_GET_FILEID( c )].s = FW_STATE_GETNAMEE;
             }
 
-            _handleNameBytes( FW_GET_FILEID( c ), FW_GET_BYTES( c ), &( p->d[1] ) );
+            _handleNameBytes( FW_GET_FILEID( c ), FW_GET_BYTES( c ), &d[1] );
             break;
 
         // -----------------------
@@ -284,7 +288,7 @@ bool filewriterProcess( struct ITMPacket *p )
             {
                 memset( _f.file[FW_GET_FILEID( c )].name, 0, MAX_FILENAMELEN );
                 _f.file[FW_GET_FILEID( c )].s = FW_STATE_UNLINK;
-                _handleNameBytes( FW_GET_FILEID( c ), FW_GET_BYTES( c ), &( p->d[1] ) );
+                _handleNameBytes( FW_GET_FILEID( c ), FW_GET_BYTES( c ), &d[1] );
             }
 
             break;
@@ -300,12 +304,12 @@ bool filewriterProcess( struct ITMPacket *p )
             {
                 if ( _f.file[FW_GET_FILEID( c )].s != FW_STATE_OPEN )
                 {
-                    _handleNameBytes( FW_GET_FILEID( c ), FW_GET_BYTES( c ), &( p->d[1] ) );
+                    _handleNameBytes( FW_GET_FILEID( c ), FW_GET_BYTES( c ), &d[1] );
                 }
                 else
                 {
                     genericsReport( V_DEBUG, "Wrote %d bytes on descriptor %d" EOL, FW_GET_BYTES( c ), FW_GET_FILEID( c ) );
-                    fwrite( &( p->d[1] ), 1, FW_GET_BYTES( c ), _f.file[FW_GET_FILEID( c )].f );
+                    fwrite( &d[1], 1, FW_GET_BYTES( c ), _f.file[FW_GET_FILEID( c )].f );
                 }
             }
 

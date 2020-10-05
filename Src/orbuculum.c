@@ -44,6 +44,7 @@
 #include <sys/stat.h>
 #include <stdio.h>
 #include <string.h>
+#include <pthread.h>
 #include <assert.h>
 #if defined OSX
     #include <sys/ioctl.h>
@@ -145,11 +146,13 @@ struct
     char *file;                                          /* File host connection */
     bool fileTerminate;                                  /* Terminate when file read isn't successful */
 
+    uint32_t intervalReportTime;                         /* If we want interval reports about performance */
+
     /* Network link */
     IF_WITH_NWCLIENT( int listenPort );                  /* Listening port for network */
 } options =
 {
-    .speed = 115200,
+    //    .speed = 115200,
     IF_WITH_NWCLIENT( .listenPort = NWCLIENT_SERVER_PORT, )
     .seggerHost = SEGGER_HOST,
 #ifdef INCLUDE_FPGA_SUPPORT
@@ -169,6 +172,10 @@ struct
     IF_INCLUDE_FPGA_SUPPORT( bool feederExit );                        /* Do we need to leave now? */
     IF_INCLUDE_FPGA_SUPPORT( struct ftdi_context *ftdi );              /* Connection materials for ftdi fpga interface */
     IF_INCLUDE_FPGA_SUPPORT( struct ftdispi_context ftdifsc );
+
+    uint32_t  intervalBytes;                                           /* Number of bytes transferred in current interval */
+    pthread_t intervalThread;                                          /* Thread reporting on intervals */
+    bool      ending;                                                  /* Flag indicating app is terminating */
 } _r;
 
 // ====================================================================================================
@@ -337,6 +344,7 @@ void _printHelp( char *progName )
     fprintf( stdout, "        h: This help" EOL );
     IF_WITH_FIFOS( fprintf( stdout, "        i: <channel> Set ITM Channel in TPIU decode (defaults to 1)" EOL ) );
     IF_WITH_NWCLIENT( fprintf( stdout, "        l: <port> Listen port for the incoming connections (defaults to %d)" EOL, NWCLIENT_SERVER_PORT ) );
+    fprintf( stdout, "        m: <interval> Output monitor information about the link at <interval>s" EOL );
     IF_WITH_FIFOS( fprintf( stdout, "        n: Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL ) );
     IF_INCLUDE_FPGA_SUPPORT( fprintf( stdout, "        o: <num> Use traceport FPGA custom interface with 1, 2 or 4 bits width" EOL ) );
     fprintf( stdout, "        p: <serialPort> to use" EOL );
@@ -362,11 +370,11 @@ int _processOptions( int argc, char *argv[] )
 
 #ifdef WITH_FIFOS
 
-    IF_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:b:c:ef:hl:no:p:Ps:tv:w:" ) ) != -1 ) )
-        IF_NOT_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:b:c:ef:ho:p:Ps:tv:w:" ) ) != -1 ) )
+    IF_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:b:c:ef:hl:m:no:p:Ps:tv:w:" ) ) != -1 ) )
+        IF_NOT_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:b:c:ef:hm:o:p:Ps:tv:w:" ) ) != -1 ) )
 #else
-    IF_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:ef:hi:l:no:p:s:v:" ) ) != -1 ) )
-        IF_NOT_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:ef:hi:no:p:s:v:" ) ) != -1 ) )
+    IF_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:ef:hi:l:m:no:p:s:v:" ) ) != -1 ) )
+        IF_NOT_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:ef:hi:m:no:p:s:v:" ) ) != -1 ) )
 #endif
             switch ( c )
             {
@@ -412,7 +420,15 @@ int _processOptions( int argc, char *argv[] )
                     options.listenPort = atoi( optarg );
                     break;
 #endif
+
+                // ------------------------------------
+
+                case 'm':
+                    options.intervalReportTime = atoi( optarg );
+                    break;
+
                     // ------------------------------------
+
 #ifdef WITH_FIFOS
 
                 case 'n':
@@ -534,7 +550,7 @@ int _processOptions( int argc, char *argv[] )
                     }
 
                     *chanIndex++ = 0;
-                    fifoSetChannel( _r.f, chan, chanName, GenericsUnescape( chanIndex ) );
+                    fifoSetChannel( _r.f, chan, chanName, genericsUnescape( chanIndex ) );
                     break;
 #endif
 
@@ -587,6 +603,11 @@ int _processOptions( int argc, char *argv[] )
     IF_WITH_FIFOS( genericsReport( V_INFO, "ForceSync  : %s" EOL, fifoGetForceITMSync( _r.f ) ? "true" : "false" ) );
     IF_WITH_FIFOS( genericsReport( V_INFO, "Permafile  : %s" EOL, options.permafile ? "true" : "false" ) );
 
+    if ( options.intervalReportTime )
+    {
+        genericsReport( V_INFO, "Report Intv : %dmS" EOL, options.intervalReportTime );
+    }
+
     if ( options.port )
     {
         genericsReport( V_INFO, "Serial Port : %s" EOL "Serial Speed: %d" EOL, options.port, options.speed );
@@ -636,7 +657,7 @@ int _processOptions( int argc, char *argv[] )
     {
         if ( fifoGetChannelName( _r.f, g ) )
         {
-            genericsReport( V_INFO, "         %02d [%s] [%s]" EOL, g, GenericsEscape( fifoGetChannelFormat( _r.f, g ) ? : "RAW" ), fifoGetChannelName( _r.f, g ) );
+            genericsReport( V_INFO, "         %02d [%s] [%s]" EOL, g, genericsEscape( fifoGetChannelFormat( _r.f, g ) ? : "RAW" ), fifoGetChannelName( _r.f, g ) );
         }
     }
 
@@ -658,6 +679,51 @@ int _processOptions( int argc, char *argv[] )
     return true;
 }
 // ====================================================================================================
+void *_checkInterval( void *params )
+
+/* Perform any interval reporting that may be needed */
+
+{
+    uint32_t snapInterval;
+
+    while ( !_r.ending )
+    {
+        usleep( options.intervalReportTime * 1000 );
+
+        /* Grab the interval and scale to 1 second */
+        snapInterval = _r.intervalBytes * 1000 / options.intervalReportTime;
+        _r.intervalBytes = 0;
+
+        /* Async channel, so each byte is 10 bits */
+        snapInterval *= 10;
+        genericsPrintf( C_PREV_LN C_CLR_LN C_YELLOW );
+
+        if ( snapInterval / 1000000 )
+        {
+            genericsPrintf( "%4d.%d " C_RESET "MBits/sec ", snapInterval / 1000000, ( snapInterval * 1 / 100000 ) % 10 );
+        }
+        else if ( snapInterval / 1000 )
+        {
+            genericsPrintf( "%4d.%d " C_RESET "KBits/sec ", snapInterval / 1000, ( snapInterval / 100 ) % 10 );
+        }
+        else
+        {
+            genericsPrintf( "  %4d " C_RESET " Bits/sec ", snapInterval );
+        }
+
+        if ( options.speed )
+        {
+            /* Conversion to percentage done as a division to avoid overflow */
+            uint32_t fullPercent = ( snapInterval ) / ( options.speed / 100 );
+            genericsPrintf( "(" C_YELLOW " %3d%% " C_RESET "full)", ( fullPercent > 100 ) ? 100 : fullPercent );
+        }
+
+        genericsPrintf( C_RESET EOL );
+    }
+
+    return NULL;
+}
+// ====================================================================================================
 static void _processBlock( int s, unsigned char *cbw )
 
 /* Generic block processor for received data */
@@ -665,24 +731,27 @@ static void _processBlock( int s, unsigned char *cbw )
 {
     genericsReport( V_DEBUG, "RXED Packet of %d bytes" EOL, s );
 
-    IF_WITH_NWCLIENT( nwclientSend( _r.n, s, cbw ) );
+    /* Account for this reception */
+    _r.intervalBytes += s;
 
-#ifdef WITH_FIFOS
-    unsigned char *c = cbw;
-
-    while ( s-- )
+    if ( s )
     {
-        fifoProtocolPump( _r.f, *c++ );
+        IF_WITH_NWCLIENT( nwclientSend( _r.n, s, cbw ) );
+#ifdef WITH_FIFOS
+        unsigned char *c = cbw;
+
+        while ( s-- )
+        {
+            fifoProtocolPump( _r.f, *c++ );
+        }
     }
 
 #endif
-
 }
 // ====================================================================================================
 int usbFeeder( void )
 
 {
-
     unsigned char cbw[TRANSFER_SIZE];
     libusb_device_handle *handle;
     libusb_device *dev;
@@ -1027,17 +1096,14 @@ int fileFeeder( void )
 static void _doExit( void )
 
 {
+    _r.ending = true;
     IF_WITH_FIFOS( fifoShutdown( _r.f ) );
 
 #ifdef WITH_NWCLIENT
     nwclientShutdown( _r.n );
 
-    while ( !nwclientShutdownComplete( _r.n ) )
-    {
-        genericsReport( V_WARN, "Waiting for clients to exit" EOL );
-        usleep( 100 );
-    }
-
+    /* Give them a bit of time, then we're leaving anyway */
+    usleep( 100000 );
 #endif
 }
 // ====================================================================================================
@@ -1055,6 +1121,11 @@ int main( int argc, char *argv[] )
     {
         /* processOptions generates its own error messages */
         genericsExit( -1, "" EOL );
+    }
+
+    if ( options.intervalReportTime )
+    {
+        pthread_create( &_r.intervalThread, NULL, &_checkInterval, NULL );
     }
 
     IF_WITH_FIFOS( fifoUsePermafiles( _r.f, options.permafile ) );

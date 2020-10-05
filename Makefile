@@ -5,7 +5,8 @@ WITH_FPGA?=1
 
 # Build configuration
 #VERBOSE=1
-DEBUG=1
+#DEBUG=1
+SCREEN_HANDLING=1
 
 CFLAGS=-DVERSION="\"1.10 InProgress\""
 
@@ -51,6 +52,10 @@ ifeq ($(WITH_FIFOS),1)
 CFLAGS += -DWITH_FIFOS
 endif
 
+ifeq ($(SCREEN_HANDLING),1)
+CFLAGS += -DSCREEN_HANDLING
+endif
+
 ifeq ($(WITH_NWCLIENT),1)
 CFLAGS += -DWITH_NWCLIENT
 endif
@@ -85,7 +90,7 @@ endif
 # Main Files
 # ==========
 
-ORBLIB_CFILES = $(App_DIR)/itmDecoder.c $(App_DIR)/tpiuDecoder.c $(App_DIR)/itmSeq.c
+ORBLIB_CFILES = $(App_DIR)/itmDecoder.c $(App_DIR)/tpiuDecoder.c $(App_DIR)/msgDecoder.c $(App_DIR)/msgSeq.c
 ORBUCULUM_CFILES = $(App_DIR)/$(ORBUCULUM).c $(App_DIR)/filewriter.c $(FPGA_CFILES)
 ifeq ($(WITH_FIFOS),1)
 ORBUCULUM_CFILES += $(App_DIR)/fifos.c

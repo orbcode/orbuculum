@@ -1,6 +1,6 @@
 /*
- * ITM Sequencer Module
- * ====================
+ * Message Sequencer Module
+ * ========================
  *
  * Copyright (C) 2017, 2019  Dave Marples  <dave@marples.net>
  * All rights reserved.
@@ -42,7 +42,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include "generics.h"
-#include "itmSeq.h"
+#include "msgSeq.h"
+#include "msgDecoder.h"
 
 // ====================================================================================================
 // ====================================================================================================
@@ -51,64 +52,37 @@
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
-
-static bool _bufferPacket( struct ITMSeq *d, enum ITMPacketType label )
-
-{
-    ITMGetPacket( d->i, &d->pbuffer[d->wp] );
-    d->pbuffer[d->wp].type = label;
-
-    d->wp = ( d->wp + 1 ) % d->pbl;
-
-    assert( d->wp != d->rp );
-
-    /* If the next message would cause overflow, then empty regardless */
-    return ( ( ( d->wp + 1 ) % d->pbl ) == d->rp );
-}
-
-// ====================================================================================================
-
-static void _handleTS( struct ITMSeq *d )
-
-/* ... a timestamp */
+static bool _bufferPacket( struct MSGSeq *d )
 
 {
-    struct ITMPacket p;
-    uint32_t stamp = 0;
+    struct msg p;
 
-    if ( ITMGetPacket( d->i, &p ) )
+
+    if ( !ITMGetDecodedPacket( d->i, &p )  )
     {
-        if ( !( p.d[0] & 0x80 ) )
-        {
-            /* This is packet format 2 ... just a simple increment */
-            stamp = p.d[0] >> 4;
-        }
-        else
-        {
-            /* This is packet format 1 ... full decode needed */
-            d->i->timeStatus = ( p.d[0] & 0x30 ) >> 4;
-            stamp = ( p.d[1] ) & 0x7f;
+        /* There wasn't a decodable message in there */
+        return false;
+    }
 
-            if ( p.len > 2 )
-            {
-                stamp |= ( p.d[2] ) << 7;
+    /* Make a copy of it for later dispatch */
+    memcpy( &d->pbuffer[d->wp], &p, sizeof( struct msg ) );
 
-                if ( p.len > 3 )
-                {
-                    stamp |= ( p.d[3] & 0x7F ) << 14;
+    /* If this is a timestamp then we put it on the front to be released first */
+    if ( d->pbuffer[d->wp].genericMsg.msgtype == MSG_TS )
+    {
+        d->releaseTimeMsg = true;
+        return true;
+    }
+    else
+    {
+        d->wp = ( d->wp + 1 ) % d->pbl;
 
-                    if ( p.len > 4 )
-                    {
-                        stamp |= ( p.d[4] & 0x7f ) << 21;
-                    }
-                }
-            }
-        }
+        assert( d->wp != d->rp );
 
-        d->i->timeStamp += stamp;
+        /* If the next message would cause overflow, then empty regardless */
+        return ( ( ( d->wp + 1 ) % d->pbl ) == d->rp );
     }
 }
-
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
@@ -116,24 +90,28 @@ static void _handleTS( struct ITMSeq *d )
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
+void MSGSeqInit( struct MSGSeq *d, struct ITMDecoder *i, uint32_t maxEntries )
 
-void ITMSeqInit( struct ITMSeq *d, struct ITMDecoder *i, uint32_t maxEntries )
-
-/* Reset and initialise an ITMSequencer instance */
+/* Reset and initialise an Message Sequencer instance */
 
 {
-    memset( d, 0, sizeof( struct ITMSeq ) );
+    memset( d, 0, sizeof( struct MSGSeq ) );
     d->i = i;
     d->pbl = maxEntries;
-    d->pbuffer = calloc( maxEntries, sizeof( struct ITMPacket ) );
+    d->pbuffer = calloc( maxEntries, sizeof( struct msg ) );
 }
-
 // ====================================================================================================
-
-struct ITMPacket *ITMSeqGetPacket( struct ITMSeq *d )
+struct msg *MSGSeqGetPacket( struct MSGSeq *d )
 
 {
     uint32_t trp = d->rp;
+
+    /* Roll the timestamp off the front if it's present */
+    if ( d->releaseTimeMsg )
+    {
+        d->releaseTimeMsg = false;
+        return &d->pbuffer[d->wp];
+    }
 
     if ( d->wp == d->rp )
     {
@@ -145,10 +123,8 @@ struct ITMPacket *ITMSeqGetPacket( struct ITMSeq *d )
 
     return &d->pbuffer[trp];
 }
-
 // ====================================================================================================
-
-bool ITMSeqPump( struct ITMSeq *d, uint8_t c )
+bool MSGSeqPump( struct MSGSeq *d, uint8_t c )
 
 /* Handle individual characters into the itm decoder */
 
@@ -177,38 +153,13 @@ bool ITMSeqPump( struct ITMSeq *d, uint8_t c )
             break;
 
         // ------------------------------------
-        case ITM_EV_RESERVED_PACKET_RXED:
-            genericsReport( V_INFO, "Reserved Packet Received" EOL );
-            break;
-
-        // ------------------------------------
-        case ITM_EV_XTN_PACKET_RXED:
-            genericsReport( V_INFO, "Unknown Extension Packet Received" EOL );
-            break;
-
-        // ------------------------------------
         case ITM_EV_ERROR:
             genericsReport( V_WARN, "ITM Error" EOL );
             break;
 
         // ------------------------------------
-        case ITM_EV_TS_PACKET_RXED:
-            _handleTS( d );
-            r = true;
-            break;
-
-        // ------------------------------------
-        case ITM_EV_SW_PACKET_RXED:
-            r = _bufferPacket(  d, ITM_PT_SW );
-            break;
-
-        // ------------------------------------
-        case ITM_EV_HW_PACKET_RXED:
-            r = _bufferPacket( d, ITM_PT_HW );
-            break;
-
-        // ------------------------------------
-        case ITM_EV_NISYNC_PACKET_RXED:
+        case ITM_EV_PACKET_RXED:
+            r = _bufferPacket(  d );
             break;
 
             // ------------------------------------
@@ -216,5 +167,4 @@ bool ITMSeqPump( struct ITMSeq *d, uint8_t c )
 
     return r;
 }
-
 // ====================================================================================================
