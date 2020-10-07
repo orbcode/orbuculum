@@ -211,12 +211,25 @@ void _handleSW( struct swMsg *m, struct ITMDecoder *i )
 
     if ( ( m->srcAddr < NUM_CHANNELS ) && ( options.presFormat[m->srcAddr] ) )
     {
-        if ( strstr( options.presFormat[m->srcAddr], "%f" ) > 0 )
+        // formatted output....start with specials
+        if ( strstr( options.presFormat[m->srcAddr], "%f" ) )
         {
             /* type punning on same host, after correctly building 32bit val
              * only unsafe on systems where u32/float have diff byte order */
             float *nastycast = ( float * )&m->value;
             fprintf( stdout, options.presFormat[m->srcAddr], *nastycast );
+        }
+        else if ( strstr( options.presFormat[m->srcAddr], "%c" ) )
+        {
+            /* Format contains %c, so execute repeatedly for all characters in sent data */
+            uint8_t op[4] = {m->value & 0xff, ( m->value >> 8 ) & 0xff, ( m->value >> 16 ) & 0xff, ( m->value >> 24 ) & 0xff};
+            uint32_t l = 0;
+
+            do
+            {
+                fprintf( stdout, options.presFormat[m->srcAddr], op[l] );
+            }
+            while ( ++l < m->len );
         }
         else
         {

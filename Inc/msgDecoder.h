@@ -49,6 +49,7 @@ struct swMsg
     enum MSGType msgtype;
     uint64_t ts;
     uint8_t srcAddr;
+    uint8_t len;
     uint32_t value;
 };
 

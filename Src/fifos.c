@@ -146,7 +146,7 @@ static void *_runFifo( void *arg )
 {
     struct _runThreadParams *params = ( struct _runThreadParams * )arg;
     struct Channel *c = params->c;
-    struct ITMPacket p;
+    struct swMsg m;
     uint32_t w;
 
     char constructString[MAX_STRING_LENGTH];
@@ -180,15 +180,41 @@ static void *_runFifo( void *arg )
         do
         {
             /* ....get the packet */
-            readDataLen = read( params->listenHandle, &p, sizeof( struct ITMPacket ) );
+            readDataLen = read( params->listenHandle, &m, sizeof( struct msg ) );
 
-            /* Build 32 value the long way around to avoid type-punning issues */
-            w = ( p.d[3] << 24 ) | ( p.d[2] << 16 ) | ( p.d[1] << 8 ) | ( p.d[0] );
+            if ( readDataLen <= 0 )
+            {
+                continue;
+            }
 
             if ( c->presFormat )
             {
-                // formatted output.
-                writeDataLen = snprintf( constructString, MAX_STRING_LENGTH, c->presFormat, w );
+                // formatted output....start with specials
+                if ( strstr( c->presFormat, "%f" ) )
+                {
+                    /* type punning on same host, after correctly building 32bit val
+                     * only unsafe on systems where u32/float have diff byte order */
+                    float *nastycast = ( float * )&m.value;
+                    writeDataLen = snprintf( constructString, MAX_STRING_LENGTH, c->presFormat, *nastycast );
+                }
+                else if ( strstr( c->presFormat, "%c" ) )
+                {
+                    /* Format contains %c, so execute repeatedly for all characters in sent data */
+                    writeDataLen = 0;
+                    uint8_t op[4] = {m.value & 0xff, ( m.value >> 8 ) & 0xff, ( m.value >> 16 ) & 0xff, ( m.value >> 24 ) & 0xff};
+
+                    uint32_t l = 0;
+
+                    do
+                    {
+                        writeDataLen += snprintf( &constructString[writeDataLen], MAX_STRING_LENGTH - writeDataLen, c->presFormat, op[l] );
+                    }
+                    while ( ++l < m.len );
+                }
+                else
+                {
+                    writeDataLen = snprintf( constructString, MAX_STRING_LENGTH, c->presFormat, m.value );
+                }
 
                 written = write( opfile, constructString, ( writeDataLen < MAX_STRING_LENGTH ) ? writeDataLen : MAX_STRING_LENGTH );
             }
@@ -202,7 +228,7 @@ static void *_runFifo( void *arg )
 
         close( opfile );
     }
-    while ( readDataLen >= 0 );
+    while ( readDataLen > 0 );
 
     pthread_exit( NULL );
 }
@@ -442,7 +468,7 @@ void _itmPumpProcess( struct fifosHandle *f, char c )
         /* MSG_ERROR */           NULL,
         /* MSG_NONE */            NULL,
         /* MSG_SOFTWARE */        ( handlers )_handleSW,
-        /* MSG_NISYNC */          NULL,
+        /* MSG_NISYNC */          ( handlers )_handleNISYNC,
         /* MSG_OSW */             ( handlers )_handleDataOffsetWP,
         /* MSG_DATA_ACCESS_WP */  ( handlers )_handleDataAccessWP,
         /* MSG_DATA_RWWP */       ( handlers )_handleDataRWWP,

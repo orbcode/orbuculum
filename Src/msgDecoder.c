@@ -190,6 +190,7 @@ static bool _handleSW( struct ITMPacket *packet, struct swMsg *decoded )
     decoded->msgtype = MSG_SOFTWARE;
 
     decoded->srcAddr = packet->srcAddr;
+    decoded->len = packet->len;
 
     /* Build 32 bit value the long way around to avoid type-punning issues */
     decoded->value =
