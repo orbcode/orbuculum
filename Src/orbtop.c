@@ -1275,6 +1275,12 @@ int main( int argc, char *argv[] )
                 r = select( sourcefd + 1, &readfds, NULL, NULL, &tv );
             }
 
+            if ( r < 0 )
+            {
+                /* Something went wrong in the select */
+                break;
+            }
+
             if ( r > 0 )
             {
                 t = read( sourcefd, cbw, TRANSFER_SIZE );

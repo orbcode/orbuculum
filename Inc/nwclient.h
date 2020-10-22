@@ -47,15 +47,7 @@ extern "C" {
 #define NWCLIENT_SERVER_PORT (3443)           /* Server port definition */
 #define TRANSFER_SIZE (4096)
 
-struct nwclientsHandle
-
-{
-    struct nwClient *firstClient;             /* Head of linked list of network clients */
-    sem_t clientList;                         /* Locking semaphore for list of network clients */
-
-    int sockfd;                               /* The socket for the inferior */
-    pthread_t ipThread;                       /* The listening thread for n/w clients */
-};
+struct nwclientsHandle;
 
 // ====================================================================================================
 

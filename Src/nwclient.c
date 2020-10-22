@@ -46,6 +46,18 @@
 
 #define CLIENT_TERM_INTERVAL_US (10000)       /* Interval to check for all clients lost */
 
+/* Master structure for the nwclients */
+struct nwclientsHandle
+
+{
+    struct nwClient *firstClient;             /* Head of linked list of network clients */
+    sem_t clientList;                         /* Locking semaphore for list of network clients */
+
+    int sockfd;                               /* The socket for the inferior */
+    pthread_t ipThread;                       /* The listening thread for n/w clients */
+    bool finish;                              /* Its time to leave */
+};
+
 /* List of any connected network clients */
 struct nwClient
 
@@ -69,11 +81,17 @@ struct nwClient
 static void _clientRemove( struct nwClient *c )
 
 {
+    const struct timespec ts = {.tv_sec = 1, .tv_nsec = 0};
+
     close( c->portNo );
     close( c->listenHandle );
 
     /* First of all, make sure we can get access to the client list */
-    sem_wait( &c->parent->clientList );
+
+    if ( sem_timedwait( &c->parent->clientList, &ts ) < 0 )
+    {
+        genericsExit( -1, "Failed to aqquire semaphore" EOL );
+    }
 
     if ( c->prevClient )
     {
@@ -127,6 +145,7 @@ static void *_listenTask( void *arg )
 
 {
     struct nwclientsHandle *h = ( struct nwclientsHandle * )arg;
+    const struct timespec ts = {.tv_sec = 1, .tv_nsec = 0};
     int newsockfd;
     socklen_t clilen;
     struct sockaddr_in cli_addr;
@@ -134,11 +153,18 @@ static void *_listenTask( void *arg )
     struct nwClient *client;
     char s[100];
 
-    while ( 1 )
+    clilen = sizeof( cli_addr );
+    listen( h->sockfd, 5 );
+
+    while ( !h->finish )
     {
-        listen( h->sockfd, 5 );
-        clilen = sizeof( cli_addr );
         newsockfd = accept( h->sockfd, ( struct sockaddr * ) &cli_addr, &clilen );
+
+        if ( h->finish )
+        {
+            close( newsockfd );
+            break;
+        }
 
         inet_ntop( AF_INET, &cli_addr.sin_addr, s, 99 );
         genericsReport( V_INFO, "New connection from %s" EOL, s );
@@ -158,7 +184,10 @@ static void *_listenTask( void *arg )
                 pthread_detach( client->thread );
 
                 /* Hook into linked list */
-                sem_wait( &h->clientList );
+                if ( sem_timedwait( &h->clientList, &ts ) < 0 )
+                {
+                    genericsExit( -1, "Failed to aqquire semaphore" EOL );
+                }
 
                 client->nextClient = h->firstClient;
                 client->prevClient = NULL;
@@ -175,6 +204,7 @@ static void *_listenTask( void *arg )
         }
     }
 
+    close( h->sockfd );
     return NULL;
 }
 // ====================================================================================================
@@ -190,17 +220,24 @@ void nwclientSend( struct nwclientsHandle *h, uint32_t len, uint8_t *buffer )
     assert( h );
     assert( len );
 
+    const struct timespec ts = {.tv_sec = 1, .tv_nsec = 0};
     struct nwClient *n = h->firstClient;
 
-    sem_wait( &h->clientList );
-
-    while ( n )
+    if ( !h->finish )
     {
-        write( n->handle, buffer, len );
-        n = n->nextClient;
-    }
+        if ( sem_timedwait( &h->clientList, &ts ) < 0 )
+        {
+            genericsExit( -1, "Failed to aqquire semaphore" EOL );
+        }
 
-    sem_post( &h->clientList );
+        while ( n )
+        {
+            write( n->handle, buffer, len );
+            n = n->nextClient;
+        }
+
+        sem_post( &h->clientList );
+    }
 }
 // ====================================================================================================
 struct nwclientsHandle *nwclientStart( int port )
@@ -266,9 +303,22 @@ free_and_return:
 void nwclientShutdown( struct nwclientsHandle *h )
 
 {
-    sem_wait( &h->clientList );
+    const struct timespec ts = {.tv_sec = 1, .tv_nsec = 0};
+
+    if ( !h )
+    {
+        return;
+    }
 
     struct nwClient *c = h->firstClient;
+
+    /* Flag that we're ending */
+    h->finish = true;
+
+    if ( sem_timedwait( &h->clientList, &ts ) < 0 )
+    {
+        genericsExit( -1, "Failed to aqquire semaphore" EOL );
+    }
 
     /* Tell all the clients to terminate */
     while ( c )

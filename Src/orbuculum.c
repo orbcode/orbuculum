@@ -343,7 +343,7 @@ void _printHelp( char *progName )
     fprintf( stdout, "        h: This help" EOL );
     IF_WITH_FIFOS( fprintf( stdout, "        i: <channel> Set ITM Channel in TPIU decode (defaults to 1)" EOL ) );
     IF_WITH_NWCLIENT( fprintf( stdout, "        l: <port> Listen port for the incoming connections (defaults to %d)" EOL, NWCLIENT_SERVER_PORT ) );
-    fprintf( stdout, "        m: <interval> Output monitor information about the link at <interval>s" EOL );
+    fprintf( stdout, "        m: <interval> Output monitor information about the link at <interval>ms" EOL );
     IF_WITH_FIFOS( fprintf( stdout, "        n: Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL ) );
     IF_INCLUDE_FPGA_SUPPORT( fprintf( stdout, "        o: <num> Use traceport FPGA custom interface with 1, 2 or 4 bits width" EOL ) );
     fprintf( stdout, "        p: <serialPort> to use" EOL );
@@ -710,10 +710,10 @@ void *_checkInterval( void *params )
             genericsPrintf( "  %4d " C_RESET " Bits/sec ", snapInterval );
         }
 
-        if ( options.speed )
+        if ( options.speed > 100 )
         {
             /* Conversion to percentage done as a division to avoid overflow */
-            uint32_t fullPercent = ( snapInterval ) / ( options.speed / 100 );
+            uint32_t fullPercent = ( snapInterval * 100 ) / options.speed;
             genericsPrintf( "(" C_YELLOW " %3d%% " C_RESET "full)", ( fullPercent > 100 ) ? 100 : fullPercent );
         }
 
@@ -1097,13 +1097,10 @@ static void _doExit( void )
 {
     _r.ending = true;
     IF_WITH_FIFOS( fifoShutdown( _r.f ) );
-
-#ifdef WITH_NWCLIENT
-    nwclientShutdown( _r.n );
+    IF_WITH_NWCLIENT( nwclientShutdown( _r.n ) );
 
     /* Give them a bit of time, then we're leaving anyway */
-    usleep( 100000 );
-#endif
+    usleep( 200000 );
 }
 // ====================================================================================================
 int main( int argc, char *argv[] )
@@ -1120,11 +1117,6 @@ int main( int argc, char *argv[] )
     {
         /* processOptions generates its own error messages */
         genericsExit( -1, "" EOL );
-    }
-
-    if ( options.intervalReportTime )
-    {
-        pthread_create( &_r.intervalThread, NULL, &_checkInterval, NULL );
     }
 
     IF_WITH_FIFOS( fifoUsePermafiles( _r.f, options.permafile ) );
@@ -1171,6 +1163,11 @@ int main( int argc, char *argv[] )
 
     /* Start the filewriter */
     IF_WITH_FIFOS( fifoFilewriter( _r.f, options.filewriter, options.fwbasedir ) );
+
+    if ( options.intervalReportTime )
+    {
+        pthread_create( &_r.intervalThread, NULL, &_checkInterval, NULL );
+    }
 
 #ifdef INCLUDE_FPGA_SUPPORT
 
