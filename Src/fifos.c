@@ -195,7 +195,7 @@ static void *_runFifo( void *arg )
                     /* type punning on same host, after correctly building 32bit val
                      * only unsafe on systems where u32/float have diff byte order */
                     float *nastycast = ( float * )&m.value;
-                    writeDataLen = snprintf( constructString, MAX_STRING_LENGTH, c->presFormat, *nastycast );
+                    writeDataLen = snprintf( constructString, MAX_STRING_LENGTH, c->presFormat, *nastycast, *nastycast, *nastycast, *nastycast );
                 }
                 else if ( strstr( c->presFormat, "%c" ) )
                 {
@@ -207,13 +207,13 @@ static void *_runFifo( void *arg )
 
                     do
                     {
-                        writeDataLen += snprintf( &constructString[writeDataLen], MAX_STRING_LENGTH - writeDataLen, c->presFormat, op[l] );
+                        writeDataLen += snprintf( &constructString[writeDataLen], MAX_STRING_LENGTH - writeDataLen, c->presFormat, op[l], op[l], op[l], op[l] );
                     }
                     while ( ++l < m.len );
                 }
                 else
                 {
-                    writeDataLen = snprintf( constructString, MAX_STRING_LENGTH, c->presFormat, m.value );
+                    writeDataLen = snprintf( constructString, MAX_STRING_LENGTH, c->presFormat, m.value, m.value, m.value, m.value );
                 }
 
                 written = write( opfile, constructString, ( writeDataLen < MAX_STRING_LENGTH ) ? writeDataLen : MAX_STRING_LENGTH );
@@ -793,6 +793,11 @@ void fifoShutdown( struct fifosHandle *f )
 
 {
     struct timespec ts;
+
+    if ( !f )
+    {
+        return;
+    }
 
     for ( int t = 0; t < NUM_CHANNELS + 1; t++ )
     {

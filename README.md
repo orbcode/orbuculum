@@ -6,6 +6,7 @@
 
 This is V1.10 in progress.
 
+* Single entry into a channel definition can be expanded multiple times (up to 4), so -c,z,"[%02x] %c" would print both a hex and ascii representation of a character, for example
 * Link Monitoring and reporting (enabled with the `-m` option to orbuculum.
 * Simple colour support (disable by commenting out `SCREEN_HANDLING` in the makefile).
 * Internal restructuring to simplify the packet decode. This will help you if you want to implement your own handlers. See `orbcat.c` for a simple example, or `orbtop.c` if timestamp ordering is important to you.
@@ -319,7 +320,7 @@ Specific command line options of note are;
 
  `-l [port]`: Set listening port for the incoming connections from clients.
 
- `-m`: Monitor interval (in mS) for reporting on state of the link. If baudrate is specified (using `-a`) then the percentage link occupancy is also reported.
+ `-m`: Monitor interval (in mS) for reporting on state of the link. If baudrate is specified (using `-a`) and is greater than 100bps then the percentage link occupancy is also reported.
  
   `-n`: Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)
 

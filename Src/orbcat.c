@@ -217,7 +217,7 @@ void _handleSW( struct swMsg *m, struct ITMDecoder *i )
             /* type punning on same host, after correctly building 32bit val
              * only unsafe on systems where u32/float have diff byte order */
             float *nastycast = ( float * )&m->value;
-            fprintf( stdout, options.presFormat[m->srcAddr], *nastycast );
+            fprintf( stdout, options.presFormat[m->srcAddr], *nastycast, *nastycast, *nastycast, *nastycast );
         }
         else if ( strstr( options.presFormat[m->srcAddr], "%c" ) )
         {
@@ -227,13 +227,13 @@ void _handleSW( struct swMsg *m, struct ITMDecoder *i )
 
             do
             {
-                fprintf( stdout, options.presFormat[m->srcAddr], op[l] );
+                fprintf( stdout, options.presFormat[m->srcAddr], op[l], op[l], op[l] );
             }
             while ( ++l < m->len );
         }
         else
         {
-            fprintf( stdout, options.presFormat[m->srcAddr], m->value );
+            fprintf( stdout, options.presFormat[m->srcAddr], m->value, m->value, m->value, m->value );
         }
     }
 }
