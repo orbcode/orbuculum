@@ -1,12 +1,12 @@
 ![Screenshot](https://raw.githubusercontent.com/orbcode/orbuculum/master/Docs/title.png)
-* Build status master: [![Build Status: master](https://travis-ci.com/orbcode/orbuculum.svg?branch=master)](https://travis-ci.com/orbcode/orbuculum)
+* Build status main: [![Build Status: master](https://travis-ci.com/orbcode/orbuculum.svg?branch=master)](https://travis-ci.com/orbcode/orbuculum)
 * Build status, Devel branch: [![Build Status: Devel](https://travis-ci.com/orbcode/orbuculum.svg?branch=Devel)](https://travis-ci.com/orbcode/orbuculum)
 
 * Latest Changes:
 
 This is V1.10.
 
-* This V1_1(+fixes) branch is now known as `main`. V1_0(+fixes) is now on branch `legacy_1_0` and new development work will be on `Devel`.
+* This V1.1(+fixes) branch is now known as `main`. V1.0(+fixes) is now on branch `legacy_1_0` and new development work will be on `Devel`.
 * Note that recent enhancements to openocd ( https://sourceforge.net/projects/openocd/ ) allow it to be used as a trace source to the various orbuculum clients...replacing the `orbuculum` multiplexer app with a slightly less capable alternative which is probably sufficient for many use cases but of course the `orbuculum` multiplexer can still plug into openocd if you need the additional functionality.
 * Single entry into a channel definition can be expanded multiple times (up to 4), so -c,z,"[%02x] %c" would print both a hex and ascii representation of a character, for example
 * Link Monitoring and reporting (enabled with the `-m` option to orbuculum.
