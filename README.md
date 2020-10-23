@@ -7,10 +7,10 @@
 This is V1.10.
 
 * This V1.1(+fixes) branch is now known as `main`. V1.0(+fixes) is now on branch `legacy_1_0` and new development work will be on `Devel`.
-* Note that recent enhancements to openocd ( https://sourceforge.net/projects/openocd/ ) allow it to be used as a trace source to the various orbuculum clients...replacing the `orbuculum` multiplexer app with a slightly less capable alternative which is probably sufficient for many use cases but of course the `orbuculum` multiplexer can still plug into openocd if you need the additional functionality.
+* Note that recent enhancements to openocd ( https://sourceforge.net/projects/openocd/ ) allow it to be used as a trace source to the various orbuculum clients...this is probably sufficient for many use cases but the `orbuculum` multiplexer can still plug into openocd if you need the additional functionality (fifos and secondary muxing).
 * Single entry into a channel definition can be expanded multiple times (up to 4), so -c,z,"[%02x] %c" would print both a hex and ascii representation of a character, for example
-* Link Monitoring and reporting (enabled with the `-m` option to orbuculum.
-* Simple colour support (disable by commenting out `SCREEN_HANDLING` in the makefile).
+* Link Monitoring and reporting is now available, enabled with the `-m` option.
+* Simple colour support is now included (disable by commenting out `SCREEN_HANDLING` in the makefile).
 * Internal restructuring to simplify the packet decode. This will help you if you want to implement your own handlers. See `orbcat.c` for a simple example, or `orbtop.c` if timestamp ordering is important to you.
 * Permanent output files are now supported in addition to fifos. These can be useful for postprocessing.
 * orbuculum now processes simple ISYNC messages, reporting them as type 8 in the hwevent fifo.
