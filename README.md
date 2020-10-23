@@ -4,8 +4,10 @@
 
 * Latest Changes:
 
-This is V1.10 in progress.
+This is V1.10.
 
+* This V1_1(+fixes) branch is now known as `main`. V1_0(+fixes) is now on branch `legacy_1_0` and new development work will be on `Devel`.
+* Note that recent enhancements to openocd ( https://sourceforge.net/projects/openocd/ ) allow it to be used as a trace source to the various orbuculum clients...replacing the `orbuculum` multiplexer app with a slightly less capable alternative which is probably sufficient for many use cases but of course the `orbuculum` multiplexer can still plug into openocd if you need the additional functionality.
 * Single entry into a channel definition can be expanded multiple times (up to 4), so -c,z,"[%02x] %c" would print both a hex and ascii representation of a character, for example
 * Link Monitoring and reporting (enabled with the `-m` option to orbuculum.
 * Simple colour support (disable by commenting out `SCREEN_HANDLING` in the makefile).
@@ -30,19 +32,11 @@ An Orbuculum is a Crystal Ball, used for seeing things that would
 You can find information about using this suite on the Embedded Rambling
 blog at http://shadetail.com/.
 
-*This program is back in development after far too long away. Development on the fpga is now underway but stability and functional fixes will continue to be made on master.*
+*This program is back in development after far too long away. A new fpga-based trace device will be announced soon and functional fixes will continue to be made on main.*
 
-For the current development status you will need to use the blackorb branch. The majority of effort at the moment is being spent on the fpga parallel trace activity.
+For the current development status you will need to use the `Devel` branch. 
 
-
-The code is in daily use now and small issues
-are patched as they are found. The parallel trace hardware using a iCE40HX-8K breakout board and the icestorm tools is stable and hardware is in development.
-
-The software runs on both Linux and OSX.
-
-The whole suite is working OK on
-regular workloads and I think most rough edges have been removed. Please
-report anything unusual you find.
+The code is in daily use now and small issues are patched as they are found. The software runs on both Linux and OSX and the whole suite is working OK on most workloads. Any bugs found now will be treated as high priority issues. Functional enhancements will also be folded in as time permits. A contribution offering a build for windows would be gratefully received!
 
 What is it?
 ===========
@@ -92,15 +86,16 @@ octave or whatever). Orbuculum itself doesn't care if the data
 originates from a RZ or NRZ port, or at what speed....that's the job
 of the interface.
 
-At the present time Orbuculum supports five devices for collecting trace
+At the present time Orbuculum supports seven devices for collecting trace
 from the target;
  
 * the Black Magic Debug Probe (BMP)
 * the SEGGER JLink
 * generic USB TTL Serial Interfaces
 * FTDI High speed serial interfaces
+* OpenOCD (Add a line like `tpiu config internal :3443 uart off 32000000` to your openocd config to use it.)
 * The ice40-HX8K Breakout Board for parallel trace.
-* Anything capable of saving the raw SWO data to a file, eg OpenOCD
+* Anything capable of saving the raw SWO data to a file
 
 Information about using each individual interface can be found in the
 docs directory. gdb setup files for each device type can be found in the `Support` directory.

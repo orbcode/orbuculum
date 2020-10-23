@@ -1,5 +1,6 @@
-V1.10 Under construction
+23rd October 2020 (Version 1.10)
 
+* Replace `master` with `main`.
 * Single entry into a channel definition can be expanded multiple times (up to 4), so -c,z,"[%02x] %c" would print both a hex and ascii representation of a character, for example
 * Link Monitoring and reporting (enabled with the `-m` option to orbuculum.
 * Simple colour support (disable by commenting out `SCREEN_HANDLING` in the makefile).
