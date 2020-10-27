@@ -875,14 +875,13 @@ int seggerFeeder( void )
 // ====================================================================================================
 int serialFeeder( void )
 {
-    int f, ret;
+    int f, ret, flags;
     unsigned char cbw[TRANSFER_SIZE];
     ssize_t t;
 
     while ( 1 )
     {
 #ifdef OSX
-
         while ( ( f = open( options.port, O_RDONLY | O_NONBLOCK ) ) < 0 )
 #else
         while ( ( f = open( options.port, O_RDONLY ) ) < 0 )
