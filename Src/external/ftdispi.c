@@ -119,7 +119,13 @@ __dll int ftdispi_open( struct ftdispi_context *fsc,
     fsc->rd_cmd = MPSSE_DO_READ | MPSSE_READ_NEG;
     fsc->bitini = BIT_P_CS;
 
+#ifdef SIO_TCOFLUSH
+    FTDI_CHECK( ftdi_tcioflush( &fsc->fc ), "PURGE", fsc->fc );
+#else
+    /* Removed due to depreciation via patch from Eric Schott 18 Oct 2018 */
+    /* unfortuantely doesn't seem to be across all libraries yet. */
     FTDI_CHECK( ftdi_usb_purge_buffers( &fsc->fc ), "PURGE", fsc->fc );
+#endif
 
     return FTDISPI_ERROR_NONE;
 }
