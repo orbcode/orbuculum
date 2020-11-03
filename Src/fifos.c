@@ -43,6 +43,7 @@
 #include <string.h>
 #include <semaphore.h>
 #include <assert.h>
+#include <inttypes.h>
 #if defined OSX
     #include <sys/ioctl.h>
     #include <libusb.h>
@@ -306,12 +307,12 @@ void _handleException( struct excMsg *m, struct fifosHandle *f )
     if ( m->exceptionNumber < 16 )
     {
         /* This is a system based exception */
-        opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%ld,%s,%s" EOL, HWEVENT_EXCEPTION, eventdifftS, exEvent[m->eventType & 0x03], exNames[m->exceptionNumber & 0x0F] );
+        opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%" PRIu64 ",%s,%s" EOL, HWEVENT_EXCEPTION, eventdifftS, exEvent[m->eventType & 0x03], exNames[m->exceptionNumber & 0x0F] );
     }
     else
     {
         /* This is a CPU defined exception */
-        opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%ld,%s,External,%d" EOL, HWEVENT_EXCEPTION, eventdifftS, exEvent[m->eventType & 0x03], m->exceptionNumber - 16 );
+        opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%" PRIu64 ",%s,External,%d" EOL, HWEVENT_EXCEPTION, eventdifftS, exEvent[m->eventType & 0x03], m->exceptionNumber - 16 );
     }
 
     write( f->c[HW_CHANNEL].handle, outputString, opLen );
@@ -332,7 +333,7 @@ void _handleDWTEvent( struct dwtMsg *m, struct fifosHandle *f )
     {
         if ( m->event & ( 1 << i ) )
         {
-            opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%ld,%s" EOL, HWEVENT_DWT, eventdifftS, evName[m->event] );
+            opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%" PRIu64 ",%s" EOL, HWEVENT_DWT, eventdifftS, evName[m->event] );
             write( f->c[HW_CHANNEL].handle, outputString, opLen );
         }
     }
@@ -352,11 +353,11 @@ void _handlePCSample( struct pcSampleMsg *m, struct fifosHandle *f )
     if ( m->sleep )
     {
         /* This is a sleep packet */
-        opLen = snprintf( outputString, ( MAX_STRING_LENGTH - 1 ), "%d,%ld,**SLEEP**" EOL, HWEVENT_PCSample, eventdifftS );
+        opLen = snprintf( outputString, ( MAX_STRING_LENGTH - 1 ), "%d,%" PRIu64 ",**SLEEP**" EOL, HWEVENT_PCSample, eventdifftS );
     }
     else
     {
-        opLen = snprintf( outputString, ( MAX_STRING_LENGTH - 1 ), "%d,%ld,0x%08x" EOL, HWEVENT_PCSample, eventdifftS, m->pc );
+        opLen = snprintf( outputString, ( MAX_STRING_LENGTH - 1 ), "%d,%" PRIu64 ",0x%08x" EOL, HWEVENT_PCSample, eventdifftS, m->pc );
     }
 
     /* We don't need to worry if this write does not succeed, it just means there is no other side of the fifo */
@@ -374,7 +375,7 @@ void _handleDataRWWP( struct watchMsg *m, struct fifosHandle *f )
 
     f->lastHWExceptionTS = m->ts;
 
-    opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%ld,%d,%s,0x%x" EOL, HWEVENT_RWWT, eventdifftS, m->comp, m->isWrite ? "Write" : "Read", m->data );
+    opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%" PRIu64 ",%d,%s,0x%x" EOL, HWEVENT_RWWT, eventdifftS, m->comp, m->isWrite ? "Write" : "Read", m->data );
     write( f->c[HW_CHANNEL].handle, outputString, opLen );
 }
 // ====================================================================================================
@@ -389,7 +390,7 @@ void _handleDataAccessWP( struct wptMsg *m, struct fifosHandle *f )
     uint64_t eventdifftS = m->ts - f->lastHWExceptionTS;
 
     f->lastHWExceptionTS = m->ts;
-    opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%ld,%d,0x%08x" EOL, HWEVENT_AWP, eventdifftS, m->comp, m->data );
+    opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%" PRIu64 ",%d,0x%08x" EOL, HWEVENT_AWP, eventdifftS, m->comp, m->data );
     write( f->c[HW_CHANNEL].handle, outputString, opLen );
 }
 // ====================================================================================================
@@ -403,7 +404,7 @@ void _handleDataOffsetWP( struct oswMsg *m, struct fifosHandle *f )
     uint64_t eventdifftS = m->ts - f->lastHWExceptionTS;
 
     f->lastHWExceptionTS = m->ts;
-    opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%ld,%d,0x%04x" EOL, HWEVENT_OFS, eventdifftS, m->comp, m->offset );
+    opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%" PRIu64 ",%d,0x%04x" EOL, HWEVENT_OFS, eventdifftS, m->comp, m->offset );
     write( f->c[HW_CHANNEL].handle, outputString, opLen );
 }
 // ====================================================================================================
