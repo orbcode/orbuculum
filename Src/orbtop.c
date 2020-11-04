@@ -634,7 +634,7 @@ static void _outputTop( uint32_t total, uint32_t reportLines, struct reportLine 
                     dispSamples += report[n].count;
                     totPercent += percentage;
 
-                    fprintf( stdout, C_YELLOW "%3d.%02d%% " C_LBLUE " %8ld ", percentage / 100, percentage % 100, report[n].count );
+                    fprintf( stdout, C_YELLOW "%3d.%02d%% " C_LBLUE " %" PRIu64 " ", percentage / 100, percentage % 100, report[n].count );
 
 
                     if ( ( options.reportFilenames ) && ( report[n].n->filename ) )
@@ -690,7 +690,7 @@ static void _outputTop( uint32_t total, uint32_t reportLines, struct reportLine 
 
     fprintf( stdout, C_RESET "-----------------" EOL );
 
-    fprintf( stdout, C_YELLOW "%3d.%02d%% " C_LBLUE " %8ld " C_RESET "of "C_YELLOW" %ld "C_RESET" Samples" EOL, totPercent / 100, totPercent % 100, dispSamples, samples );
+    fprintf( stdout, C_YELLOW "%3d.%02d%% " C_LBLUE " %8" PRIu64 " " C_RESET "of "C_YELLOW" %" PRIu64 " "C_RESET" Samples" EOL, totPercent / 100, totPercent % 100, dispSamples, samples );
 
     if ( p )
     {

@@ -364,7 +364,7 @@ void _dumpProfile( void )
         if ( !t->seen )
         {
             /* Haven't seen it before, so announce it */
-            fprintf( _r.c, "fl=(%d) %s\nfn=(%d) %s\n0x%08x %d %ld\n", t->index, t->n->filename, t->index, t->n->function, t->n->addr, t->n->line, myCost );
+            fprintf( _r.c, "fl=(%d) %s\nfn=(%d) %s\n0x%08x %d %" PRIu64 "\n", t->index, t->n->filename, t->index, t->n->function, t->n->addr, t->n->line, myCost );
             t->seen = true;
         }
     }
@@ -393,7 +393,7 @@ void _dumpProfile( void )
         if ( !t->seen )
         {
             /* This is a previously unseen dest, announce it */
-            fprintf( _r.c, "fl=(%d) %s\nfn=(%d) %s\n0x%08x %d %ld\n", t->index, t->n->filename, t->index, t->n->function, t->n->addr, t->n->line, myCost );
+            fprintf( _r.c, "fl=(%d) %s\nfn=(%d) %s\n0x%08x %d %" PRIu64 "\n", t->index, t->n->filename, t->index, t->n->function, t->n->addr, t->n->line, myCost );
             t->seen = true;
         }
 
@@ -412,7 +412,7 @@ void _dumpProfile( void )
 
         /* Now publish the call destination. By definition is is known, so can be shortformed */
         fprintf( _r.c, "cfi=(%d)\ncfn=(%d)\ncalls=%d 0x%08x %d\n", t->index, t->index, totalCalls, _r.sub[i].dst, t->n->line );
-        fprintf( _r.c, "0x%08x %d %ld\n", _r.sub[i].src, f->n->line, totalCost );
+        fprintf( _r.c, "0x%08x %d %" PRIu64 "\n", _r.sub[i].src, f->n->line, totalCost );
     }
 }
 // ====================================================================================================
@@ -472,7 +472,7 @@ void _outputProfile( void )
     fprintf( _r.c, "# callgrind format\n" );
     fprintf( _r.c, "positions: line instr\nevent: Cyc : Processor Clock Cycles\nevents: Cyc\n" );
     /* Samples are in time order, so we can determine the extent of time.... */
-    fprintf( _r.c, "summary: %ld\n", _r.calls[_r.cdCount - 1].tstamp - _r.calls[0].tstamp );
+    fprintf( _r.c, "summary: %" PRIu64 "\n", _r.calls[_r.cdCount - 1].tstamp - _r.calls[0].tstamp );
     fprintf( _r.c, "ob=%s\n", options.elffile );
 
     /* If we have a set of sub-calls from a previous run then delete them */
