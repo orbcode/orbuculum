@@ -61,6 +61,7 @@
 #include <netinet/in.h>
 #include <assert.h>
 #include <netdb.h>
+#include <inttypes.h>
 
 #include "git_version_info.h"
 #include "uthash.h"
