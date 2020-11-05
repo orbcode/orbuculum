@@ -1,6 +1,9 @@
 Version 1.20 in Progress
-* Fix segfaults on 32-bit OSes
-* Fix depreciation warning with latest versions of libftdi
+
+* (From V1.11) Fix building on OSX (Andrew Kohlsmith)
+* (From V1.11) Fix segfaults on 32-bit OSes
+* (From V1.11) Fix depreciation warning with latest versions of libftdi
+* (From V1.11) Fix bitrot in documentation URL (master -> main transition, Jan Christoph Bernack)
 
 23rd October 2020 (Version 1.10)
 
