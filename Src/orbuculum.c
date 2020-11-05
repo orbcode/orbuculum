@@ -632,6 +632,10 @@ int _processOptions( int argc, char *argv[] )
     {
         genericsReport( V_INFO, "Using TPIU : true (ITM on channel %d)" EOL, fifoGettpiuITMChannel( _r.f ) );
     }
+    else
+    {
+        genericsReport( V_INFO, "Using TPIU : false" EOL );
+    }
 
 #endif
 

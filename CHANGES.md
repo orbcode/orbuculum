@@ -1,5 +1,6 @@
 Version 1.20 in Progress
-* Nothing to see here
+* Fix segfaults on 32-bit OSes
+* Fix depreciation warning with latest versions of libftdi
 
 23rd October 2020 (Version 1.10)
 
