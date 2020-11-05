@@ -810,7 +810,11 @@ void fifoShutdown( struct fifosHandle *f )
             /* Wait a max of one second for the thread to exit */
             ts.tv_sec += 1;
 
+#ifdef OSX
+            pthread_join( f->c[t].thread, NULL );
+#else
             pthread_timedjoin_np( f->c[t].thread, NULL, &ts );
+#endif
 
             if ( ! f->permafile )
             {
