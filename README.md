@@ -4,7 +4,11 @@
 
 * Latest Changes:
 
-This is V1.10.
+* V1.11: Fix segfaults on 32-bit OSes
+* V1.11: Fix depreciation warning with latest versions of libftdi
+* V1.11: Fix bitrot in documentation URL (master -> main transition)
+
+V1.10 changes against V1.00;
 
 * This V1.1(+fixes) branch is now known as `main`. V1.0(+fixes) is now on branch `legacy_1_0` and new development work will be on `Devel`.
 * Note that recent enhancements to openocd ( https://sourceforge.net/projects/openocd/ ) allow it to be used as a trace source to the various orbuculum clients...this is probably sufficient for many use cases but the `orbuculum` multiplexer can still plug into openocd if you need the additional functionality (fifos and secondary muxing).
