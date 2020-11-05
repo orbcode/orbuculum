@@ -42,7 +42,13 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdarg.h>
+
+#ifdef OSX
+#include "osxelf.h"
+#else
 #include <elf.h>
+#endif
+
 #include <demangle.h>
 #include <assert.h>
 #include <inttypes.h>

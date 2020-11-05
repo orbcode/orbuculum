@@ -75,6 +75,31 @@ struct nwClient
 
 };
 
+#ifdef OSX
+static int sem_timedwait(sem_t *sem, const struct timespec *ts)
+{
+	int ret;
+	int left, step;
+
+	left = ts->tv_sec * 1000;		/* how much waiting is left, in msec */
+	step = 10;				/* msec to sleep at each trywait() failure */
+
+	do {
+		if ((ret = sem_trywait(sem)) != 0) {
+			struct timespec dly;
+
+			dly.tv_sec = 0;
+			dly.tv_nsec = step * 1000000;
+			nanosleep(&dly, NULL);
+
+			left -= step;
+		}
+	} while (ret != 0 && left > 0);
+
+	return ret;
+}
+#endif
+
 // ====================================================================================================
 // Network server implementation for raw SWO feed
 // ====================================================================================================
@@ -90,7 +115,7 @@ static void _clientRemove( struct nwClient *c )
 
     if ( sem_timedwait( &c->parent->clientList, &ts ) < 0 )
     {
-        genericsExit( -1, "Failed to aqquire semaphore" EOL );
+        genericsExit( -1, "Failed to acquire semaphore" EOL );
     }
 
     if ( c->prevClient )
@@ -186,7 +211,7 @@ static void *_listenTask( void *arg )
                 /* Hook into linked list */
                 if ( sem_timedwait( &h->clientList, &ts ) < 0 )
                 {
-                    genericsExit( -1, "Failed to aqquire semaphore" EOL );
+                    genericsExit( -1, "Failed to acquire semaphore" EOL );
                 }
 
                 client->nextClient = h->firstClient;
@@ -227,7 +252,7 @@ void nwclientSend( struct nwclientsHandle *h, uint32_t len, uint8_t *buffer )
     {
         if ( sem_timedwait( &h->clientList, &ts ) < 0 )
         {
-            genericsExit( -1, "Failed to aqquire semaphore" EOL );
+            genericsExit( -1, "Failed to acquire semaphore" EOL );
         }
 
         while ( n )
@@ -317,7 +342,7 @@ void nwclientShutdown( struct nwclientsHandle *h )
 
     if ( sem_timedwait( &h->clientList, &ts ) < 0 )
     {
-        genericsExit( -1, "Failed to aqquire semaphore" EOL );
+        genericsExit( -1, "Failed to acquire semaphore" EOL );
     }
 
     /* Tell all the clients to terminate */

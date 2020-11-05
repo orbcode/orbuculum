@@ -72,8 +72,14 @@ GCC_DEFINE+= -std=gnu99
 CFILES =
 SFILES =
 OLOC = ofiles
+
+ifdef OSX
+INCLUDE_PATHS += -I/usr/local/include/libusb-1.0 -I/usr/local/opt/binutils/include/libiberty -I/usr/local/opt/binutils/include
+LDLIBS = -L. -lpthread -L/usr/local/lib -lusb-1.0 -losxelf -lbfd -lz -ldl -lintl -L/usr/local/opt/binutils/lib -liberty -L$(OLOC) -l$(ORBLIB)
+else
 INCLUDE_PATHS += -I/usr/local/include/libusb-1.0 -I/usr/include/libiberty
 LDLIBS = -L. -L/usr/local/lib -lusb-1.0 -lelf -lbfd -lz -ldl -liberty -L$(OLOC) -l$(ORBLIB)
+endif
 
 ifdef LINUX
 LDLIBS += -lpthread

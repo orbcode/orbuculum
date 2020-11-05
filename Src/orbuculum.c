@@ -886,6 +886,7 @@ int serialFeeder( void )
     while ( 1 )
     {
 #ifdef OSX
+	int flags;
 
         while ( ( f = open( options.port, O_RDONLY | O_NONBLOCK ) ) < 0 )
 #else
