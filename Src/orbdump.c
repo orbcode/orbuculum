@@ -42,7 +42,7 @@
 #include <stdio.h>
 #include <string.h>
 #if defined OSX
-    #include "elf.h"
+    #include "osxelf.h"
     #include <libusb.h>
 #else
     #include <elf.h>

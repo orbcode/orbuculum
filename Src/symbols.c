@@ -45,7 +45,7 @@
 #include <stdarg.h>
 
 #ifdef OSX
-#include "elf.h"
+#include "osxelf.h"
 #else
 #include <elf.h>
 #endif

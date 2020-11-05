@@ -44,7 +44,7 @@
 #include <stdarg.h>
 #include "bfd_wrapper.h"
 #if defined OSX
-    #include "elf.h"
+    #include "osxelf.h"
     #include <libusb.h>
 #else
     #include <elf.h>
