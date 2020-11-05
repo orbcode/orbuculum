@@ -4,9 +4,10 @@
 
 * Latest Changes:
 
-* V1.11: Fix segfaults on 32-bit OSes
+* V1.11: Fix building on OSX (Andrew Kohlsmith)
+* V1.11: Fix segfaults on 32-bit OSes 
 * V1.11: Fix depreciation warning with latest versions of libftdi
-* V1.11: Fix bitrot in documentation URL (master -> main transition)
+* V1.11: Fix bitrot in documentation URL (master -> main transition, Jan Christoph Bernack)
 
 V1.10 changes against V1.00;
 
