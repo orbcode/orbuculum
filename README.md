@@ -1,5 +1,5 @@
-![Screenshot](https://raw.githubusercontent.com/orbcode/orbuculum/master/Docs/title.png)
-* Build status main: [![Build Status: master](https://travis-ci.com/orbcode/orbuculum.svg?branch=main)](https://travis-ci.com/orbcode/orbuculum)
+![Screenshot](https://raw.githubusercontent.com/orbcode/orbuculum/main/Docs/title.png)
+* Build status main: [![Build Status: main](https://travis-ci.com/orbcode/orbuculum.svg?branch=main)](https://travis-ci.com/orbcode/orbuculum)
 * Build status, Devel branch: [![Build Status: Devel](https://travis-ci.com/orbcode/orbuculum.svg?branch=Devel)](https://travis-ci.com/orbcode/orbuculum)
 
 * Latest Changes:
