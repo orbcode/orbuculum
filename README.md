@@ -205,8 +205,8 @@ replace them with the following;
 
 ...be careful to set the trace width to be the same as what you've configured on the FPGA (the -o parameter on the orbuculum command line).
 
-Building
-========
+Building on Linux
+=================
 
 Dependencies
 ------------
@@ -230,6 +230,26 @@ how well your build environment is set up.
 To build the FPGA and load it into the board, install the incredible icestorm tools from Clifford
 Wolf, then go into the `orbtrace/src` directory and type `./create`. It will take about 30 seconds
 to compile the image and burn it to the board.
+
+Building on OSX
+===============
+
+Recipie instructions courtesy of FrankTheTank;
+
+* `brew install libelf`
+* `brew install libusb`
+* `brew edit binutils`
+* add `--enable-install-libiberty`, to the configure options of binutils.
+* `brew install -s binutils` or if already installed, `brew reinstall -s binutils`
+
+and finally;
+
+```
+export LDFLAGS="-L/usr/local/opt/binutils/lib"
+export CPPFLAGS="-I/usr/local/opt/binutils/include"
+make WITH_FPGA=0
+```
+
 
 Using
 =====
