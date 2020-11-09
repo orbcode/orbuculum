@@ -4,6 +4,7 @@
 
 * Latest Changes:
 
+* V1.12: Update gdbtrace.init to remove `with` syntax. This remains available in the `gdbinit_withwith.init` file, but that syntax breaks older versions of gdb.
 * V1.11: Fix building on OSX (Andrew Kohlsmith)
 * V1.11: Fix segfaults on 32-bit OSes 
 * V1.11: Fix depreciation warning with latest versions of libftdi
@@ -152,7 +153,13 @@ gdb session with `source gdbtrace.init` and then typing `help orbuculum`. Help o
 parameters for each macro are available via the help system too.
 
 In general, you will configure orbuculum via your local `.gdbinit` file. Several example files are 
-also in the Support directory. Generically, it looks like this; 
+also in the Support directory. There you will find a `gdbtrace.init` file for 'regular' gcc
+use, and a `gdbtrace_withwith.init` file for use with recent versions of gdb that support
+the `with` syntax. The functionality of both is identical, but the `with` syntax allows it
+to be used more easily with non-C languages like Rust...unfortunately that syntax isn't
+supported on older versions of gdb.
+
+Anyway, generically, a configuration looks like this; 
 
     source Support/gdbtrace.init            <---- Source the trace specific stuff
     target extended-remote /dev/ttyACM0     <-
