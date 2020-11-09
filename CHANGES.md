@@ -1,5 +1,6 @@
 Version 1.20 in Progress
 
+* (From V1.12) Update gdbtrace.init to remove `with` syntax. This remains available in the `gdbinit_withwith.init` file, but that syntax breaks older versions of gdb.
 * (From V1.11) Fix building on OSX (Andrew Kohlsmith)
 * (From V1.11) Fix segfaults on 32-bit OSes
 * (From V1.11) Fix depreciation warning with latest versions of libftdi
