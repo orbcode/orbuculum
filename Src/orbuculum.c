@@ -747,9 +747,9 @@ static void _processBlock( int s, unsigned char *cbw )
         {
             fifoProtocolPump( _r.f, *c++ );
         }
+#endif
     }
 
-#endif
 }
 // ====================================================================================================
 int usbFeeder( void )
