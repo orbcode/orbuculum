@@ -2,7 +2,7 @@
  * SWO Splitter for Blackmagic Probe and TTL Serial Interfaces
  * ===========================================================
  *
- * Copyright (C) 2017, 2019  Dave Marples  <dave@marples.net>
+ * Copyright (C) 2017, 2019, 2020  Dave Marples  <dave@marples.net>
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -115,11 +115,20 @@
 #define SEGGER_HOST "localhost"               /* Address to connect to SEGGER */
 #define SEGGER_PORT (2332)
 
-/* Descriptor information for BMP */
-#define VID       (0x1d50)
-#define PID       (0x6018)
-#define INTERFACE (5)
-#define ENDPOINT  (0x85)
+/* Table of known devices to try opening */
+static const struct deviceList
+{
+    uint32_t vid;
+    uint32_t pid;
+    uint8_t iface;
+    uint8_t ep;
+    char *name;
+} _deviceList[] =
+{
+    { 0x1d50, 0x6018, 5, 0x85, "Blackmagic Probe" },
+    { 0x2b3e, 0xc610, 3, 0x85, "Phywhisperer-UDT" },
+    { 0, 0, 0, 0 }
+};
 
 #ifndef TRANSFER_SIZE
     #define TRANSFER_SIZE (4096)
@@ -756,9 +765,10 @@ int usbFeeder( void )
 
 {
     unsigned char cbw[TRANSFER_SIZE];
-    libusb_device_handle *handle;
+    libusb_device_handle *handle = NULL;
     libusb_device *dev;
     int size;
+    const struct deviceList *p;
     int32_t err;
 
     while ( 1 )
@@ -769,15 +779,33 @@ int usbFeeder( void )
             return ( -1 );
         }
 
-        genericsReport( V_INFO, "Opening USB Device" EOL );
-
         /* Snooze waiting for the device to appear .... this is useful for when they come and go */
-        while ( !( handle = libusb_open_device_with_vid_pid( NULL, VID, PID ) ) )
+        while ( 1 )
         {
+            p = _deviceList;
+
+            while ( p->vid != 0 )
+            {
+                genericsReport( V_DEBUG, "Looking for %s (%04x:%04x)" EOL, p->name, p->vid, p->pid );
+
+                if ( ( handle = libusb_open_device_with_vid_pid( NULL, p->vid, p->pid ) ) )
+                {
+                    break;
+                }
+
+                p++;
+            }
+
+            if ( handle )
+            {
+                break;
+            }
+
+            /* Take a pause before looking again */
             usleep( 500000 );
         }
 
-        genericsReport( V_INFO, "USB Device opened" EOL );
+        genericsReport( V_INFO, "Found %s" EOL, p->name );
 
         if ( !( dev = libusb_get_device( handle ) ) )
         {
@@ -785,19 +813,19 @@ int usbFeeder( void )
             continue;
         }
 
-        if ( ( err = libusb_claim_interface ( handle, INTERFACE ) ) < 0 )
+        if ( ( err = libusb_claim_interface ( handle, p->iface ) ) < 0 )
         {
-            genericsReport( V_ERROR, "Failed to claim interface (%d)" EOL, err );
-            return 0;
+            genericsReport( V_WARN, "Failed to claim interface (%d)" EOL, err );
+            continue;
         }
 
         int32_t r;
 
-        genericsReport( V_INFO, "USB Interface claimed, ready for data" EOL );
+        genericsReport( V_DEBUG, "USB Interface claimed, ready for data" EOL );
 
         while ( true )
         {
-            r = libusb_bulk_transfer( handle, ENDPOINT, cbw, TRANSFER_SIZE, &size, 10 );
+            r = libusb_bulk_transfer( handle, p->ep, cbw, TRANSFER_SIZE, &size, 10 );
 
             if ( ( r < 0 ) && ( r != LIBUSB_ERROR_TIMEOUT ) )
             {
@@ -886,7 +914,7 @@ int serialFeeder( void )
     while ( 1 )
     {
 #ifdef OSX
-	int flags;
+        int flags;
 
         while ( ( f = open( options.port, O_RDONLY | O_NONBLOCK ) ) < 0 )
 #else

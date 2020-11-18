@@ -44,9 +44,9 @@
 #include <stdarg.h>
 
 #ifdef OSX
-#include "osxelf.h"
+    #include "osxelf.h"
 #else
-#include <elf.h>
+    #include <elf.h>
 #endif
 
 #include <demangle.h>

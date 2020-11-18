@@ -76,27 +76,30 @@ struct nwClient
 };
 
 #ifdef OSX
-static int sem_timedwait(sem_t *sem, const struct timespec *ts)
+static int sem_timedwait( sem_t *sem, const struct timespec *ts )
 {
-	int ret;
-	int left, step;
+    int ret;
+    int left, step;
 
-	left = ts->tv_sec * 1000;		/* how much waiting is left, in msec */
-	step = 10;				/* msec to sleep at each trywait() failure */
+    left = ts->tv_sec * 1000;       /* how much waiting is left, in msec */
+    step = 10;              /* msec to sleep at each trywait() failure */
 
-	do {
-		if ((ret = sem_trywait(sem)) != 0) {
-			struct timespec dly;
+    do
+    {
+        if ( ( ret = sem_trywait( sem ) ) != 0 )
+        {
+            struct timespec dly;
 
-			dly.tv_sec = 0;
-			dly.tv_nsec = step * 1000000;
-			nanosleep(&dly, NULL);
+            dly.tv_sec = 0;
+            dly.tv_nsec = step * 1000000;
+            nanosleep( &dly, NULL );
 
-			left -= step;
-		}
-	} while (ret != 0 && left > 0);
+            left -= step;
+        }
+    }
+    while ( ret != 0 && left > 0 );
 
-	return ret;
+    return ret;
 }
 #endif
 
