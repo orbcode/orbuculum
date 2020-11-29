@@ -92,7 +92,7 @@ octave or whatever). Orbuculum itself doesn't care if the data
 originates from a RZ or NRZ port, or at what speed....that's the job
 of the interface.
 
-At the present time Orbuculum supports eight devices for collecting trace
+At the present time Orbuculum supports nine devices for collecting trace
 from the target;
  
 * the Black Magic Debug Probe (BMP)
@@ -103,6 +103,7 @@ from the target;
 * PyOCD (Add options like `enable_swv: True`, `swv_system_clock: 32000000` to your `pyocd.yml` to use it.)
 * The ice40-HX8K Breakout Board for parallel trace.
 * Anything capable of saving the raw SWO data to a file
+* Anything capable of offering SWO on a TCP port
 
 Information about using each individual interface can be found in the
 docs directory. gdb setup files for each device type can be found in the `Support` directory.
@@ -123,8 +124,8 @@ but 921600 baud is normally acheivable. On BMP the baudrate is set via
 the gdb session with the 'monitor traceswo xxxx' command. For a TTL
 Serial device its set by the Orbuculum command line.  Segger devices
 can normally work faster, but no experimentation has yet been done to
-find their max limits, which are probably dependent on the specific JLink
-you are using.
+find their max limits, which are probably it's dependent on the specific JLink
+you are using. JLink-Pro and JTrace devices appear to work up to 50MHz. YMMV.
 
 When using parallel trace you are limited by the capabilities of the FPGA configuration and
 the speed you can get data off the chip. The current maximum speed supported for the
@@ -358,7 +359,7 @@ Specific command line options of note are;
 
   `-P`: Create permanent files rather than fifos - useful when you want to use the processed data later.
 
-  `-s [address]:[port]`: Set address for SEGGER JLink connection, (default none:2332)
+  `-s [address]:[port]`: Set address for Source connection, (default none:2332). This used to be 'Segger' connection, but it's more general than that - it can be used for any TCP port that issues 'clean' SWO data.
 
   `-t`: Use TPIU decoder.  This will not sync if TPIU is not configured, so you won't see
      packets in that case.
@@ -401,7 +402,7 @@ options for orbcat are;
 
  `-n`: Enforce sync requirement for ITM (i.e. ITM needsd to issue syncs)
 
- `-s [server]:[port]`: to connect to. Defaults to localhost:3443 to connect to the orbuculum daemon. Use localhost:2332 to connect to an existing Segger J-Link..
+ `-s [server]:[port]`: to connect to. Defaults to localhost:3443 to connect to the orbuculum daemon. Use localhost:2332 to connect to a Segger J-Link, or whatever other combination applies to your source.
 
  `-t`: Use TPIU decoder.  This will not sync if TPIU is not configured, so you won't see
      packets in that case.
@@ -427,8 +428,8 @@ line for orbtop would be;
 ...the pointer to the elf file is always needed for orbtop to be able to recover symbols from. 
 
 One useful command line option for orbtop (and indeed, for the majority of the rest of the
-suite) is -s localhost:2332, which will connect directly to a SEGGER J-Link you might have exporting
-its port, with no requirement for the orbuculum multiplexer in the way.
+suite) is -s localhost:2332, which will connect directly to any source you might have exporting
+SWO data on its TCP its port, with no requirement for the orbuculum multiplexer in the way.
 
 Command line options for orbtop are;
 
@@ -827,5 +828,5 @@ and then;
 
     > ./ofiles/orbuculum -g 9999 -b md/ -c 0,text,"%c"
 
-However, that's probably over-complicated now...the orbuculum -f option supports ongoing streaming from
-a file directly.  This information is just left here to show the flexibilities you have got available.
+However, that's probably over-complicated now...just use the orbuculum -s option to hook to any source that
+is pumping out clean SWO data. This information is just left here to show the flexibilities you have got available.
