@@ -92,7 +92,7 @@ octave or whatever). Orbuculum itself doesn't care if the data
 originates from a RZ or NRZ port, or at what speed....that's the job
 of the interface.
 
-At the present time Orbuculum supports seven devices for collecting trace
+At the present time Orbuculum supports eight devices for collecting trace
 from the target;
  
 * the Black Magic Debug Probe (BMP)
@@ -100,6 +100,7 @@ from the target;
 * generic USB TTL Serial Interfaces
 * FTDI High speed serial interfaces
 * OpenOCD (Add a line like `tpiu config internal :3443 uart off 32000000` to your openocd config to use it.)
+* PyOCD (Add options like `enable_swv: True`, `swv_system_clock: 32000000` to your `pyocd.yml` to use it.)
 * The ice40-HX8K Breakout Board for parallel trace.
 * Anything capable of saving the raw SWO data to a file
 
