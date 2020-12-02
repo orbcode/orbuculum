@@ -9,7 +9,7 @@ void GenericsConfigureTracing(uint32_t itmChannel, uint32_t sampleInterval, uint
   *((volatile unsigned *)(0xE0040010)) = 31;  // Output bits at 72000000/(31+1)=2.250MHz.
   *((volatile unsigned *)(0xE00400F0)) = 2;  // Use Async mode pin protocol
 
-  if (!itmChannel)
+  if (itmChannel!=0x7f)
     {
       *((volatile unsigned *)(0xE0040304)) = 0;  // Bypass the TPIU and send output directly
     }
