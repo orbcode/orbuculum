@@ -350,7 +350,7 @@ void _printHelp( char *progName )
     fprintf( stdout, "        e: When reading from file, terminate at end of file rather than waiting for further input" EOL );
     fprintf( stdout, "        f: <filename> Take input from specified file" EOL );
     fprintf( stdout, "        h: This help" EOL );
-    IF_WITH_FIFOS( fprintf( stdout, "        i: <channel> Set ITM Channel in TPIU decode (defaults to 1)" EOL ) );
+    IF_WITH_FIFOS( fprintf( stdout, "        i: <channel> Set ITM Channel in TPIU decode (defaults to 0)" EOL ) );
     IF_WITH_NWCLIENT( fprintf( stdout, "        l: <port> Listen port for the incoming connections (defaults to %d)" EOL, NWCLIENT_SERVER_PORT ) );
     fprintf( stdout, "        m: <interval> Output monitor information about the link at <interval>ms" EOL );
     IF_WITH_FIFOS( fprintf( stdout, "        n: Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL ) );
@@ -378,11 +378,11 @@ int _processOptions( int argc, char *argv[] )
 
 #ifdef WITH_FIFOS
 
-    IF_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:b:c:ef:hl:m:no:p:Ps:tv:w:" ) ) != -1 ) )
-        IF_NOT_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:b:c:ef:hm:o:p:Ps:tv:w:" ) ) != -1 ) )
+    IF_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:b:c:ef:hi:l:m:no:p:Ps:tv:w:" ) ) != -1 ) )
+        IF_NOT_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:b:c:efi::hm:o:p:Ps:tv:w:" ) ) != -1 ) )
 #else
-    IF_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:ef:hi:l:m:no:p:s:v:" ) ) != -1 ) )
-        IF_NOT_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:ef:hi:m:no:p:s:v:" ) ) != -1 ) )
+    IF_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:ef:hl:m:no:p:s:v:" ) ) != -1 ) )
+        IF_NOT_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:ef:hm:no:p:s:v:" ) ) != -1 ) )
 #endif
             switch ( c )
             {
@@ -584,17 +584,6 @@ int _processOptions( int argc, char *argv[] )
                     // ------------------------------------
             }
 
-#ifdef WITH_FIFOS
-
-    /* Now perform sanity checks.... */
-    if ( fifoGetUseTPIU( _r.f ) && ( !fifoGettpiuITMChannel( _r.f ) ) )
-    {
-        genericsReport( V_ERROR, "TPIU set for use but no channel set for ITM output" EOL );
-        return false;
-    }
-
-#endif
-
 #ifdef INCLUDE_FPGA_SUPPORT
 
     if ( ( options.orbtrace ) && !( ( options.orbtraceWidth == 1 ) || ( options.orbtraceWidth == 2 ) || ( options.orbtraceWidth == 4 ) ) )
@@ -756,6 +745,7 @@ static void _processBlock( int s, unsigned char *cbw )
         {
             fifoProtocolPump( _r.f, *c++ );
         }
+
 #endif
     }
 
@@ -1142,8 +1132,8 @@ int main( int argc, char *argv[] )
     sigset_t set;
     struct sigaction sa;
 
-    /* Setup fifos with forced ITM sync, no TPIU and TPIU on channel 1 if its engaged later */
-    IF_WITH_FIFOS( _r.f = fifoInit( true, false, 1 ) );
+    /* Setup fifos with forced ITM sync, no TPIU and TPIU on channel 0 if its engaged later */
+    IF_WITH_FIFOS( _r.f = fifoInit( true, false, 0 ) );
     IF_WITH_FIFOS( assert( _r.f ) );
 
     if ( !_processOptions( argc, argv ) )

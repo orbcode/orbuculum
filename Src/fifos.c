@@ -577,7 +577,7 @@ static void _tpiuProtocolPump( struct fifosHandle *f, uint8_t c )
 
                 if ( ( f->p.packet[g].s != 0 ) && ( f->p.packet[g].s != 0x7f ) )
                 {
-                    genericsReport( V_INFO, "Unknown TPIU channel %02x" EOL, f->p.packet[g].s );
+                    genericsReport( V_INFO, "Unhandled TPIU channel %02x" EOL, f->p.packet[g].s );
                 }
             }
 
