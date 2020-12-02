@@ -51,7 +51,7 @@ struct nwclientsHandle
 
 {
     struct nwClient *firstClient;             /* Head of linked list of network clients */
-    sem_t clientList;                         /* Locking semaphore for list of network clients */
+    pthread_mutex_t clientList;               /* Lock for list of network clients */
 
     int sockfd;                               /* The socket for the inferior */
     pthread_t ipThread;                       /* The listening thread for n/w clients */
@@ -75,30 +75,31 @@ struct nwClient
 
 };
 
-#ifdef OSX
-static int sem_timedwait(sem_t *sem, const struct timespec *ts)
+static int lock_with_timeout( pthread_mutex_t *mutex, const struct timespec *ts )
 {
-	int ret;
-	int left, step;
+    int ret;
+    int left, step;
 
-	left = ts->tv_sec * 1000;		/* how much waiting is left, in msec */
-	step = 10;				/* msec to sleep at each trywait() failure */
+    left = ts->tv_sec * 1000;       /* how much waiting is left, in msec */
+    step = 10;              /* msec to sleep at each trywait() failure */
 
-	do {
-		if ((ret = sem_trywait(sem)) != 0) {
-			struct timespec dly;
+    do
+    {
+        if ( ( ret = pthread_mutex_trylock( mutex ) ) != 0 )
+        {
+            struct timespec dly;
 
-			dly.tv_sec = 0;
-			dly.tv_nsec = step * 1000000;
-			nanosleep(&dly, NULL);
+            dly.tv_sec = 0;
+            dly.tv_nsec = step * 1000000;
+            nanosleep( &dly, NULL );
 
-			left -= step;
-		}
-	} while (ret != 0 && left > 0);
+            left -= step;
+        }
+    }
+    while ( ret != 0 && left > 0 );
 
-	return ret;
+    return ret;
 }
-#endif
 
 // ====================================================================================================
 // Network server implementation for raw SWO feed
@@ -113,9 +114,9 @@ static void _clientRemove( struct nwClient *c )
 
     /* First of all, make sure we can get access to the client list */
 
-    if ( sem_timedwait( &c->parent->clientList, &ts ) < 0 )
+    if ( lock_with_timeout( &c->parent->clientList, &ts ) < 0 )
     {
-        genericsExit( -1, "Failed to acquire semaphore" EOL );
+        genericsExit( -1, "Failed to acquire mutex" EOL );
     }
 
     if ( c->prevClient )
@@ -133,7 +134,7 @@ static void _clientRemove( struct nwClient *c )
     }
 
     /* OK, we made our modifications */
-    sem_post( &c->parent->clientList );
+    pthread_mutex_unlock( &c->parent->clientList );
 
     /* Remove the memory that was allocated for this client */
     free( c );
@@ -209,9 +210,9 @@ static void *_listenTask( void *arg )
                 pthread_detach( client->thread );
 
                 /* Hook into linked list */
-                if ( sem_timedwait( &h->clientList, &ts ) < 0 )
+                if ( lock_with_timeout( &h->clientList, &ts ) < 0 )
                 {
-                    genericsExit( -1, "Failed to acquire semaphore" EOL );
+                    genericsExit( -1, "Failed to acquire mutex" EOL );
                 }
 
                 client->nextClient = h->firstClient;
@@ -224,7 +225,7 @@ static void *_listenTask( void *arg )
 
                 h->firstClient = client;
 
-                sem_post( &h->clientList );
+                pthread_mutex_unlock( &h->clientList );
             }
         }
     }
@@ -250,9 +251,9 @@ void nwclientSend( struct nwclientsHandle *h, uint32_t len, uint8_t *buffer )
 
     if ( !h->finish )
     {
-        if ( sem_timedwait( &h->clientList, &ts ) < 0 )
+        if ( lock_with_timeout( &h->clientList, &ts ) < 0 )
         {
-            genericsExit( -1, "Failed to acquire semaphore" EOL );
+            genericsExit( -1, "Failed to acquire mutex" EOL );
         }
 
         while ( n )
@@ -261,7 +262,7 @@ void nwclientSend( struct nwclientsHandle *h, uint32_t len, uint8_t *buffer )
             n = n->nextClient;
         }
 
-        sem_post( &h->clientList );
+        pthread_mutex_unlock( &h->clientList );
     }
 }
 // ====================================================================================================
@@ -308,8 +309,8 @@ struct nwclientsHandle *nwclientStart( int port )
         goto free_and_return;
     }
 
-    /* Create a semaphore to lock the client list */
-    sem_init( &h->clientList, 0, 1 );
+    /* Create a mutex to lock the client list */
+    pthread_mutex_init( &h->clientList, NULL );
 
     /* We have the listening socket - spawn a thread to handle it */
     if ( pthread_create( &( h->ipThread ), NULL, &_listenTask, h ) )
@@ -340,9 +341,9 @@ void nwclientShutdown( struct nwclientsHandle *h )
     /* Flag that we're ending */
     h->finish = true;
 
-    if ( sem_timedwait( &h->clientList, &ts ) < 0 )
+    if ( lock_with_timeout( &h->clientList, &ts ) < 0 )
     {
-        genericsExit( -1, "Failed to acquire semaphore" EOL );
+        genericsExit( -1, "Failed to acquire mutex" EOL );
     }
 
     /* Tell all the clients to terminate */
@@ -354,11 +355,11 @@ void nwclientShutdown( struct nwclientsHandle *h )
         close( c->handle );
         close( c->listenHandle );
 
-        /* This is safe because we are locked by the semaphore */
+        /* This is safe because we are locked by the mutex */
         c = c->nextClient;
     }
 
-    sem_post( &h->clientList );
+    pthread_mutex_unlock( &h->clientList );
 }
 // ====================================================================================================
 bool nwclientShutdownComplete( struct nwclientsHandle *h )
