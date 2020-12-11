@@ -1035,7 +1035,10 @@ int fpgaFeeder( void )
             genericsReport( V_WARN, "RXED frame of %d/%d full packets (%3d%%)    \r",
                             ( d - scratchBuffer ) / ( FTDI_PACKET_SIZE - 1 ), FTDI_NUM_FRAMES, ( ( d - scratchBuffer ) * 100 ) / ( FTDI_HS_TRANSFER_SIZE - FTDI_NUM_FRAMES ) );
 
-            IF_WITH_NWCLIENT( nwclientSend( _r.n, ( d - scratchBuffer ), scratchBuffer ) );
+            if ( d - scratchBuffer )
+              {
+                IF_WITH_NWCLIENT( nwclientSend( _r.n, ( d - scratchBuffer ), scratchBuffer ) );
+              }
         }
 
         genericsReport( V_WARN, "Exit Requested (%d, %s)" EOL, t, ftdi_get_error_string( _r.ftdi ) );
