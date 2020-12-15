@@ -23,20 +23,21 @@ set_io clkIn		J3	# connected to 12MHz xtal
 
 # LEDs
 set_io sync_led		B5	# LED0 (D9, red)
-set_io txOvf_led	B4	# LED1 (D8, red)
-set_io txInd_led	A2	# LED2 (D7, red)
-set_io heartbeat_led	A1	# LED3 (D6, red)
+set_io txOvf_led	C4	# LED5 (D4, red)
+set_io txInd_led	B4	# LED1 (D8, red)
+
+set_io heartbeat_led	C3	# LED7 (D2, red)
 
 # scope channels (non-standard)
 set_io yellow		P15	# J2 pin 6
 set_io green		P16	# J2 pin 5
 set_io blue		R15	# J2 pin 4
 
-# other indicators (currently for SUMP2)
-set_io D5		C5	# LED4 (D5, red)
-set_io D4		C4	# LED5 (D4, red)
+# other indicators (currently not used)
 set_io D3		B3	# LED6 (D3, red)
-set_io D2 		C3	# LED7 (D2, red)
+set_io D5		C5	# LED4 (D5, red)
+set_io D6 		A1	# LED3 (D6, red)
+set_io D7		A2	# LED2 (D7, red)
 
 # Input bits for SUMP2
 set_io events_din[0]    B1 

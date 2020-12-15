@@ -22,10 +22,10 @@ module topLevel(
 		input 		  rstIn,
 
 		// Other indicators
-		output reg 	  D5,
-		output reg 	  D4,
 		output reg 	  D3,
-		output reg 	  D2,
+		output reg 	  D5,
+		output reg 	  D6,
+		output reg 	  D7,
 		output reg 	  cts
 				  
 `ifdef INCLUDE_SUMP2
@@ -126,8 +126,7 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b000001)) SpiRxIn
    wire 		    packetr;
    
   // -----------------------------------------------------------------------------------------
-  traceIF #(.BUSWIDTH(MAX_BUS_WIDTH)) traceif (
-                   .clk(clkOut), 
+  traceIF #(.MAXBUSWIDTH(MAX_BUS_WIDTH)) traceif (
                    .rst(rst), 
 
 		   // Downwards interface to trace pins
@@ -157,9 +156,9 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b000001)) SpiRxIn
    wire 		    rxTrig_tl;
    wire 		    rxErr_tl;
    wire 		    frameReset;
-   wire [2:0] 		    widthSet;
+   wire [1:0] 		    widthSet;
    
-   packSend marshall (
+   packBuild marshall (
 		      .clk(clkOut), 
 		      .rst(rst), 
 

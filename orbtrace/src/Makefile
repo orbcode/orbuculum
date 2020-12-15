@@ -1,7 +1,7 @@
 # Define the line below to get SUMP2 incorporated
-INCLUDE_SUMP2=1
+#INCLUDE_SUMP2=1
 
-RVAL ?= 1 #  Replace with $$RANDOM to get a randomised build
+RVAL ?= 8787329 #5 #  Replace with $$RANDOM to get a randomised build
 
 SUPPORTED_HARDWARE=ICE40HX8K_B_EVN ICE40HX1K_STICK_EVN
 

@@ -1,9 +1,9 @@
 `default_nettype none
 
-// packSend
-// ========
+// packBuild
+// =========
 //
-module packSend (
+module packBuild (
 		input 	      clk, // System Clock
 		input 	      rst, // Clock synchronised reset
 		
@@ -180,4 +180,4 @@ module packSend (
 	       if ((oldDataNext==0) && (DataNext==1) && ({outputWpDomB,3'b000}!=outputRp)) outputRp<=outputRp+1;
 	  end // else: !if(rst)
      end // always @ (posedge clk)
-endmodule // packSend
+endmodule // packBuild

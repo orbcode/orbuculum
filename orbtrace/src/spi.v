@@ -13,12 +13,12 @@ module spi (
 	    output 	 tx_free, // Indicator that transmit register is available
 	    output 	 is_transmitting, // Low when transmit line is idle.
 	    input 	 sync,
-	    input [2:0]  widthEnc,
+	    input [1:0]  widthEnc,
 	    output 	 rxFrameReset
 	    );
 
    reg 			 realTransmission;    // Is this real data or an empty frame
-   reg [1:0] 		 width;               // How wide the pins are on the CPU (0-->1, 1-->2, 2-->x, 3-->4)
+   reg [1:0] 		 width;               // How wide the pins are on the CPU (0-->1, 1-->1, 2-->2, 3-->4)
  			 
    reg [15:0] 		 tx_ledstretch;       // Stretch the LED so it can be seen
    reg [4:0] 		 tx_bits_remaining;   // How many bits in this word of the frame left?
@@ -62,7 +62,6 @@ module spi (
 	if (rst)
 	  begin
 	     width<=3;
-	     widthEnc<=4;
 	  end
 	else
 	  begin
@@ -81,7 +80,6 @@ module spi (
 		  begin
 		     // Only really interested in the one that sets up the transmission
 		     width<=rx_data[3:2];
-		     widthEnc<={1'b0,rx_data[3:2]}+1;
 
 		     // We need these right now to be able to make sense of the following...
 		     tx_words_remaining = 8;
