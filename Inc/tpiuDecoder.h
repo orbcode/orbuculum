@@ -67,6 +67,7 @@ struct TPIUDecoderStats
 {
     uint32_t lostSync;                     /* Number of times sync has been lost */
     uint32_t syncCount;                    /* Number of times a sync event has been received */
+    uint32_t halfSyncCount;                /* Number of times a half sync event has been received */
     uint32_t packets;                      /* Number of packets received */
     uint32_t error;                        /* Number of times an error has been received */
 };
@@ -78,6 +79,7 @@ struct TPIUDecoder
     uint8_t currentStream;                 /* Currently selected stream */
     uint32_t syncMonitor;                  /* State of sync reception ... in case we loose sync */
     struct timeval lastPacket;             /* Timestamp for last packet arrival */
+    bool got_lowbits;                      /* Indicator that we've already got the low bits */
     uint8_t rxedPacket[TPIU_PACKET_LEN];   /* Packet currently under construction */
 
     struct TPIUDecoderStats stats;         /* Record of comms stats */

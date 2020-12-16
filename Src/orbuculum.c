@@ -378,11 +378,11 @@ int _processOptions( int argc, char *argv[] )
 
 #ifdef WITH_FIFOS
 
-    IF_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:b:c:ef:hl:m:no:p:Ps:tv:w:" ) ) != -1 ) )
-        IF_NOT_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:b:c:ef:hm:o:p:Ps:tv:w:" ) ) != -1 ) )
+    IF_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:b:c:ef:hi:l:m:no:p:Ps:tv:w:" ) ) != -1 ) )
+        IF_NOT_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:b:c:efi::hm:o:p:Ps:tv:w:" ) ) != -1 ) )
 #else
-    IF_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:ef:hi:l:m:no:p:s:v:" ) ) != -1 ) )
-        IF_NOT_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:ef:hi:m:no:p:s:v:" ) ) != -1 ) )
+    IF_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:ef:hl:m:no:p:s:v:" ) ) != -1 ) )
+        IF_NOT_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:ef:hm:no:p:s:v:" ) ) != -1 ) )
 #endif
             switch ( c )
             {
@@ -583,17 +583,6 @@ int _processOptions( int argc, char *argv[] )
                     return false;
                     // ------------------------------------
             }
-
-#ifdef WITH_FIFOS
-
-    /* Now perform sanity checks.... */
-    if ( fifoGetUseTPIU( _r.f ) && ( !fifoGettpiuITMChannel( _r.f ) ) )
-    {
-        genericsReport( V_ERROR, "TPIU set for use but no channel set for ITM output" EOL );
-        return false;
-    }
-
-#endif
 
 #ifdef INCLUDE_FPGA_SUPPORT
 

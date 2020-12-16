@@ -33,6 +33,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <assert.h>
 #ifdef DEBUG
     #include "generics.h"
 #else
@@ -41,6 +42,8 @@
 #include "tpiuDecoder.h"
 
 #define SYNCPATTERN 0xFFFFFF7F
+#define HALFSYNC_HIGH 0x7F
+#define HALFSYNC_LOW  0XFF
 #define NO_CHANNEL_CHANGE (0xFF)
 #define TIMEOUT (3)
 
@@ -175,6 +178,8 @@ enum TPIUPumpEvent TPIUPump( struct TPIUDecoder *t, uint8_t d )
         t->state = TPIU_RXING;
         t->stats.syncCount++;
         t->byteCount = 0;
+        t->got_lowbits = false;
+        genericsReport( V_DEBUG, "!!!! " EOL );
 
         /* Consider this a valid timestamp */
         gettimeofday( &t->lastPacket, NULL );
@@ -190,6 +195,27 @@ enum TPIUPumpEvent TPIUPump( struct TPIUDecoder *t, uint8_t d )
 
         // -----------------------------------
         case TPIU_RXING:
+
+            // We collect in sets of 16 bits, in order to filter halfsyncs (0x7fff)
+            if ( !t->got_lowbits )
+            {
+                t->got_lowbits = true;
+                t->rxedPacket[t->byteCount] = d;
+                return TPIU_EV_NONE;
+            }
+
+            t->got_lowbits = false;
+
+            if ( ( d == HALFSYNC_HIGH ) && ( t->rxedPacket[t->byteCount] == HALFSYNC_LOW ) )
+            {
+                // A halfsync, waste of space, to be ignored
+                t->stats.halfSyncCount++;
+                return TPIU_EV_NONE;
+            }
+
+            // Pre-increment for the low byte we already got, post increment for this one
+            genericsReport( V_DEBUG, "[%02x %02x] ", t->rxedPacket[t->byteCount], d );
+            t->byteCount++;
             t->rxedPacket[t->byteCount++] = d;
 
             if ( t->byteCount != TPIU_PACKET_LEN )
@@ -207,6 +233,7 @@ enum TPIUPumpEvent TPIUPump( struct TPIUDecoder *t, uint8_t d )
             if ( diffTime.tv_sec < TIMEOUT )
             {
                 t->stats.packets++;
+                genericsReport( V_DEBUG, EOL );
                 return TPIU_EV_RXEDPACKET;
             }
             else

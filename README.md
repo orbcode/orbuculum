@@ -324,7 +324,8 @@ Specific command line options of note are;
 
  `-i [channel]`: Set Channel for ITM in TPIU decode (defaults to 1). Note that the TPIU must
      be in use for this to make sense.  If you call the GenericsConfigureTracing
-     routine above with the ITM Channel set to 0 then the TPIU will be bypassed.
+     routine above with the ITM Channel set to 0x7f then the TPIU will be bypassed.  ***If you do
+     not have this set correctly and you're using the TPIU you will not see any data at all***.
 
  `-l [port]`: Set listening port for the incoming connections from clients.
 
