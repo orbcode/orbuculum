@@ -152,7 +152,7 @@ static void *_runFifo( void *arg )
 
     char constructString[MAX_STRING_LENGTH];
     int opfile;
-    size_t readDataLen, writeDataLen, written;
+    size_t readDataLen, writeDataLen, written = 0;
 
     /* Remove the file if it exists */
     unlink( c->fifoName );
@@ -324,19 +324,33 @@ void _handleDWTEvent( struct dwtMsg *m, struct fifosHandle *f )
     char outputString[MAX_STRING_LENGTH];
     int opLen;
 
-    const char *evName[] = {"CPI", "Exc", "Sleep", "LSU", "Fold", "Cyc"};
+#define NUM_EVENTS 6
+    const char *evName[NUM_EVENTS] = {"CPI", "Exc", "Sleep", "LSU", "Fold", "Cyc"};
     uint64_t eventdifftS = m->ts - f->lastHWExceptionTS;
 
     f->lastHWExceptionTS = m->ts;
+    opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%" PRIu64, HWEVENT_DWT, eventdifftS );
 
-    for ( uint32_t i = 0; i < 6; i++ )
+    for ( uint32_t i = 0; i < NUM_EVENTS; i++ )
     {
         if ( m->event & ( 1 << i ) )
         {
             opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%" PRIu64 ",%s" EOL, HWEVENT_DWT, eventdifftS, evName[m->event] );
             write( f->c[HW_CHANNEL].handle, outputString, opLen );
+            // Copy this event into the output string
+            outputString[opLen++] = ',';
+            const char *u = evName[i];
+
+            do
+            {
+                outputString[opLen++] = *u++;
+            }
+            while ( *u );
         }
     }
+
+    write( f->c[HW_CHANNEL].handle, outputString, opLen );
+    write( f->c[HW_CHANNEL].handle, EOL, strlen( EOL ) );
 }
 // ====================================================================================================
 void _handlePCSample( struct pcSampleMsg *m, struct fifosHandle *f )
