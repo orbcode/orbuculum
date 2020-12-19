@@ -45,9 +45,9 @@
 #include <stdarg.h>
 
 #ifdef OSX
-#include "osxelf.h"
+    #include "osxelf.h"
 #else
-#include <elf.h>
+    #include <elf.h>
 #endif
 
 #include <stdint.h>
@@ -296,13 +296,13 @@ struct SymbolSet *SymbolSetCreate( char *filename )
             if (
                         ( memcmp( &statbuf.st_size, &newstatbuf.st_size, sizeof( off_t ) ) ) ||
 #ifdef OSX
-			( memcmp( &statbuf.st_mtimespec, &newstatbuf.st_mtimespec, sizeof( struct timespec ) ) ) ||
-			( memcmp( &statbuf.st_ctimespec, &newstatbuf.st_ctimespec, sizeof( struct timespec ) ) )
+                        ( memcmp( &statbuf.st_mtimespec, &newstatbuf.st_mtimespec, sizeof( struct timespec ) ) ) ||
+                        ( memcmp( &statbuf.st_ctimespec, &newstatbuf.st_ctimespec, sizeof( struct timespec ) ) )
 #else
-			( memcmp( &statbuf.st_mtim, &newstatbuf.st_mtim, sizeof( struct timespec ) ) ) ||
-			( memcmp( &statbuf.st_ctim, &newstatbuf.st_ctim, sizeof( struct timespec ) ) )
+                        ( memcmp( &statbuf.st_mtim, &newstatbuf.st_mtim, sizeof( struct timespec ) ) ) ||
+                        ( memcmp( &statbuf.st_ctim, &newstatbuf.st_ctim, sizeof( struct timespec ) ) )
 #endif
-	       )
+            )
             {
                 /* Make this the version we check next time around */
                 memcpy( &statbuf, &newstatbuf, sizeof( struct stat ) );
@@ -344,15 +344,21 @@ bool SymbolSetValid( struct SymbolSet **s, char *filename )
 
 {
     struct stat n;
-    stat( filename, &n );
+
+    if ( 0 != stat( filename, &n ) )
+    {
+        /* We can't even stat the file, assume it's invalid */
+        SymbolSetDelete( s );
+        return false;
+    }
 
     /* We check filesize, modification time and status change time for any differences */
     if ( ( !( *s ) ) ||
             ( memcmp( &n.st_size, &( ( *s )->st.st_size ), sizeof( off_t ) ) ) ||
 
 #ifdef OSX
-            ( memcmp( &n.st_mtimespec, &( ( *s )->st.st_mtimespec), sizeof( struct timespec ) ) ) ||
-            ( memcmp( &n.st_ctimespec, &( ( *s )->st.st_ctimespec), sizeof( struct timespec ) ) )
+            ( memcmp( &n.st_mtimespec, &( ( *s )->st.st_mtimespec ), sizeof( struct timespec ) ) ) ||
+            ( memcmp( &n.st_ctimespec, &( ( *s )->st.st_ctimespec ), sizeof( struct timespec ) ) )
 #else
             ( memcmp( &n.st_mtim, &( ( *s )->st.st_mtim ), sizeof( struct timespec ) ) ) ||
             ( memcmp( &n.st_ctim, &( ( *s )->st.st_ctim ), sizeof( struct timespec ) ) )
