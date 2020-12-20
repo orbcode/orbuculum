@@ -1,24 +1,23 @@
 `default_nettype none
 
 module spi (
-	    input 	 clk, // The master clock for this module
-	    input 	 rst, // Synchronous reset.
+	    input        clk, // The master clock for this module
+	    input        rst, // Synchronous reset.
 
-	    output reg 	 tx, // Outgoing serial line
+	    output reg   tx, // Outgoing serial line
 	    input        rx,
  	 
-	    input 	 dClk,
-	    input 	 transmitIn, // Signal to transmit
+	    input        dClk,
+	    input        transmitIn, // Signal to transmit
 	    input [15:0] tx_word, // Byte to transmit
-	    output 	 tx_free, // Indicator that transmit register is available
-	    output 	 is_transmitting, // Low when transmit line is idle.
-	    input 	 sync,
-	    input [1:0]  widthEnc,
-	    output 	 rxFrameReset
+	    output       tx_free, // Indicator that transmit register is available
+	    output       is_transmitting, // Low when transmit line is idle.
+	    input        sync,
+	    output reg [1:0]  width, // How wide the pins are on the CPU (0-->1, 1-->1, 2-->2, 3-->4)
+	    output       rxFrameReset
 	    );
 
    reg 			 realTransmission;    // Is this real data or an empty frame
-   reg [1:0] 		 width;               // How wide the pins are on the CPU (0-->1, 1-->1, 2-->2, 3-->4)
  			 
    reg [15:0] 		 tx_ledstretch;       // Stretch the LED so it can be seen
    reg [4:0] 		 tx_bits_remaining;   // How many bits in this word of the frame left?

@@ -5,7 +5,7 @@ WITH_FPGA?=1
 
 # Build configuration
 #VERBOSE=1
-#DEBUG=1
+DEBUG=1
 SCREEN_HANDLING=1
 
 CFLAGS=-DVERSION="\"1.20InProgress\""
@@ -115,7 +115,6 @@ ORBSTAT_CFILES = $(App_DIR)/$(ORBSTAT).c $(App_DIR)/symbols.c
 ifeq ($(WITH_FPGA),1)
 CFLAGS+=-DINCLUDE_FPGA_SUPPORT
 LDLIBS += -lftdi1
-FPGA_CFILES=$(EXT)/ftdispi.c
 endif
 
 ##########################################################################

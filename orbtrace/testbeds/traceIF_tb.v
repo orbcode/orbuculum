@@ -117,11 +117,32 @@ traceIF DUT (
       sendByte(8'h7f);
 
       // ....and a sane message
-      sendByte(8'h42);
-      sendByte(8'h71);
-      sendByte(8'h19);
-      sendByte(8'h69);
-      sendByte(8'h12);      
+      sendByte(8'h00);
+      sendByte(8'h01);
+      
+      sendByte(8'h02);
+      sendByte(8'h03);
+      
+      sendByte(8'h04);
+      sendByte(8'h05);   
+         
+      sendByte(8'h06);
+      sendByte(8'h07); 
+
+      sendByte(8'hff);
+      sendByte(8'h7f); 
+           
+      sendByte(8'h08);
+      sendByte(8'h09);
+      
+      sendByte(8'h0a);
+      sendByte(8'h0b);
+      
+      sendByte(8'h0c);
+      sendByte(8'h0d);  
+          
+      sendByte(8'h0e);
+      sendByte(8'h0f);            
 
       $finish;
       

@@ -99,14 +99,9 @@
     #define IF_INCLUDE_FPGA_SUPPORT(...) __VA_ARGS__
     #define FTDI_VID  (0x0403)
     #define FTDI_PID  (0x6010)
-    #define FTDI_INTERFACE (INTERFACE_A)
-    #define FTDI_UART_INTERFACE (INTERFACE_B)
-    #define FTDI_INTERFACE_SPEED CLOCK_MAX_SPEEDX5
-    #define FTDI_PACKET_SIZE  (17)
-    #define FTDI_NUM_FRAMES   (900)  // If you make this too large the driver drops frames
-    #define FTDI_HS_TRANSFER_SIZE (FTDI_PACKET_SIZE*FTDI_NUM_FRAMES)
-    #define FPGA_AWAKE (0x80)
-    #define FPGA_ASLEEP (0x90)
+    #define FTDI_INTERFACE (INTERFACE_B)
+    #define FTDI_INTERFACE_SPEED (12000000)
+    #define FTDI_HS_TRANSFER_SIZE (4096)
     // #define DUMP_FTDI_BYTES // Uncomment to get data dump of bytes from FTDI transfer
 #else
     #define IF_INCLUDE_FPGA_SUPPORT(...)
@@ -955,119 +950,65 @@ int serialFeeder( void )
 int fpgaFeeder( void )
 
 {
-    int f;
-    int t = 0;
+    int f, t;
     uint8_t cbw[FTDI_HS_TRANSFER_SIZE];
-    uint8_t scratchBuffer[FTDI_HS_TRANSFER_SIZE - FTDI_NUM_FRAMES];
-    uint8_t *c;
-    uint8_t *d;
-    uint8_t initSequence[] = {0xA5, 0xAC};
 
-    // Insert appropriate control byte to set port width for trace
-    initSequence[1] = ( char[] )
+    _r.ftdi = ftdi_new();
+
+    while ( 1 )
     {
-        0xA0, 0xA4, 0xAC, 0xAC
-    }[options.orbtraceWidth - 1];
-
-    // FTDI Chip takes a little while to reset itself
-    // usleep( 400000 );
-
-    _r.feederExit = false;
-
-    while ( !_r.feederExit )
-    {
-        _r.ftdi = ftdi_new();
-        ftdi_set_interface( _r.ftdi, FTDI_INTERFACE );
-
         do
         {
+            ftdi_set_interface( _r.ftdi, FTDI_INTERFACE );
             f = ftdi_usb_open( _r.ftdi, FTDI_VID, FTDI_PID );
 
             if ( f < 0 )
             {
-                genericsReport( V_WARN, "Cannot open device (%s)" EOL, ftdi_get_error_string( _r.ftdi ) );
+                genericsReport( V_INFO, "Cannot open device (%s)" EOL, ftdi_get_error_string( _r.ftdi ) );
                 usleep( 50000 );
             }
         }
-        while ( ( f < 0 ) && ( !_r.feederExit ) );
+        while ( f < 0 );
 
         genericsReport( V_INFO, "Port opened" EOL );
-        f = ftdispi_open( &_r.ftdifsc, _r.ftdi, FTDI_INTERFACE );
+
+        f = ftdi_set_baudrate( _r.ftdi, FTDI_INTERFACE_SPEED );
 
         if ( f < 0 )
         {
-            genericsReport( V_ERROR, "Cannot open spi %d (%s)" EOL, f, ftdi_get_error_string( _r.ftdi ) );
+            genericsReport( V_ERROR, "Cannot set baudate %d %d (%s)" EOL, f, FTDI_INTERFACE_SPEED, ftdi_get_error_string( _r.ftdi ) );
             return -2;
         }
 
-        ftdispi_setmode( &_r.ftdifsc, 1, 0, 1, 0, 0, FPGA_AWAKE );
+        ftdi_set_line_property( _r.ftdi, 8, STOP_BIT_1, NONE );
 
-        ftdispi_setloopback( &_r.ftdifsc, 0 );
-
-        f = ftdispi_setclock( &_r.ftdifsc, FTDI_INTERFACE_SPEED );
-
-        if ( f < 0 )
-        {
-            genericsReport( V_ERROR, "Cannot set clockrate %d %d (%s)" EOL, f, FTDI_INTERFACE_SPEED, ftdi_get_error_string( _r.ftdi ) );
-            return -2;
-        }
+        ftdi_read_data_set_chunksize( _r.ftdi, FTDI_HS_TRANSFER_SIZE );
+        ftdi_setdtr( _r.ftdi, true );
 
         genericsReport( V_INFO, "All parameters configured" EOL );
 
-        IF_WITH_FIFOS( fifoForceSync( _r.f, true ) );
+        IF_WITH_FIFOS( fifoForceSync( _r.f, true ) );        
 
-        while ( ( !_r.feederExit ) && ( ( t = ftdispi_write_read( &_r.ftdifsc, initSequence, 2, cbw, FTDI_HS_TRANSFER_SIZE, FPGA_AWAKE ) ) >= 0 ) )
+        while ( ( t = ftdi_read_data( _r.ftdi, cbw, FTDI_HS_TRANSFER_SIZE ) ) >= 0 )
         {
-            c = cbw;
-            d = scratchBuffer;
-
-            for ( f = 0; f < FTDI_NUM_FRAMES; f++ )
+            if ( !t )
             {
-                if ( ( *c ) & 0x80 )
-                {
-                    // This frame has no useful data
-                    c += FTDI_PACKET_SIZE;
-                    continue;
-                }
-                else
-                {
-                    // This frame contains something - copy and feed it, excluding header byte
-                    memcpy( d, &c[1], FTDI_PACKET_SIZE - 1 );
-                    d += FTDI_PACKET_SIZE - 1;
-
-                    for ( uint32_t e = 1; e < FTDI_PACKET_SIZE; e++ )
-                    {
-#ifdef DUMP_FTDI_BYTES
-                        printf( "%02X ", c[e] );
-#endif
-                        IF_WITH_FIFOS( fifoProtocolPump( _r.f, c[e] ) );
-                    }
-
-                    c += FTDI_PACKET_SIZE;
-#ifdef DUMP_FTDI_BYTES
-                    printf( "\n" );
-#endif
-                }
+                continue;
             }
 
-            genericsReport( V_WARN, "RXED frame of %d/%d full packets (%3d%%)    \r",
-                            ( d - scratchBuffer ) / ( FTDI_PACKET_SIZE - 1 ), FTDI_NUM_FRAMES, ( ( d - scratchBuffer ) * 100 ) / ( FTDI_HS_TRANSFER_SIZE - FTDI_NUM_FRAMES ) );
-
-            if ( d - scratchBuffer )
-            {
-                IF_WITH_NWCLIENT( nwclientSend( _r.n, ( d - scratchBuffer ), scratchBuffer ) );
-            }
+	    genericsReport( V_DEBUG, "RXED Packet of %d bytes" EOL, t );
+	    
+            _processBlock( t, cbw );
         }
 
-        genericsReport( V_WARN, "Exit Requested (%d, %s)" EOL, t, ftdi_get_error_string( _r.ftdi ) );
+        ftdi_setdtr( _r.ftdi, false );
 
-        ftdispi_setgpo( &_r.ftdifsc, FPGA_ASLEEP );
-        ftdispi_close( &_r.ftdifsc, 1 );
+        genericsReport( V_WARN, "Read failed" EOL );
+
+        ftdi_usb_close( _r.ftdi );
+        _r.ftdi = NULL;
     }
-
-    return 0;
 }
-
 // ====================================================================================================
 void fpgaFeederClose( int dummy )
 

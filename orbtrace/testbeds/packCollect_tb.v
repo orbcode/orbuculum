@@ -3,105 +3,158 @@
 
 `timescale 1ns/100ps
 
-module packCollect_tb();
-   parameter chunksize=(1-1);
+// Tests for packetCollection (built on traceIF in combination with packBuild)
+// Set width to 3, 2 and 1 to test each width
+// Set PS to 0 and 1 to test phase differences
+// Run with
+//  iverilog -o r traceIF.v packCollect.v ../testbeds/traceIF_tb.v  ; vvp r
 
-   reg[3:0] traceDin;  // Port is always 4 bits wide, even if we use less
-   reg 	    traceClk;
-   reg 	    clk;
-   reg 	    rst;
+module packbuild_tb;
+   parameter WIDTH=3;    // 3=4 bit, 2=2 bit, 1,0=1 bit
+   parameter PS=0;       // If to implement phase shift
+
+   parameter chunksize=(WIDTH==3)?3:(WIDTH==2)?1:0;
+
+   // Testbed interface 
+   reg[3:0] traceDinA_tb;
+   reg[3:0] traceDinB_tb;
    reg [1:0] width_tb;
-	    
-   wire     dAvail_tb;
-   wire [3:0] dout_tb;
    
-   wire       dReqNext_tb;
+   reg 	    traceClk_tb;
+   reg 	    clk_tb;
+   reg 	    rst_tb;
 
-   wire       sync_tb;
-
-   wire     pack_avail_tb;
-   reg 	    pack_next_tb;
-   reg 	    pack_next_word_tb;
-   
-	    
-   wire     [15:0] pack_element_tb;  
-   wire     [7:0] pack_final_tb;
-   
-   traceIF trace (
-		.clk(clk), // System Clock
-		.rst(rst), // Async reset
-		.traceDin(traceDin), // Tracedata ... 1-4 bits
-		.traceClk(traceClk), // Tracedata clock
-
-		.dNext(dReqNext_tb), // Strobe for requesting next data element
-		.dAvail(dAvail_tb), // Flag indicating data is available
-		.dOut(dout_tb) // ...the valid data write position
-   );
-
-   packCollect DUT (
-		   .clk(clk), // System Clock
-		   .rst(rst), // System reset
-		   .width(width_tb), // Current trace buffer width
-		    .sync(sync_tb), // Indicator of if we are in sync
-
-		   // Downwards interface to trace elements
-		   .TraceNext(dReqNext_tb), // Strobe for requesting next trace data element
-		    .TraceAvail(dAvail_tb), // Flag indicating trace data is available
-		    .TraceIn(dout_tb), // ...the valid Trace Data
-		    
-		   // Upwards interface to packet processor
-		    .PacketAvail(pack_avail_tb), // Flag indicating packet is available
-		   .PacketNext(pack_next_tb), // Strobe for requesting next packet
-		   .PacketNextWd(pack_next_word_tb), // Strobe for next 16 bit word in packet	 
-
-		   .PacketOut(pack_element_tb), // The next packet word
-		   .PacketFinal(pack_final_tb) // The last word in the packet (used for reconstruction)
-		   );
+   wire        dAvail_tb;
+   wire [15:0] dout_tb;
+   wire        pr_tb;
+   wire        sync_tb;
+        
    
    
+traceIF traceIF_DUT (
+		.rst(rst_tb),                  // Reset synchronised to clock
+
+	// Downwards interface to the trace pins
+		.traceDina(traceDinA_tb),      // Tracedata rising edge... 1-n bits max, can be less
+		.traceDinb(traceDinB_tb),      // Tracedata falling edge... 1-n bits max, can be less
+		.traceClkin(traceClk_tb),      // Tracedata clock... async to clk
+		.width(width_tb),              // How wide the bus under consideration is 0..3 (1, 1, 2 & 4 bits)
+
+	// Upwards interface to packet processor
+		.WdAvail(dAvail_tb),           // Flag indicating word is available
+		.PacketWd(dout_tb),            // The last word that has been received
+		.PacketReset(pr_tb),           // Flag indicating to start packet again
+                .sync(sync_tb)
+	     );
+
+   wire        [15:0] packElement_tb;
+   reg                DataNext_tb;
+   wire               DataReady_tb;
+   reg                DataFrameReset_tb;
+   wire               DataOverf_tb;
+   
+packBuild packBuild_DUT (
+                .clk(clk_tb), // System Clock
+                .rst(rst_tb), // Clock synchronised reset
+                
+                // Downwards interface to packet processor : wrClk Clock
+                .wrClk(traceClk_tb), // Clock for write side operations to fifo
+                .WdAvail(dAvail_tb), // Flag indicating word is available
+                .PacketReset(pr_tb), // Flag indicating to start again
+                .PacketWd(dout_tb), // The next packet word
+
+                // Upwards interface to serial (or other) handler : clk Clock
+                .DataVal(packElement_tb), // Output data value
+
+                .rdClk(clk_tb),
+                .DataNext(DataNext_tb), // Request for next data element
+                .DataReady(DataReady_tb), // Indicator that the next data element is available
+                .DataFrameReset(DataFrameReset_tb), // Reset to start of data frame
+ 
+                .DataOverf(DataOverf_tb) // Too much data in buffer
+                         );
+
+   always @(negedge traceClk_tb)
+     begin
+        if (pr_tb)
+          $monitor("***PACKET RESET***========================");
+        else
+          begin 
+             if (dAvail_tb==1)
+               begin
+                  //if (dout_tb!=16'h7fff)
+                    $display("%04x",dout_tb);
+               end // if (dAvail_tb==1)
+          end // else: !if(pr_tb)
+     end // always @ (posedge traceClk_tb)
+      
    //-----------------------------------------------------------
+   // Send a byte to the traceport, toggling clock appropriately   
    task sendByte;
       input[7:0] byteToSend;
       integer bitsToSend;
 
+      reg [3:0] leftover;
+      integer   sendbuffer;
+
+      // In the coded files, 4MSB are the LSB, and vice-versa, so reverse them
       begin
 	 bitsToSend=8;
+         if (PS)
+           begin
+              sendbuffer=byteToSend;           
+              byteToSend={leftover,byteToSend[7:4]};
+              leftover=sendbuffer[3:0];
+           end
+         
 	 while (bitsToSend>0) begin
-	    traceDin[chunksize:0]=byteToSend;
-	    #10;
-	    traceClk<=!traceClk;
-	    #10;
+	    traceDinA_tb[chunksize:0]=byteToSend;
 	    bitsToSend=bitsToSend-(chunksize+1);
-	    byteToSend=byteToSend>>(chunksize+1);	    
+	    byteToSend=byteToSend>>(chunksize+1);
+	    traceDinB_tb[chunksize:0]=byteToSend;
+	    bitsToSend=bitsToSend-(chunksize+1);
+	    byteToSend=byteToSend>>(chunksize+1);
+	    traceClk_tb<=0;
+	    #10;
+	    traceClk_tb<=1;
+	    #10;
+            traceClk_tb<=0;
+            //$write("%x%x",traceDinA_tb,traceDinB_tb);
+            
 	 end
       end
    endtask
    //-----------------------------------------------------------      
-      
 
+   integer goodreturn;
+   reg [7:0] feedval;
+   integer dummy;
+      
+   integer fd;
+   reg [8*10:1] str;
+   
+   
    always
      begin
 	while (1)
 	  begin
-	     clk=~clk;
+	     clk_tb=~clk_tb;
 	     #2;
 	  end
      end
       
    initial begin
-      rst=0;
-      width_tb=chunksize;
-      pack_next_tb=0;      
-      traceDin=0;
-      traceClk=0;
-
-      clk=0;
-      #10;
-      rst=1;
-      #10;
-      rst=0;
-      #100;
-
+      rst_tb=0;
+      width_tb=WIDTH;
+      traceDinA_tb=0;
+      traceDinB_tb=0;      
+      traceClk_tb=0;
+      clk_tb=0;
+      #1;      
+      rst_tb=1;
+      #1;
+      rst_tb=0;
+      
       // Initially send some junk while out of sync
       sendByte(8'hfe);
       sendByte(8'h23);
@@ -111,8 +164,21 @@ module packCollect_tb();
       sendByte(8'hff);
       sendByte(8'hff);
       sendByte(8'h7f);
+      sendByte(8'hff);
+      sendByte(8'hff);
+      sendByte(8'hff);
+      sendByte(8'h7f);
+      
       // ....and a sane message
       sendByte(8'h00);
+      if (DataReady_tb==1'b0)
+	begin
+	   $display("Data not available before packet complete: CORRECT");
+	end
+      else
+	begin
+	   $display("Data available signalled before packet complete: ERROR");
+	end
       sendByte(8'h10);
       sendByte(8'h01);
       sendByte(8'h11);
@@ -127,90 +193,55 @@ module packCollect_tb();
       sendByte(8'h06);
       sendByte(8'h16);      
       sendByte(8'h07);
-      sendByte(8'h68);
-      if (pack_avail_tb==1'b0)
-	begin
-	   $display("No packet available before packet complete: CORRECT");
-	end
-      else
-	begin
-	   $display("Packet available signalled before packet complete: ERROR");
-	end
+      sendByte(8'h18);
+
+      sendByte(8'h20);
+      sendByte(8'h01);
+      
+
+      while (DataReady_tb)
+        begin
+           DataNext_tb=1;
+           #4;
+           DataNext_tb=0;
+           #4;
+           $display("R1:%04X (%d)",packElement_tb,DataReady_tb);
+        end
+      $display("First packet compelte");
+      
+      sendByte(8'h21);
+      sendByte(8'h02);
+      sendByte(8'h22);      
+      sendByte(8'h03);
+      sendByte(8'h23);      
+      sendByte(8'h04);
+      sendByte(8'h24);      
+      sendByte(8'h05);
+      sendByte(8'h25);      
+      sendByte(8'h06);
+      sendByte(8'h26);      
+      sendByte(8'h07);
+      sendByte(8'h28);
+      sendByte(8'h28);      
       
       sendByte(8'hff);
-      #50;
-      if (pack_avail_tb==1'b1)
-	begin
-	   $display("Packet available after packet complete: CORRECT");
-	end
-      else
-	begin
-	   $display("No Packet available signalled after packet complete: ERROR");
-	end
+      sendByte(8'hff);
 
-      pack_next_tb=1;
-      #4;
-      pack_next_tb=0;
-      #10
+      sendByte(8'hff);
+      sendByte(8'h7f);
 
-      if (pack_avail_tb==1'b1)
-	begin
-	   $display("Packet available after packet receive: ERROR");
-	end
-      else
-	begin
-	   $display("No Packet available signalled after packet receive: CORRECT");
-	end
-      #10;
-
-      $display("68:%02X",pack_final_tb);
-      pack_next_word_tb=1;
-      #4;
-      pack_next_word_tb=0;
-      #4;
-      $display("1000:%04X",pack_element_tb);
-      pack_next_word_tb=1;
-      #4;
-      pack_next_word_tb=0;
-      #4;
-      $display("1101:%04X",pack_element_tb);
-      pack_next_word_tb=1;
-      #4;
-      pack_next_word_tb=0;
-      #4;
-      $display("1202:%04X",pack_element_tb);
-      pack_next_word_tb=1;
-      #4;
-      pack_next_word_tb=0;
-      #4;
-      $display("1303:%04X",pack_element_tb);
-      pack_next_word_tb=1;
-      #4;
-      pack_next_word_tb=0;
-      #4;
-      $display("1404:%04X",pack_element_tb);
-      pack_next_word_tb=1;
-      #4;
-      pack_next_word_tb=0;
-      #4;
-      $display("1505:%04X",pack_element_tb);
-      pack_next_word_tb=1;
-      #4;
-      pack_next_word_tb=0;
-      #4;
-      $display("1606:%04X",pack_element_tb);
-      pack_next_word_tb=1;
-      #4;
-      pack_next_word_tb=0;
-      #4;
-      $display("6807:%04X",pack_element_tb);
-      pack_next_word_tb=1;
-      #4;
-      pack_next_word_tb=0;
-      #4;
-      $display("6807:%04X",pack_element_tb);
+      sendByte(8'haa);
+      sendByte(8'hbb);
       
-      
+      while (DataReady_tb)
+        begin
+           DataNext_tb=1;
+           #4;
+           DataNext_tb=0;
+           #4;
+           $display("R2:%04X (%d)",packElement_tb,DataReady_tb);
+        end
+
       
       $finish;
       
@@ -220,6 +251,7 @@ module packCollect_tb();
 
       $dumpvars;
    end
-endmodule 
+endmodule // trace_IF_tb
 
-  
+   
+   

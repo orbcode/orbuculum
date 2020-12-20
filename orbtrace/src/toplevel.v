@@ -4,10 +4,6 @@ module topLevel(
 		input [3:0] 	  traceDin, // Port is always 4 bits wide, even if we use less
 		input 		  traceClk, // Supporting clock for input - must be on a global clock pin
 
-		output 		  spitx,
-		output 		  spirx, 
-		input 		  spiclk,
-		
 		input 		  uartrx, // Receive data into UART
 		output 		  uarttx, // Transmit data from UART 
 
@@ -49,6 +45,10 @@ module topLevel(
    wire 		   clk;
    wire 		   clkOut;
    wire 		   BtraceClk;
+
+   reg                     sync_strobe;
+   reg                     ovf_strobe;
+
   
 `ifdef NO_GB_IO_AVAILABLE
 // standard input pin for trace clock,
@@ -99,27 +99,10 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b0)) MtraceIn3
  .D_IN_1 (tTraceDinb[3])
  );
 
-SB_IO #(.PULLUP(1), .PIN_TYPE(6'b000001)) SpiClkIn
-(
- .PACKAGE_PIN (spiclk),
- .D_IN_0 (spiclkIn),
- );
-
-SB_IO #(.PULLUP(1), .PIN_TYPE(6'b000001)) SpiRxIn
-(
- .PACKAGE_PIN (spirx),
- .INPUT_CLK (spiclkIn),
- .D_IN_0 (spirxIn),
- );
-
    // DDR input data
    wire [MAX_BUS_WIDTH-1:0] tTraceDina;
    wire [MAX_BUS_WIDTH-1:0] tTraceDinb;
 
-   wire 		    spiclkIn;
-   wire 		    spirxIn;
-   
- 		    
    wire 		    wclk;
    wire 		    wdavail;
    wire [15:0] 		    packetwd;
@@ -140,7 +123,7 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b000001)) SpiRxIn
 		   .PacketWd(packetwd),          // The next packet word
 		   .PacketReset(packetr),        // Flag indicating to start again
 
-   		   .sync(sync_led)               // Indicator that we are in sync
+	           .sync(sync_strobe)            // Indicator that we are in sync
 		);		  
    
   // -----------------------------------------------------------------------------------------
@@ -157,12 +140,12 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b000001)) SpiRxIn
    wire 		    rxErr_tl;
    wire 		    frameReset;
    wire [1:0] 		    widthSet;
+   reg                      txOvf_strobe;
+
    
    packBuild marshall (
 		      .clk(clkOut), 
 		      .rst(rst), 
-
-		      .sync(sync_led), // Indicator of if we are in sync
 
 		      // Downwards interface to target interface
 		      .wrClk(BtraceClk),             // Clock for write side operations to fifo
@@ -171,29 +154,30 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b000001)) SpiRxIn
 		      .PacketWd(packetwd),           // The next packet word
 		      
 		      // Upwards interface to serial (or other) handler
-		      .rdClk(spiclkIn),
-                      .FrameReady(dataReady),
+		      .rdClk(clkOut),
 		      .DataVal(filter_data),         // Output data value
+
+                      .DataReady(dataReady),
 		      .DataNext(txFree),             // Request for data
+                       
 		      .DataFrameReset(frameReset),   // Reset to start of output frame
-                      .DataOverf(txOvf_led)          // Too much data in buffer
+                      .DataOverf(txOvf_strobe)       // Too much data in buffer
  		      );
 
- spi transmitter (
-		  .clk(clkOut), // The master clock for this module
-		  .rst(rst), // Synchronous reset.
+   
+   
 
-		  .tx(spitx), // Outgoing serial line
-		  .rx(spirxIn), // Incoming serial line
-		  .dClk(spiclkIn),
-		  .transmitIn(dataReady), // Signal to transmit
-		  .tx_word(filter_data), // Byte to transmit
-		  .tx_free(txFree), // Indicator that transmit register is available
-		  .is_transmitting(txInd_led), // Low when transmit line is idle.
-		  .sync(sync_led),
-		  .widthEnc(widthSet),
-		  .rxFrameReset(frameReset)
-		  );
+   uart #(.CLOCKFRQ(48_000_000), .BAUDRATE(12_000_000)) transmitter (
+	             .clk(clkOut),                   // The master clock for this module
+	             .rst(rst),                      // Synchronous reset.
+	             .rx(uartrx),                    // Incoming serial line
+	             .tx(uarttx),                    // Outgoing serial line
+                     
+	             .transmit(dataReady), // Signal to transmit
+	             .tx_byte(8'd65), // Byte to transmit
+	             .tx_free(txFree), // Indicator that transmit register is available
+	             .is_transmitting(txInd_led) // Low when transmit line is idle.
+                     );
    
  // Set up clock for 48Mhz with input of 12MHz
    SB_PLL40_CORE #(
@@ -212,6 +196,14 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b000001)) SpiRxIn
 			  );
 
    reg [25:0] 		   clkCount;
+   reg [6:0]               syncCount;
+   reg [23:0] 		   ovfCount;       // LED stretch for overflow indication
+
+   assign sync_led = (syncCount!=0);
+   assign heartbeat_led=clkCount[25];
+   assign txOvf_led = (ovfCount!=0);
+
+   assign D6 = !rstIn;
 
    // We don't want anything awake until the clocks are stable
    assign rst=(lock&rstIn);
@@ -221,20 +213,27 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b000001)) SpiRxIn
 	if (rst)
 	  begin
 	     cts<=1'b0;
-	     clkCount <= 0;
-//	     sync_led<=0;
-//	     txOvf_led<=0;
-//	     txInd_led<=0;
-//	     heartbeat_led<=0;
-//	     D5<=0;
-//	     D4<=0;
-//	     D3<=0;
-//	     D2<=0;
+	     clkCount <= ~0;
+             syncCount <= 0;
+             ovfCount <= 0;
+	     D3<=0;
+	     D5<=0;
+//	     D6<=0;
+	     D7<=0;
 	  end
 	else
-	  begin	  
+	  begin
+             if (txOvf_strobe)
+               ovfCount<=~0;
+             else
+               if (ovfCount>0) ovfCount<=ovfCount-1;
+
+             if (sync_strobe)
+               syncCount<=~0;
+             else
+               if (syncCount>0) syncCount<=syncCount-1;
+
 	     clkCount <= clkCount + 1;
-	     heartbeat_led<=clkCount[25];
 	  end // else: !if(rst)
      end // always @ (posedge clkOut)
 
