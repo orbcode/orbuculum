@@ -886,7 +886,7 @@ int serialFeeder( void )
     while ( 1 )
     {
 #ifdef OSX
-	int flags;
+        int flags;
 
         while ( ( f = open( options.port, O_RDONLY | O_NONBLOCK ) ) < 0 )
 #else
@@ -1036,9 +1036,9 @@ int fpgaFeeder( void )
                             ( d - scratchBuffer ) / ( FTDI_PACKET_SIZE - 1 ), FTDI_NUM_FRAMES, ( ( d - scratchBuffer ) * 100 ) / ( FTDI_HS_TRANSFER_SIZE - FTDI_NUM_FRAMES ) );
 
             if ( d - scratchBuffer )
-              {
+            {
                 IF_WITH_NWCLIENT( nwclientSend( _r.n, ( d - scratchBuffer ), scratchBuffer ) );
-              }
+            }
         }
 
         genericsReport( V_WARN, "Exit Requested (%d, %s)" EOL, t, ftdi_get_error_string( _r.ftdi ) );
