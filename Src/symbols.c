@@ -344,7 +344,13 @@ bool SymbolSetValid( struct SymbolSet **s, char *filename )
 
 {
     struct stat n;
-    stat( filename, &n );
+
+    if ( 0 != stat( filename, &n ) )
+    {
+        /* We can't even stat the file, assume it's invalid */
+        SymbolSetDelete( s );
+        return false;
+    }
 
     /* We check filesize, modification time and status change time for any differences */
     if ( ( !( *s ) ) ||
