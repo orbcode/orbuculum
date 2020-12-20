@@ -16,6 +16,9 @@ IMXRT;
   enableIMXRT102XSWO : Enable SWO on IMXRT102X series pins (AD_B0_04)
   enableIMXRT106XSWO : Enable SWO on IMXRT106X series pins (AD_B0_10)
 
+SAM5X;
+  enableSAMD5XSWD    : Enable SWO on SAM5X output pin on SAM5X
+  
 All;
   prepareSWO      : Prepare SWO output in specified format
 
@@ -222,6 +225,20 @@ define enableSTM32SWO
 end
 document enableSTM32SWO
 enableSTM32SWO Configure output pin on STM32 for SWO use.
+end
+# ====================================================================
+define enableSAMD5XSWD
+  # Enable peripheral channel clock on GCLK#0
+  # GCLK->PHCTRL[47] = GCLK_PCHCTRL_GEN(0)
+  set *(unsigned char *)0x40001D3C = 0
+  # GCLK->PHCTRL[47] |= GCLK_PCHCTRL_CHEN
+  set *(unsigned char *)0x40001D3C |= 0x40
+  # Configure PINMUX for GPIOB.30. '7' is SWO.
+  set *(unsigned char *)0x410080BF |= 0x07
+  set *(unsigned char *)0x410080DE = 0x01
+end
+document enableSAMD5XSWD
+enableSAMD5XSWD Configure output pin on SAM5X for SWO use.
 end
 # ====================================================================
 # Enable CORTEX TRACE on preconfigured pins
