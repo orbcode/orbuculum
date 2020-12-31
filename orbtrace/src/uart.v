@@ -84,7 +84,7 @@ module uart(
    assign recv_error = (recv_state == RX_ERROR);
    assign tx_free = (tx_state == TX_IDLE);
    
-   always @(posedge clk) begin
+   always @(posedge clk,posedge rst) begin
       if (rst) begin
 	 recv_state <= RX_IDLE;
 	 tx_state <= TX_IDLE;

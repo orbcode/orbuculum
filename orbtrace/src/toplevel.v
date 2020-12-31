@@ -104,31 +104,29 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b0)) MtraceIn3
    wire [MAX_BUS_WIDTH-1:0] tTraceDinb;
 
    wire 		    wclk;
-   wire 		    wdavail;
-   wire [15:0] 		    packetwd;
-   wire 		    packetr;
+   wire 		    pkavail;
+   wire [127:0] 	    packet;
    
   // -----------------------------------------------------------------------------------------
   traceIF #(.MAXBUSWIDTH(MAX_BUS_WIDTH)) traceif (
                    .rst(rst), 
 
 		   // Downwards interface to trace pins
-                   .traceDina(tTraceDina),       // Tracedata rising edge ... 1-n bits
-                   .traceDinb(tTraceDinb),       // Tracedata falling edge (LSB) ... 1-n bits		   
-                   .traceClkin(BtraceClk),       // Tracedata clock
-		   .width(widthSet),             // Current trace buffer width 
+                   .traceDina(tTraceDina),          // Tracedata rising edge ... 1-n bits
+                   .traceDinb(tTraceDinb),          // Tracedata falling edge (LSB) ... 1-n bits
+                   .traceClkin(BtraceClk),          // Tracedata clock
+		   .width(widthSet),                // Current trace buffer width 
 
 		   // Upwards interface to packet processor
-		   .WdAvail(wdavail),            // Flag indicating word is available
-		   .PacketWd(packetwd),          // The next packet word
-		   .PacketReset(packetr),        // Flag indicating to start again
+		   .PkAvail(pkavail),               // Flag indicating packet is available
+		   .Packet(packet),                 // The next packet
 
-	           .sync(sync_strobe)            // Indicator that we are in sync
+	           .sync(sync_strobe)               // Indicator that we are in sync
 		);		  
    
   // -----------------------------------------------------------------------------------------
 
-   wire [15:0] 		    filter_data;
+   wire [7:0] 		    filter_data;
 
    wire 		    dataAvail;
    wire 		    dataReady;
@@ -138,34 +136,27 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b0)) MtraceIn3
    wire [7:0] 		    rx_byte_tl;
    wire 		    rxTrig_tl;
    wire 		    rxErr_tl;
-   wire 		    frameReset;
    wire [1:0] 		    widthSet;
    reg                      txOvf_strobe;
 
-   
+   assign widthSet=2'b11;
+
    packBuild marshall (
 		      .clk(clkOut), 
 		      .rst(rst), 
 
 		      // Downwards interface to target interface
-		      .wrClk(BtraceClk),             // Clock for write side operations to fifo
-		      .WdAvail(wdavail),             // Flag indicating word is available
-		      .PacketReset(packetr),         // Flag indicating to start again
-		      .PacketWd(packetwd),           // The next packet word
+		      .PkAvail(pkavail),             // Flag indicating packet is available
+		      .Packet(packet),               // The next packet
 		      
 		      // Upwards interface to serial (or other) handler
-		      .rdClk(clkOut),
 		      .DataVal(filter_data),         // Output data value
 
                       .DataReady(dataReady),
-		      .DataNext(txFree),             // Request for data
+		      .DataNext(txFree&&!dataReady), // Request for data
                        
-		      .DataFrameReset(frameReset),   // Reset to start of output frame
                       .DataOverf(txOvf_strobe)       // Too much data in buffer
  		      );
-
-   
-   
 
    uart #(.CLOCKFRQ(48_000_000), .BAUDRATE(12_000_000)) transmitter (
 	             .clk(clkOut),                   // The master clock for this module
@@ -173,10 +164,10 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b0)) MtraceIn3
 	             .rx(uartrx),                    // Incoming serial line
 	             .tx(uarttx),                    // Outgoing serial line
                      
-	             .transmit(dataReady), // Signal to transmit
-	             .tx_byte(8'd65), // Byte to transmit
-	             .tx_free(txFree), // Indicator that transmit register is available
-	             .is_transmitting(txInd_led) // Low when transmit line is idle.
+	             .transmit(dataReady),           // Signal to transmit
+	             .tx_byte(filter_data),          // Byte to transmit
+	             .tx_free(txFree),               // Indicator that transmit register is available
+	             .is_transmitting(txInd_led)     // Low when transmit line is idle.
                      );
    
  // Set up clock for 48Mhz with input of 12MHz
@@ -203,11 +194,9 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b0)) MtraceIn3
    assign heartbeat_led=clkCount[25];
    assign txOvf_led = (ovfCount!=0);
 
-   assign D6 = !rstIn;
-
    // We don't want anything awake until the clocks are stable
    assign rst=(lock&rstIn);
-   
+
    always @(posedge clkOut)
      begin
 	if (rst)
@@ -218,7 +207,7 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b0)) MtraceIn3
              ovfCount <= 0;
 	     D3<=0;
 	     D5<=0;
-//	     D6<=0;
+	     D6<=0;
 	     D7<=0;
 	  end
 	else

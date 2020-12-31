@@ -25,10 +25,10 @@ module traceIF_tb;
    reg 	    rst_tb;
 
    wire        dAvail_tb;
-   wire [15:0] dout_tb;
-   wire        pr_tb;
-   wire        sync_tb;
+   reg         dAck_tb;
    
+   wire [127:0] dout_tb;
+   wire        sync_tb;
    
 traceIF DUT (
 		.rst(rst_tb),                  // Reset synchronised to clock
@@ -40,45 +40,79 @@ traceIF DUT (
 		.width(width_tb),              // How wide the bus under consideration is 0..3 (1, 1, 2 & 4 bits)
 
 	// Upwards interface to packet processor
-		.WdAvail(dAvail_tb),           // Flag indicating word is available
-		.PacketWd(dout_tb),            // The last word that has been received
-		.PacketReset(pr_tb),           // Flag indicating to start packet again
+		.PkAvail(dAvail_tb),           // Flag indicating packet is available
+                .PkAck(dAck_tb),               // Handshake for collecting data
+		.Packet(dout_tb),              // The last packet that has been received
 
 		.sync(sync_tb)                 // Indicator that we are in sync
 	     );
    
 
    //-----------------------------------------------------------
-   // Send a byte to the traceport, toggling clock appropriately   
+   // Send a byte to the traceport, toggling clock appropriately
+   // Two cases, sending word AhAlBhBl.
+   // When in phase (PS=0);
+   //  SendA  SendB
+   //   Al     Ah
+   //   Bl     Bh
+   //
+   // When out of phase (PS=1);
+   //  SendA  SendB
+   //   xx     Al
+   //   Ah     Bl
+   //   Bh     xx
+
    task sendByte;
       input[7:0] byteToSend;
       integer bitsToSend;
 
+      reg [3:0] leftover;
+      reg [7:0] txbuffer;
+
       begin
 	 bitsToSend=8;
+         if (PS)
+           begin
+              txbuffer={byteToSend[3:0],leftover};
+              leftover=byteToSend[7:4];
+           end
+         else
+           begin
+              txbuffer={byteToSend[7:4],byteToSend[3:0]};
+           end
+
 	 while (bitsToSend>0) begin
-            if (PS)
-	      traceDinA_tb[chunksize:0]=byteToSend;
-            else
-	      traceDinB_tb[chunksize:0]=byteToSend;              
+	    traceDinA_tb[chunksize:0]=txbuffer;
 	    bitsToSend=bitsToSend-(chunksize+1);
-	    byteToSend=byteToSend>>(chunksize+1);
-            if (PS)
-	      traceDinB_tb[chunksize:0]=byteToSend;
-            else
-	      traceDinA_tb[chunksize:0]=byteToSend;              
+	    txbuffer=txbuffer>>(chunksize+1);
+	    traceDinB_tb[chunksize:0]=txbuffer;
 	    bitsToSend=bitsToSend-(chunksize+1);
-	    byteToSend=byteToSend>>(chunksize+1);
+	    txbuffer=txbuffer>>(chunksize+1);
 	    traceClk_tb<=0;
 	    #10;
 	    traceClk_tb<=1;
 	    #10;
             traceClk_tb<=0;
+            //$write("%x%x",traceDinA_tb,traceDinB_tb);
 	 end
       end
    endtask
    //-----------------------------------------------------------      
-      
+
+   reg [2:0] davail_cdc;
+
+   always @(posedge clk_tb)
+     begin
+        davail_cdc<={davail_cdc[1:0],dAvail_tb};
+        if (davail_cdc==3'b011)
+          begin
+             $display("OUTPUT=%x",dout_tb);
+             dAck_tb<=1'b1;
+          end
+        else
+          dAck_tb<=1'b0;
+     end
+
    always
      begin
 	while (1)
@@ -102,8 +136,11 @@ traceIF DUT (
       #20;
 
       // Initially send some junk while out of sync
-      sendByte(8'hfe);
-      sendByte(8'h23);
+      sendByte(8'h00);
+      sendByte(8'h00);
+      sendByte(8'h00);
+      sendByte(8'h99);
+      sendByte(8'h88);
 
       // Now send Sync Sequence
       sendByte(8'hff);
@@ -117,8 +154,8 @@ traceIF DUT (
       sendByte(8'h7f);
 
       // ....and a sane message
-      sendByte(8'h00);
-      sendByte(8'h01);
+      sendByte(8'h12);
+      sendByte(8'h34);
       
       sendByte(8'h02);
       sendByte(8'h03);
@@ -129,9 +166,6 @@ traceIF DUT (
       sendByte(8'h06);
       sendByte(8'h07); 
 
-      sendByte(8'hff);
-      sendByte(8'h7f); 
-           
       sendByte(8'h08);
       sendByte(8'h09);
       
@@ -139,8 +173,14 @@ traceIF DUT (
       sendByte(8'h0b);
       
       sendByte(8'h0c);
-      sendByte(8'h0d);  
-          
+      sendByte(8'h0d);
+
+      sendByte(8'h0e);
+      sendByte(8'h0f);
+      sendByte(8'h0e);
+      sendByte(8'h0f);
+      sendByte(8'h0e);
+      sendByte(8'h0f);
       sendByte(8'h0e);
       sendByte(8'h0f);            
 

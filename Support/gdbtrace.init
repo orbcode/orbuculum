@@ -16,6 +16,9 @@ IMXRT;
   enableIMXRT102XSWO : Enable SWO on IMXRT102X series pins (AD_B0_04)
   enableIMXRT106XSWO : Enable SWO on IMXRT106X series pins (AD_B0_10)
 
+SAM5X;
+  enableSAMD5XSWD    : Enable SWO on SAM5X output pin on SAM5X
+
 All;
   prepareSWO      : Prepare SWO output in specified format
 
@@ -224,6 +227,20 @@ document enableSTM32SWO
 enableSTM32SWO Configure output pin on STM32 for SWO use.
 end
 # ====================================================================
+define enableSAMD5XSWD
+  # Enable peripheral channel clock on GCLK#0
+  # GCLK->PHCTRL[47] = GCLK_PCHCTRL_GEN(0)
+  set *(unsigned char *)0x40001D3C = 0
+  # GCLK->PHCTRL[47] |= GCLK_PCHCTRL_CHEN
+  set *(unsigned char *)0x40001D3C |= 0x40
+  # Configure PINMUX for GPIOB.30. '7' is SWO.
+  set *(unsigned char *)0x410080BF |= 0x07
+  set *(unsigned char *)0x410080DE = 0x01
+end
+document enableSAMD5XSWD
+enableSAMD5XSWD Configure output pin on SAM5X for SWO use.
+end
+# ====================================================================
 # Enable CORTEX TRACE on preconfigured pins
 define _doTRACE
      # Must be called with $bits containing number of bits to set trace for
@@ -239,20 +256,25 @@ define _doTRACE
 
      # Set pin protocol to Sync Trace Port (TPIU_SPPR)
      set *($TPIUBASE+0xF0)=0
-  
-     # Flush all initial configuration
-     # DWT_CTRL = 0,  ITM_TCR = 0 to start off with
-     set *($DWTBASE) = 0
-     set *($ITMBASE+0xe80) = 0
 end
 # ====================================================================
 define enableSTM32TRACE
   set $bits=4
+  set $drive=1
   
   if $argc >= 1
     set $bits = $arg0
   end
     if (($bits<1) || ($bits==3) || ($bits>4))
+    help enableSTM32TRACE
+  end
+
+  if $argc >= 2
+    set $drive = $arg1
+  end
+
+print $drive
+  if ($drive > 3)
     help enableSTM32TRACE
   end
 
@@ -262,12 +284,19 @@ define enableSTM32TRACE
   # Enable AHB1ENR
   set *0x40023830 |= 0x10
 
+  # Enable compensation cell
+  set *0x40023844 |= (1<<14)
+  set *0x40013820 |=1
+
   # Setup PE2 & PE3
   # Port Mode
   set *0x40021000 &= ~(0x000000F0)
   set *0x40021000 |= 0xA0
-  # Drive speed (Very high)
-  set *0x40021008 |= 0xf0
+
+  # Drive speed
+  set *0x40021008 &= ~0xf0
+  set *0x40021008 |= ($drive<<4)|($drive<<6)
+
   # No Pull up or down
   set *0x4002100C &= ~0xF0
   # AF0
@@ -277,7 +306,8 @@ define enableSTM32TRACE
      # Setup PE4
      set *0x40021000 &= ~(0x00000300)
      set *0x40021000 |= 0x200
-     set *0x40021008 |= 0x300
+     set *0x40021008 &= ~0x300
+     set *0x40021008 |= ($drive<<8)
      set *0x4002100C &= ~0x300
      set *0x40021020 &= ~0x300
   end
@@ -287,7 +317,8 @@ define enableSTM32TRACE
 
      set *0x40021000 &= ~(0x00003C00)
      set *0x40021000 |= 0x2800
-     set *0x40021008 |= 0x3C00
+     set *0x40021008 &= ~0x3C00
+     set *0x40021008 |= ($drive<<10)|($drive<<12)
      set *0x4002100C &= ~0x3C00
      set *0x40021020 &= ~0x3C00
   end
@@ -307,6 +338,7 @@ end
 document enableSTM32TRACE
 enableSTM32TRACE <Width>: Enable TRACE on STM32 pins
   <Width>   : Number of bits wide (1,2 or 4 only)
+  <Drive>   : Drive strength (0=lowest, 3=highest)
 end
 # ====================================================================
 define dwtPOSTCNT

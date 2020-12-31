@@ -7,11 +7,11 @@
 // Set width to 3, 2 and 1 to test each width
 // Set PS to 0 and 1 to test phase differences
 // Run with
-//  iverilog -o r traceIF.v packCollect.v ../testbeds/traceIF_tb.v  ; vvp r
+//  iverilog -o r traceIF.v packBuild.v ram.v ../testbeds/packCollect_tb.v  ; vvp r
 
-module packbuild_tb;
-   parameter WIDTH=3;    // 3=4 bit, 2=2 bit, 1,0=1 bit
-   parameter PS=0;       // If to implement phase shift
+module packCollect_tb;
+   parameter WIDTH=4;    // 3=4 bit, 2=2 bit, 1,0=1 bit
+   parameter PS=1;       // If to implement phase shift
 
    parameter chunksize=(WIDTH==3)?3:(WIDTH==2)?1:0;
 
@@ -24,13 +24,11 @@ module packbuild_tb;
    reg 	    clk_tb;
    reg 	    rst_tb;
 
-   wire        dAvail_tb;
-   wire [15:0] dout_tb;
-   wire        pr_tb;
+   wire        PkAvail_tb;
+   wire [127:0] dout_tb;
+
    wire        sync_tb;
-        
-   
-   
+
 traceIF traceIF_DUT (
 		.rst(rst_tb),                  // Reset synchronised to clock
 
@@ -41,79 +39,74 @@ traceIF traceIF_DUT (
 		.width(width_tb),              // How wide the bus under consideration is 0..3 (1, 1, 2 & 4 bits)
 
 	// Upwards interface to packet processor
-		.WdAvail(dAvail_tb),           // Flag indicating word is available
-		.PacketWd(dout_tb),            // The last word that has been received
-		.PacketReset(pr_tb),           // Flag indicating to start packet again
+		.PkAvail(PkAvail_tb),          // Flag indicating packet is available
+		.Packet(dout_tb),              // The last packet that has been received
                 .sync(sync_tb)
 	     );
 
-   wire        [15:0] packElement_tb;
+   wire        [7:0]  packElement_tb;
    reg                DataNext_tb;
    wire               DataReady_tb;
-   reg                DataFrameReset_tb;
    wire               DataOverf_tb;
    
 packBuild packBuild_DUT (
-                .clk(clk_tb), // System Clock
-                .rst(rst_tb), // Clock synchronised reset
+                .clk(clk_tb),                 // System Clock
+                .rst(rst_tb),                 // Clock synchronised reset
                 
-                // Downwards interface to packet processor : wrClk Clock
-                .wrClk(traceClk_tb), // Clock for write side operations to fifo
-                .WdAvail(dAvail_tb), // Flag indicating word is available
-                .PacketReset(pr_tb), // Flag indicating to start again
-                .PacketWd(dout_tb), // The next packet word
+        // Downwards interface to packet processor
+                .PkAvail(PkAvail_tb),         // Flag indicating packet is available
+                .Packet(dout_tb),             // The next packet
 
-                // Upwards interface to serial (or other) handler : clk Clock
-                .DataVal(packElement_tb), // Output data value
+        // Upwards interface to serial (or other) handler : clk Clock
+                .DataVal(packElement_tb),     // Output data value
 
-                .rdClk(clk_tb),
-                .DataNext(DataNext_tb), // Request for next data element
-                .DataReady(DataReady_tb), // Indicator that the next data element is available
-                .DataFrameReset(DataFrameReset_tb), // Reset to start of data frame
+                .DataNext(DataNext_tb),       // Request for next data element
+                .DataReady(DataReady_tb),     // Indicator that the next data element is available
  
-                .DataOverf(DataOverf_tb) // Too much data in buffer
+                .DataOverf(DataOverf_tb)      // Too much data in buffer
                          );
 
-   always @(negedge traceClk_tb)
-     begin
-        if (pr_tb)
-          $monitor("***PACKET RESET***========================");
-        else
-          begin 
-             if (dAvail_tb==1)
-               begin
-                  //if (dout_tb!=16'h7fff)
-                    $display("%04x",dout_tb);
-               end // if (dAvail_tb==1)
-          end // else: !if(pr_tb)
-     end // always @ (posedge traceClk_tb)
-      
    //-----------------------------------------------------------
-   // Send a byte to the traceport, toggling clock appropriately   
+   // Send a byte to the traceport, toggling clock appropriately
+   // Two cases, sending word AhAlBhBl.
+   // Data arrives with first sample in MS 4 bits, second sample in LS 4 bits.
+   // When in phase (PS=0);
+   //  SendA  SendB
+   //   Ah     Al
+   //   Bh     Bl
+   //
+   // When out of phase (PS=1);
+   //  SendA  SendB
+   //   xx     Ah
+   //   Al     Bh
+   //   Bl     xx
+
    task sendByte;
       input[7:0] byteToSend;
       integer bitsToSend;
 
       reg [3:0] leftover;
-      integer   sendbuffer;
+      reg [7:0] txbuffer;
 
-      // In the coded files, 4MSB are the LSB, and vice-versa, so reverse them
       begin
 	 bitsToSend=8;
          if (PS)
            begin
-              sendbuffer=byteToSend;           
-              byteToSend={leftover,byteToSend[7:4]};
-              leftover=sendbuffer[3:0];
+              txbuffer={byteToSend[3:0],leftover};
+              leftover=byteToSend[7:4];
+           end
+         else
+           begin
+              txbuffer={byteToSend[7:4],byteToSend[3:0]};
            end
          
 	 while (bitsToSend>0) begin
-	    traceDinA_tb[chunksize:0]=byteToSend;
+	    traceDinA_tb[chunksize:0]=txbuffer;
 	    bitsToSend=bitsToSend-(chunksize+1);
-	    byteToSend=byteToSend>>(chunksize+1);
-	    traceDinB_tb[chunksize:0]=byteToSend;
+	    txbuffer=txbuffer>>(chunksize+1);
+	    traceDinB_tb[chunksize:0]=txbuffer;
 	    bitsToSend=bitsToSend-(chunksize+1);
-	    byteToSend=byteToSend>>(chunksize+1);
+	    txbuffer=txbuffer>>(chunksize+1);
 	    traceClk_tb<=0;
 	    #10;
 	    traceClk_tb<=1;
@@ -132,8 +125,7 @@ packBuild packBuild_DUT (
       
    integer fd;
    reg [8*10:1] str;
-   
-   
+
    always
      begin
 	while (1)
@@ -142,13 +134,21 @@ packBuild packBuild_DUT (
 	     #2;
 	  end
      end
-      
+
+   always @(posedge clk_tb)
+       begin
+          if (DataReady_tb)
+            $display("Rx:%02X (%d)",packElement_tb,DataReady_tb);
+       end
+
    initial begin
       rst_tb=0;
       width_tb=WIDTH;
       traceDinA_tb=0;
-      traceDinB_tb=0;      
+      traceDinB_tb=0;
+      DataNext_tb=0;
       traceClk_tb=0;
+
       clk_tb=0;
       #1;      
       rst_tb=1;
@@ -170,7 +170,7 @@ packBuild packBuild_DUT (
       sendByte(8'h7f);
       
       // ....and a sane message
-      sendByte(8'h00);
+      sendByte(8'hAA);
       if (DataReady_tb==1'b0)
 	begin
 	   $display("Data not available before packet complete: CORRECT");
@@ -197,18 +197,6 @@ packBuild packBuild_DUT (
 
       sendByte(8'h20);
       sendByte(8'h01);
-      
-
-      while (DataReady_tb)
-        begin
-           DataNext_tb=1;
-           #4;
-           DataNext_tb=0;
-           #4;
-           $display("R1:%04X (%d)",packElement_tb,DataReady_tb);
-        end
-      $display("First packet compelte");
-      
       sendByte(8'h21);
       sendByte(8'h02);
       sendByte(8'h22);      
@@ -223,6 +211,24 @@ packBuild packBuild_DUT (
       sendByte(8'h07);
       sendByte(8'h28);
       sendByte(8'h28);      
+
+
+      sendByte(8'h30);
+      sendByte(8'h01);
+      sendByte(8'h31);
+      sendByte(8'h02);
+      sendByte(8'h32);
+      sendByte(8'h03);
+      sendByte(8'h33);
+      sendByte(8'h04);
+      sendByte(8'h34);
+      sendByte(8'h05);
+      sendByte(8'h35);
+      sendByte(8'h06);
+      sendByte(8'h36);
+      sendByte(8'h07);
+      sendByte(8'h38);
+      sendByte(8'h39);
       
       sendByte(8'hff);
       sendByte(8'hff);
@@ -232,16 +238,9 @@ packBuild packBuild_DUT (
 
       sendByte(8'haa);
       sendByte(8'hbb);
-      
-      while (DataReady_tb)
-        begin
-           DataNext_tb=1;
-           #4;
-           DataNext_tb=0;
-           #4;
-           $display("R2:%04X (%d)",packElement_tb,DataReady_tb);
-        end
 
+      DataNext_tb<=1;
+      #1000;
       
       $finish;
       

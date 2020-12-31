@@ -100,9 +100,9 @@
     #define FTDI_VID  (0x0403)
     #define FTDI_PID  (0x6010)
     #define FTDI_INTERFACE (INTERFACE_B)
-    #define FTDI_INTERFACE_SPEED (12000000)
-    #define FTDI_HS_TRANSFER_SIZE (4096)
-    // #define DUMP_FTDI_BYTES // Uncomment to get data dump of bytes from FTDI transfer
+    #define FPGA_INTERFACE_SPEED (12000000)
+    #define FPGA_HS_TRANSFER_SIZE (512)
+    #define DUMP_FTDI_BYTES // Uncomment to get data dump of bytes from FTDI transfer
 #else
     #define IF_INCLUDE_FPGA_SUPPORT(...)
 #endif
@@ -188,7 +188,7 @@ struct
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
-static void _intHandler( int sig, siginfo_t *si, void *unused )
+static void _intHandler( int sig )
 
 {
     /* CTRL-C exit is not an error... */
@@ -948,73 +948,75 @@ int serialFeeder( void )
 #ifdef INCLUDE_FPGA_SUPPORT
 
 int fpgaFeeder( void )
-
 {
-    int f, t;
-    uint8_t cbw[FTDI_HS_TRANSFER_SIZE];
+    int f, ret;
 
-    _r.ftdi = ftdi_new();
+    unsigned char cbw[FPGA_HS_TRANSFER_SIZE];
+    ssize_t t;
 
     while ( 1 )
     {
-        do
-        {
-            ftdi_set_interface( _r.ftdi, FTDI_INTERFACE );
-            f = ftdi_usb_open( _r.ftdi, FTDI_VID, FTDI_PID );
+#ifdef OSX
+        int flags;
 
-            if ( f < 0 )
-            {
-                genericsReport( V_INFO, "Cannot open device (%s)" EOL, ftdi_get_error_string( _r.ftdi ) );
-                usleep( 50000 );
-            }
+        while ( ( f = open( options.port, O_RDONLY | O_NONBLOCK ) ) < 0 )
+#else
+        while ( ( f = open( options.port, O_RDONLY ) ) < 0 )
+#endif
+        {
+            genericsReport( V_WARN, "Can't open fpga serial port" EOL );
+            usleep( 500000 );
         }
-        while ( f < 0 );
 
         genericsReport( V_INFO, "Port opened" EOL );
 
-        f = ftdi_set_baudrate( _r.ftdi, FTDI_INTERFACE_SPEED );
+#ifdef OSX
+        /* Remove the O_NONBLOCK flag now the port is open (OSX Only) */
 
-        if ( f < 0 )
+        if ( ( flags = fcntl( f, F_GETFL, NULL ) ) < 0 )
         {
-            genericsReport( V_ERROR, "Cannot set baudate %d %d (%s)" EOL, f, FTDI_INTERFACE_SPEED, ftdi_get_error_string( _r.ftdi ) );
-            return -2;
+            genericsExit( -3, "F_GETFL failed" EOL );
         }
 
-        ftdi_set_line_property( _r.ftdi, 8, STOP_BIT_1, NONE );
+        flags &= ~O_NONBLOCK;
 
-        ftdi_read_data_set_chunksize( _r.ftdi, FTDI_HS_TRANSFER_SIZE );
-        ftdi_setdtr( _r.ftdi, true );
-
-        genericsReport( V_INFO, "All parameters configured" EOL );
-
-        IF_WITH_FIFOS( fifoForceSync( _r.f, true ) );        
-
-        while ( ( t = ftdi_read_data( _r.ftdi, cbw, FTDI_HS_TRANSFER_SIZE ) ) >= 0 )
+        if ( ( flags = fcntl( f, F_SETFL, flags ) ) < 0 )
         {
-            if ( !t )
+            genericsExit( -3, "F_SETFL failed" EOL );
+        }
+
+#endif
+
+        if ( ( ret = _setSerialConfig ( f, FPGA_INTERFACE_SPEED ) ) < 0 )
+        {
+            genericsExit( ret, "fpga setSerialConfig failed" EOL );
+        }
+
+        while ( ( t = read( f, cbw, FPGA_HS_TRANSFER_SIZE ) ) > 0 )
+        {
+#ifdef DUMP_FTDI_BYTES
+            printf( "*** %d ***" EOL, t );
+            uint8_t *c = cbw;
+            uint32_t y = t;
+
+            while ( y-- )
             {
-                continue;
+                printf( "%02X ", *c++ );
+
+                if ( !( y % 20 ) )
+                {
+                    printf( EOL );
+                }
             }
 
-	    genericsReport( V_DEBUG, "RXED Packet of %d bytes" EOL, t );
-	    
             _processBlock( t, cbw );
+#endif
         }
 
-        ftdi_setdtr( _r.ftdi, false );
+        genericsReport( V_INFO, "fpga Read failed" EOL );
 
-        genericsReport( V_WARN, "Read failed" EOL );
-
-        ftdi_usb_close( _r.ftdi );
-        _r.ftdi = NULL;
+        close( f );
     }
-}
-// ====================================================================================================
-void fpgaFeederClose( int dummy )
-
-{
-    ( void )dummy;
-    _r.feederExit = true;
 }
 #endif
 // ====================================================================================================
@@ -1073,9 +1075,6 @@ static void _doExit( void )
 int main( int argc, char *argv[] )
 
 {
-    sigset_t set;
-    struct sigaction sa;
-
     /* Setup fifos with forced ITM sync, no TPIU and TPIU on channel 1 if its engaged later */
     IF_WITH_FIFOS( _r.f = fifoInit( true, false, 1 ) );
     IF_WITH_FIFOS( assert( _r.f ) );
@@ -1092,22 +1091,15 @@ int main( int argc, char *argv[] )
     atexit( _doExit );
 
     /* This ensures the atexit gets called */
-    sa.sa_flags = SA_SIGINFO;
-    sigemptyset( &sa.sa_mask );
-    sa.sa_sigaction = _intHandler;
-
-    if ( sigaction( SIGINT, &sa, NULL ) == -1 )
+    if ( SIG_ERR == signal( SIGINT, _intHandler ) )
     {
         genericsExit( -1, "Failed to establish Int handler" EOL );
     }
 
     /* Don't kill a sub-process when any reader or writer evaporates */
-    sigemptyset( &set );
-    sigaddset( &set, SIGPIPE );
-
-    if ( pthread_sigmask( SIG_BLOCK, &set, NULL ) == -1 )
+    if ( SIG_ERR == signal( SIGPIPE, SIG_IGN ) )
     {
-        genericsExit( -1, "Failed to establish Int handler" EOL );
+        genericsExit( -1, "Failed to ignore SIGPIPEs" EOL );
     }
 
 #ifdef WITH_FIFOS
@@ -1140,7 +1132,6 @@ int main( int argc, char *argv[] )
 
     if ( options.orbtrace )
     {
-        signal( SIGINT, fpgaFeederClose );
         exit( fpgaFeeder() );
     }
 

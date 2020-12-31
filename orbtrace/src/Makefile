@@ -10,7 +10,7 @@ SUPPORTED_HARDWARE=ICE40HX8K_B_EVN ICE40HX1K_STICK_EVN
 BUFFER_FLAGS=
 
 
-ORB_SOURCE_FILES=toplevel.v uart.v traceIF.v packBuild.v ram.v
+ORB_SOURCE_FILES=toplevel.v ram.v uart.v traceIF.v packBuild.v
 SOURCE_FILES=$(ORB_SOURCE_FILES)
 
 ifdef INCLUDE_SUMP2
