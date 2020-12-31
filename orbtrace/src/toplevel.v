@@ -105,6 +105,7 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b0)) MtraceIn3
 
    wire 		    wclk;
    wire 		    pkavail;
+   wire                     sync_toggle;
    wire [127:0] 	    packet;
    
   // -----------------------------------------------------------------------------------------
@@ -118,10 +119,10 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b0)) MtraceIn3
 		   .width(widthSet),                // Current trace buffer width 
 
 		   // Upwards interface to packet processor
-		   .PkAvail(pkavail),               // Flag indicating packet is available
+		   .PkAvail(pkavail),               // Toggling flag indicating next packet
 		   .Packet(packet),                 // The next packet
 
-	           .sync(sync_strobe)               // Indicator that we are in sync
+	           .sync(sync_toggle),              // Toggling Indicator that we are in sync
 		);		  
    
   // -----------------------------------------------------------------------------------------
@@ -148,9 +149,11 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b0)) MtraceIn3
 		      // Downwards interface to target interface
 		      .PkAvail(pkavail),             // Flag indicating packet is available
 		      .Packet(packet),               // The next packet
-		      
+                      .sync(sync_toggle),            // A sync pulse has arrived		      
+
 		      // Upwards interface to serial (or other) handler
 		      .DataVal(filter_data),         // Output data value
+                      .syncInd(sync_led),            // LED indicating sync status
 
                       .DataReady(dataReady),
 		      .DataNext(txFree&&!dataReady), // Request for data
@@ -187,10 +190,8 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b0)) MtraceIn3
 			  );
 
    reg [25:0] 		   clkCount;
-   reg [6:0]               syncCount;
    reg [23:0] 		   ovfCount;       // LED stretch for overflow indication
 
-   assign sync_led = (syncCount!=0);
    assign heartbeat_led=clkCount[25];
    assign txOvf_led = (ovfCount!=0);
 
@@ -203,7 +204,6 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b0)) MtraceIn3
 	  begin
 	     cts<=1'b0;
 	     clkCount <= ~0;
-             syncCount <= 0;
              ovfCount <= 0;
 	     D3<=0;
 	     D5<=0;
@@ -216,11 +216,6 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b0)) MtraceIn3
                ovfCount<=~0;
              else
                if (ovfCount>0) ovfCount<=ovfCount-1;
-
-             if (sync_strobe)
-               syncCount<=~0;
-             else
-               if (syncCount>0) syncCount<=syncCount-1;
 
 	     clkCount <= clkCount + 1;
 	  end // else: !if(rst)

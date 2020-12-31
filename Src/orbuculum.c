@@ -102,7 +102,7 @@
     #define FTDI_INTERFACE (INTERFACE_B)
     #define FPGA_INTERFACE_SPEED (12000000)
     #define FPGA_HS_TRANSFER_SIZE (512)
-    #define DUMP_FTDI_BYTES // Uncomment to get data dump of bytes from FTDI transfer
+//    #define DUMP_FTDI_BYTES // Uncomment to get data dump of bytes from FTDI transfer
 #else
     #define IF_INCLUDE_FPGA_SUPPORT(...)
 #endif
@@ -1008,9 +1008,9 @@ int fpgaFeeder( void )
                     printf( EOL );
                 }
             }
+#endif
 
             _processBlock( t, cbw );
-#endif
         }
 
         genericsReport( V_INFO, "fpga Read failed" EOL );
