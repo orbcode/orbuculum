@@ -7,6 +7,9 @@ set_io traceDin[2]	E16	# J2 pin 33
 set_io traceDin[3]	F16	# J2 pin 29
 set_io traceClk		H16	# J2 pin 25
 
+set_frequency BtraceClk 120
+set_frequency clkOut 96
+
 # UART connection to PC
 set_io uartrx		B10	# RX pin of FT2232H
 set_io uarttx		B12	# TX pin of FT2232H
@@ -24,9 +27,9 @@ set_io txInd_led	B4	# LED1 (D8, red)
 set_io heartbeat_led	C3	# LED7 (D2, red)
 
 # scope channels (non-standard)
-set_io yellow		P15	# J2 pin 6
-set_io green		P16	# J2 pin 5
-set_io blue		R15	# J2 pin 4
+set_io -nowarn yellow		P15	# J2 pin 6
+set_io -nowarn green		P16	# J2 pin 5
+set_io -nowarn blue		R15	# J2 pin 4
 
 # other indicators (currently not used)
 set_io D3		B3	# LED6 (D3, red)
@@ -35,19 +38,19 @@ set_io D6 		A1	# LED3 (D6, red)
 set_io D7		A2	# LED2 (D7, red)
 
 # Input bits for SUMP2
-set_io events_din[0]    B1 
-set_io events_din[1]    B2
-set_io events_din[2]    C1
-set_io events_din[3]    C2
-set_io events_din[4]    E2
-set_io events_din[5]    F1
-set_io events_din[6]    F2
-set_io events_din[7]    G1
-set_io events_din[8]    G2
-set_io events_din[9]    H1
-set_io events_din[10]   J2
-set_io events_din[11]   J1
-set_io events_din[12]   K3
-set_io events_din[13]   K1
-set_io events_din[14]   L3
-set_io events_din[15]   L1
+set_io -nowarn events_din[0]    B1 
+set_io -nowarn events_din[1]    B2
+set_io -nowarn events_din[2]    C1
+set_io -nowarn events_din[3]    C2
+set_io -nowarn events_din[4]    E2
+set_io -nowarn events_din[5]    F1
+set_io -nowarn events_din[6]    F2
+set_io -nowarn events_din[7]    G1
+set_io -nowarn events_din[8]    G2
+set_io -nowarn events_din[9]    H1
+set_io -nowarn events_din[10]   J2
+set_io -nowarn events_din[11]   J1
+set_io -nowarn events_din[12]   K3
+set_io -nowarn events_din[13]   K1
+set_io -nowarn events_din[14]   L3
+set_io -nowarn events_din[15]   L1

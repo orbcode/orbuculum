@@ -4,7 +4,7 @@
 
 * Latest Changes:
 
-This is the development branch for V1.20.
+This is the development branch for V1.20. The majority of new work is on the FPGA (orbtrace). See the README in the orbtrace directory for more information on that.
 
 The CHANGES file now tells you what's been done when.
 
