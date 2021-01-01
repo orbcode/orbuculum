@@ -10,14 +10,13 @@ module packBuild (
 	        // Downwards interface to packet processor
 		input            PkAvail,       // Flag indicating word is available
 		input [127:0]    Packet,        // The next packet word
-                input            sync,          // A sync pulse has arrived
                   
 		// Upwards interface to serial (or other) handler : clk Clock
 		output reg [7:0] DataVal,       // Output data value
 
 		input            DataNext,      // Request for next data element
 		output reg       DataReady,     // Next data element is available
-                output           syncInd,       // Indicator of sync status
+                output           dataInd,       // Indicator of data status
 
                 // Indicator that buffer overflowed
 		output reg       DataOverf      // Too much data in buffer
@@ -33,10 +32,7 @@ module packBuild (
    wire [127:0]                  ramData;          // The data from the RAM
    reg [127:0]                   currentPacket;    // The packet being transmitted
 
-   reg [2:0]                     sync_cdc;         // cdc/edge detecting sync
-   reg [26:0]                    syncCount;        // Stretcher for sync
-
-   reg [24:0]                    syncIndStretch;   // Sync indication stretch
+   reg [25:0]                    dataIndStretch;   // Data indication stretch
    
    reg [4:0]                     count;            // Which element we are outputting?
    reg [6:0]                     senderState;      // Onehot state encoding for uploader
@@ -58,8 +54,7 @@ module packBuild (
         );
 
    assign packetWrite = ((pkavail_cdc==3'b011) || (pkavail_cdc==3'b100));
-   wire syncStretch = (syncCount!=0);
-   wire syncInd = (syncIndStretch!=0);
+   wire                          dataInd = (dataIndStretch!=0);
    
    /* States for uploader state machine */
    parameter
@@ -88,26 +83,23 @@ module packBuild (
 	  begin // Perform new packet received actions ==================================
 
              // Perform cdc activities
-             sync_cdc<={sync_cdc[1:0],sync};
              pkavail_cdc<={pkavail_cdc[1:0],PkAvail};
 
              // Check for sync
-             if (syncCount!=0) syncCount<=syncCount-1;
-             if (syncIndStretch!=0) syncIndStretch<=syncIndStretch-1;
-             if ((sync_cdc==3'b011) || (sync_cdc==3'b100)) syncCount<=~0;
+             if (dataIndStretch!=0) dataIndStretch<=dataIndStretch-1;
 
              // Store packet if we can
-             if ((packetWrite) && (syncStretch))
+             if (packetWrite)
                begin
                   // We have a new packet, we will store it and check overflow
                   $display("New packet: %32x",Packet);
-                  syncIndStretch<=~0;
                   if (nextWp==Rp)
                     begin
                        Rp<=Rp+1;
                        DataOverf<=1'b1;
                        $display("Overflowed");
                     end
+                  dataIndStretch<=~0;
                   Wp<=nextWp;
                   nextWp<=nextWp+1;
                end

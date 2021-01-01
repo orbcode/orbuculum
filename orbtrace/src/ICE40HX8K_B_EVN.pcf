@@ -17,7 +17,7 @@ set_io rstIn            A16     # DTRn pin of FT2232H
 set_io clkIn		J3	# connected to 12MHz xtal
 
 # LEDs
-set_io sync_led		B5	# LED0 (D9, red)
+set_io data_led		B5	# LED0 (D9, red)
 set_io txOvf_led	C4	# LED5 (D4, red)
 set_io txInd_led	B4	# LED1 (D8, red)
 

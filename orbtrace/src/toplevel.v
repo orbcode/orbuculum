@@ -8,7 +8,7 @@ module topLevel(
 		output 		  uarttx, // Transmit data from UART 
 
 		// Leds....
-		output 		  sync_led,
+		output 		  data_led,
 		output 		  txInd_led, // Transmitted UART Data indication
 		output 		  txOvf_led,
 		output 		  heartbeat_led,
@@ -46,7 +46,6 @@ module topLevel(
    wire 		   clkOut;
    wire 		   BtraceClk;
 
-   reg                     sync_strobe;
    reg                     ovf_strobe;
 
   
@@ -100,45 +99,37 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b0)) MtraceIn3
  );
 
    // DDR input data
-   wire [MAX_BUS_WIDTH-1:0] tTraceDina;
-   wire [MAX_BUS_WIDTH-1:0] tTraceDinb;
+   wire [MAX_BUS_WIDTH-1:0] tTraceDina;           // Low order bits (first edge) of input
+   wire [MAX_BUS_WIDTH-1:0] tTraceDinb;           // High order bits (second edge) of input
 
-   wire 		    wclk;
-   wire 		    pkavail;
-   wire                     sync_toggle;
-   wire [127:0] 	    packet;
+   wire 		    pkavail;              // Toggle of packet availability
+   wire [127:0] 	    packet;               // Packet delivered from trace interface
    
   // -----------------------------------------------------------------------------------------
   traceIF #(.MAXBUSWIDTH(MAX_BUS_WIDTH)) traceif (
                    .rst(rst), 
 
-		   // Downwards interface to trace pins
+           // Downwards interface to trace pins
                    .traceDina(tTraceDina),          // Tracedata rising edge ... 1-n bits
                    .traceDinb(tTraceDinb),          // Tracedata falling edge (LSB) ... 1-n bits
                    .traceClkin(BtraceClk),          // Tracedata clock
 		   .width(widthSet),                // Current trace buffer width 
 
-		   // Upwards interface to packet processor
+           // Upwards interface to packet processor
 		   .PkAvail(pkavail),               // Toggling flag indicating next packet
 		   .Packet(packet),                 // The next packet
-
-	           .sync(sync_toggle),              // Toggling Indicator that we are in sync
 		);		  
    
   // -----------------------------------------------------------------------------------------
 
-   wire [7:0] 		    filter_data;
+   wire [7:0] 		    tx_data;                // Data byte to be sent to serial
 
-   wire 		    dataAvail;
-   wire 		    dataReady;
+   wire 		    dataReady;              // Indicator that data is available
    
-   wire 		    txFree;
+   wire 		    txFree;                 // Request for more data to tx
    
-   wire [7:0] 		    rx_byte_tl;
-   wire 		    rxTrig_tl;
-   wire 		    rxErr_tl;
-   wire [1:0] 		    widthSet;
-   reg                      txOvf_strobe;
+   wire [1:0] 		    widthSet;               // Current width of the interface
+   reg                      txOvf_strobe;           // Strobe that data overflowed
 
    assign widthSet=2'b11;
 
@@ -146,14 +137,13 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b0)) MtraceIn3
 		      .clk(clkOut), 
 		      .rst(rst), 
 
-		      // Downwards interface to target interface
+           // Downwards interface to target interface
 		      .PkAvail(pkavail),             // Flag indicating packet is available
 		      .Packet(packet),               // The next packet
-                      .sync(sync_toggle),            // A sync pulse has arrived		      
 
-		      // Upwards interface to serial (or other) handler
-		      .DataVal(filter_data),         // Output data value
-                      .syncInd(sync_led),            // LED indicating sync status
+           // Upwards interface to serial (or other) handler
+		      .DataVal(tx_data),             // Output data value
+                      .dataInd(data_led),            // LED indicating data sync status
 
                       .DataReady(dataReady),
 		      .DataNext(txFree&&!dataReady), // Request for data
@@ -161,25 +151,26 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b0)) MtraceIn3
                       .DataOverf(txOvf_strobe)       // Too much data in buffer
  		      );
 
-   uart #(.CLOCKFRQ(48_000_000), .BAUDRATE(12_000_000)) transmitter (
+   uart #(.CLOCKFRQ(96_000_000), .BAUDRATE(12_000_000)) transmitter (
 	             .clk(clkOut),                   // The master clock for this module
 	             .rst(rst),                      // Synchronous reset.
 	             .rx(uartrx),                    // Incoming serial line
 	             .tx(uarttx),                    // Outgoing serial line
                      
 	             .transmit(dataReady),           // Signal to transmit
-	             .tx_byte(filter_data),          // Byte to transmit
+	             .tx_byte(tx_data),              // Byte to transmit
 	             .tx_free(txFree),               // Indicator that transmit register is available
 	             .is_transmitting(txInd_led)     // Low when transmit line is idle.
                      );
    
- // Set up clock for 48Mhz with input of 12MHz
+ // Set up clock for 96Mhz with input of 12MHz
    SB_PLL40_CORE #(
 		   .FEEDBACK_PATH("SIMPLE"),
 		   .PLLOUT_SELECT("GENCLK"),
 		   .DIVR(4'b0000),
 		   .DIVF(7'b0111111),
-		   .DIVQ(3'b100),
+		   //.DIVQ(3'b100),
+                   .DIVQ(3'b011),
 		   .FILTER_RANGE(3'b001)
 		   ) uut (
 			  .LOCK(lock),
@@ -188,6 +179,8 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b0)) MtraceIn3
 			  .REFERENCECLK(clkIn),
 			  .PLLOUTCORE(clkOut)
 			  );
+
+// ========================================================================================================================
 
    reg [25:0] 		   clkCount;
    reg [23:0] 		   ovfCount;       // LED stretch for overflow indication
@@ -303,7 +296,7 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b0)) MtraceIn3
 //   assign events_loc[15] = txFree;
 //   assign events_loc[11] = frameReset;
 
-   assign events_loc[15] = sync_led;
+   assign events_loc[15] = data_led;
    
   
 //   assign events_loc[7:0]   = events_din[7:0];
