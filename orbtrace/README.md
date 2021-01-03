@@ -13,9 +13,9 @@ Outstanding development actions;
 Current testing status;
 
  * Tested on ICE40HX8K at 1, 2 & 4 bit depths
- * Tested with STM32F427 CPU running at 16MHz
+ * Tested with STM32F427 CPU running at 16MHz & 160MHz.
 
- * Needs testing at higher speeds
+ * Needs testing at higher speeds and on more CPUs
  * Needs testing on HX1K
 
 To build it perform;
@@ -75,3 +75,11 @@ ITMTPR 0xFFFFFFFF
 ```
 
 Note that signal integrity is a _huge_ issue. the `enableSTM32TRACE` command takes a second parameter which is drive strength, value 0-3. It defaults to 1. You may have to increase this.  If you have unexpected data corruption rest a finger on the HX8 TRACE input pins. If that fixes the issue, you know where it lies.  This will be addressed on 'production' hardware.
+
+LEDs
+====
+
+ - D2: Heartbeat. Solid red when the bitfile is loaded. Flashes while the trace collector is running.
+ - D4: Overflow. Illuminated when there are too many data arriving over the trace link to be stored in local RAM prior to transmission (i.e. the off-board transmission link can't keep up).
+ - D8: Tx. Flashes while data is being sent over the serial link.
+ - D9: Data. A 'sticky' version of D8 which will stay illuminated for about 1.5Secs after any data.

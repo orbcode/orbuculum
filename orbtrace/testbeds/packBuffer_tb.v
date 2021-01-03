@@ -3,15 +3,13 @@
 
 `timescale 1ns/100ps
 
-// Tests for packetCollection (built on traceIF in combination with packBuild)
+// Tests for packetBuffering (built on traceIF)
 // Set width to 3, 2 and 1 to test each width
-// Set PS to 0 and 1 to test phase differences
 // Run with
-//  iverilog -o r traceIF.v packBuild.v ram.v ../testbeds/packCollect_tb.v  ; vvp r
+//  iverilog -o r traceIF.v packBuffer.v ram.v ../testbeds/packBuffer_tb.v  ; vvp r
 
-module packCollect_tb;
+module packBuffer_tb;
    parameter WIDTH=4;    // 3=4 bit, 2=2 bit, 1,0=1 bit
-   parameter PS=1;       // If to implement phase shift
 
    parameter chunksize=(WIDTH==3)?3:(WIDTH==2)?1:0;
 
@@ -27,9 +25,7 @@ module packCollect_tb;
    wire        PkAvail_tb;
    wire [127:0] dout_tb;
 
-   wire        sync_tb;
-
-traceIF traceIF_DUT (
+traceIF DUT (
 		.rst(rst_tb),                  // Reset synchronised to clock
 
 	// Downwards interface to the trace pins
@@ -40,66 +36,50 @@ traceIF traceIF_DUT (
 
 	// Upwards interface to packet processor
 		.PkAvail(PkAvail_tb),          // Flag indicating packet is available
-		.Packet(dout_tb),              // The last packet that has been received
-                .sync(sync_tb)
+		.Packet(dout_tb)               // The last packet that has been received
 	     );
 
-   wire        [7:0]  packElement_tb;
-   reg                DataNext_tb;
-   wire               DataReady_tb;
-   wire               DataOverf_tb;
-   
-packBuild packBuild_DUT (
-                .clk(clk_tb),                 // System Clock
-                .rst(rst_tb),                 // Clock synchronised reset
+   wire [127:0] frame_tb;
+   reg          frameNext_tb;
+   wire         frameReady_tb;
+   wire         dataOverf_tb;
+
+packBuffer packBuffer_DUT (
+                .clk(clk_tb),
+                .rst(rst_tb),
                 
         // Downwards interface to packet processor
-                .PkAvail(PkAvail_tb),         // Flag indicating packet is available
-                .Packet(dout_tb),             // The next packet
+                .PkAvail(PkAvail_tb),           // Flag indicating packet is available
+                .Packet(dout_tb),               // The next packet
+                  
+		// Upwards interface to output handler : clk Clock
+		.Frame(frame_tb),               // Output frame
 
-        // Upwards interface to serial (or other) handler : clk Clock
-                .DataVal(packElement_tb),     // Output data value
+		.FrameNext(frameNext_tb),       // Request for next data element
+		.FrameReady(frameReady_tb),     // Next data element is available
 
-                .DataNext(DataNext_tb),       // Request for next data element
-                .DataReady(DataReady_tb),     // Indicator that the next data element is available
- 
-                .DataOverf(DataOverf_tb)      // Too much data in buffer
-                         );
-
+		.DataOverf(dataOverf_tb)        // Too much data in buffer
+ 		);
+   
    //-----------------------------------------------------------
    // Send a byte to the traceport, toggling clock appropriately
-   // Two cases, sending word AhAlBhBl.
-   // Data arrives with first sample in MS 4 bits, second sample in LS 4 bits.
-   // When in phase (PS=0);
+   // Fortunately, CORTEX-M always sends LSB on L-H edge, so we don't
+   // need to worry about phase.
    //  SendA  SendB
-   //   Ah     Al
-   //   Bh     Bl
-   //
-   // When out of phase (PS=1);
-   //  SendA  SendB
-   //   xx     Ah
-   //   Al     Bh
-   //   Bl     xx
+   //   Al     Ah
+   //   Bl     Bh
 
    task sendByte;
+
       input[7:0] byteToSend;
       integer bitsToSend;
 
-      reg [3:0] leftover;
       reg [7:0] txbuffer;
 
       begin
 	 bitsToSend=8;
-         if (PS)
-           begin
-              txbuffer={byteToSend[3:0],leftover};
-              leftover=byteToSend[7:4];
-           end
-         else
-           begin
-              txbuffer={byteToSend[7:4],byteToSend[3:0]};
-           end
-         
+         txbuffer={byteToSend[7:4],byteToSend[3:0]};
+
 	 while (bitsToSend>0) begin
 	    traceDinA_tb[chunksize:0]=txbuffer;
 	    bitsToSend=bitsToSend-(chunksize+1);
@@ -113,7 +93,6 @@ packBuild packBuild_DUT (
 	    #10;
             traceClk_tb<=0;
             //$write("%x%x",traceDinA_tb,traceDinB_tb);
-            
 	 end
       end
    endtask
@@ -122,6 +101,8 @@ packBuild packBuild_DUT (
    integer goodreturn;
    reg [7:0] feedval;
    integer dummy;
+   reg     readTime;
+   
       
    integer fd;
    reg [8*10:1] str;
@@ -136,17 +117,26 @@ packBuild packBuild_DUT (
      end
 
    always @(posedge clk_tb)
-       begin
-          if (DataReady_tb)
-            $display("Rx:%02X (%d)",packElement_tb,DataReady_tb);
+     begin
+        frameNext_tb<=1'b0;
+
+        if (readTime==1) // Slight bodge to allow 1 cycle for frameNext to re-sync.
+          readTime=0;
+        else        
+          if (frameReady_tb!=0)
+            begin
+               frameNext_tb<=1'b1;
+               readTime=1;
+               $display("Rx:%16X",frame_tb);
+            end
        end
 
    initial begin
       rst_tb=0;
+      readTime=0;
       width_tb=WIDTH;
       traceDinA_tb=0;
       traceDinB_tb=0;
-      DataNext_tb=0;
       traceClk_tb=0;
 
       clk_tb=0;
@@ -171,14 +161,6 @@ packBuild packBuild_DUT (
       
       // ....and a sane message
       sendByte(8'hAA);
-      if (DataReady_tb==1'b0)
-	begin
-	   $display("Data not available before packet complete: CORRECT");
-	end
-      else
-	begin
-	   $display("Data available signalled before packet complete: ERROR");
-	end
       sendByte(8'h10);
       sendByte(8'h01);
       sendByte(8'h11);
@@ -239,8 +221,7 @@ packBuild packBuild_DUT (
       sendByte(8'haa);
       sendByte(8'hbb);
 
-      DataNext_tb<=1;
-      #1000;
+      #10;
       
       $finish;
       
@@ -250,7 +231,4 @@ packBuild packBuild_DUT (
 
       $dumpvars;
    end
-endmodule // trace_IF_tb
-
-   
-   
+endmodule // packBuffer_tb

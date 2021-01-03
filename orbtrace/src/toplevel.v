@@ -117,7 +117,7 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b0)) MtraceIn3
 
            // Upwards interface to packet processor
 		   .PkAvail(pkavail),               // Toggling flag indicating next packet
-		   .Packet(packet),                 // The next packet
+		   .Packet(packet)                  // The next packet
 		);		  
    
   // -----------------------------------------------------------------------------------------
@@ -133,7 +133,11 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b0)) MtraceIn3
 
    assign widthSet=2'b11;
 
-   packBuild marshall (
+   wire [127:0]             frame;
+   wire                     frameNext;
+   wire                     frameReady;
+   
+   packBuffer marshall (
 		      .clk(clkOut), 
 		      .rst(rst), 
 
@@ -141,16 +145,33 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b0)) MtraceIn3
 		      .PkAvail(pkavail),             // Flag indicating packet is available
 		      .Packet(packet),               // The next packet
 
-           // Upwards interface to serial (or other) handler
-		      .DataVal(tx_data),             // Output data value
-                      .dataInd(data_led),            // LED indicating data sync status
+           // Upwards interface to output handler
+		      .Frame(frame),                 // Output frame
 
-                      .DataReady(dataReady),
-		      .DataNext(txFree&&!dataReady), // Request for data
-                       
+		      .FrameNext(frameNext),         // Request for next data element
+		      .FrameReady(frameReady),       // Next data element is available
+
+           // Status indicators
+                      .DataInd(data_led),            // LED indicating data sync status
                       .DataOverf(txOvf_strobe)       // Too much data in buffer
  		      );
 
+  packToSerial serialPrepare (
+		      .clk(clkOut),
+		      .rst(rst),
+		
+	  // Downwards interface to packet buffer
+		      .Frame(frame),                 // Input frame
+
+		      .FrameNext(frameNext),         // Request for next data element
+		      .FrameReady(frameReady),       // Next data element is available
+                     
+          // Upwards interface to serial handler
+                      .DataVal(tx_data),             // Output data value
+                      .DataReady(dataReady),
+		      .DataNext(txFree&&!dataReady)  // Request for data
+ 		);
+   
    uart #(.CLOCKFRQ(96_000_000), .BAUDRATE(12_000_000)) transmitter (
 	             .clk(clkOut),                   // The master clock for this module
 	             .rst(rst),                      // Synchronous reset.

@@ -20,7 +20,7 @@ module traceIF # (parameter MAXBUSWIDTH = 4) (
                                                     //  0..3 (1, 1, 2 & 4 bits)
 	// Upwards interface to packet processor
 		output reg              PkAvail,    // Toggling indicator packet ready
-		output reg [127:0]      Packet,     // The last packet
+		output reg [127:0]      Packet      // The last packet
 		);		  
    
    // Internals =======================================================================
@@ -86,7 +86,7 @@ module traceIF # (parameter MAXBUSWIDTH = 4) (
 
                        if (packetwd != 16'h7fff)
                          begin
-                            $display("Got word: %04X (%d)",packetwd,ofs);
+                            $display("Got word: %04X",packetwd);
                             elemCount<={elemCount[6:0],1'b0};
                             
                             case (elemCount)

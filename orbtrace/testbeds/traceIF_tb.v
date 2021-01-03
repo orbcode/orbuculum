@@ -5,27 +5,25 @@
 
 // Tests for traceIF.
 // Set width to 3, 2 and 1 to test each width
-// Set PS to 0 and 1 to test phase differences
 // Run with
 //  iverilog -o r traceIF.v ../testbeds/traceIF_tb.v  ; vvp r
 
 module traceIF_tb;
    parameter WIDTH=3;    // 3=4 bit, 2=2 bit, 1,0=1 bit
-   parameter PS=1;       // If to implement phase shift
 
    parameter chunksize=(WIDTH==3)?3:(WIDTH==2)?1:0;
 
    // Testbed interface 
-   reg[3:0] traceDinA_tb;
-   reg[3:0] traceDinB_tb;
+   reg [3:0] traceDinA_tb;
+   reg [3:0] traceDinB_tb;
    reg [1:0] width_tb;
    
-   reg 	    traceClk_tb;
-   reg 	    clk_tb;
-   reg 	    rst_tb;
+   reg 	     traceClk_tb;
+   reg 	     clk_tb;
+   reg 	     rst_tb;
 
-   wire        dAvail_tb;
-   reg         dAck_tb;
+   wire      dAvail_tb;
+   reg       dAck_tb;
    
    wire [127:0] dout_tb;
    wire        sync_tb;
@@ -41,45 +39,28 @@ traceIF DUT (
 
 	// Upwards interface to packet processor
 		.PkAvail(dAvail_tb),           // Flag indicating packet is available
-                .PkAck(dAck_tb),               // Handshake for collecting data
-		.Packet(dout_tb),              // The last packet that has been received
-
-		.sync(sync_tb)                 // Indicator that we are in sync
+		.Packet(dout_tb)               // The last packet that has been received
 	     );
    
 
    //-----------------------------------------------------------
    // Send a byte to the traceport, toggling clock appropriately
-   // Two cases, sending word AhAlBhBl.
-   // When in phase (PS=0);
+   // Fortunately, CORTEX-M always sends LSB on L-H edge, so we don't
+   // need to worry about phase.
    //  SendA  SendB
    //   Al     Ah
    //   Bl     Bh
-   //
-   // When out of phase (PS=1);
-   //  SendA  SendB
-   //   xx     Al
-   //   Ah     Bl
-   //   Bh     xx
 
    task sendByte;
+
       input[7:0] byteToSend;
       integer bitsToSend;
 
-      reg [3:0] leftover;
       reg [7:0] txbuffer;
 
       begin
 	 bitsToSend=8;
-         if (PS)
-           begin
-              txbuffer={byteToSend[3:0],leftover};
-              leftover=byteToSend[7:4];
-           end
-         else
-           begin
-              txbuffer={byteToSend[7:4],byteToSend[3:0]};
-           end
+         txbuffer={byteToSend[7:4],byteToSend[3:0]};
 
 	 while (bitsToSend>0) begin
 	    traceDinA_tb[chunksize:0]=txbuffer;
@@ -143,11 +124,6 @@ traceIF DUT (
       sendByte(8'h88);
 
       // Now send Sync Sequence
-      sendByte(8'hff);
-      sendByte(8'hff);
-      sendByte(8'hff);
-      sendByte(8'h7f);
-      // Now send Sync Sequence (need two syncs for when out of sync)
       sendByte(8'hff);
       sendByte(8'hff);
       sendByte(8'hff);

@@ -1,7 +1,7 @@
 # Define the line below to get SUMP2 incorporated
 #INCLUDE_SUMP2=1
 
-RVAL ?= 34 #  Replace with $$RANDOM to get a randomised build
+RVAL ?= 17 #  Replace with $$RANDOM to get a randomised build
 
 SUPPORTED_HARDWARE=ICE40HX8K_B_EVN ICE40HX1K_STICK_EVN
 
@@ -10,7 +10,7 @@ SUPPORTED_HARDWARE=ICE40HX8K_B_EVN ICE40HX1K_STICK_EVN
 BUFFER_FLAGS=
 
 
-ORB_SOURCE_FILES=toplevel.v ram.v uart.v traceIF.v packBuild.v
+ORB_SOURCE_FILES=toplevel.v ram.v uart.v traceIF.v packBuffer.v packToSerial.v
 SOURCE_FILES=$(ORB_SOURCE_FILES)
 
 ifdef INCLUDE_SUMP2
