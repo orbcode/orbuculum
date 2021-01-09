@@ -4,7 +4,7 @@ WITH_FIFOS?=1
 WITH_FPGA?=1
 
 # Build configuration
-#VERBOSE=1
+VERBOSE?=0
 DEBUG=1
 SCREEN_HANDLING=1
 
@@ -104,6 +104,9 @@ endif
 ifeq ($(WITH_NWCLIENT),1)
 ORBUCULUM_CFILES += $(App_DIR)/nwclient.c
 endif
+ifeq ($(WITH_FPGA),1)
+ORBUCULUM_CFILES += $(EXT)/ftdispi.c
+endif
 ORBCAT_CFILES = $(App_DIR)/$(ORBCAT).c 
 ORBTOP_CFILES = $(App_DIR)/$(ORBTOP).c $(App_DIR)/symbols.c $(EXT)/cJSON.c
 ORBDUMP_CFILES = $(App_DIR)/$(ORBDUMP).c
@@ -136,7 +139,7 @@ MAKE = make
 # Quietening
 ##########################################################################
 
-ifdef VERBOSE
+ifeq ($(VERBOSE),1)
 cmd = $1
 Q :=
 else
@@ -214,7 +217,7 @@ $(ORBLIB) : get_version $(ORBLIB_POBJS)
 	-@echo "Completed build of" $(ORBLIB)
 
 $(ORBUCULUM) : $(ORBLIB) $(ORBUCULUM_POBJS) 
-	$(Q)$(LD) $(LDFLAGS) -o $(OLOC)/$(ORBUCULUM) $(MAP) $(ORBUCULUM_POBJS) $(LDLIBS)
+	$(Q)$(LD) $(LDFLAGS) -o $(OLOC)/$(ORBUCULUM) $(MAP) $(ORBUCULUM_POBJS)  $(LDLIBS)
 	-@echo "Completed build of" $(ORBUCULUM)
 
 $(ORBCAT) : $(ORBLIB) $(ORBCAT_POBJS)

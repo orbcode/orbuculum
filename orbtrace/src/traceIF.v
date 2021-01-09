@@ -30,12 +30,9 @@ module traceIF # (parameter MAXBUSWIDTH = 4) (
    reg [111:0]  cPacket;                  // Entire TPIU frame being constructed
    reg [2:0]    remainingClocks;          // Number of elements to remaining for word
    reg [7:0]    elemCount;                // Element we're currently waiting to store
-   reg [25:0]   syncInd;                  // Stretcher since last sync (1.4s @ 48MHz)
+   reg [25:0]   syncInd;                  // Stretcher since last sync (~0.7s @ 96MHz)
    
    // ================== Input data against traceclock from target system =============
-
-   // Number of clock ticks for a full 16 bits to have been received
-   wire [2:0]   remainingClocksForFullWord = (width==3)?3'h1:(width==2)?3'h3:3'h7;
 
    // Flag indicating we've got a new full sync (for 4, 2 and 1 bit cases)
    wire        syncPacket = (construct[31 -: 32]==32'h7fff_ffff);
@@ -57,7 +54,7 @@ module traceIF # (parameter MAXBUSWIDTH = 4) (
 	     construct       <= 0;               // Nothing built
              elemCount       <= (1<<0);          // No elements for this packet
              PkAvail         <= 0;               // No packet pending right now
-             remainingClocks <= remainingClocksForFullWord;
+             remainingClocks <= 0;               // Clocks will be set after reset
 	  end
 	else
 	  begin
@@ -68,7 +65,12 @@ module traceIF # (parameter MAXBUSWIDTH = 4) (
              if (syncPacket)
                begin
                   $display("Got sync");
-                  remainingClocks <= remainingClocksForFullWord;
+                  case (width)
+                    3: remainingClocks <= 3'h1;
+                    2: remainingClocks <= 3'h3;
+                    default: remainingClocks <= 3'h7;
+                  endcase // case (width)
+
                   elemCount <= (1<<0);           // erase any partial packet
                   syncInd <= ~0;
                end
@@ -82,7 +84,11 @@ module traceIF # (parameter MAXBUSWIDTH = 4) (
                   else
                     begin
                        // Got a complete word, process it
-                       remainingClocks <= remainingClocksForFullWord;
+                       case (width)
+                         3: remainingClocks <= 3'h1;
+                         2: remainingClocks <= 3'h3;
+                         default: remainingClocks <= 3'h7;
+                       endcase // case (width)
 
                        if (packetwd != 16'h7fff)
                          begin

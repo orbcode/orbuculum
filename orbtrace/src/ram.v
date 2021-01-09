@@ -1,4 +1,9 @@
-module ram (din, write_en, waddr, wclk, raddr, rclk, dout);//256x16
+// ram.v
+// =====
+//
+// Provide dual clocked ram with parameterisable address and data widths.
+
+module ram (din, write_en, waddr, wclk, raddr, rclk, dout);
    parameter  addr_width = 8;
    parameter  data_width = 16;
    input      [addr_width-1:0] waddr, raddr;

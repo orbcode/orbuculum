@@ -3,11 +3,10 @@ ORBTrace Development
 
 This is the development status for the ORBTrace parallel TRACE hardware. Its very unlikely you want to be here but, just in case you do, this is built using Clifford Wolfs' icestorm toolchain and currently targets a either a lattice iCE40HX-8K board or the lattice icestick.
 
-It is work in progress, but progress is now quite good (1st Jan 2021). In theory it will work with any trace port operating up to 120MHz. I've never seen one faster.
+It is work in progress, but progress is now quite good (9th Jan 2021). In theory it will work with any trace port operating up to 120MHz. I've never seen one faster.
 
 Outstanding development actions;
 
- * Move back to SPI interface away from UART one (will allow 30MHz data transfer as opposed to 12MHz)
  * Parse TPIU packets to split out ETM data and buffer it on-chip (will allow for post-mortem dumps)
  
 Current testing status;
@@ -17,6 +16,7 @@ Current testing status;
 
  * Needs testing at higher speeds and on more CPUs
  * Needs testing on HX1K
+ * Needs width setting from `orbuculum` down to the FPGA. At the moment it's set in the FPGA verilog `toplevel.v` file and the setting on the orbuculum command line is ignored.
 
 To build it perform;
 
@@ -33,13 +33,20 @@ make ICE40HX1K_STICK_EVN
 
 ```
 
+Data is presented at 12Mbaud over the serial port of the HX8 board. You can simply copy the frames of data to somewhere with something like this;
+
+```
+cat /dev/ttyUSB1 > myfile
+```
+Note that all syncs are removed from the data flow, which allows you to convey a lot more _real_ data. By default a sync is inserted every 16 data frames...you can shorten or lengthen that internal through a parameter in `packToSerial.v` if you wish.
+
 Information on how to integrate it with orbuculum (hint, the `-o` option) is in the main README. Basically, you need to tell it that you're using the TRACE hardware and which serial port it appears on, like this;
 
 ```
 ofiles/orbuculum -o 4 -p /dev/ttyUSB1
 ```
 
-Once it's up and running you can treat it just like any other orbuculum data source. Note that you do need to set parallel trace, as opposed to SWO mode, in your setup. If you're using the gdbtrace.init file provided as part of orbuculum then this works fine for a STM32F427;
+If you include the `-m 1000` kind of option it'll tell you how full the link is too.  Once it's up and running you can treat it just like any other orbuculum data source. Note that you do need to set parallel trace, as opposed to SWO mode, in your setup. If you're using the gdbtrace.init file provided as part of orbuculum then this works fine for a STM32F427;
 
 ```
 source ~/Develop/orbuculum/Support/gdbtrace.init
@@ -82,4 +89,4 @@ LEDs
  - D2: Heartbeat. Solid red when the bitfile is loaded. Flashes while the trace collector is running.
  - D4: Overflow. Illuminated when there are too many data arriving over the trace link to be stored in local RAM prior to transmission (i.e. the off-board transmission link can't keep up).
  - D8: Tx. Flashes while data is being sent over the serial link.
- - D9: Data. A 'sticky' version of D8 which will stay illuminated for about 1.5Secs after any data.
+ - D9: Data. A 'sticky' version of D8 which will stay illuminated for about 0.7Secs after any data.

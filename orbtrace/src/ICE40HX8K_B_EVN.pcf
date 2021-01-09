@@ -11,10 +11,16 @@ set_io traceClk		H16	# J2 pin 25
 #set_frequency clkOut 96
 
 # UART connection to PC
-set_io uartrx		B10	# RX pin of FT2232H
-set_io uarttx		B12	# TX pin of FT2232H
+set_io -nowarn uartrx	B10	# RX pin of FT2232H
+set_io -nowarn uarttx	B12	# TX pin of FT2232H
 set_io cts		A15	# CTSn pin of FT2232H
 set_io rstIn            A16     # DTRn pin of FT2232H
+
+# SPI connection to PC
+set_io -nowarn SPItx    P12     # SPI MISO (B13)
+set_io -nowarn SPIrx    P11     # SPI MOSI
+set_io -nowarn SPIclk   R11     # SPI CLK
+set_io -nowarn SPIcs	R12	# SPI CS pin of FT2232H
 
 # Oscillator clock for FPGA PLL
 set_io clkIn		J3	# connected to 12MHz xtal

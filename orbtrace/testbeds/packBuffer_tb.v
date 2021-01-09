@@ -1,3 +1,4 @@
+
 // TPIU Signaling framework. 
 // From CoreSight TPIU-Lite Technical Reference Manual Revision: r0p0 
 
@@ -9,7 +10,8 @@
 //  iverilog -o r traceIF.v packBuffer.v ram.v ../testbeds/packBuffer_tb.v  ; vvp r
 
 module packBuffer_tb;
-   parameter WIDTH=4;    // 3=4 bit, 2=2 bit, 1,0=1 bit
+   parameter WIDTH=4;          // 3=4 bit, 2=2 bit, 1,0=1 bit
+   parameter BUFFLENLOG2=9;    // Depth of packet frame buffer (512 packets)
 
    parameter chunksize=(WIDTH==3)?3:(WIDTH==2)?1:0;
 
@@ -25,7 +27,7 @@ module packBuffer_tb;
    wire        PkAvail_tb;
    wire [127:0] dout_tb;
 
-traceIF DUT (
+traceIF traceIF_tb (
 		.rst(rst_tb),                  // Reset synchronised to clock
 
 	// Downwards interface to the trace pins
@@ -41,10 +43,11 @@ traceIF DUT (
 
    wire [127:0] frame_tb;
    reg          frameNext_tb;
-   wire         frameReady_tb;
+   wire [BUFFLENLOG2-1:0] framesCnt_tb;          // No of frames available
+   wire         frameReady_tb = (framesCnt_tb!=0);
    wire         dataOverf_tb;
 
-packBuffer packBuffer_DUT (
+packBuffer #(.BUFFLENLOG2(BUFFLENLOG2)) packBuffer_DUT (
                 .clk(clk_tb),
                 .rst(rst_tb),
                 
@@ -56,7 +59,7 @@ packBuffer packBuffer_DUT (
 		.Frame(frame_tb),               // Output frame
 
 		.FrameNext(frameNext_tb),       // Request for next data element
-		.FrameReady(frameReady_tb),     // Next data element is available
+		.FramesCnt(framesCnt_tb),       // Number of data elements available
 
 		.DataOverf(dataOverf_tb)        // Too much data in buffer
  		);

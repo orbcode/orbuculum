@@ -1,52 +1,53 @@
 `default_nettype none
 
 module topLevel(
-		input [3:0] 	  traceDin, // Port is always 4 bits wide, even if we use less
-		input 		  traceClk, // Supporting clock for input - must be on a global clock pin
+		input [3:0]       traceDin, // Port is always 4 bits wide, even if we use less
+		input             traceClk, // Supporting clock for input - global clock pin
+		input             rstIn,
 
-		input 		  uartrx, // Receive data into UART
-		output 		  uarttx, // Transmit data from UART 
+                // UART Connection
+		input             uartrx, // Receive data into UART
+		output            uarttx, // Transmit data from UART
 
 		// Leds....
-		output 		  data_led,
-		output 		  txInd_led, // Transmitted UART Data indication
-		output 		  txOvf_led,
-		output 		  heartbeat_led,
+		output            data_led,
+		output            txInd_led, // Transmitted UART Data indication
+		output            txOvf_led,
+		output            heartbeat_led,
 		
 		// Config and housekeeping
-		input 		  clkIn,
-		input 		  rstIn,
+		input             clkIn,
 
 		// Other indicators
-		output reg 	  D3,
-		output reg 	  D5,
-		output reg 	  D6,
-		output reg 	  D7,
-		output reg 	  cts
+		output reg        D3,
+		output reg        D5,
+		output reg        D6,
+		output reg        D7,
+		output reg        cts
 				  
-`ifdef INCLUDE_SUMP2
-                , // Include SUMP2 connections
-		input 		  uartrx,
-		output 		  uarttx,
+                                  `ifdef INCLUDE_SUMP2
+                                  , // Include SUMP2 connections
+		input             uartrx,
+		output            uarttx,
 		input wire [15:0] events_din
-`endif		
+                                  `endif
 		);      
 
 	    
    // Parameters =============================================================================
 
    parameter MAX_BUS_WIDTH=4;  // Maximum bus width that system is set for...not more than 4!! 
+   parameter BUFFLENLOG2=9;    // Depth of packet frame buffer (512 bytes)
 
    // Internals =============================================================================
 
-
-   wire 		   lock; // Indicator that PLL has locked
+   wire 		   lock;               // Indicator that PLL has locked
    wire 		   rst;
    wire 		   clk;
-   wire 		   clkOut;
-   wire 		   BtraceClk;
+   wire 		   clkOut;             // Buffered clock for use across system
+   wire 		   BtraceClk;          // Buffered trace input clock
 
-   reg                     ovf_strobe;
+   reg                     ovf_strobe;         // Strobe indicating overflow condition
 
   
 `ifdef NO_GB_IO_AVAILABLE
@@ -104,6 +105,8 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b0)) MtraceIn3
 
    wire 		    pkavail;              // Toggle of packet availability
    wire [127:0] 	    packet;               // Packet delivered from trace interface
+   reg  [1:0] 		    widthSet;             // Current width of the interface
+   wire [1:0]               widthCmd;             // Commanded width
    
   // -----------------------------------------------------------------------------------------
   traceIF #(.MAXBUSWIDTH(MAX_BUS_WIDTH)) traceif (
@@ -121,23 +124,15 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b0)) MtraceIn3
 		);		  
    
   // -----------------------------------------------------------------------------------------
-
-   wire [7:0] 		    tx_data;                // Data byte to be sent to serial
-
-   wire 		    dataReady;              // Indicator that data is available
    
-   wire 		    txFree;                 // Request for more data to tx
-   
-   wire [1:0] 		    widthSet;               // Current width of the interface
    reg                      txOvf_strobe;           // Strobe that data overflowed
-
-   assign widthSet=2'b11;
 
    wire [127:0]             frame;
    wire                     frameNext;
+   wire [BUFFLENLOG2-1:0]   framesCnt;              // No of frames available
    wire                     frameReady;
    
-   packBuffer marshall (
+   packBuffer #(.BUFFLENLOG2(BUFFLENLOG2)) marshall (
 		      .clk(clkOut), 
 		      .rst(rst), 
 
@@ -149,12 +144,18 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b0)) MtraceIn3
 		      .Frame(frame),                 // Output frame
 
 		      .FrameNext(frameNext),         // Request for next data element
-		      .FrameReady(frameReady),       // Next data element is available
+		      .FramesCnt(framesCnt),         // Number of frames available
 
            // Status indicators
                       .DataInd(data_led),            // LED indicating data sync status
                       .DataOverf(txOvf_strobe)       // Too much data in buffer
  		      );
+
+   wire                     frameReady = (framesCnt != 0);
+
+   wire 		    txFree;                 // Request for more data to tx
+   wire [7:0] 		    tx_data;                // Data byte to be sent to serial
+   wire 		    dataReady;              // Indicator that data is available
 
   packToSerial serialPrepare (
 		      .clk(clkOut),
@@ -183,7 +184,7 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b0)) MtraceIn3
 	             .tx_free(txFree),               // Indicator that transmit register is available
 	             .is_transmitting(txInd_led)     // Low when transmit line is idle.
                      );
-   
+
  // Set up clock for 96Mhz with input of 12MHz
    SB_PLL40_CORE #(
 		   .FEEDBACK_PATH("SIMPLE"),
@@ -203,7 +204,7 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b0)) MtraceIn3
 
 // ========================================================================================================================
 
-   reg [25:0] 		   clkCount;
+   reg [25:0] 		   clkCount;       // Clock for heartbeat
    reg [23:0] 		   ovfCount;       // LED stretch for overflow indication
 
    assign heartbeat_led=clkCount[25];
@@ -226,8 +227,9 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b0)) MtraceIn3
 	  end
 	else
 	  begin
-             if (txOvf_strobe)
-               ovfCount<=~0;
+             widthSet<=3;                              // FIXME - this should be set from serial
+
+             if (txOvf_strobe) ovfCount<=~0;
              else
                if (ovfCount>0) ovfCount<=ovfCount-1;
 
@@ -235,13 +237,16 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b0)) MtraceIn3
 	  end // else: !if(rst)
      end // always @ (posedge clkOut)
 
-// ========================================================================================================================
-// ========================================================================================================================
-// ========================================================================================================================
+// =============================================================================================
+// =============================================================================================
+// =============================================================================================
 // SUMP SETUP
-// ========================================================================================================================
-// ========================================================================================================================
-// ========================================================================================================================
+// =============================================================================================
+// =============================================================================================
+// =============================================================================================
+//
+//    WARNING: This code has not been used for a while, and probably needs tidying.
+//
    
 `ifdef INCLUDE_SUMP2
 
@@ -497,12 +502,12 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b0)) MtraceIn3
       );  
 
 `endif
-// ========================================================================================================================
-// ========================================================================================================================
-// ========================================================================================================================
+// =====================================================================================
+// =====================================================================================
+// =====================================================================================
 // END OF SUMP2 SETUP
-// ========================================================================================================================
-// ========================================================================================================================
-// ========================================================================================================================
+// =====================================================================================
+// =====================================================================================
+// =====================================================================================
 
 endmodule // topLevel

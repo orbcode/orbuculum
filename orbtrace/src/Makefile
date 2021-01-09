@@ -1,7 +1,10 @@
 # Define the line below to get SUMP2 incorporated
-#INCLUDE_SUMP2=1
+#INCLUDE_SUMP2=1  WARNING: Probably bitrotted a bit
 
-RVAL ?= 17 #  Replace with $$RANDOM to get a randomised build
+RVAL ?= 42 # Replace with $$RANDOM to get a randomised build
+           # In general, for a release, set this to a value that
+           # results in the timing minima being met, to make life
+           # easy for people to rebuild the bitfile
 
 SUPPORTED_HARDWARE=ICE40HX8K_B_EVN ICE40HX1K_STICK_EVN
 
@@ -10,7 +13,10 @@ SUPPORTED_HARDWARE=ICE40HX8K_B_EVN ICE40HX1K_STICK_EVN
 BUFFER_FLAGS=
 
 
-ORB_SOURCE_FILES=toplevel.v ram.v uart.v traceIF.v packBuffer.v packToSerial.v
+ORB_SOURCE_FILES  = toplevel.v ram.v traceIF.v packBuffer.v
+ORB_SOURCE_FILES += packToSerial.v uart.v
+BUFFER_FLAGS+=-DUSE_UART_TRANSPORT
+
 SOURCE_FILES=$(ORB_SOURCE_FILES)
 
 ifdef INCLUDE_SUMP2

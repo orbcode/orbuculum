@@ -3,6 +3,9 @@
 // packToSerial
 // ============
 //
+// Take a packet from the fifo and serialise it to the output device. Intersperse the
+// flow with sync packets at a parameterised interval.
+//
 module packToSerial (
 		input            clk,
 		input            rst,

@@ -1,7 +1,14 @@
 #!/usr/bin/python3
+
+# This hack will convert a csv file into a straight datafile for
+# pumping into a test deck. The csv contains two columns; a sample
+# number and a 5 bit hex value representing the state of the four
+# trace pins and the clock pin.  The sample number is ignored and
+# the data is convered herein.
+
 binval=0
 ainval=0
-with open("fastitm.csv", "r") as infile:
+with open("slowitm.csv", "r") as infile:
     infile.readline()
     while True:
         ainval=binval

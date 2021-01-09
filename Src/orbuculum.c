@@ -94,15 +94,14 @@
 #endif
 
 #ifdef INCLUDE_FPGA_SUPPORT
+    #define FPGA_MAX_FRAMES (0x1ff)
+
     #include <libftdi1/ftdi.h>
     #include "ftdispi.h"
     #define IF_INCLUDE_FPGA_SUPPORT(...) __VA_ARGS__
-    #define FTDI_VID  (0x0403)
-    #define FTDI_PID  (0x6010)
-    #define FTDI_INTERFACE (INTERFACE_B)
-    #define FPGA_INTERFACE_SPEED (12000000)
+
+    #define FPGA_SERIAL_INTERFACE_SPEED (12000000)
     #define FPGA_HS_TRANSFER_SIZE (512)
-//    #define DUMP_FTDI_BYTES // Uncomment to get data dump of bytes from FTDI transfer
 #else
     #define IF_INCLUDE_FPGA_SUPPORT(...)
 #endif
@@ -128,6 +127,8 @@ static const struct deviceList
 #ifndef TRANSFER_SIZE
     #define TRANSFER_SIZE (4096)
 #endif
+
+//#define DUMP_BLOCK
 
 /* Record for options, either defaults or from command line */
 struct
@@ -177,6 +178,7 @@ struct
     IF_INCLUDE_FPGA_SUPPORT( struct ftdispi_context ftdifsc );
 
     uint64_t  intervalBytes;                                           /* Number of bytes transferred in current interval */
+
     pthread_t intervalThread;                                          /* Thread reporting on intervals */
     bool      ending;                                                  /* Flag indicating app is terminating */
 } _r;
@@ -574,7 +576,7 @@ int _processOptions( int argc, char *argv[] )
 
                 // ------------------------------------
                 default:
-                    genericsReport( V_ERROR, "%c" EOL, c );
+                    genericsReport( V_ERROR, "Unrecognised option '%c'" EOL, c );
                     return false;
                     // ------------------------------------
             }
@@ -587,13 +589,19 @@ int _processOptions( int argc, char *argv[] )
         return false;
     }
 
+    if ( !options.port )
+    {
+        genericsReport( V_ERROR, "Supporting serial port needs to be specified for orbtrace" EOL );
+        return false;
+    }
+
 #endif
 
     /* ... and dump the config if we're being verbose */
     genericsReport( V_INFO, "Orbuculum V" VERSION " (Git %08X %s, Built " BUILD_DATE ")" EOL, GIT_HASH, ( GIT_DIRTY ? "Dirty" : "Clean" ) );
-    IF_WITH_FIFOS( genericsReport( V_INFO, "BasePath   : %s" EOL, fifoGetChanPath( _r.f ) ) );
-    IF_WITH_FIFOS( genericsReport( V_INFO, "ForceSync  : %s" EOL, fifoGetForceITMSync( _r.f ) ? "true" : "false" ) );
-    IF_WITH_FIFOS( genericsReport( V_INFO, "Permafile  : %s" EOL, options.permafile ? "true" : "false" ) );
+    IF_WITH_FIFOS( genericsReport( V_INFO, "BasePath    : %s" EOL, fifoGetChanPath( _r.f ) ) );
+    IF_WITH_FIFOS( genericsReport( V_INFO, "ForceSync   : %s" EOL, fifoGetForceITMSync( _r.f ) ? "true" : "false" ) );
+    IF_WITH_FIFOS( genericsReport( V_INFO, "Permafile   : %s" EOL, options.permafile ? "true" : "false" ) );
 
     if ( options.intervalReportTime )
     {
@@ -614,7 +622,7 @@ int _processOptions( int argc, char *argv[] )
 
     if ( options.orbtrace )
     {
-        genericsReport( V_INFO, "Orbtrace   : %d bits width" EOL, options.orbtraceWidth );
+        genericsReport( V_INFO, "Orbtrace    : %d bits width" EOL, options.orbtraceWidth );
     }
 
 #endif
@@ -623,18 +631,18 @@ int _processOptions( int argc, char *argv[] )
 
     if ( fifoGetUseTPIU( _r.f ) )
     {
-        genericsReport( V_INFO, "Using TPIU : true (ITM on channel %d)" EOL, fifoGettpiuITMChannel( _r.f ) );
+        genericsReport( V_INFO, "Using TPIU  : true (ITM on channel %d)" EOL, fifoGettpiuITMChannel( _r.f ) );
     }
     else
     {
-        genericsReport( V_INFO, "Using TPIU : false" EOL );
+        genericsReport( V_INFO, "Using TPIU  : false" EOL );
     }
 
 #endif
 
     if ( options.file )
     {
-        genericsReport( V_INFO, "Input File : %s", options.file );
+        genericsReport( V_INFO, "Input File  : %s", options.file );
 
         if ( options.fileTerminate )
         {
@@ -647,7 +655,7 @@ int _processOptions( int argc, char *argv[] )
     }
 
 #ifdef WITH_FIFOS
-    genericsReport( V_INFO, "Channels   :" EOL );
+    genericsReport( V_INFO, "Channels    :" EOL );
 
     for ( int g = 0; g < NUM_CHANNELS; g++ )
     {
@@ -732,16 +740,32 @@ static void _processBlock( int s, unsigned char *cbw )
 
     if ( s )
     {
-        IF_WITH_NWCLIENT( nwclientSend( _r.n, s, cbw ) );
-#ifdef WITH_FIFOS
-        unsigned char *c = cbw;
+#ifdef DUMP_BLOCK
+        uint8_t *c = cbw;
+        uint32_t y = s;
 
-        while ( s-- )
+        while ( y-- )
         {
-            fifoProtocolPump( _r.f, *c++ );
+            printf( "%02X ", *c++ );
+
+            if ( !( y % 16 ) )
+            {
+                printf( EOL );
+            }
         }
 
 #endif
+        IF_WITH_NWCLIENT( nwclientSend( _r.n, s, cbw ) );
+
+#ifdef WITH_FIFOS
+
+        while ( s-- )
+        {
+            fifoProtocolPump( _r.f, *cbw++ );
+        }
+
+#endif
+
     }
 
 }
@@ -987,29 +1011,13 @@ int fpgaFeeder( void )
 
 #endif
 
-        if ( ( ret = _setSerialConfig ( f, FPGA_INTERFACE_SPEED ) ) < 0 )
+        if ( ( ret = _setSerialConfig ( f, FPGA_SERIAL_INTERFACE_SPEED ) ) < 0 )
         {
             genericsExit( ret, "fpga setSerialConfig failed" EOL );
         }
 
         while ( ( t = read( f, cbw, FPGA_HS_TRANSFER_SIZE ) ) > 0 )
         {
-#ifdef DUMP_FTDI_BYTES
-            printf( "*** %d ***" EOL, t );
-            uint8_t *c = cbw;
-            uint32_t y = t;
-
-            while ( y-- )
-            {
-                printf( "%02X ", *c++ );
-
-                if ( !( y % 20 ) )
-                {
-                    printf( EOL );
-                }
-            }
-#endif
-
             _processBlock( t, cbw );
         }
 
