@@ -1,7 +1,8 @@
 language: c
 env:
-  - WITH_FPGA=0
-  - WITH_FPGA=1
+  - WITH_UART_FEEDER=0 WITH_SPI_FEEDER=1
+  - WITH_UART_FEEDER=1 WITH_SPI_FEEDER=0  
+  - WITH_UART_FEEDER=0 WITH_SPI_FEEDER=0
 script:
   - make
 
