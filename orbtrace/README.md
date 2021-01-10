@@ -33,7 +33,9 @@ make ICE40HX1K_STICK_EVN
 
 ```
 
-Data is presented at 12Mbaud over the serial port of the HX8 board. You can simply copy the frames of data to somewhere with something like this;
+The system can be built using either an SPI or a UART transport layer. SPI gives better performance (30MHz data rate) but is even more experimental than the UART version. By default UART is built. Change the defines at the head of both the `orbuculum` and `orbtrace` makefiles to use the SPI.
+
+Using UART data is presented at 12Mbaud over the serial port of the HX8 board. You can simply copy the frames of data to somewhere with something like this;
 
 ```
 cat /dev/ttyUSB1 > myfile

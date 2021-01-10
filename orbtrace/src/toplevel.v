@@ -5,9 +5,19 @@ module topLevel(
 		input             traceClk, // Supporting clock for input - global clock pin
 		input             rstIn,
 
+`ifdef USE_UART_TRANSPORT
                 // UART Connection
 		input             uartrx, // Receive data into UART
 		output            uarttx, // Transmit data from UART
+`endif
+
+`ifdef USE_SPI_TRANSPORT
+                // SPI Connection
+                output            SPItx,
+                input             SPIrx,
+                input             SPIclk,
+                input             SPIcs,
+`endif
 
 		// Leds....
 		output            data_led,
@@ -153,6 +163,7 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b0)) MtraceIn3
 
    wire                     frameReady = (framesCnt != 0);
 
+`ifdef USE_UART_TRANSPORT
    wire 		    txFree;                 // Request for more data to tx
    wire [7:0] 		    tx_data;                // Data byte to be sent to serial
    wire 		    dataReady;              // Indicator that data is available
@@ -173,7 +184,7 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b0)) MtraceIn3
 		      .DataNext(txFree&&!dataReady)  // Request for data
  		);
    
-   uart #(.CLOCKFRQ(96_000_000), .BAUDRATE(12_000_000)) transmitter (
+   uart #(.CLOCKFRQ(96_000_000), .BAUDRATE(12_000_000)) transceiver (
 	             .clk(clkOut),                   // The master clock for this module
 	             .rst(rst),                      // Synchronous reset.
 	             .rx(uartrx),                    // Incoming serial line
@@ -184,6 +195,53 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b0)) MtraceIn3
 	             .tx_free(txFree),               // Indicator that transmit register is available
 	             .is_transmitting(txInd_led)     // Low when transmit line is idle.
                      );
+`endif
+
+`ifdef USE_SPI_TRANSPORT
+   wire [BUFFLENLOG2-1:0]   framesCnt;
+   wire [127:0]             txPacket;
+   wire                     txGetNext;
+   wire [31:0]              rxPacket;
+   wire                     pktComplete;
+
+    packToSPI SPIPrepare (
+		.clk(clkOut),
+		.rst(rst),
+
+                //.Width            // Trace port width
+                .Transmitting(txInd_led),          // Indication of transmit activity
+
+        // Downwards interface to packet buffer
+		.Frame(frame),                     // Input frame
+		.FrameNext(frameNext),             // Request for next data element
+		.FrameReady(frameReady),           // Next data element is available
+                .FramesCnt(framesCnt),             // No of frames available
+
+	// Upwards interface to SPI
+		.TxPacket(txPacket),               // Output data packet
+                .TxGetNext(txGetNext),             // Toggle to request next packet
+
+		.RxPacket(rxPacket),               // Input data packet
+		.PktComplete(pktComplete),         // Request for next data element
+                .CS(SPIcs)                         // Current Chip Select state
+		);
+
+    spi transceiver (
+	        .rst(rst),
+                .clk(clkOut),
+
+	        .Tx(SPItx),                        // Outgoing SPI serial line (MISO)
+                .Rx(SPIrx),                        // Incoming SPI serial line (MOSI)
+                .Cs(SPIcs),
+	        .DClk(SPIclk),                     // Clock for SPI
+
+	        .Tx_packet(txPacket),              // Packet to transmit
+                .TxGetNext(txGetNext),             // Toggle to request next packet
+
+                .PktComplete(pktComplete),         // Toggle indicating data received
+                .RxedFrame(rxPacket)               // The frame of data received
+	    );
+`endif
 
  // Set up clock for 96Mhz with input of 12MHz
    SB_PLL40_CORE #(

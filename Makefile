@@ -1,7 +1,12 @@
 # Optional components of the build
 WITH_NWCLIENT?=1
 WITH_FIFOS?=1
-WITH_FPGA?=1
+
+# Define only one of these
+WITH_UART_FEEDER?=1
+WITH_SPI_FEEDER?=0
+
+
 
 # Build configuration
 VERBOSE?=0
@@ -46,6 +51,19 @@ else
 GCC_DEFINE=
 DEBUG_OPTS =
 OPT_LEVEL = -O2
+endif
+
+ifeq ($(WITH_UART_FEEDER),1)
+ifeq ($(WITH_SPI_FEEDER),1)
+$(error cannot define both feeders)
+endif
+WITH_FPGA=1
+CFLAGS += -DFPGA_UART_FEEDER
+endif
+
+ifeq ($(WITH_SPI_FEEDER),1)
+WITH_FPGA=1
+CFLAGS += -DFPGA_SPI_FEEDER
 endif
 
 ifeq ($(WITH_FIFOS),1)

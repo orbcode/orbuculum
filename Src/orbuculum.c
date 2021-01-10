@@ -100,8 +100,23 @@
     #include "ftdispi.h"
     #define IF_INCLUDE_FPGA_SUPPORT(...) __VA_ARGS__
 
-    #define FPGA_SERIAL_INTERFACE_SPEED (12000000)
-    #define FPGA_HS_TRANSFER_SIZE (512)
+    #ifdef FPGA_UART_FEEDER
+        #define FPGA_SERIAL_INTERFACE_SPEED (12000000)
+        #define FPGA_HS_TRANSFER_SIZE (512)
+    #endif
+
+    #ifdef FPGA_SPI_FEEDER
+        #define FTDI_INTERFACE (INTERFACE_A)
+        #define FTDI_INTERFACE_SPEED CLOCK_MAX_SPEEDX5
+        #define FTDI_VID  (0x0403)
+        #define FTDI_PID  (0x6010)
+        #define FTDI_PACKET_SIZE  (16)
+        #define FTDI_NUM_FRAMES   (512)  // If you make this too large the driver drops frames
+        #define FTDI_HS_TRANSFER_SIZE (FTDI_PACKET_SIZE*(FTDI_NUM_FRAMES+2))
+        #define FPGA_AWAKE (0x80)
+        #define FPGA_ASLEEP (0x90)
+    #endif
+
 #else
     #define IF_INCLUDE_FPGA_SUPPORT(...)
 #endif
@@ -622,7 +637,14 @@ int _processOptions( int argc, char *argv[] )
 
     if ( options.orbtrace )
     {
-        genericsReport( V_INFO, "Orbtrace    : %d bits width" EOL, options.orbtraceWidth );
+        genericsReport( V_INFO, "Orbtrace    : %d bits width, ", options.orbtraceWidth );
+#ifdef FPGA_SPI_FEEDER
+        genericsReport( V_INFO, "SPI Feeder" EOL );
+#elif defined(FPGA_UART_FEEDER)
+        genericsReport( V_INFO, "UART Feeder" EOL );
+#else
+        genericsReport( V_INFO, "NO Feeder" EOL );
+#endif
     }
 
 #endif
@@ -744,13 +766,15 @@ static void _processBlock( int s, unsigned char *cbw )
         uint8_t *c = cbw;
         uint32_t y = s;
 
+        fprintf( stderr, EOL );
+
         while ( y-- )
         {
-            printf( "%02X ", *c++ );
+            fprintf( stderr, "%02X ", *c++ );
 
             if ( !( y % 16 ) )
             {
-                printf( EOL );
+                fprintf( stderr, EOL );
             }
         }
 
@@ -971,6 +995,7 @@ int serialFeeder( void )
 // ====================================================================================================
 #ifdef INCLUDE_FPGA_SUPPORT
 
+#ifdef FPGA_UART_FEEDER
 int fpgaFeeder( void )
 {
     int f, ret;
@@ -1026,6 +1051,128 @@ int fpgaFeeder( void )
         close( f );
     }
 }
+#endif
+// ====================================================================================================
+#ifdef FPGA_SPI_FEEDER
+
+int fpgaFeeder( void )
+
+{
+    int f;
+    int t = 0;
+    uint8_t cbw[FTDI_HS_TRANSFER_SIZE];
+
+    /* Init sequence is <INIT> <BITS> <TFR-H> <TFR-L> */
+    uint8_t initSequence[] = { 0xA5, options.orbtraceWidth - 1, 0, 0 };
+    uint32_t readableFrames = 0;
+
+    // FTDI Chip takes a little while to reset itself
+    usleep( 400000 );
+
+    _r.feederExit = false;
+
+#ifdef OSX
+    int flags;
+
+    while ( ( f = open( options.port, O_RDONLY | O_NONBLOCK ) ) < 0 )
+#else
+    while ( ( f = open( options.port, O_RDONLY ) ) < 0 )
+#endif
+    {
+        genericsReport( V_WARN, "Can't open fpga supporting serial port" EOL );
+        usleep( 500000 );
+    }
+
+
+    while ( !_r.feederExit )
+    {
+        _r.ftdi = ftdi_new();
+        ftdi_set_interface( _r.ftdi, FTDI_INTERFACE );
+
+        do
+        {
+            f = ftdi_usb_open( _r.ftdi, FTDI_VID, FTDI_PID );
+
+            if ( f < 0 )
+            {
+                genericsReport( V_WARN, "Cannot open device (%s)" EOL, ftdi_get_error_string( _r.ftdi ) );
+                usleep( 50000 );
+            }
+        }
+        while ( ( f < 0 ) && ( !_r.feederExit ) );
+
+        genericsReport( V_INFO, "Port opened" EOL );
+        f = ftdispi_open( &_r.ftdifsc, _r.ftdi, FTDI_INTERFACE );
+
+        if ( f < 0 )
+        {
+            genericsReport( V_ERROR, "Cannot open spi %d (%s)" EOL, f, ftdi_get_error_string( _r.ftdi ) );
+            return -2;
+        }
+
+        ftdispi_setmode( &_r.ftdifsc, /*CSH=*/1, /*CPOL =*/0, /*CPHA=*/0, /*LSB=*/0, /*BITMODE=*/0, FPGA_AWAKE );
+
+        ftdispi_setloopback( &_r.ftdifsc, 0 );
+
+        f = ftdispi_setclock( &_r.ftdifsc, FTDI_INTERFACE_SPEED );
+
+        if ( f < 0 )
+        {
+            genericsReport( V_ERROR, "Cannot set clockrate %d %d (%s)" EOL, f, FTDI_INTERFACE_SPEED, ftdi_get_error_string( _r.ftdi ) );
+            return -2;
+        }
+
+        genericsReport( V_INFO, "All parameters configured" EOL );
+
+        IF_WITH_FIFOS( fifoForceSync( _r.f, true ) );
+
+        /* First time through, we need to read one frame */
+
+        while ( ( !_r.feederExit ) && ( ( t = ftdispi_write_read( &_r.ftdifsc, initSequence, 4, cbw, ( readableFrames + 2 ) * FTDI_PACKET_SIZE, FPGA_AWAKE ) ) >= 0 ) )
+        {
+            ftdispi_setgpo( &_r.ftdifsc, FPGA_ASLEEP );
+
+            if ( readableFrames )
+            {
+                genericsReport( V_WARN, "RXED frame of %d packets" EOL, readableFrames );
+
+                /* We deliberately include the first element in the transfer so there's a frame sync (0xfffffff7) in the flow */
+                _processBlock( ( readableFrames + 1 )*FTDI_PACKET_SIZE, cbw );
+            }
+
+
+            /* Final protocol frame should contain number of frames available in next run */
+            if ( ( cbw[( readableFrames + 1 )*FTDI_PACKET_SIZE] != 0xA6 ) ||
+                    ( cbw[( readableFrames + 1 )*FTDI_PACKET_SIZE + 12] != 0xff ) ||
+                    ( cbw[( readableFrames + 1 )*FTDI_PACKET_SIZE + 13] != 0xff ) ||
+                    ( cbw[( readableFrames + 1 )*FTDI_PACKET_SIZE + 14] != 0xff ) ||
+                    ( cbw[( readableFrames + 1 )*FTDI_PACKET_SIZE + 15] != 0x7f ) )
+            {
+                genericsReport( V_ERROR, "Protocol error" EOL );
+
+                /* Resetting readable frames will allow us to restart the protocol */
+                readableFrames = 0;
+            }
+            else
+            {
+                readableFrames = cbw[( readableFrames + 1 ) * FTDI_PACKET_SIZE + 2] + 256 * cbw[( readableFrames + 1 ) * FTDI_PACKET_SIZE + 1];
+
+                /* Max out the readable frames in case it exceeds our buffers */
+                readableFrames = ( readableFrames > FTDI_NUM_FRAMES ) ? FTDI_NUM_FRAMES : readableFrames;
+                initSequence[2] = readableFrames / 256;
+                initSequence[3] = readableFrames & 255;
+            }
+        }
+
+        genericsReport( V_WARN, "Exit Requested (%d, %s)" EOL, t, ftdi_get_error_string( _r.ftdi ) );
+
+        ftdispi_close( &_r.ftdifsc, 1 );
+    }
+
+    return 0;
+}
+#endif
+
 #endif
 // ====================================================================================================
 int fileFeeder( void )

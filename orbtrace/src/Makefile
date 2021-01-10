@@ -1,5 +1,7 @@
 # Define the line below to get SUMP2 incorporated
 #INCLUDE_SUMP2=1  WARNING: Probably bitrotted a bit
+USE_UART_FEEDER=1
+#USE_SPI_FEEDER=1
 
 RVAL ?= 42 # Replace with $$RANDOM to get a randomised build
            # In general, for a release, set this to a value that
@@ -11,11 +13,20 @@ SUPPORTED_HARDWARE=ICE40HX8K_B_EVN ICE40HX1K_STICK_EVN
 .PHONY: all clean $(SUPPORTED_HARDWARE)
 
 BUFFER_FLAGS=
-
-
 ORB_SOURCE_FILES  = toplevel.v ram.v traceIF.v packBuffer.v
+
+ifdef USE_UART_FEEDER
+ifdef USE_SPI_FEEDER
+$(error Cannot define both feeders at the same time)
+endif
 ORB_SOURCE_FILES += packToSerial.v uart.v
-BUFFER_FLAGS+=-DUSE_UART_TRANSPORT
+BUFFER_FLAGS += -DUSE_UART_TRANSPORT
+endif
+
+ifdef USE_SPI_FEEDER
+ORB_SOURCE_FILES += packToSPI.v spi.v
+BUFFER_FLAGS += -DUSE_SPI_TRANSPORT
+endif
 
 SOURCE_FILES=$(ORB_SOURCE_FILES)
 

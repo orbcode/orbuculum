@@ -4,7 +4,7 @@ module spi (
 	    input              rst,
             input              clk,
 
-	    output  reg        Tx,            // Outgoing serial line
+	    output             Tx,            // Outgoing serial line
 	    input              Rx,
             input              Cs,
 	    input              DClk,          // Clock for transmit
@@ -75,7 +75,7 @@ module spi (
        end // else: !if(inhibited)
      end // always @ (negedge DClk, posedge inhibited)
     
-   always @(*)//posedge clk)  // Monitor CS
+   always @(*) // Monitor CS
      begin
         if (Cs) inhibited<=1'b1;
         else

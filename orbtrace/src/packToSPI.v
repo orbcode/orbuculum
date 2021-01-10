@@ -9,6 +9,7 @@ module packToSPI (
 		
         // Commands output
                 output reg [1:0] Width,            // Trace port width
+                output           Transmitting,     // Indication of transmit activity
 
         // Downwards interface to packet buffer
 		input [127:0]    Frame,            // Input frame
@@ -17,7 +18,7 @@ module packToSPI (
                 input [BUFFLENLOG2-1:0] FramesCnt, // No of frames available
 
 	// Upwards interface to SPI
-		output reg [127:0] TxPacket,       // Output data packet
+		output     [127:0] TxPacket,       // Output data packet
                 input              TxGetNext,      // Toggle to request next packet
 
 		input [31:0]       RxPacket,       // Input data packet
@@ -42,7 +43,8 @@ module packToSPI (
    reg [2:0]                       txGetNext_toggle; // Next packet tx edge detect
    reg [2:0]                       rxGotNext_toggle; // Next packet rx edge detect
 
-   wire [119:0]                    frameHeader = {(16-BUFFLENLOG2)'h0,sendCount, 68'h0,senderState, 32'hFFFFFF7F };
+   /* Frame header/footer is <NumToSend> ..... (any just we want) <Footer> */
+   wire [119:0]                    frameHeader = {(16-BUFFLENLOG2)'h0,sendCount, 8'hff,60'h0,senderState, 32'hFFFFFF7F };
 
    /* Decodes for startup frame */
    wire [7:0]                      command     = RxPacket[31 :24];
@@ -50,17 +52,16 @@ module packToSPI (
    wire [15:0]                     pksendCount = RxPacket[15 : 0];
 
    /* Frame needs to be reversed to go out of SPI port correctly */
-   wire [127:0]                    revFrame = { Frame[ 8 +: 8], Frame[  0 +: 8], Frame[ 24 +: 8], Frame[ 16 +: 8],
-                                                Frame[40 +: 8], Frame[ 32 +: 8], Frame[ 56 +: 8], Frame[ 48 +: 8],
-                                                Frame[72 +: 8], Frame[ 64 +: 8], Frame[ 88 +: 8], Frame[ 80 +: 8],
-                                                Frame[104 +: 8], Frame[96 +: 8], Frame[120 +: 8], Frame[112 +: 8] };
+   wire [127:0]                    revFrame = { Frame[  7 -: 8], Frame[ 15 -: 8], Frame[ 23 -: 8], Frame[ 31 -: 8],
+                                                Frame[ 39 -: 8], Frame[ 47 -: 8], Frame[ 55 -: 8], Frame[ 63 -: 8],
+                                                Frame[ 71 -: 8], Frame[ 79 -: 8], Frame[ 87 -: 8], Frame[ 95 -: 8],
+                                                Frame[103 +: 8], Frame[111 -: 8], Frame[119 -: 8], Frame[127 -: 8] };
    
    /* If we're not sending exhaust then we just relay the send packet */
-   assign TxPacket=(senderState==(1<<ST_SENDING_FRAMES))?Frame:{ 8'hA6, frameHeader };
-   
-   
-//{3'h0,senderState,2'h0,Width, sendCount};
+   assign TxPacket=(senderState==(1<<ST_SENDING_FRAMES))?revFrame:{ 8'hA6, frameHeader };
    // For test purposes, replace Frame with {RxPacket,3'h0,senderState,2'h0,Width, sendCount};
+
+   assign Transmitting=(senderState!=(1<<ST_IDLE));
    
    always @(posedge clk,posedge rst)
      begin
@@ -118,7 +119,6 @@ module packToSPI (
                                 end
                            end
                       end
-
                  
                (1<<ST_SENDING_FRAMES): // -- Outputting the frames --
                  begin
