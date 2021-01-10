@@ -3,11 +3,13 @@ ORBTrace Development
 
 This is the development status for the ORBTrace parallel TRACE hardware. Its very unlikely you want to be here but, just in case you do, this is built using Clifford Wolfs' icestorm toolchain and currently targets a either a lattice iCE40HX-8K board or the lattice icestick.
 
-It is work in progress, but progress is now quite good (9th Jan 2021). In theory it will work with any trace port operating up to 120MHz. I've never seen one faster.
+It is work in progress, but progress is now quite good (10th Jan 2021). In theory, on a HX1 or HX8 part, it will work with any trace port operating up to 120MHz. I've never seen one faster.  Early work on UP5K suggests it will run there up to around 50MHz, but work on that is incomplete at the moment.
 
 Outstanding development actions;
 
  * Parse TPIU packets to split out ETM data and buffer it on-chip (will allow for post-mortem dumps)
+ * Needs width setting from `orbuculum` down to the FPGA. At the moment it's set in the FPGA verilog `toplevel.v` file and the setting on the orbuculum command line is ignored.
+ * Complete UP5K (Icebreaker) support
  
 Current testing status;
 
@@ -16,7 +18,6 @@ Current testing status;
 
  * Needs testing at higher speeds and on more CPUs
  * Needs testing on HX1K
- * Needs width setting from `orbuculum` down to the FPGA. At the moment it's set in the FPGA verilog `toplevel.v` file and the setting on the orbuculum command line is ignored.
 
 To build it perform;
 
@@ -32,6 +33,8 @@ cd src
 make ICE40HX1K_STICK_EVN
 
 ```
+
+..You can also do `make ICEBREAKER` but that will just get you a broken result at the moment.
 
 The system can be built using either an SPI or a UART transport layer. SPI gives better performance (30MHz data rate) but is even more experimental than the UART version. By default UART is built. Change the defines at the head of both the `orbuculum` and `orbtrace` makefiles to use the SPI.
 

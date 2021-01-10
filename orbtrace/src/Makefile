@@ -8,7 +8,7 @@ RVAL ?= 42 # Replace with $$RANDOM to get a randomised build
            # results in the timing minima being met, to make life
            # easy for people to rebuild the bitfile
 
-SUPPORTED_HARDWARE=ICE40HX8K_B_EVN ICE40HX1K_STICK_EVN
+SUPPORTED_HARDWARE=ICE40HX8K_B_EVN ICE40HX1K_STICK_EVN ICEBREAKER
 
 .PHONY: all clean $(SUPPORTED_HARDWARE)
 
@@ -82,11 +82,18 @@ $(SUPPORTED_HARDWARE):%:%.bin
 
 ICE40HX1K_STICK_EVN.asc: DEVICE := --hx1k
 ICE40HX1K_STICK_EVN.asc: PACKAGE := tq144
+ICE40HX1K_STICK_EVN.asc: BUFFER_FLAGS += -DICE40HX1K_STICK
 ICE40HX1K_STICK_EVN.asc: traceIF_GB.json
 
 ICE40HX8K_B_EVN.asc: DEVICE := --hx8k
 ICE40HX8K_B_EVN.asc: PACKAGE := ct256
+ICE40HX8K_B_EVN.asc: BUFFER_FLAGS += -DICE40HX8K_EVN
 ICE40HX8K_B_EVN.asc: traceIF_GBIO.json
+
+ICEBREAKER.asc: DEVICE := --up5k
+ICEBREAKER.asc: PACKAGE := sg48
+ICEBREAKER.asc: BUFFER_FLAGS += -DICEBREAKER
+ICEBREAKER.asc: traceIF_GB.json
 
 # verilog synthesis stage:
 

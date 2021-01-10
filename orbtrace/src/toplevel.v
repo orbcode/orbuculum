@@ -29,10 +29,12 @@ module topLevel(
 		input             clkIn,
 
 		// Other indicators
+`ifndef ICEBREAKER                 
 		output reg        D3,
 		output reg        D5,
 		output reg        D6,
 		output reg        D7,
+`endif
 		output reg        cts
 				  
                                   `ifdef INCLUDE_SUMP2
@@ -243,13 +245,42 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b0)) MtraceIn3
 	    );
 `endif
 
- // Set up clock for 96Mhz with input of 12MHz
+`ifdef ICEBREAKER
+	SB_PLL40_2F_PAD #(
+		.DIVR(4'b0000),
+		.DIVF(7'b0111111),
+		.DIVQ(3'b100),
+		.FILTER_RANGE(3'b001),
+		.FEEDBACK_PATH("SIMPLE"),
+		.DELAY_ADJUSTMENT_MODE_FEEDBACK("FIXED"),
+		.FDA_FEEDBACK(4'b0000),
+		.SHIFTREG_DIV_MODE(2'b00),
+		.PLLOUT_SELECT_PORTA("GENCLK"),
+		.PLLOUT_SELECT_PORTB("GENCLK_HALF"),
+		.ENABLE_ICEGATE_PORTA(1'b0),
+		.ENABLE_ICEGATE_PORTB(1'b0)
+	) pll_I (
+		.PACKAGEPIN(clkIn),
+		.PLLOUTCOREA(),
+		.PLLOUTGLOBALA(clkOut),
+		.EXTFEEDBACK(1'b0),
+		.DYNAMICDELAY(8'h00),
+		.RESETB(1'b1),
+		.BYPASS(1'b0),
+		.LATCHINPUTVALUE(1'b0),
+		.LOCK(lock),
+		.SDI(1'b0),
+		.SDO(),
+		.SCLK(1'b0)
+	);
+`else // !`ifdef ICEBREAKER
+   // Setup for HX8 and HX1 parts
+   // Set up clock for 96Mhz with input of 12MHz
    SB_PLL40_CORE #(
 		   .FEEDBACK_PATH("SIMPLE"),
 		   .PLLOUT_SELECT("GENCLK"),
 		   .DIVR(4'b0000),
 		   .DIVF(7'b0111111),
-		   //.DIVQ(3'b100),
                    .DIVQ(3'b011),
 		   .FILTER_RANGE(3'b001)
 		   ) uut (
@@ -259,7 +290,7 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b0)) MtraceIn3
 			  .REFERENCECLK(clkIn),
 			  .PLLOUTCORE(clkOut)
 			  );
-
+`endif
 // ========================================================================================================================
 
    reg [25:0] 		   clkCount;       // Clock for heartbeat
@@ -278,10 +309,12 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b0)) MtraceIn3
 	     cts<=1'b0;
 	     clkCount <= ~0;
              ovfCount <= 0;
+`ifndef ICEBREAKER
 	     D3<=0;
 	     D5<=0;
 	     D6<=0;
 	     D7<=0;
+`endif
 	  end
 	else
 	  begin
