@@ -40,6 +40,7 @@ module frameBuffer (
    reg [BUFFLENLOG2-1:0]	 prevRp;           // Previous Read Element position
 
    reg [BUFFLENLOG2:0]           FramesCnt_t;      // No of frames available (pre-clock)
+                                                   // Note the extra bit is intentional!
 
    reg [25:0]                    dataIndStretch;   // Data indication stretch
    
@@ -84,6 +85,7 @@ module frameBuffer (
              // Delay frames count by one cycle to allow for RAM propagation
              FramesCnt <= FramesCnt_t;
 
+             // ... and calculate how many we've got in store (accomodate wrap-around)
              FramesCnt_t <= {1'b1,Wp}-Rp;
              
              // Check for sync
@@ -94,6 +96,7 @@ module frameBuffer (
                begin
                   // We have a new frame, we will store it no matter what
                   $display("New frame: %32x (Rp=%d, Wp=%d)",FrameIn,Rp,Wp);
+                  TotalFrames <= TotalFrames + 1;
                   dataIndStretch<=~0;
                   if (nextWp==Rp)
                     begin

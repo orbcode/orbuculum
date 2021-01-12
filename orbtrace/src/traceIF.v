@@ -21,10 +21,6 @@ module traceIF # (parameter MAXBUSWIDTH = 4) (
 	// Upwards interface to packet processor
 		output reg              FrAvail,    // Toggling indicator frame ready
 		output reg [127:0]      Frame,      // The last frame
-
-        // Statistics
-                output reg [15:0]       SyncCount   // Number of syncs detected
-
 		);		  
    
    // Internals =======================================================================
@@ -52,7 +48,6 @@ module traceIF # (parameter MAXBUSWIDTH = 4) (
         // Default status bits
 	if (rst)
 	  begin
-             SyncCount       <= 0;
              syncInd         <= 0;               // Not initially synced
 	     construct       <= 0;               // Nothing built
              elemCount       <= 0;               // No elements for this packet
@@ -72,7 +67,6 @@ module traceIF # (parameter MAXBUSWIDTH = 4) (
              if (syncPacket)
                begin
                   $display("Got sync");
-                  SyncCount <= SyncCount + 1;      // maintain stats
                   remainingClocks <= packetClocks; // We need to grab the whole packet
                   elemCount <= 0;                  // erase any partial packet
                   syncInd <= ~0;                   // ..and max the stretch count

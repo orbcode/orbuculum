@@ -66,11 +66,10 @@ enum TPIUPumpState
 struct TPIUCommsStats
 
 {
-  uint16_t pendingCount;                   /* Number of frames pending at the start of this stat report */
-  uint16_t syncCount;                      /* Number of line syncs received from target */
-  uint8_t leds;                            /* LED status bitfield */
-  uint16_t lostFrames;                     /* Number of frames lost to overflow */
-  uint32_t totalFrames;                    /* Total frames received */
+    uint16_t pendingCount;                   /* Number of frames pending at the start of this stat report */
+    uint8_t leds;                            /* LED status bitfield */
+    uint16_t lostFrames;                     /* Number of frames lost to overflow */
+    uint32_t totalFrames;                    /* Total frames received */
 };
 
 struct TPIUDecoderStats

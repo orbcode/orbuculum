@@ -99,21 +99,23 @@
     #include <libftdi1/ftdi.h>
     #include "ftdispi.h"
     #define IF_INCLUDE_FPGA_SUPPORT(...) __VA_ARGS__
+    #define FPGA_SERIAL_INTERFACE_SPEED (12000000)
 
     #ifdef FPGA_UART_FEEDER
-        #define FPGA_SERIAL_INTERFACE_SPEED (12000000)
+        #define EFFECTIVE_DATA_TRANSFER_SPEED FPGA_SERIAL_INTERFACE_SPEED
         #define FPGA_HS_TRANSFER_SIZE (512)
     #endif
 
     #ifdef FPGA_SPI_FEEDER
         #define FTDI_INTERFACE (INTERFACE_A)
         #define FTDI_INTERFACE_SPEED CLOCK_MAX_SPEEDX5
+        #define EFFECTIVE_DATA_TRANSFER_SPEED (3000000)
         #define FTDI_VID  (0x0403)
         #define FTDI_PID  (0x6010)
         #define FTDI_PACKET_SIZE  (16)
-        #define FTDI_NUM_FRAMES   (512)  // If you make this too large the driver drops frames
+        #define FTDI_NUM_FRAMES   (511)  // If you make this too large the driver drops frames
         #define FTDI_HS_TRANSFER_SIZE (FTDI_PACKET_SIZE*(FTDI_NUM_FRAMES+2))
-        #define FPGA_AWAKE (0x80)
+        #define FPGA_AWAKE  (0x80)
         #define FPGA_ASLEEP (0x90)
     #endif
 
@@ -163,6 +165,7 @@ struct
     int32_t seggerPort;                                  /* ...and port */
     char *port;                                          /* Serial host connection */
     int speed;                                           /* Speed of serial link */
+    uint32_t dataSpeed;                                  /* Effective data speed (can be less than link speed!) */
     char *file;                                          /* File host connection */
     bool fileTerminate;                                  /* Terminate when file read isn't successful */
 
@@ -401,6 +404,7 @@ int _processOptions( int argc, char *argv[] )
                 // ------------------------------------
                 case 'a':
                     options.speed = atoi( optarg );
+                    options.dataSpeed = options.speed;
                     break;
 
                     // ------------------------------------
@@ -610,6 +614,12 @@ int _processOptions( int argc, char *argv[] )
         return false;
     }
 
+    /* Override link speed as primary capacity indicator for orbtrace case */
+    if ( options.orbtrace )
+    {
+        options.dataSpeed = EFFECTIVE_DATA_TRANSFER_SPEED;
+    }
+
 #endif
 
     /* ... and dump the config if we're being verbose */
@@ -620,12 +630,22 @@ int _processOptions( int argc, char *argv[] )
 
     if ( options.intervalReportTime )
     {
-        genericsReport( V_INFO, "Report Intv : %dmS" EOL, options.intervalReportTime );
+        genericsReport( V_INFO, "Report Intv : %d mS" EOL, options.intervalReportTime );
     }
 
     if ( options.port )
     {
-        genericsReport( V_INFO, "Serial Port : %s" EOL "Serial Speed: %d" EOL, options.port, options.speed );
+        genericsReport( V_INFO, "Serial Port : %s" EOL, options.port );
+    }
+
+    if ( options.speed )
+    {
+        genericsReport( V_INFO, "Serial Speed: %d baud" EOL, options.speed );
+    }
+
+    if ( options.dataSpeed )
+    {
+        genericsReport( V_INFO, "Max Data Rt : %d bps" EOL, options.dataSpeed );
     }
 
     if ( options.seggerPort )
@@ -737,13 +757,31 @@ void *_checkInterval( void *params )
             genericsPrintf( "  %4d " C_RESET " Bits/sec ", snapInterval );
         }
 
-        if ( options.speed > 100 )
+        if ( options.dataSpeed > 100 )
         {
             /* Conversion to percentage done as a division to avoid overflow */
-            uint32_t fullPercent = ( snapInterval * 100 ) / options.speed;
+            uint32_t fullPercent = ( snapInterval * 100 ) / options.dataSpeed;
             genericsPrintf( "(" C_YELLOW " %3d%% " C_RESET "full)", ( fullPercent > 100 ) ? 100 : fullPercent );
         }
 
+#ifdef WITH_FIFOS
+
+        if ( options.orbtrace )
+        {
+            struct TPIUCommsStats *c = fifoGetCommsStats( _r.f );
+            genericsPrintf( C_RESET " LEDS: %s%s%s%s" C_RESET " Frames: "C_YELLOW "%d" C_RESET,
+                            c->leds & 1 ? C_YELLOW "d" : C_RESET "-",
+                            c->leds & 2 ? C_YELLOW "t" : C_RESET "-",
+                            c->leds & 0x20 ? C_LRED "O" : C_RESET "-",
+                            c->leds & 0x80 ? C_YELLOW "h" : C_RESET "-",
+                            c->totalFrames );
+
+            genericsReport( V_INFO, " Pending:%5d Lost:%5d",
+                            c->pendingCount,
+                            c->lostFrames );
+        }
+
+#endif
         genericsPrintf( C_RESET EOL );
     }
 
@@ -1126,20 +1164,33 @@ int fpgaFeeder( void )
 
         IF_WITH_FIFOS( fifoForceSync( _r.f, true ) );
 
-        /* First time through, we need to read one frame */
+        /* First time through, we need to read one frame. The way this protocol works is;    */
+        /* Each frame that comes from the FPGA is 16 bytes long. A frame sync is an explicit */
+        /* value that cannot appear in a frame (fffffff7) that is used to 'reset' the frame  */
+        /* counter inside the TPIU Decoder. We can 'hide' data in incomplete packets in the  */
+        /* flow...so we send a packet that goes;                                             */
+        /*           A6 HH LL .. .. .. .. .. .. .. .. .. FF FF FF F7                         */
+        /* at the end of a cluster of frames. That says (in HH LL) how many frames are *now* */
+        /* in the buffer. In the next round we then collect that many frames. This minimises */
+        /* the overhead of using the spi since we're only ever requesting frames that we     */
+        /* know contain valid data.  We also prepend that same footer to the start of a      */
+        /* cluster of frames - that way we know, independently of what has gone before, what */
+        /* is in this cluster.                                                               */
+        /* If you request too many frames (i.e. by overrunning the SPI) then you will just   */
+        /* see repeats of the footer, and those will be ignored by the protocol decoder.     */
+        /* If you _underrun_ then you might get the wrong number of frames next time around  */
+        /* again, but it'll correct.                                                         */
+        /* For the startup or reset case, we request zero frames, then we just get the header*/
+        /* and footer, and the contents of the footer allow us to get into sync.             */
+        /* (as a fringe benefit, we encode other data in the fake header too, but that is all*/
+        /* decoded in the TPIU decoder, not here.                                            */
 
         while ( ( !_r.feederExit ) && ( ( t = ftdispi_write_read( &_r.ftdifsc, initSequence, 4, cbw, ( readableFrames + 2 ) * FTDI_PACKET_SIZE, FPGA_AWAKE ) ) >= 0 ) )
         {
-            ftdispi_setgpo( &_r.ftdifsc, FPGA_ASLEEP );
+            genericsReport( V_DEBUG, "RXED frame of %d packets" EOL, readableFrames );
 
-            if ( readableFrames )
-            {
-                genericsReport( V_WARN, "RXED frame of %d packets" EOL, readableFrames );
-
-                /* We deliberately include the first element in the transfer so there's a frame sync (0xfffffff7) in the flow */
-                _processBlock( ( readableFrames + 1 )*FTDI_PACKET_SIZE, cbw );
-            }
-
+            /* We deliberately include the first element in the transfer so there's a frame sync (0xfffffff7) in the flow */
+            _processBlock( ( readableFrames + 1 )*FTDI_PACKET_SIZE, cbw );
 
             /* Final protocol frame should contain number of frames available in next run */
             if ( ( cbw[( readableFrames + 1 )*FTDI_PACKET_SIZE] != 0xA6 ) ||
@@ -1148,7 +1199,7 @@ int fpgaFeeder( void )
                     ( cbw[( readableFrames + 1 )*FTDI_PACKET_SIZE + 14] != 0xff ) ||
                     ( cbw[( readableFrames + 1 )*FTDI_PACKET_SIZE + 15] != 0x7f ) )
             {
-                genericsReport( V_ERROR, "Protocol error" EOL );
+                genericsReport( V_INFO, "Protocol error" EOL );
 
                 /* Resetting readable frames will allow us to restart the protocol */
                 readableFrames = 0;
@@ -1161,7 +1212,11 @@ int fpgaFeeder( void )
                 readableFrames = ( readableFrames > FTDI_NUM_FRAMES ) ? FTDI_NUM_FRAMES : readableFrames;
                 initSequence[2] = readableFrames / 256;
                 initSequence[3] = readableFrames & 255;
+
             }
+
+            ftdispi_setgpo( &_r.ftdifsc, FPGA_ASLEEP );
+
         }
 
         genericsReport( V_WARN, "Exit Requested (%d, %s)" EOL, t, ftdi_get_error_string( _r.ftdi ) );

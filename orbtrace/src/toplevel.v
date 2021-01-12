@@ -122,7 +122,6 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b0)) MtraceIn3
 
    wire [15:0]              lostFrames;           // Number of frames lost due to lack of space
    wire [31:0]              totalFrames;          // Number of frames received overall
-   wire [15:0]              syncCount;            // Number of received syncs
    
   // -----------------------------------------------------------------------------------------
   traceIF #(.MAXBUSWIDTH(MAX_BUS_WIDTH)) traceif (
@@ -137,10 +136,6 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b0)) MtraceIn3
            // Upwards interface to packet processor
 		   .FrAvail(pkavail),               // Toggling flag indicating next packet
 		   .Frame(packet),                  // The next packet
-
-
-           // Stats
-                   .SyncCount(syncCount)            // Number of syncs detected
 		);		  
    
   // -----------------------------------------------------------------------------------------
@@ -203,7 +198,6 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b0)) MtraceIn3
 
           // Stats out
                       .Leds(leds),                   // Led values on the board
-                      .SyncCount(syncCount),         // Number of syncs detected
                       .TotalFrames(totalFrames),     // Number of frames received
                       .LostFrames(lostFrames)        // Number of frames lost
  		);
@@ -251,7 +245,6 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b0)) MtraceIn3
 
         // Stats out
                 .Leds(leds),                       // Led values on the board
-                .SyncCount(syncCount),             // Number of syncs detected
                 .TotalFrames(totalFrames),         // Number of frames received
                 .LostFrames(lostFrames)            // Number of frames lost
 		);

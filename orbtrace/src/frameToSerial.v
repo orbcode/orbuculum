@@ -3,8 +3,8 @@
 // frameToSerial
 // ============
 //
-// Take a frame from the fifo and serialise it to the output device. Intersperse the
-// flow with sync frames at a parameterised interval.
+// Take a frame from the fifo and serialise it to the output device. Send
+// sync frames at intervals, irrespective of if there is data or not.
 //
 module frameToSerial (
 		input            clk,
@@ -23,7 +23,6 @@ module frameToSerial (
 
         // Stats out
                 input [7:0]        Leds,           // Led values on the board
-                input [15:0]       SyncCount,      // Number of syncs detected
                 input [15:0]       LostFrames,     // Number of frames lost
                 input [31:0]       TotalFrames     // Number of frames received
  		);
@@ -37,7 +36,7 @@ module frameToSerial (
 
    reg [4:0]                     count;            // Which element we are outputting?
    reg                           senderState;      // state encoding for uploader
-   reg [7:0]                     syncInterval;     // Interval between sync frames
+   reg [22:0]                    syncInterval;     // Interval between sync frames
    reg [127:0]                   frameHeader;
    
    
@@ -58,26 +57,27 @@ module frameToSerial (
 	  end
 	else
 	  begin
+             if (syncInterval!=0) syncInterval <= syncInterval - 1;
+
              // Send data to uart if possible ==========================================
              case (senderState)
                ST_IDLE: // -- Waiting for some data to become available --
                  begin
-                    if (FrameReady)
+                    if ((FrameReady) || (syncInterval==0))
                       begin
                          count<=5'h10;
                          senderState<=ST_SENDING_FRAME;
                          if (syncInterval==0)
                            begin
-                              syncInterval <= SYNC_INTERVAL;
-                              currentFrame <= {8'hA6,(16-BUFFLENLOG2)'h0,FramesCnt, SyncCount, Leds, LostFrames, TotalFrames, 32'hFFFFFF7F };
+                              syncInterval <= ~0;
+                              currentFrame <= {8'hA6,(16-BUFFLENLOG2)'h0,FramesCnt, 16'h0, Leds, LostFrames, TotalFrames, 32'hFFFFFF7F };
                            end
                          else
                            begin
                               currentFrame<=Frame;
                               FrameNext<=1'b1;
-                              syncInterval <= syncInterval - 1;
-                           end // else: !if(syncInterval==0)
-                      end // if (FrameReady)
+                           end
+                      end
                  end // case: ST_IDLE
 
                ST_SENDING_FRAME: // -- Outputting the frame --

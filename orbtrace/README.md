@@ -3,7 +3,9 @@ ORBTrace Development
 
 This is the development status for the ORBTrace parallel TRACE hardware. Its very unlikely you want to be here but, just in case you do, this is built using Clifford Wolfs' icestorm toolchain and currently targets a either a lattice iCE40HX-8K board or the lattice icestick.
 
-It is work in progress, but progress is now quite good (10th Jan 2021). In theory, on a HX1 or HX8 part, it will work with any trace port operating up to 120MHz. I've never seen one faster.  Early work on UP5K suggests it will run there up to around 50MHz, but work on that is incomplete at the moment.
+It is work in progress, but progress is quite good (12th Jan 2021). In theory, on a HX1 or HX8 part, it will work with any trace port operating up to 120MHz. I've never seen one faster.  Early work on UP5K suggests it will run there up to around 50MHz, but work on that is incomplete at the moment.
+
+This should all be viewed as experimental. There remains work to be done.
 
 Outstanding development actions;
 
@@ -36,7 +38,7 @@ make ICE40HX1K_STICK_EVN
 
 ..You can also do `make ICEBREAKER` but that will just get you a broken result at the moment.
 
-The system can be built using either an SPI or a UART transport layer. SPI gives better performance (30MHz data rate) but is even more experimental than the UART version. By default UART is built. Change the defines at the head of both the `orbuculum` and `orbtrace` makefiles to use the SPI.
+The system can be built using either an SPI or a UART transport layer. SPI is potentially capable of better performance (30MHz line rate) but `orbuculum` itself is only single threaded for data collection so the link is only about 12% used, which gives around 2.5Mbps maximum. By allowing `orbuculum` to constantly stream data we should be able to get around 21-22Mbps of end to end traffic. Change the defines at the head of both the `orbuculum` and `orbtrace` makefiles to use the SPI. Both the serial and SPI interfaces are fully tested.
 
 Using UART data is presented at 12Mbaud over the serial port of the HX8 board. You can simply copy the frames of data to somewhere with something like this;
 
@@ -51,7 +53,15 @@ Information on how to integrate it with orbuculum (hint, the `-o` option) is in 
 ofiles/orbuculum -o 4 -p /dev/ttyUSB1
 ```
 
-If you include the `-m 1000` kind of option it'll tell you how full the link is too.  Once it's up and running you can treat it just like any other orbuculum data source. Note that you do need to set parallel trace, as opposed to SWO mode, in your setup. If you're using the gdbtrace.init file provided as part of orbuculum then this works fine for a STM32F427;
+If you include the `-m 100` kind of option it'll tell you how full the link is too. We sneak some other data into those sync packets from the board, so you will also see how many 16 byte frames of data have been received and the board LED status too, something like this;
+
+```
+1.5 MBits/sec (  51% full) LEDS: d--h Frames: 1903
+```
+
+The leds are `d`ata, `t`ransmit, `O`verflow and `h`eartbeat. Higher verbosity levels will report more link information, but that's mostly for debug and diagnostic purposes.
+
+Once it's up and running you can treat it just like any other orbuculum data source. Note that you do need to set parallel trace, as opposed to SWO mode, in your setup. If you're using the gdbtrace.init file provided as part of orbuculum then this works fine for a STM32F427;
 
 ```
 source ~/Develop/orbuculum/Support/gdbtrace.init
@@ -69,9 +79,9 @@ enableSTM32TRACE 4
 
 dwtSamplePC 0
 dwtSyncTap 1
-dwtPostTap 0
+dwtPostTap 1
 dwtPostInit 1
-dwtPostReset 0
+dwtPostReset 10
 dwtCycEna 1
 dwtTraceException 1
 
@@ -91,7 +101,7 @@ Note that signal integrity is a _huge_ issue. the `enableSTM32TRACE` command tak
 LEDs
 ====
 
- - D2: Heartbeat. Solid red when the bitfile is loaded. Flashes while the trace collector is running.
- - D4: Overflow. Illuminated when there are too many data arriving over the trace link to be stored in local RAM prior to transmission (i.e. the off-board transmission link can't keep up).
- - D8: Tx. Flashes while data is being sent over the serial link.
- - D9: Data. A 'sticky' version of D8 which will stay illuminated for about 0.7Secs after any data.
+ - D2: Heartbeat. Solid red when the bitfile is loaded. Flashes while the trace collector is running. (`h` in the `orbuculum` monitor)
+ - D4: Overflow. Illuminated when there are too many data arriving over the trace link to be stored in local RAM prior to transmission (i.e. the off-board transmission link can't keep up), `O` in the monitor.
+ - D8: Tx. Flashes while data is being sent over the serial link, `t` in the monitor.
+ - D9: Data. A 'sticky' version of D8 which will stay illuminated for about 0.7Secs after any data, `d` in the monitor.

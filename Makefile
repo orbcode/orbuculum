@@ -4,7 +4,7 @@ WITH_FIFOS?=1
 
 # Define only one of these
 WITH_UART_FEEDER?=1
-WITH_SPI_FEEDER?=0
+#WITH_SPI_FEEDER?=1
 
 
 

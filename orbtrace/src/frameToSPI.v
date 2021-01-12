@@ -43,7 +43,6 @@ module frameToSPI (
 
         // Stats out
                 input [7:0]        Leds,           // Led values on the board
-                input [15:0]       SyncCount,      // Number of syncs detected
                 input [15:0]       LostFrames,     // Number of frames lost
                 input [31:0]       TotalFrames     // Number of frames received
  		);
@@ -65,9 +64,6 @@ module frameToSPI (
    reg [2:0]                       txGetNext_toggle; // Next packet tx edge detect
    reg [2:0]                       rxGotNext_toggle; // Next packet rx edge detect
 
-   /* Frame header/footer is <NumToSend> ..... (any just we want) <Footer> */
-   wire [119:0]                    frameHeader = {(16-BUFFLENLOG2)'h0,sendCount, SyncCount, Leds, 8'h00, LostFrames, TotalFrames, 32'hFFFFFF7F };
-
    /* Decodes for startup frame */
    wire [7:0]                      command     = RxPacket[31 :24];
    wire [1:0]                      pkWidth     = RxPacket[17 :16];
@@ -88,7 +84,7 @@ module frameToSPI (
 	  end
 	else
 	  begin
-             TxFrame<=(senderState==ST_SENDING_FRAMES)?Frame:{ 8'hA6, frameHeader };
+             TxFrame <= (senderState==ST_SENDING_FRAMES)?Frame:{8'hA6,(16-BUFFLENLOG2)'h0,FramesCnt, 16'h0, Leds, LostFrames, TotalFrames, 32'hFFFFFF7F };
              txGetNext_toggle <= { txGetNext_toggle[1:0], TxGetNext };
              rxGotNext_toggle <= { rxGotNext_toggle[1:0], PktComplete };
 
