@@ -46,6 +46,7 @@
 #define HALFSYNC_LOW  0XFF
 #define NO_CHANNEL_CHANGE (0xFF)
 #define TIMEOUT (3)
+#define STAT_SYNC_BYTE (0xA6)
 
 // ====================================================================================================
 void TPIUDecoderInit( struct TPIUDecoder *t )
@@ -152,6 +153,25 @@ bool TPIUGetPacket( struct TPIUDecoder *t, struct TPIUPacket *p )
     return true;
 }
 // ====================================================================================================
+struct TPIUCommsStats *TPIUGetCommsStats( struct TPIUDecoder *t )
+
+{
+  return &t->commsStats;
+}
+
+// ====================================================================================================
+void _decodeCommsStats( struct TPIUDecoder *t )
+
+/* Decode received communication stats into transfer buffer */
+
+{
+  t->commsStats.pendingCount = (t->rxedPacket[1]<<8)|t->rxedPacket[2];
+  t->commsStats.syncCount    = (t->rxedPacket[3]<<8)|t->rxedPacket[4];
+  t->commsStats.leds         = t->rxedPacket[5];
+  t->commsStats.lostFrames   = (t->rxedPacket[6]<<8)|t->rxedPacket[7];
+  t->commsStats.totalFrames  = (t->rxedPacket[8]<<24)|(t->rxedPacket[9]<<16)|(t->rxedPacket[10]<<8)|(t->rxedPacket[11]);
+}
+// ====================================================================================================
 enum TPIUPumpEvent TPIUPump( struct TPIUDecoder *t, uint8_t d )
 
 /* Pump next byte into the protocol decoder */
@@ -174,6 +194,13 @@ enum TPIUPumpEvent TPIUPump( struct TPIUDecoder *t, uint8_t d )
         {
             r = TPIU_EV_NEWSYNC;
         }
+
+        /* Deal with the special state that these are communication stats from the link */
+        /* ...it is still a reset though!                                               */
+        if (( t->byteCount == 14 ) && ( t->rxedPacket[0]==STAT_SYNC_BYTE ))
+          {
+            _decodeCommsStats( t );
+          }
 
         t->state = TPIU_RXING;
         t->stats.syncCount++;

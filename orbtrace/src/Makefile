@@ -3,28 +3,30 @@
 USE_UART_FEEDER=1
 #USE_SPI_FEEDER=1
 
-RVAL ?= 42 # Replace with $$RANDOM to get a randomised build
+RVAL ?= 7844 # Replace with $$RANDOM to get a randomised build
            # In general, for a release, set this to a value that
            # results in the timing minima being met, to make life
            # easy for people to rebuild the bitfile
+
+$(echo Build number is $RVAL)
 
 SUPPORTED_HARDWARE=ICE40HX8K_B_EVN ICE40HX1K_STICK_EVN ICEBREAKER
 
 .PHONY: all clean $(SUPPORTED_HARDWARE)
 
 BUFFER_FLAGS=
-ORB_SOURCE_FILES  = toplevel.v ram.v traceIF.v packBuffer.v
+ORB_SOURCE_FILES  = toplevel.v ram.v traceIF.v frameBuffer.v
 
 ifdef USE_UART_FEEDER
 ifdef USE_SPI_FEEDER
 $(error Cannot define both feeders at the same time)
 endif
-ORB_SOURCE_FILES += packToSerial.v uart.v
+ORB_SOURCE_FILES += frameToSerial.v uart.v
 BUFFER_FLAGS += -DUSE_UART_TRANSPORT
 endif
 
 ifdef USE_SPI_FEEDER
-ORB_SOURCE_FILES += packToSPI.v spi.v
+ORB_SOURCE_FILES += frameToSPI.v spi.v
 BUFFER_FLAGS += -DUSE_SPI_TRANSPORT
 endif
 

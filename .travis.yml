@@ -15,4 +15,5 @@ addons:
     - libiberty-dev
 
 before_install:
-  - if [ "$WITH_FPGA" = 1 ]; then sudo apt install -y libftdi1-dev; fi
+  - if [ "$WITH_UART_FEEDER" = 1 ]; then sudo apt install -y libftdi1-dev; fi
+  - if [ "$WITH_SPI_FEEDER" = 1 ]; then sudo apt install -y libftdi1-dev; fi  

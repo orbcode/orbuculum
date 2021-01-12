@@ -119,6 +119,10 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b0)) MtraceIn3
    wire [127:0] 	    packet;               // Packet delivered from trace interface
    reg  [1:0] 		    widthSet;             // Current width of the interface
    wire [1:0]               widthCmd;             // Commanded width
+
+   wire [15:0]              lostFrames;           // Number of frames lost due to lack of space
+   wire [31:0]              totalFrames;          // Number of frames received overall
+   wire [15:0]              syncCount;            // Number of received syncs
    
   // -----------------------------------------------------------------------------------------
   traceIF #(.MAXBUSWIDTH(MAX_BUS_WIDTH)) traceif (
@@ -131,8 +135,12 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b0)) MtraceIn3
 		   .width(widthSet),                // Current trace buffer width 
 
            // Upwards interface to packet processor
-		   .PkAvail(pkavail),               // Toggling flag indicating next packet
-		   .Packet(packet)                  // The next packet
+		   .FrAvail(pkavail),               // Toggling flag indicating next packet
+		   .Frame(packet),                  // The next packet
+
+
+           // Stats
+                   .SyncCount(syncCount)            // Number of syncs detected
 		);		  
    
   // -----------------------------------------------------------------------------------------
@@ -143,24 +151,29 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b0)) MtraceIn3
    wire                     frameNext;
    wire [BUFFLENLOG2-1:0]   framesCnt;              // No of frames available
    wire                     frameReady;
+   wire [7:0]               leds  = { heartbeat_led, 1'b0, txOvf_led, 1'b0, 1'b0, 1'b0, txInd_led, data_led };
    
-   packBuffer #(.BUFFLENLOG2(BUFFLENLOG2)) marshall (
+   frameBuffer #(.BUFFLENLOG2(BUFFLENLOG2)) marshall (
 		      .clk(clkOut), 
 		      .rst(rst), 
 
            // Downwards interface to target interface
-		      .PkAvail(pkavail),             // Flag indicating packet is available
-		      .Packet(packet),               // The next packet
+		      .FrAvail(pkavail),             // Flag indicating frame is available
+		      .FrameIn(packet),              // The input frame for storage
 
            // Upwards interface to output handler
-		      .Frame(frame),                 // Output frame
+		      .FrameOut(frame),              // Output frame
 
 		      .FrameNext(frameNext),         // Request for next data element
 		      .FramesCnt(framesCnt),         // Number of frames available
 
            // Status indicators
                       .DataInd(data_led),            // LED indicating data sync status
-                      .DataOverf(txOvf_strobe)       // Too much data in buffer
+                      .DataOverf(txOvf_strobe),      // Too much data in buffer
+
+           // Stats
+                      .TotalFrames(totalFrames),     // Number of frames received
+                      .LostFrames(lostFrames)        // Number of frames lost
  		      );
 
    wire                     frameReady = (framesCnt != 0);
@@ -170,20 +183,29 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b0)) MtraceIn3
    wire [7:0] 		    tx_data;                // Data byte to be sent to serial
    wire 		    dataReady;              // Indicator that data is available
 
-  packToSerial serialPrepare (
+  frameToSerial #(.BUFFLENLOG2(BUFFLENLOG2)) serialPrepare (
 		      .clk(clkOut),
 		      .rst(rst),
 		
+                    //.Width(widthSet)               // Trace port width
+
 	  // Downwards interface to packet buffer
 		      .Frame(frame),                 // Input frame
 
 		      .FrameNext(frameNext),         // Request for next data element
 		      .FrameReady(frameReady),       // Next data element is available
-                     
+                      .FramesCnt(framesCnt),         // No of frames available
+
           // Upwards interface to serial handler
                       .DataVal(tx_data),             // Output data value
                       .DataReady(dataReady),
-		      .DataNext(txFree&&!dataReady)  // Request for data
+		      .DataNext(txFree&&!dataReady), // Request for data
+
+          // Stats out
+                      .Leds(leds),                   // Led values on the board
+                      .SyncCount(syncCount),         // Number of syncs detected
+                      .TotalFrames(totalFrames),     // Number of frames received
+                      .LostFrames(lostFrames)        // Number of frames lost
  		);
    
    uart #(.CLOCKFRQ(96_000_000), .BAUDRATE(12_000_000)) transceiver (
@@ -201,16 +223,16 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b0)) MtraceIn3
 
 `ifdef USE_SPI_TRANSPORT
    wire [BUFFLENLOG2-1:0]   framesCnt;
-   wire [127:0]             txPacket;
+   wire [127:0]             txFrame;
    wire                     txGetNext;
    wire [31:0]              rxPacket;
    wire                     pktComplete;
 
-    packToSPI SPIPrepare (
+   frameToSPI #(.BUFFLENLOG2(BUFFLENLOG2)) SPIPrepare (
 		.clk(clkOut),
 		.rst(rst),
 
-                //.Width            // Trace port width
+              //.Width(widthSet)                   // Trace port width
                 .Transmitting(txInd_led),          // Indication of transmit activity
 
         // Downwards interface to packet buffer
@@ -220,12 +242,18 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b0)) MtraceIn3
                 .FramesCnt(framesCnt),             // No of frames available
 
 	// Upwards interface to SPI
-		.TxPacket(txPacket),               // Output data packet
-                .TxGetNext(txGetNext),             // Toggle to request next packet
+		.TxFrame(txFrame),                 // Output data frame
+                .TxGetNext(txGetNext),             // Toggle to request next frame
 
 		.RxPacket(rxPacket),               // Input data packet
 		.PktComplete(pktComplete),         // Request for next data element
-                .CS(SPIcs)                         // Current Chip Select state
+                .CS(SPIcs),                        // Current Chip Select state
+
+        // Stats out
+                .Leds(leds),                       // Led values on the board
+                .SyncCount(syncCount),             // Number of syncs detected
+                .TotalFrames(totalFrames),         // Number of frames received
+                .LostFrames(lostFrames)            // Number of frames lost
 		);
 
     spi transceiver (
@@ -237,8 +265,8 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b0)) MtraceIn3
                 .Cs(SPIcs),
 	        .DClk(SPIclk),                     // Clock for SPI
 
-	        .Tx_packet(txPacket),              // Packet to transmit
-                .TxGetNext(txGetNext),             // Toggle to request next packet
+	        .Tx_packet(txFrame),               // Frame to transmit
+                .TxGetNext(txGetNext),             // Toggle to request next frame
 
                 .PktComplete(pktComplete),         // Toggle indicating data received
                 .RxedFrame(rxPacket)               // The frame of data received

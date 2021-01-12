@@ -63,6 +63,16 @@ enum TPIUPumpState
 
 #define TPIU_PACKET_LEN (16)
 
+struct TPIUCommsStats
+
+{
+  uint16_t pendingCount;                   /* Number of frames pending at the start of this stat report */
+  uint16_t syncCount;                      /* Number of line syncs received from target */
+  uint8_t leds;                            /* LED status bitfield */
+  uint16_t lostFrames;                     /* Number of frames lost to overflow */
+  uint32_t totalFrames;                    /* Total frames received */
+};
+
 struct TPIUDecoderStats
 {
     uint32_t lostSync;                     /* Number of times sync has been lost */
@@ -82,7 +92,8 @@ struct TPIUDecoder
     bool got_lowbits;                      /* Indicator that we've already got the low bits */
     uint8_t rxedPacket[TPIU_PACKET_LEN];   /* Packet currently under construction */
 
-    struct TPIUDecoderStats stats;         /* Record of comms stats */
+    struct TPIUDecoderStats stats;         /* Record of decoder stats */
+    struct TPIUCommsStats commsStats;      /* Record of Comms stats */
 };
 
 struct TPIUPacket
@@ -101,8 +112,8 @@ bool TPIUGetPacket( struct TPIUDecoder *t, struct TPIUPacket *p );
 void TPIUDecoderZeroStats( struct TPIUDecoder *t );
 bool TPIUDecoderSynced( struct TPIUDecoder *t );
 struct TPIUDecoderStats *TPIUDecoderGetStats( struct TPIUDecoder *t );
+struct TPIUCommsStats *TPIUGetCommsStats( struct TPIUDecoder *t );
 enum TPIUPumpEvent TPIUPump( struct TPIUDecoder *t, uint8_t d );
-
 void TPIUDecoderInit( struct TPIUDecoder *t );
 // ====================================================================================================
 #ifdef __cplusplus

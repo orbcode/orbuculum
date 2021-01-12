@@ -683,7 +683,12 @@ int fifoGettpiuITMChannel( struct fifosHandle *f )
 {
     return f->tpiuITMChannel;
 }
+// ====================================================================================================
+struct TPIUCommsStats *fifoGetCommsStats( struct fifosHandle *f )
 
+{
+  return TPIUGetCommsStats( &f->t );
+}
 // ====================================================================================================
 // Main interface components
 // ====================================================================================================

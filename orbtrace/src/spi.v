@@ -62,7 +62,7 @@ module spi (
           tx_data<={tx_data[126:0],1'b0};     // In the absence of other, move tx along
 
           /* Toggle to get next data ready */
-          if (bitcount==126) TxGetNext<=!TxGetNext;             
+          if (bitcount==96) TxGetNext<=!TxGetNext;
 
           /* When we reach zero we will need to start shifting tx data in */
           /* this is done early because of the pipelining effects         */
