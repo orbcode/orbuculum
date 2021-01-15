@@ -61,7 +61,6 @@ module topLevel(
 
    reg                     ovf_strobe;         // Strobe indicating overflow condition
 
-  
 `ifdef NO_GB_IO_AVAILABLE
 // standard input pin for trace clock,
 // then route it into an internal global buffer.
@@ -132,6 +131,7 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b0)) MtraceIn3
                    .traceDinb(tTraceDinb),          // Tracedata falling edge (LSB) ... 1-n bits
                    .traceClkin(BtraceClk),          // Tracedata clock
 		   .width(widthSet),                // Current trace buffer width 
+                   .edgeOutput(D5),                 // DIAGNOSTIC for inverted sync
 
            // Upwards interface to packet processor
 		   .FrAvail(pkavail),               // Toggling flag indicating next packet
@@ -146,7 +146,7 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b0)) MtraceIn3
    wire                     frameNext;
    wire [BUFFLENLOG2-1:0]   framesCnt;              // No of frames available
    wire                     frameReady;
-   wire [7:0]               leds  = { heartbeat_led, 1'b0, txOvf_led, 1'b0, 1'b0, 1'b0, txInd_led, data_led };
+   wire [7:0]               leds  = { heartbeat_led, D5, txOvf_led, 1'b0, 1'b0, 1'b0, txInd_led, data_led };
    
    frameBuffer #(.BUFFLENLOG2(BUFFLENLOG2)) marshall (
 		      .clk(clkOut), 
@@ -332,7 +332,7 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b0)) MtraceIn3
              ovfCount <= 0;
 `ifndef ICEBREAKER
 	     D3<=0;
-	     D5<=0;
+//	     D5<=0;                                    // Temporarily set from traceIF for low edge sync
 	     D6<=0;
 	     D7<=0;
 `endif

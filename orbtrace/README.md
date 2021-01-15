@@ -1,9 +1,9 @@
 ORBTrace Development
 ====================
 
-This is the development status for the ORBTrace parallel TRACE hardware. Its very unlikely you want to be here but, just in case you do, this is built using Clifford Wolfs' icestorm toolchain and currently targets a either a lattice iCE40HX-8K board or the lattice icestick.
+This is the development status for the ORBTrace parallel TRACE hardware. You're only here 'cos you're brave. This is built using Clifford Wolfs' icestorm toolchain and currently targets a either a lattice iCE40HX-8K board or the lattice icestick.
 
-It is work in progress, but progress is quite good (12th Jan 2021). In theory, on a HX1 or HX8 part, it will work with any trace port operating up to 120MHz. I've never seen one faster.  Early work on UP5K suggests it will run there up to around 50MHz, but work on that is incomplete at the moment.
+This is now mostly complete (15th Jan 2021). In theory, on a HX1 or HX8 part, it will work with any trace port operating up to 120MHz. I've never seen one faster.  Early work on UP5K suggests it will run there up to around 50MHz, but work on that is incomplete at the moment.
 
 This should all be viewed as experimental. There remains work to be done.
 
@@ -16,7 +16,9 @@ Outstanding development actions;
 Current testing status;
 
  * Tested on ICE40HX8K at 1, 2 & 4 bit depths
+ * Tested against Rising Edge and Falling edge synced flows
  * Tested with STM32F427 CPU running at 16MHz & 160MHz.
+ * Tested with NRF5340 running at 32MHz
 
  * Needs testing at higher speeds and on more CPUs
  * Needs testing on HX1K
@@ -45,7 +47,7 @@ Using UART data is presented at 12Mbaud over the serial port of the HX8 board. Y
 ```
 cat /dev/ttyUSB1 > myfile
 ```
-Note that all syncs are removed from the data flow, which allows you to convey a lot more _real_ data. By default a sync is inserted every 16 data frames...you can shorten or lengthen that internal through a parameter in `packToSerial.v` if you wish.
+Note that all syncs are removed from the data flow, which allows you to convey a lot more _real_ data. By default a sync is inserted every now and again, which keeps the UI sync'ed with the board.
 
 Information on how to integrate it with orbuculum (hint, the `-o` option) is in the main README. Basically, you need to tell it that you're using the TRACE hardware and which serial port it appears on, like this;
 
@@ -53,7 +55,7 @@ Information on how to integrate it with orbuculum (hint, the `-o` option) is in 
 ofiles/orbuculum -o 4 -p /dev/ttyUSB1
 ```
 
-If you include the `-m 100` kind of option it'll tell you how full the link is too. We sneak some other data into those sync packets from the board, so you will also see how many 16 byte frames of data have been received and the board LED status too, something like this;
+Note that the actual value of the `-o` parameter is currently ignored (the width is whatever is set in the bitfile). If you include the `-m 100` kind of option it'll tell you how full the link is too. We sneak some other data into those sync packets from the board, so you will also see how many 16 byte frames of data have been received and the board LED status too, something like this;
 
 ```
 1.5 MBits/sec (  51% full) LEDS: d--h Frames: 1903
@@ -77,7 +79,9 @@ monitor reset
 # This line for parallel trace output
 enableSTM32TRACE 4
 
-dwtSamplePC 0
+# For NRF use 'enableNRFTRACE 4' instead
+
+dwtSamplePC 1
 dwtSyncTap 1
 dwtPostTap 1
 dwtPostInit 1
@@ -103,5 +107,7 @@ LEDs
 
  - D2: Heartbeat. Solid red when the bitfile is loaded. Flashes while the trace collector is running. (`h` in the `orbuculum` monitor)
  - D4: Overflow. Illuminated when there are too many data arriving over the trace link to be stored in local RAM prior to transmission (i.e. the off-board transmission link can't keep up), `O` in the monitor.
+ - D5: FallingEdge. (Diagnostic). Used to indicate that the link is synced to the falling edge rather than the rising one. Completely unimportant to end users, but very important to me...I will ask you for the state of this LED if you need support!
  - D8: Tx. Flashes while data is being sent over the serial link, `t` in the monitor.
  - D9: Data. A 'sticky' version of D8 which will stay illuminated for about 0.7Secs after any data, `d` in the monitor.
+ 

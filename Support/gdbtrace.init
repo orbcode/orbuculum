@@ -19,6 +19,9 @@ IMXRT;
 SAM5X;
   enableSAMD5XSWD    : Enable SWO on SAM5X output pin on SAM5X
 
+NRF;
+  enableNRFTRACE : Start TRACE on NRF pins
+
 All;
   prepareSWO      : Prepare SWO output in specified format
 
@@ -55,20 +58,12 @@ end
 # ====================================================================
 # ====================================================================
 
-# Locations in the memory map for interesting things
-
-set $ITMBASE=0xE0000000
-set $DWTBASE=0xE0001000
-set $FPBBASE=0xE0002000
-set $SCBBASE=0xE000ED00
-set $DCBBASE=0xE000EDF0
-set $TPIUBASE=0xE0040000
-set $ETMBASE=0xE0041000
 
 # Definitions for the CPU types we currently support
 set $CPU_IMXRT102X=1
 set $CPU_STM32=2
 set $CPU_IMXRT106X=1
+set $CPU_NRF=3
 
 # Legacy fixups...lets avoid upsetting anyone too much
 
@@ -81,6 +76,41 @@ define prepareSWD
        echo prepareSWD: This command has been replaced with prepareSWO\n
        quit
 end
+# ====================================================================
+define _setAddressesSTM32
+
+# Locations in the memory map for interesting things on STM32
+set $ITMBASE=0xE0000000
+set $DWTBASE=0xE0001000
+set $CDBBASE=0xE000EDF0
+set $TPIUBASE=0xE0040000
+set $ETMBASE=0xE0041000
+end
+
+define _setAddressesIMXRT
+# Locations in the memory map for interesting things on IMXRT
+set $ITMBASE=0xE0000000
+set $DWTBASE=0xE0001000
+set $CDBBASE=0xE000EDF0
+set $TPIUBASE=0xE0040000
+set $ETMBASE=0xE0041000
+end
+
+define _setAddressesNRF
+# Locations in the memory map for interesting things on NRF
+set $ITMBASE=0xE0000000
+set $DWTBASE=0xE0001000
+set $CDBBASE=0xE000EDF0
+set $TPIUBASE=0xE0040000
+set $ETMBASE=0xE0041000
+set $CTIBASE=0xE0042000
+set $SCSBASE=0xE000E000
+set $BPUBASE=0xE0002000
+set $NRF_TAD_S=0xE0080000
+set $NRF_P0_S=0x50842500
+set $NRF_SPU_S=0x50003000
+end
+
 # ====================================================================
 define prepareSWO
   set $clockspeed=72000000
@@ -109,7 +139,7 @@ define prepareSWO
   set *($ETMBASE+0xfb0) = 0xc5acce55
 
   # Enable DEMCR TRCENA
-  set *($DCBBASE+0xC)|=(1<<24)
+  set *($CDBBASE+0xC)|=(1<<24)
 
   if ($useMan==0)
     # Use Async mode pin protocol (TPIU_SPPR)
@@ -133,7 +163,7 @@ define prepareSWO
   end
 
   # Flush all initial configuration
-  set *($DCBBASE+0xC) |= 0x1000000
+  set *($CDBBASE+0xC) |= 0x1000000
   set *($DWTBASE) = 0
   set *($ITMBASE+0xe80) = 0
 end
@@ -147,6 +177,8 @@ end
 
 # ====================================================================
 define enableIMXRT102XSWO
+
+  _setAddressesIMXRT
   # Store the CPU we are using
   set $CPU=$CPU_IMXRT102X
 
@@ -174,6 +206,7 @@ define enableIMXRT1021SWO
 end
 # ====================================================================
 define enableIMXRT106XSWO
+  _setAddressesIMXRT
   # Store the CPU we are using
   set $CPU=$CPU_IMXRT106X
 
@@ -199,6 +232,7 @@ define enableSTM32SWO
     set $tgt = $arg0
   end
   set $CPU=$CPU_STM32
+   _setAddressesSTM32
   if ($tgt==4)
     # STM32F4 variant.
     # Enable AHB1ENR
@@ -228,6 +262,8 @@ enableSTM32SWO Configure output pin on STM32 for SWO use.
 end
 # ====================================================================
 define enableSAMD5XSWD
+
+  _setAddressesSAM
   # Enable peripheral channel clock on GCLK#0
   # GCLK->PHCTRL[47] = GCLK_PCHCTRL_GEN(0)
   set *(unsigned char *)0x40001D3C = 0
@@ -245,11 +281,9 @@ end
 define _doTRACE
      # Must be called with $bits containing number of bits to set trace for
 
-     # Enable Trace TRCENA (DCB DEMCR)
-     set *($DCBBASE+0xC)=(1<<24)
-
      set *($ITMBASE+0xfb0) = 0xc5acce55
      set *($ETMBASE+0xfb0) = 0xc5acce55
+     set *($TPIUBASE+0xfb0) = 0xc5acce55
 
      # Set port size (TPIU_CSPSR)
      set *($TPIUBASE+4) = (1<<$bits)
@@ -281,6 +315,7 @@ print $drive
   set $bits = $bits-1
   set $CPU=$CPU_STM32
 
+  _setAddressesSTM32
   # Enable AHB1ENR
   set *0x40023830 |= 0x10
 
@@ -332,6 +367,9 @@ print $drive
      set *0xE0042004 |= ((3<<6) | (1<<5))
   end
 
+  # Enable Trace TRCENA (DCB DEMCR)
+  set *($CDBBASE+0xC)=(1<<24)
+
   # Finally start the trace output
   _doTRACE
 end
@@ -341,11 +379,95 @@ enableSTM32TRACE <Width>: Enable TRACE on STM32 pins
   <Drive>   : Drive strength (0=lowest, 3=highest)
 end
 # ====================================================================
+define enableNRFTRACE
+  set $bits=4
+  set $cspeed=1
+  set $drive=11
+  #11
+
+  if $argc >= 1
+    set $bits = $arg0
+  end
+    if (($bits<1) || ($bits==3) || ($bits>4))
+    help enableNRFTRACE
+  end
+
+  if $argc >= 2
+    set $drive=$arg1
+  end
+
+  if ((($drive<0) || ($drive>3)) && ($drive!=11))
+     help enableNRFTRACE
+  end
+
+  if $argc >= 3
+    set $cspeed=$arg2
+  end
+  if (( $cspeed < 0 ) || ( $cspeed > 3))
+    help enableNRFTRACE
+  end
+
+  set $bits = $bits-1
+  set $CPU=$CPU_NRF
+
+  _setAddressesNRF
+  # Actions from Section 8.9 of the manual
+  # NRF_TAD_S->ENABLE = TAD_ENABLE_ENABLE_Msk
+  set *($NRF_TAD_S+0x500) = 1
+
+  # NRF_TAD_S->CLOCKSTART = TAD_CLOCKSTART_START_Msk
+  set *($NRF_TAD_S+4) = 1
+
+  # Release permissions ( NRF_SPU_S->GPIOPORT[0].PERM )
+  # Set pins to be controlled
+  # NRF_TAD_S->PSEL.TRACECLK = TAD_PSEL_TRACECLK_PIN_Traceclk
+  # NRF_TAD_S->PSEL.TRACEDATAX = TAD_PSEL_TRACEDATA0_PIN_TracedataX
+
+  set *($NRF_SPU_S+0x4c0 ) &=~ ( (1<<12)|(1<<11) )
+
+  set *($NRF_TAD_S+0x504+0) = 12
+  set *($NRF_TAD_S+0x504+4) = 11
+  set *($NRF_P0_S + 0x200 + 4*12  ) = (7<<28) | ( $drive << 8)
+  set *($NRF_P0_S + 0x200 + 4*11  ) = (7<<28) | ( $drive << 8)
+
+  if ($bits>0)
+    set *($NRF_SPU_S+0x4c0 ) &=~ ( 1<<10 )
+
+    set *($NRF_TAD_S+0x504+8) = 10
+    set *($NRF_P0_S + 0x200 + 4*10  ) = (7<<28) | ( $drive << 8)
+
+    if ($bits>1)
+      set *($NRF_SPU_S+0x4c0 ) &=~ ( (1<<9)|(1<<8) )
+      set *($NRF_TAD_S+0x504+0x0C) = 9
+      set *($NRF_TAD_S+0x504+0x10) = 8
+      set *($NRF_P0_S + 0x200 + 4*9  ) = (7<<28) | ( $drive << 8)
+      set *($NRF_P0_S + 0x200 + 4*8  ) = (7<<28) | ( $drive << 8)
+    end
+  end
+
+
+  # NRF_TAD_S->TRACEPORTSPEED = TAD_TRACEPORTSPEED_TRACEPORTSPEED_64MHz
+  # Can be 0..3
+  set *($NRF_TAD_S+0x518) = $cspeed
+
+  # Enable Trace TRCENA (DCB DEMCR)
+  set *($CDBBASE+0xC)=(1<<24)
+
+  # Finally start the trace output
+  _doTRACE
+end
+document enableNRFTRACE
+enableNRFTRACE <Width> <drive> <speed> : Enable TRACE on NRF pins
+  <Width>   : Number of bits wide (1,2 or 4 only)
+  <Drive>   : Drive strength (0 (lowest), 1, 2, 3 or 11 (highest))
+  <Speed>   : Clock Speed (0..3, 0 fastest)
+end
+# ====================================================================
 define dwtPOSTCNT
   if ($argc!=1)
     help dwtPOSTCNT
   else
-    set *($DCBBASE+0xC) |= 0x1000000
+    set *($CDBBASE+0xC) |= 0x1000000
     if ($arg0==1)
       set *($DWTBASE) |= (1<<22)
     else
@@ -361,7 +483,7 @@ define dwtFOLDEVT
   if ($argc!=1)
     help dwtFOLDEVT
   else
-    set *($DCBBASE+0xC) |= 0x1000000
+    set *($CDBBASE+0xC) |= 0x1000000
     if ($arg0==1)
       set *($DWTBASE) |= (1<<21)
     else
@@ -377,7 +499,7 @@ define dwtLSUEVT
   if ($argc!=1)
     help dwtLSUEVT
   else
-    set *($DCBBASE+0xC) |= 0x1000000
+    set *($CDBBASE+0xC) |= 0x1000000
     if ($arg0==1)
       set *($DWTBASE) |= (1<<20)
     else
@@ -393,7 +515,7 @@ define dwtSLEEPEVT
   if ($argc!=1)
     help dwtSLEEPEVT
   else
-    set *($DCBBASE+0xC) |= 0x1000000
+    set *($CDBBASE+0xC) |= 0x1000000
     if ($arg0==1)
       set *($DWTBASE) |= (1<<19)
     else
@@ -409,7 +531,7 @@ define dwtDEVEVT
   if ($argc!=1)
     help dwtCEVEVT
   else
-    set *($DCBBASE+0xC) |= 0x1000000
+    set *($CDBBASE+0xC) |= 0x1000000
     if ($arg0==1)
       set *($DWTBASE) |= (1<<18)
     else
@@ -425,7 +547,7 @@ define dwtCPIEVT
   if ($argc!=1)
     help dwtCPIEVT
   else
-    set *($DCBBASE+0xC) |= 0x1000000
+    set *($CDBBASE+0xC) |= 0x1000000
     if ($arg0==1)
       set *($DWTBASE) |= (1<<17)
     else
@@ -441,7 +563,7 @@ define dwtTraceException
   if ($argc!=1)
     help dwtTraceException
   else
-    set *($DCBBASE+0xC) |= 0x1000000
+    set *($CDBBASE+0xC) |= 0x1000000
     if ($arg0==1)
       set *($DWTBASE) |= (1<<16)
     else
@@ -457,7 +579,7 @@ define dwtSamplePC
   if ($argc!=1)
     help dwtSamplePC
   else
-    set *($DCBBASE+0xC) |= 0x1000000
+    set *($CDBBASE+0xC) |= 0x1000000
     if ($arg0==1)
       set *($DWTBASE) |= (1<<12)
     else
@@ -473,7 +595,7 @@ define dwtSyncTap
   if (($argc!=1) || ($arg0<0) || ($arg0>3))
     help dwtSyncTap
   else
-    set *($DCBBASE|0xC) |= 0x1000000
+    set *($CDBBASE|0xC) |= 0x1000000
     set *($DWTBASE) &= ~(0x03<<10)
     set *($DWTBASE) |= (($arg0&0x03)<<10)
   end
@@ -486,7 +608,7 @@ define dwtPostTap
   if (($argc!=1) || ($arg0<0) || ($arg0>1))
     help dwtPostTap
   else
-    set *($DCBBASE|0xC) |= 0x1000000
+    set *($CDBBASE|0xC) |= 0x1000000
     if ($arg0==0)
       set *($DWTBASE) &= ~(1<<9)
     else
@@ -502,7 +624,7 @@ define dwtPostInit
   if (($argc!=1) || ($arg0<0) || ($arg0>15))
     help dwtPostInit
   else
-    set *($DCBBASE+0xC) |= 0x1000000
+    set *($CDBBASE+0xC) |= 0x1000000
     set *($DWTBASE) &= ~(0x0f<<5)    
     set *($DWTBASE) |= (($arg0&0x0f)<<5)
   end
@@ -515,7 +637,7 @@ define dwtPostReset
   if (($argc!=1) || ($arg0<0) || ($arg0>15))
     help dwtPostReset
   else
-    set *($DCBBASE+0xC) |= 0x1000000
+    set *($CDBBASE+0xC) |= 0x1000000
     set *($DWTBASE) &= ~(0x0f<<1)    
     set *($DWTBASE) |= (($arg0&0x0f)<<1)
   end
@@ -530,7 +652,7 @@ define dwtCycEna
   if ($argc!=1)
     help dwtCycEna
   else
-    set *($DCBBASE+0xC) |= 0x1000000
+    set *($CDBBASE+0xC) |= 0x1000000
     if ($arg0==1)
       set *($DWTBASE) |= (1<<0)
     else

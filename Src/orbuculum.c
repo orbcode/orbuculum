@@ -765,7 +765,7 @@ void *_checkInterval( void *params )
         }
 
 #ifdef WITH_FIFOS
-
+#ifdef INCLUDE_FPGA_SUPPORT
         if ( options.orbtrace )
         {
             struct TPIUCommsStats *c = fifoGetCommsStats( _r.f );
@@ -780,7 +780,7 @@ void *_checkInterval( void *params )
                             c->pendingCount,
                             c->lostFrames );
         }
-
+#endif
 #endif
         genericsPrintf( C_RESET EOL );
     }
