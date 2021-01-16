@@ -3,7 +3,7 @@
 USE_UART_FEEDER=1
 #USE_SPI_FEEDER=1
 
-RVAL ?= 992 # Replace with $$RANDOM to get a randomised build
+RVAL ?= 27833 # Replace with $$RANDOM to get a randomised build
            # In general, for a release, set this to a value that
            # results in the timing minima being met, to make life
            # easy for people to rebuild the bitfile

@@ -766,6 +766,7 @@ void *_checkInterval( void *params )
 
 #ifdef WITH_FIFOS
 #ifdef INCLUDE_FPGA_SUPPORT
+
         if ( options.orbtrace )
         {
             struct TPIUCommsStats *c = fifoGetCommsStats( _r.f );
@@ -780,6 +781,7 @@ void *_checkInterval( void *params )
                             c->pendingCount,
                             c->lostFrames );
         }
+
 #endif
 #endif
         genericsPrintf( C_RESET EOL );
@@ -1041,14 +1043,17 @@ int fpgaFeeder( void )
     unsigned char cbw[FPGA_HS_TRANSFER_SIZE];
     ssize_t t;
 
+    assert( ( options.orbtraceWidth == 1 ) || ( options.orbtraceWidth == 2 ) || ( options.orbtraceWidth == 4 ) );
+    uint8_t wwString[] = { 'w', 0xA0 | ( ( options.orbtraceWidth == 4 ) ? 3 : options.orbtraceWidth ) };
+
     while ( 1 )
     {
 #ifdef OSX
         int flags;
 
-        while ( ( f = open( options.port, O_RDONLY | O_NONBLOCK ) ) < 0 )
+        while ( ( f = open( options.port, O_RDWR | O_NONBLOCK ) ) < 0 )
 #else
-        while ( ( f = open( options.port, O_RDONLY ) ) < 0 )
+        while ( ( f = open( options.port, O_RDWR ) ) < 0 )
 #endif
         {
             genericsReport( V_WARN, "Can't open fpga serial port" EOL );
@@ -1074,15 +1079,29 @@ int fpgaFeeder( void )
 
 #endif
 
+
         if ( ( ret = _setSerialConfig ( f, FPGA_SERIAL_INTERFACE_SPEED ) ) < 0 )
         {
             genericsExit( ret, "fpga setSerialConfig failed" EOL );
         }
 
-        while ( ( t = read( f, cbw, FPGA_HS_TRANSFER_SIZE ) ) > 0 )
+        if ( write ( f, wwString, sizeof( wwString ) ) < 0 )
         {
+            genericsExit( ret, "Failed to set orbtrace width" EOL );
+        }
+
+        do
+        {
+            t = read( f, cbw, FPGA_HS_TRANSFER_SIZE );
+
+            if ( t < 0 )
+            {
+                break;
+            }
+
             _processBlock( t, cbw );
         }
+        while ( 1 );
 
         genericsReport( V_INFO, "fpga Read failed" EOL );
 
@@ -1100,8 +1119,9 @@ int fpgaFeeder( void )
     int t = 0;
     uint8_t cbw[FTDI_HS_TRANSFER_SIZE];
 
-    /* Init sequence is <INIT> <BITS> <TFR-H> <TFR-L> */
-    uint8_t initSequence[] = { 0xA5, options.orbtraceWidth - 1, 0, 0 };
+    /* Init sequence is <INIT> <0xA0|BITS> <TFR-H> <TFR-L> */
+    assert( ( options.orbtraceWidth == 1 ) || ( options.orbtraceWidth == 2 ) || ( options.orbtraceWidth == 4 ) );
+    uint8_t initSequence[] = { 0xA5, 0xA0 | ( ( options.orbtraceWidth == 4 ) ? 3 : options.orbtraceWidth ), 0, 0 };
     uint32_t readableFrames = 0;
 
     // FTDI Chip takes a little while to reset itself

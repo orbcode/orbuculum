@@ -9,7 +9,10 @@
 module frameToSerial (
 		input            clk,
 		input            rst,
-		
+
+        // Command and Control
+                output [1:0]     Width,            // Width setting to hardware
+
         // Downwards interface to frame buffer
 		input [127:0]    Frame,            // Input frame
 		output reg       FrameNext,        // Request for next data frame
@@ -20,6 +23,9 @@ module frameToSerial (
 		output reg [7:0] DataVal,          // Output data value
 		input            DataNext,         // Request for next data element
 		output reg       DataReady,        // Next data element is available
+
+                input            RxedEvent,        // Flag that something was received
+                input [7:0]      DataInSerial,     // Data we received over serial link
 
         // Stats out
                 input [7:0]        Leds,           // Led values on the board
@@ -38,8 +44,8 @@ module frameToSerial (
    reg                           senderState;      // state encoding for uploader
    reg [22:0]                    syncInterval;     // Interval between sync frames
    reg [127:0]                   frameHeader;
-   
-   
+   reg                           primed;           // State toggle for serial rx
+
    /* States for uploader state machine */
    parameter
      ST_IDLE           = 0,
@@ -54,6 +60,8 @@ module frameToSerial (
 	  begin
              senderState  <= ST_IDLE;
              syncInterval <= 0;
+             primed       <= 0;
+             Width        <= 2'h3;
 	  end
 	else
 	  begin
@@ -95,6 +103,25 @@ module frameToSerial (
                       end // case: senderState[ST_SENDING_FRAME]
                  end // case: ST_SENDING_FRAME
              endcase // case (senderState)
+
+             // Check for command back from UART to change width ====================
+             if (RxedEvent)
+               begin
+                  primed<=1'b0;
+                  /* If character is a 'w' then prime for second character */
+                  if (DataInSerial==8'h77) primed<=1'b1;
+                  else
+                    begin
+                       if (primed==1'b1)
+                         case (DataInSerial)
+                           8'hA0: Width<=0;
+                           8'hA1: Width<=1;
+                           8'hA2: Width<=2;
+                           8'hA3: Width<=3;
+                           default: Width<=Width;
+                         endcase // case (DataInSerial)
+                    end // else: !if(DataInSerial==8'h77)
+               end // if (RxedEvent)
           end // else: !if(rst)
      end // always @ (clk,posedge rst)
 endmodule // frameToSerial

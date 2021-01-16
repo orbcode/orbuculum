@@ -28,7 +28,7 @@ module frameBuffer (
                 output                       DataInd,     // Indicator of data status
 
                 output reg [31:0]            TotalFrames, // Number of frames received
-                output reg [31:0]            LostFrames   // Number of frames lost
+                output reg [15:0]            LostFrames   // Number of frames lost
  		);
 
    // Internals =========================================================================

@@ -23,7 +23,7 @@ module frameToSPI (
 		input            clk,
 		input            rst,
 		
-        // Commands output
+        // Command and Control
                 output reg [1:0] Width,            // Trace port width
                 output           Transmitting,     // Indication of transmit activity
 

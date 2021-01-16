@@ -177,12 +177,14 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b0)) MtraceIn3
    wire 		    txFree;                 // Request for more data to tx
    wire [7:0] 		    tx_data;                // Data byte to be sent to serial
    wire 		    dataReady;              // Indicator that data is available
+   reg [7:0]                rxSerial;               // Input from serial
+   wire                     rxedEvent;              // Indicator of a byte received
 
   frameToSerial #(.BUFFLENLOG2(BUFFLENLOG2)) serialPrepare (
 		      .clk(clkOut),
 		      .rst(rst),
 		
-                    //.Width(widthSet)               // Trace port width
+                      .Width(widthSet),              // Trace port width
 
 	  // Downwards interface to packet buffer
 		      .Frame(frame),                 // Input frame
@@ -195,6 +197,8 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b0)) MtraceIn3
                       .DataVal(tx_data),             // Output data value
                       .DataReady(dataReady),
 		      .DataNext(txFree&&!dataReady), // Request for data
+                      .RxedEvent(rxedEvent),         // Flag that something was received
+                      .DataInSerial(rxSerial),       // Data we received over serial link
 
           // Stats out
                       .Leds(leds),                   // Led values on the board
@@ -207,13 +211,16 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b0)) MtraceIn3
 	             .rst(rst),                      // Synchronous reset.
 	             .rx(uartrx),                    // Incoming serial line
 	             .tx(uarttx),                    // Outgoing serial line
+
+                     .received(rxedEvent),           // Flag that something was received
+                     .rx_byte(rxSerial),             // What we received
                      
 	             .transmit(dataReady),           // Signal to transmit
 	             .tx_byte(tx_data),              // Byte to transmit
 	             .tx_free(txFree),               // Indicator that transmit register is available
 	             .is_transmitting(txInd_led)     // Low when transmit line is idle.
-                     );
-`endif
+                  );
+`endif //  `ifdef USE_UART_TRANSPORT
 
 `ifdef USE_SPI_TRANSPORT
    wire [BUFFLENLOG2-1:0]   framesCnt;
@@ -226,7 +233,7 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b0)) MtraceIn3
 		.clk(clkOut),
 		.rst(rst),
 
-              //.Width(widthSet)                   // Trace port width
+                .Width(widthSet),                  // Trace port width
                 .Transmitting(txInd_led),          // Indication of transmit activity
 
         // Downwards interface to packet buffer
@@ -247,7 +254,7 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b0)) MtraceIn3
                 .Leds(leds),                       // Led values on the board
                 .TotalFrames(totalFrames),         // Number of frames received
                 .LostFrames(lostFrames)            // Number of frames lost
-		);
+	     );
 
     spi transceiver (
 	        .rst(rst),
@@ -339,8 +346,6 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b0)) MtraceIn3
 	  end
 	else
 	  begin
-             widthSet<=3;                              // FIXME - this should be set from serial
-
              if (txOvf_strobe) ovfCount<=~0;
              else
                if (ovfCount>0) ovfCount<=ovfCount-1;

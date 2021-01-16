@@ -3,7 +3,7 @@ ORBTrace Development
 
 This is the development status for the ORBTrace parallel TRACE hardware. You're only here 'cos you're brave. This is built using Clifford Wolfs' icestorm toolchain and currently targets a either a lattice iCE40HX-8K board or the lattice icestick.
 
-This is now mostly complete (15th Jan 2021). In theory, on a HX1 or HX8 part, it will work with any trace port operating up to 120MHz. I've never seen one faster.  Early work on UP5K suggests it will run there up to around 50MHz, but work on that is incomplete at the moment.
+This is now mostly complete (16th Jan 2021). In theory, on a HX1 or HX8 part, it will work with any trace port operating up to 106MHz. Some stroking of the logic may make it a bit faster but there's no point doing that until everything else is done.   Early work on UP5K suggests it will run there up to around 50MHz, but work on that is incomplete at the moment.
 
 This should all be viewed as experimental. There remains work to be done.
 
@@ -55,7 +55,7 @@ Information on how to integrate it with orbuculum (hint, the `-o` option) is in 
 ofiles/orbuculum -o 4 -p /dev/ttyUSB1
 ```
 
-Note that the actual value of the `-o` parameter is currently ignored (the width is whatever is set in the bitfile). If you include the `-m 100` kind of option it'll tell you how full the link is too. We sneak some other data into those sync packets from the board, so you will also see how many 16 byte frames of data have been received and the board LED status too, something like this;
+The value of the `-o` parameter sets the 'width' (i.e. number of bits) on the trace port hardware. If you include the `-m 100` kind of option it'll tell you how full the link is too. We sneak some other data into those sync packets from the board, so you will also see how many 16 byte frames of data have been received and the board LED status too, something like this;
 
 ```
 1.5 MBits/sec (  51% full) LEDS: d--h Frames: 1903
@@ -79,7 +79,7 @@ monitor reset
 # This line for parallel trace output
 enableSTM32TRACE 4
 
-# For NRF use 'enableNRFTRACE 4' instead
+# For NRF53 use 'enableNRFTRACE 4' instead
 
 dwtSamplePC 1
 dwtSyncTap 1

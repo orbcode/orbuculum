@@ -7,6 +7,10 @@ set_io traceDin[2]	E16	# J2 pin 33
 set_io traceDin[3]	F16	# J2 pin 29
 set_io traceClk		H16	# J2 pin 25
 
+# Debug pin
+set_io -nowarn N16 N16
+
+# Frequency constraints - comment these during development for pain reduction
 #set_frequency BtraceClk 120
 #set_frequency clkOut 96
 
@@ -29,7 +33,6 @@ set_io clkIn		J3	# connected to 12MHz xtal
 set_io data_led		B5	# LED0 (D9, red)
 set_io txOvf_led	C4	# LED5 (D4, red)
 set_io txInd_led	B4	# LED1 (D8, red)
-
 set_io heartbeat_led	C3	# LED7 (D2, red)
 
 # scope channels (non-standard)
