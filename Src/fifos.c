@@ -84,6 +84,14 @@
 
 #define MAX_STRING_LENGTH (100)              /* Maximum length that will be output from a fifo for a single event */
 
+struct runThreadParams                       /* Structure for parameters passed to a software task thread */
+{
+    int portNo;
+    int listenHandle;
+    bool permafile;
+    struct Channel *c;
+};
+
 struct Channel                               /* Information for an individual channel */
 {
     char *chanName;                          /* Filename to be used for the fifo */
@@ -92,7 +100,7 @@ struct Channel                               /* Information for an individual ch
     /* Runtime state */
     int handle;                              /* Handle to the fifo */
     pthread_t thread;                        /* Thread on which it's running */
-
+    struct runThreadParams params;           /* Parameters for running thread */
     char *fifoName;                          /* Constructed fifo name (from chanPath and name) */
 };
 
@@ -121,13 +129,6 @@ struct fifosHandle
     struct Channel c[NUM_CHANNELS + 1];           /* Output for each channel */
 };
 
-struct _runThreadParams                   /* Structure for parameters passed to a software task thread */
-{
-    int portNo;
-    int listenHandle;
-    bool permafile;
-    struct Channel *c;
-};
 
 // ====================================================================================================
 // ====================================================================================================
@@ -145,7 +146,7 @@ static void *_runFifo( void *arg )
 /* This is the control loop for the channel fifos (for each software port) */
 
 {
-    struct _runThreadParams *params = ( struct _runThreadParams * )arg;
+    struct runThreadParams *params = ( struct runThreadParams * )arg;
     struct Channel *c = params->c;
     struct swMsg m;
     uint32_t w;
@@ -239,10 +240,10 @@ static void *_runHWFifo( void *arg )
 /* This is the control loop for the hardware fifo */
 
 {
-    struct _runThreadParams *params = ( struct _runThreadParams * )arg;
+    struct runThreadParams *params = ( struct runThreadParams * )arg;
     struct Channel *c = params->c;
     int opfile;
-    size_t readDataLen, writeDataLen = 0;
+    size_t readDataLen = 0, writeDataLen = 0;
     uint8_t p[MAX_STRING_LENGTH];
 
     /* Remove the file if it exists */
@@ -273,7 +274,7 @@ static void *_runHWFifo( void *arg )
             /* ....get the packet, don't worry if it can't be written */
             readDataLen = read( params->listenHandle, p, MAX_STRING_LENGTH );
 
-            if ( readDataLen )
+            if ( readDataLen > 0 )
             {
                 writeDataLen = write( opfile, p, readDataLen );
             }
@@ -286,7 +287,12 @@ static void *_runHWFifo( void *arg )
 
     pthread_exit( NULL );
 }
+// ====================================================================================================
+static void _intEINTRHandler( int sig )
 
+{
+    pthread_exit( NULL );
+}
 // ====================================================================================================
 // Decoders for each message
 // ====================================================================================================
@@ -722,7 +728,6 @@ bool fifoCreate( struct fifosHandle *f )
 /* Create each sub-process that will handle a port */
 
 {
-    struct _runThreadParams *params;
     int fd[2];
 
     /* Make sure there's an initial timestamp to work with */
@@ -753,17 +758,16 @@ bool fifoCreate( struct fifosHandle *f )
 
                 f->c[t].handle = fd[1];
 
-                params = ( struct _runThreadParams * )malloc( sizeof( struct _runThreadParams ) );
-                params->listenHandle = fd[0];
-                params->portNo = t;
-                params->permafile = f->permafile;
-                params->c = &f->c[t];
+                f->c[t].params.listenHandle = fd[0];
+                f->c[t].params.portNo = t;
+                f->c[t].params.permafile = f->permafile;
+                f->c[t].params.c = &f->c[t];
 
                 f->c[t].fifoName = ( char * )malloc( strlen( f->c[t].chanName ) + strlen( f->chanPath ) + 2 );
                 strcpy( f->c[t].fifoName, f->chanPath );
                 strcat( f->c[t].fifoName, f->c[t].chanName );
 
-                if ( pthread_create( &( f->c[t].thread ), NULL, &_runFifo, params ) )
+                if ( pthread_create( &( f->c[t].thread ), NULL, &_runFifo, &f->c[t].params ) )
                 {
                     return false;
                 }
@@ -785,17 +789,16 @@ bool fifoCreate( struct fifosHandle *f )
 
             f->c[t].handle = fd[1];
 
-            params = ( struct _runThreadParams * )malloc( sizeof( struct _runThreadParams ) );
-            params->listenHandle = fd[0];
-            params->portNo = t;
-            params->permafile = f->permafile;
-            params->c = &f->c[t];
+            f->c[t].params.listenHandle = fd[0];
+            f->c[t].params.portNo = t;
+            f->c[t].params.permafile = f->permafile;
+            f->c[t].params.c = &f->c[t];
 
             f->c[t].fifoName = ( char * )malloc( strlen( HWFIFO_NAME ) + strlen( f->chanPath ) + 2 );
             strcpy( f->c[t].fifoName, f->chanPath );
             strcat( f->c[t].fifoName, HWFIFO_NAME );
 
-            if ( pthread_create( &( f->c[t].thread ), NULL, &_runHWFifo, params ) )
+            if ( pthread_create( &( f->c[t].thread ), NULL, &_runHWFifo, &f->c[t].params ) )
             {
                 return false;
             }
@@ -817,12 +820,21 @@ void fifoShutdown( struct fifosHandle *f )
         return;
     }
 
+    /* Firstly go tell everything they're doomed */
     for ( int t = 0; t < NUM_CHANNELS + 1; t++ )
     {
         if ( f->c[t].handle > 0 )
         {
             close( f->c[t].handle );
+            pthread_kill ( f->c[t].thread, EINTR );
+        }
+    }
 
+    /* ...now clean up */
+    for ( int t = 0; t < NUM_CHANNELS + 1; t++ )
+    {
+        if ( f->c[t].handle > 0 )
+        {
             clock_gettime( CLOCK_REALTIME, &ts );
             /* Wait a max of one second for the thread to exit */
             ts.tv_sec += 1;
@@ -844,7 +856,6 @@ void fifoShutdown( struct fifosHandle *f )
         {
             free( f->c[t].presFormat );
         }
-
     }
 
     free( f );
@@ -869,7 +880,6 @@ void fifoUsePermafiles( struct fifosHandle *f, bool usePermafilesSet )
     f->permafile = usePermafilesSet;
 }
 // ====================================================================================================
-
 struct fifosHandle *fifoInit( bool forceITMSyncSet, bool useTPIUSet, int TPIUchannelSet )
 
 {
@@ -878,6 +888,12 @@ struct fifosHandle *fifoInit( bool forceITMSyncSet, bool useTPIUSet, int TPIUcha
     f->useTPIU = useTPIUSet;
     f->forceITMSync = forceITMSyncSet;
     f->tpiuITMChannel = TPIUchannelSet;
+
+    /* Trap EINTR so we can use it to interrupt reads/writes in the threads */
+    if ( SIG_ERR == signal( EINTR, _intEINTRHandler ) )
+    {
+        genericsExit( -1, "Failed to establish EINTR handler" EOL );
+    }
 
     return f;
 }

@@ -109,7 +109,7 @@
     #ifdef FPGA_SPI_FEEDER
         #define FTDI_INTERFACE (INTERFACE_A)
         #define FTDI_INTERFACE_SPEED CLOCK_MAX_SPEEDX5
-        #define EFFECTIVE_DATA_TRANSFER_SPEED (3000000)
+        #define EFFECTIVE_DATA_TRANSFER_SPEED (27000000)
         #define FTDI_VID  (0x0403)
         #define FTDI_PID  (0x6010)
         #define FTDI_PACKET_SIZE  (16)
@@ -144,6 +144,7 @@ static const struct deviceList
 #ifndef TRANSFER_SIZE
     #define TRANSFER_SIZE (4096)
 #endif
+#define TRANSFER_BUFFER (200000)
 
 //#define DUMP_BLOCK
 
@@ -191,14 +192,21 @@ struct
     IF_WITH_NWCLIENT( struct nwclientsHandle *n );
 
     /* Link to the FPGA subsystem */
-    IF_INCLUDE_FPGA_SUPPORT( bool feederExit );                        /* Do we need to leave now? */
     IF_INCLUDE_FPGA_SUPPORT( struct ftdi_context *ftdi );              /* Connection materials for ftdi fpga interface */
     IF_INCLUDE_FPGA_SUPPORT( struct ftdispi_context ftdifsc );
 
     uint64_t  intervalBytes;                                           /* Number of bytes transferred in current interval */
 
+    pthread_t bufferFeederHandle;                                      /* Handle to any established buffer feeder */
+
     pthread_t intervalThread;                                          /* Thread reporting on intervals */
     bool      ending;                                                  /* Flag indicating app is terminating */
+
+    /* Transfer buffers from the receiver */
+    uint32_t wp;
+    uint32_t rp;
+    uint8_t buffer[TRANSFER_BUFFER];
+
 } _r;
 
 // ====================================================================================================
@@ -834,6 +842,85 @@ static void _processBlock( int s, unsigned char *cbw )
 
 }
 // ====================================================================================================
+static void *_bufferFeeder( void *arg )
+
+{
+  /* Pump a block of data from the buffer into the various handlers. */
+    uint32_t span;
+
+    while ( !_r.ending )
+    {
+        if ( _r.wp != _r.rp )
+        {
+            if ( _r.wp > _r.rp )
+            {
+                span = _r.wp - _r.rp;
+            }
+            else
+            {
+                span = TRANSFER_BUFFER - _r.rp;
+            }
+
+            IF_WITH_NWCLIENT( nwclientSend( _r.n, span, &_r.buffer[_r.rp] ) );
+
+#ifdef WITH_FIFOS
+
+            for ( uint32_t r = 0; r < span; r++ )
+            {
+                fifoProtocolPump( _r.f, _r.buffer[_r.rp + r] );
+            }
+
+#endif
+            _r.rp = ( _r.rp + span ) % TRANSFER_BUFFER;
+            _r.intervalBytes += span;
+        }
+        else
+        {
+            usleep( 1000 );
+        }
+    }
+
+    return 0;
+}
+// ====================================================================================================
+static void _submitBlock( uint32_t t, uint8_t *p )
+
+{
+    /* Load new frame bytes into transfer buffer */
+    uint32_t nwp = ( _r.wp + 1 ) % TRANSFER_BUFFER;
+
+    while ( t-- )
+    {
+        while ( nwp == _r.rp )
+        {
+            usleep( 10 );
+        }
+
+        _r.buffer[_r.wp] = *p++;
+        _r.wp = nwp;
+        nwp = ( nwp + 1 ) % TRANSFER_BUFFER;
+    }
+}
+// ====================================================================================================
+static void _createBufferFeeder( void )
+
+{
+    if ( pthread_create( &( _r.bufferFeederHandle ), NULL, &_bufferFeeder, NULL ) )
+    {
+        genericsExit( -1, "Failed to create buffer feeder" EOL );
+    }
+}
+// ====================================================================================================
+static void _destroyBufferFeeder( void )
+
+{
+    if ( _r.bufferFeederHandle )
+    {
+        pthread_cancel( _r.bufferFeederHandle );
+        _r.bufferFeederHandle = 0;
+    }
+}
+// ====================================================================================================
 int usbFeeder( void )
 
 {
@@ -896,7 +983,7 @@ int usbFeeder( void )
 
         genericsReport( V_DEBUG, "USB Interface claimed, ready for data" EOL );
 
-        while ( true )
+        while ( !_r.ending )
         {
             r = libusb_bulk_transfer( handle, p->ep, cbw, TRANSFER_SIZE, &size, 10 );
 
@@ -945,7 +1032,7 @@ int seggerFeeder( void )
            server->h_length );
     serv_addr.sin_port = htons( options.seggerPort );
 
-    while ( 1 )
+    while ( !_r.ending )
     {
         sockfd = socket( AF_INET, SOCK_STREAM, 0 );
         setsockopt( sockfd, SOL_SOCKET, SO_REUSEPORT, &flag, sizeof( flag ) );
@@ -956,23 +1043,31 @@ int seggerFeeder( void )
             return -1;
         }
 
-        while ( connect( sockfd, ( struct sockaddr * ) &serv_addr, sizeof( serv_addr ) ) < 0 )
+        while ( ( !_r.ending ) && ( connect( sockfd, ( struct sockaddr * ) &serv_addr, sizeof( serv_addr ) ) < 0 ) )
         {
             usleep( 500000 );
+        }
+
+        if ( _r.ending )
+        {
+            break;
         }
 
         genericsReport( V_INFO, "Established Segger Link" EOL );
 
         IF_WITH_FIFOS( fifoForceSync( _r.f, true ) );
 
-        while ( ( t = read( sockfd, cbw, TRANSFER_SIZE ) ) > 0 )
+        while ( !_r.ending && ( ( t = read( sockfd, cbw, TRANSFER_SIZE ) ) > 0 ) )
         {
             _processBlock( t, cbw );
         }
 
         close( sockfd );
 
-        genericsReport( V_INFO, "Lost Segger Link" EOL );
+        if ( ! _r.ending )
+        {
+            genericsReport( V_INFO, "Lost Segger Link" EOL );
+        }
     }
 
     return -2;
@@ -984,14 +1079,14 @@ int serialFeeder( void )
     unsigned char cbw[TRANSFER_SIZE];
     ssize_t t;
 
-    while ( 1 )
+    while ( !_r.ending )
     {
 #ifdef OSX
         int flags;
 
-        while ( ( f = open( options.port, O_RDONLY | O_NONBLOCK ) ) < 0 )
+        while ( !_r.ending && ( f = open( options.port, O_RDONLY | O_NONBLOCK ) ) < 0 )
 #else
-        while ( ( f = open( options.port, O_RDONLY ) ) < 0 )
+        while ( !_r.ending && ( f = open( options.port, O_RDONLY ) ) < 0 )
 #endif
         {
             genericsReport( V_WARN, "Can't open serial port" EOL );
@@ -1022,15 +1117,20 @@ int serialFeeder( void )
             genericsExit( ret, "setSerialConfig failed" EOL );
         }
 
-        while ( ( t = read( f, cbw, TRANSFER_SIZE ) ) > 0 )
+        while ( ( !_r.ending ) && ( t = read( f, cbw, TRANSFER_SIZE ) ) > 0 )
         {
             _processBlock( t, cbw );
         }
 
-        genericsReport( V_INFO, "Read failed" EOL );
+        if ( ! _r.ending )
+        {
+            genericsReport( V_INFO, "Read failed" EOL );
+        }
 
         close( f );
     }
+
+    return 0;
 }
 // ====================================================================================================
 #ifdef INCLUDE_FPGA_SUPPORT
@@ -1046,14 +1146,14 @@ int fpgaFeeder( void )
     assert( ( options.orbtraceWidth == 1 ) || ( options.orbtraceWidth == 2 ) || ( options.orbtraceWidth == 4 ) );
     uint8_t wwString[] = { 'w', 0xA0 | ( ( options.orbtraceWidth == 4 ) ? 3 : options.orbtraceWidth ) };
 
-    while ( 1 )
+    while ( !_r.ending )
     {
 #ifdef OSX
         int flags;
 
-        while ( ( f = open( options.port, O_RDWR | O_NONBLOCK ) ) < 0 )
+        while ( ( !_r.ending ) && ( f = open( options.port, O_RDWR | O_NONBLOCK ) ) < 0 )
 #else
-        while ( ( f = open( options.port, O_RDWR ) ) < 0 )
+        while ( ( !_r.ending ) && ( f = open( options.port, O_RDWR ) ) < 0 )
 #endif
         {
             genericsReport( V_WARN, "Can't open fpga serial port" EOL );
@@ -1090,7 +1190,7 @@ int fpgaFeeder( void )
             genericsExit( ret, "Failed to set orbtrace width" EOL );
         }
 
-        do
+        while ( !_r.ending )
         {
             t = read( f, cbw, FPGA_HS_TRANSFER_SIZE );
 
@@ -1101,12 +1201,16 @@ int fpgaFeeder( void )
 
             _processBlock( t, cbw );
         }
-        while ( 1 );
 
-        genericsReport( V_INFO, "fpga Read failed" EOL );
+        if ( !_r.ending )
+        {
+            genericsReport( V_INFO, "fpga Read failed" EOL );
+        }
 
         close( f );
     }
+
+    return 0;
 }
 #endif
 // ====================================================================================================
@@ -1116,8 +1220,8 @@ int fpgaFeeder( void )
 
 {
     int f;
+    uint8_t transferBlock[FTDI_HS_TRANSFER_SIZE];
     int t = 0;
-    uint8_t cbw[FTDI_HS_TRANSFER_SIZE];
 
     /* Init sequence is <INIT> <0xA0|BITS> <TFR-H> <TFR-L> */
     assert( ( options.orbtraceWidth == 1 ) || ( options.orbtraceWidth == 2 ) || ( options.orbtraceWidth == 4 ) );
@@ -1127,14 +1231,12 @@ int fpgaFeeder( void )
     // FTDI Chip takes a little while to reset itself
     usleep( 400000 );
 
-    _r.feederExit = false;
-
 #ifdef OSX
     int flags;
 
-    while ( ( f = open( options.port, O_RDONLY | O_NONBLOCK ) ) < 0 )
+    while ( ( !_r.ending ) && ( f = open( options.port, O_RDONLY | O_NONBLOCK ) ) < 0 )
 #else
-    while ( ( f = open( options.port, O_RDONLY ) ) < 0 )
+    while ( !( _r.ending ) && ( f = open( options.port, O_RDONLY ) ) < 0 )
 #endif
     {
         genericsReport( V_WARN, "Can't open fpga supporting serial port" EOL );
@@ -1142,7 +1244,7 @@ int fpgaFeeder( void )
     }
 
 
-    while ( !_r.feederExit )
+    while ( !_r.ending )
     {
         _r.ftdi = ftdi_new();
         ftdi_set_interface( _r.ftdi, FTDI_INTERFACE );
@@ -1157,7 +1259,7 @@ int fpgaFeeder( void )
                 usleep( 50000 );
             }
         }
-        while ( ( f < 0 ) && ( !_r.feederExit ) );
+        while ( ( f < 0 ) && ( !_r.ending ) );
 
         genericsReport( V_INFO, "Port opened" EOL );
         f = ftdispi_open( &_r.ftdifsc, _r.ftdi, FTDI_INTERFACE );
@@ -1168,7 +1270,7 @@ int fpgaFeeder( void )
             return -2;
         }
 
-        ftdispi_setmode( &_r.ftdifsc, /*CSH=*/1, /*CPOL =*/0, /*CPHA=*/0, /*LSB=*/0, /*BITMODE=*/0, FPGA_AWAKE );
+        ftdispi_setmode( &_r.ftdifsc, /*CSH=*/1, /*CPOL =*/0, /*CPHA=*/0, /*LSB=*/0, /*BITMODE=*/0, FPGA_ASLEEP );
 
         ftdispi_setloopback( &_r.ftdifsc, 0 );
 
@@ -1183,6 +1285,8 @@ int fpgaFeeder( void )
         genericsReport( V_INFO, "All parameters configured" EOL );
 
         IF_WITH_FIFOS( fifoForceSync( _r.f, true ) );
+
+        _createBufferFeeder();
 
         /* First time through, we need to read one frame. The way this protocol works is;    */
         /* Each frame that comes from the FPGA is 16 bytes long. A frame sync is an explicit */
@@ -1205,19 +1309,31 @@ int fpgaFeeder( void )
         /* (as a fringe benefit, we encode other data in the fake header too, but that is all*/
         /* decoded in the TPIU decoder, not here.                                            */
 
-        while ( ( !_r.feederExit ) && ( ( t = ftdispi_write_read( &_r.ftdifsc, initSequence, 4, cbw, ( readableFrames + 2 ) * FTDI_PACKET_SIZE, FPGA_AWAKE ) ) >= 0 ) )
+        /* SPI will wake up for duration of read, then back to sleep again */
+        while ( !_r.ending )
         {
+            /* Try and read some data */
+            t = ftdispi_write_read( &_r.ftdifsc, initSequence, 4,
+                                    transferBlock,
+                                    ( readableFrames + 2 ) * FTDI_PACKET_SIZE,
+                                    FPGA_AWAKE );
+
+            if ( t < 0 )
+            {
+                break;
+            }
+
             genericsReport( V_DEBUG, "RXED frame of %d packets" EOL, readableFrames );
 
             /* We deliberately include the first element in the transfer so there's a frame sync (0xfffffff7) in the flow */
-            _processBlock( ( readableFrames + 1 )*FTDI_PACKET_SIZE, cbw );
+            _submitBlock( ( readableFrames + 1 )*FTDI_PACKET_SIZE, transferBlock );
+
+            /* Get pointer to after last valid frame */
+            uint8_t *cbw = &transferBlock[ ( readableFrames + 1 ) * FTDI_PACKET_SIZE ];
 
             /* Final protocol frame should contain number of frames available in next run */
-            if ( ( cbw[( readableFrames + 1 )*FTDI_PACKET_SIZE] != 0xA6 ) ||
-                    ( cbw[( readableFrames + 1 )*FTDI_PACKET_SIZE + 12] != 0xff ) ||
-                    ( cbw[( readableFrames + 1 )*FTDI_PACKET_SIZE + 13] != 0xff ) ||
-                    ( cbw[( readableFrames + 1 )*FTDI_PACKET_SIZE + 14] != 0xff ) ||
-                    ( cbw[( readableFrames + 1 )*FTDI_PACKET_SIZE + 15] != 0x7f ) )
+            if ( ( *cbw != 0xA6 ) || ( *( cbw + 12 ) != 0xff ) || ( *( cbw + 13 ) != 0xff ) ||
+                    ( *( cbw + 14 ) != 0xff ) || ( *( cbw + 15 ) != 0x7f ) )
             {
                 genericsReport( V_INFO, "Protocol error" EOL );
 
@@ -1226,24 +1342,24 @@ int fpgaFeeder( void )
             }
             else
             {
-                readableFrames = cbw[( readableFrames + 1 ) * FTDI_PACKET_SIZE + 2] + 256 * cbw[( readableFrames + 1 ) * FTDI_PACKET_SIZE + 1];
+                readableFrames = ( *( cbw + 2 ) ) + 256 * ( *( cbw + 1 ) );
 
                 /* Max out the readable frames in case it exceeds our buffers */
                 readableFrames = ( readableFrames > FTDI_NUM_FRAMES ) ? FTDI_NUM_FRAMES : readableFrames;
                 initSequence[2] = readableFrames / 256;
                 initSequence[3] = readableFrames & 255;
-
             }
-
-            ftdispi_setgpo( &_r.ftdifsc, FPGA_ASLEEP );
-
         }
 
-        genericsReport( V_WARN, "Exit Requested (%d, %s)" EOL, t, ftdi_get_error_string( _r.ftdi ) );
+        if ( !_r.ending )
+        {
+            genericsReport( V_WARN, "Exit Requested (%d, %s)" EOL, t, ftdi_get_error_string( _r.ftdi ) );
+        }
 
         ftdispi_close( &_r.ftdifsc, 1 );
     }
 
+    _destroyBufferFeeder();
     return 0;
 }
 #endif
@@ -1295,11 +1411,11 @@ static void _doExit( void )
 
 {
     _r.ending = true;
+
     IF_WITH_FIFOS( fifoShutdown( _r.f ) );
     IF_WITH_NWCLIENT( nwclientShutdown( _r.n ) );
-
     /* Give them a bit of time, then we're leaving anyway */
-    usleep( 200000 );
+    usleep( 200 );
 }
 // ====================================================================================================
 int main( int argc, char *argv[] )

@@ -156,7 +156,11 @@ static void *_client( void *args )
         if ( ( c->finish ) || ( readDataLen <= 0 ) || ( write( c->portNo, maxTransitPacket, readDataLen ) < 0 ) )
         {
             /* This port went away, so remove it */
-            genericsReport( V_INFO, "Connection dropped" EOL );
+            if ( !c->finish )
+            {
+                genericsReport( V_INFO, "Connection dropped" EOL );
+            }
+
             c->finish = true;
         }
     }

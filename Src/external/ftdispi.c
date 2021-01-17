@@ -316,7 +316,7 @@ __dll int ftdispi_write_read( struct ftdispi_context *fsc,
     fsc->mem[i++] = BIT_DIR;
     FTDI_CHECK( ftdi_write_data( &fsc->fc, fsc->mem, i ), "WR", fsc->fc );
 
-    return ftdispi_wait( fsc, BIT_P_CS, fsc->bitini, RETRY_MAX );
+    return 0;
 }
 
 __dll int ftdispi_write( struct ftdispi_context *fsc,
