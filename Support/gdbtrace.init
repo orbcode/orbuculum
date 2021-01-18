@@ -104,10 +104,6 @@ set $DWTBASE=0xE0001000
 set $CDBBASE=0xE000EDF0
 set $TPIUBASE=0xE0040000
 set $ETMBASE=0xE0041000
-set $CTIBASE=0xE0042000
-set $SCSBASE=0xE000E000
-set $BPUBASE=0xE0002000
-set $NRF_TAD_S=0xE0080000
 end
 
 define _setAddressesNRF52
@@ -118,6 +114,10 @@ end
 
 define _setAddressesNRF53
 _setAddressesNRF
+set $CTIBASE=0xE0042000
+set $SCSBASE=0xE000E000
+set $BPUBASE=0xE0002000
+set $NRF_TAD_S=0xE0080000
 set $NRF_P0_S=0x50842500
 set $NRF_SPU_S=0x50003000
 end
@@ -423,7 +423,7 @@ define enableNRF52TRACE
 
   # from modules/nrfx/mdk/system_nrf52.c
   # CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
-  set *($CDBBASE+0xC)=(1<<24)
+  set *($CDBBASE+0xC) |= (1<<24)
 
   # NRF_CLOCK->TRACECONFIG |= CLOCK_TRACECONFIG_TRACEMUX_Parallel << CLOCK_TRACECONFIG_TRACEMUX_Pos;
   set *($NRF_CLOCK+0x0000055C) &= ~(3 << 16)
