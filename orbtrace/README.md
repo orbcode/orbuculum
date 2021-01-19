@@ -79,7 +79,7 @@ monitor reset
 # This line for parallel trace output
 enableSTM32TRACE 4
 
-# For NRF53 use 'enableNRFTRACE 4' instead
+# For NRF53 use 'enableNRF53TRACE 4' instead
 
 dwtSamplePC 1
 dwtSyncTap 1

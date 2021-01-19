@@ -20,7 +20,8 @@ SAM5X;
   enableSAMD5XSWD    : Enable SWO on SAM5X output pin on SAM5X
 
 NRF;
-  enableNRFTRACE : Start TRACE on NRF pins
+  enableNRF52TRACE : Start TRACE on NRF52 (not nrf52833 or nrf52840) pins
+  enableNRF53TRACE : Start TRACE on NRF53* pins
 
 All;
   prepareSWO      : Prepare SWO output in specified format
@@ -103,6 +104,16 @@ set $DWTBASE=0xE0001000
 set $CDBBASE=0xE000EDF0
 set $TPIUBASE=0xE0040000
 set $ETMBASE=0xE0041000
+end
+
+define _setAddressesNRF52
+_setAddressesNRF
+set $NRF_P0_PIN_CNF=0x50000700
+set $NRF_CLOCK=0x40000000
+end
+
+define _setAddressesNRF53
+_setAddressesNRF
 set $CTIBASE=0xE0042000
 set $SCSBASE=0xE000E000
 set $BPUBASE=0xE0002000
@@ -379,7 +390,72 @@ enableSTM32TRACE <Width>: Enable TRACE on STM32 pins
   <Drive>   : Drive strength (0=lowest, 3=highest)
 end
 # ====================================================================
-define enableNRFTRACE
+define enableNRF52TRACE
+  set $bits=4
+  set $cspeed=1
+  set $drive=3
+
+  if $argc >= 1
+    set $bits = $arg0
+  end
+    if (($bits<1) || ($bits==3) || ($bits>4))
+    help enableNRF53TRACE
+  end
+
+  if $argc >= 2
+    set $drive=$arg1
+  end
+  if (($drive!=0) & ($drive!=3))
+     help enableNRF52TRACE
+  end
+
+  if $argc >= 3
+    set $cspeed=$arg2
+  end
+  if (( $cspeed < 0 ) || ( $cspeed > 3))
+    help enableNRF52TRACE
+  end
+
+  set $bits = $bits-1
+  set $CPU=$CPU_NRF
+
+  _setAddressesNRF52
+
+  # from modules/nrfx/mdk/system_nrf52.c
+  # CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+  set *($CDBBASE+0xC) |= (1<<24)
+
+  # NRF_CLOCK->TRACECONFIG |= CLOCK_TRACECONFIG_TRACEMUX_Parallel << CLOCK_TRACECONFIG_TRACEMUX_Pos;
+  set *($NRF_CLOCK+0x0000055C) &= ~(3 << 16)
+  set *($NRF_CLOCK+0x0000055C) |= (2 << 16)
+  set *($NRF_CLOCK+0x0000055C) &= ~(3 << 0)
+  set *($NRF_CLOCK+0x0000055C) |= ($cspeed << 0)
+
+  if ($bits>0)
+    # NRF_P0->PIN_CNF[18] = (GPIO_PIN_CNF_DRIVE_H0H1 << GPIO_PIN_CNF_DRIVE_Pos) | (GPIO_PIN_CNF_INPUT_Connect << GPIO_PIN_CNF_INPUT_Pos) | (GPIO_PIN_CNF_DIR_Output << GPIO_PIN_CNF_DIR_Pos);
+    set *($NRF_P0_PIN_CNF+18*4) = (($drive<<8) | (0<<1) | (1<<0))
+    # NRF_P0->PIN_CNF[20] = (GPIO_PIN_CNF_DRIVE_H0H1 << GPIO_PIN_CNF_DRIVE_Pos) | (GPIO_PIN_CNF_INPUT_Connect << GPIO_PIN_CNF_INPUT_Pos) | (GPIO_PIN_CNF_DIR_Output << GPIO_PIN_CNF_DIR_Pos);
+    set *($NRF_P0_PIN_CNF+20*4) = (($drive<<8) | (0<<1) | (1<<0))
+    if ($bits>1)
+      # NRF_P0->PIN_CNF[14] = (GPIO_PIN_CNF_DRIVE_H0H1 << GPIO_PIN_CNF_DRIVE_Pos) | (GPIO_PIN_CNF_INPUT_Connect << GPIO_PIN_CNF_INPUT_Pos) | (GPIO_PIN_CNF_DIR_Output << GPIO_PIN_CNF_DIR_Pos);
+      set *($NRF_P0_PIN_CNF+14*4) = (($drive<<8) | (0<<1) | (1<<0))
+      # NRF_P0->PIN_CNF[15] = (GPIO_PIN_CNF_DRIVE_H0H1 << GPIO_PIN_CNF_DRIVE_Pos) | (GPIO_PIN_CNF_INPUT_Connect << GPIO_PIN_CNF_INPUT_Pos) | (GPIO_PIN_CNF_DIR_Output << GPIO_PIN_CNF_DIR_Pos);
+      set *($NRF_P0_PIN_CNF+15*4) = (($drive<<8) | (0<<1) | (1<<0))
+      # NRF_P0->PIN_CNF[16] = (GPIO_PIN_CNF_DRIVE_H0H1 << GPIO_PIN_CNF_DRIVE_Pos) | (GPIO_PIN_CNF_INPUT_Connect << GPIO_PIN_CNF_INPUT_Pos) | (GPIO_PIN_CNF_DIR_Output << GPIO_PIN_CNF_DIR_Pos);
+      set *($NRF_P0_PIN_CNF+16*4) = (($drive<<8) | (0<<1) | (1<<0))
+    end
+  end
+  # Finally start the trace output
+  _doTRACE
+end
+document enableNRF52TRACE
+enableNRF52TRACE <Drive> <Speed> : Enable TRACE on NRF52 pins (not nrf52833 or nrf52840)
+  <Width>   : Number of bits wide (1,2 or 4 only)
+  <Drive>   : Drive strength (0 (low), 3 (high))
+  <Speed>   : Clock Speed (0..3, 0 fastest)
+end
+# ====================================================================
+define enableNRF53TRACE
   set $bits=4
   set $cspeed=1
   set $drive=11
@@ -389,7 +465,7 @@ define enableNRFTRACE
     set $bits = $arg0
   end
     if (($bits<1) || ($bits==3) || ($bits>4))
-    help enableNRFTRACE
+    help enableNRF53TRACE
   end
 
   if $argc >= 2
@@ -397,20 +473,20 @@ define enableNRFTRACE
   end
 
   if ((($drive<0) || ($drive>3)) && ($drive!=11))
-     help enableNRFTRACE
+     help enableNRF53TRACE
   end
 
   if $argc >= 3
     set $cspeed=$arg2
   end
   if (( $cspeed < 0 ) || ( $cspeed > 3))
-    help enableNRFTRACE
+    help enableNRF53TRACE
   end
 
   set $bits = $bits-1
   set $CPU=$CPU_NRF
 
-  _setAddressesNRF
+  _setAddressesNRF53
   # Actions from Section 8.9 of the manual
   # NRF_TAD_S->ENABLE = TAD_ENABLE_ENABLE_Msk
   set *($NRF_TAD_S+0x500) = 1
@@ -456,8 +532,8 @@ define enableNRFTRACE
   # Finally start the trace output
   _doTRACE
 end
-document enableNRFTRACE
-enableNRFTRACE <Width> <drive> <speed> : Enable TRACE on NRF pins
+document enableNRF53TRACE
+enableNRF53TRACE <Width> <drive> <speed> : Enable TRACE on NRF pins
   <Width>   : Number of bits wide (1,2 or 4 only)
   <Drive>   : Drive strength (0 (lowest), 1, 2, 3 or 11 (highest))
   <Speed>   : Clock Speed (0..3, 0 fastest)
