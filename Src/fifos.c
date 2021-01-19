@@ -813,8 +813,6 @@ void fifoShutdown( struct fifosHandle *f )
 /* Destroy the per-port sub-processes. These will terminate when the fifos close */
 
 {
-    struct timespec ts;
-
     if ( !f )
     {
         return;
@@ -835,15 +833,7 @@ void fifoShutdown( struct fifosHandle *f )
     {
         if ( f->c[t].handle > 0 )
         {
-            clock_gettime( CLOCK_REALTIME, &ts );
-            /* Wait a max of one second for the thread to exit */
-            ts.tv_sec += 1;
-
-#ifdef OSX
             pthread_join( f->c[t].thread, NULL );
-#else
-            pthread_timedjoin_np( f->c[t].thread, NULL, &ts );
-#endif
 
             if ( ! f->permafile )
             {

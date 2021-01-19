@@ -10,12 +10,17 @@ RVAL ?= 27833 # Replace with $$RANDOM to get a randomised build
 
 $(echo Build number is $RVAL)
 
-SUPPORTED_HARDWARE=ICE40HX8K_B_EVN ICE40HX1K_STICK_EVN ICEBREAKER
+ICE_HARDWARE=ICE40HX8K_B_EVN ICE40HX1K_STICK_EVN ICEBREAKER
+ECP_HARDWARE=ECPIX_5_85F
+
+SUPPORTED_HARDWARE=$(ICE_HARDWARE) $(ECP_HARDWARE)
 
 .PHONY: all clean $(SUPPORTED_HARDWARE)
 
 BUFFER_FLAGS=
-ORB_SOURCE_FILES  = toplevel.v ram.v traceIF.v frameBuffer.v
+ORB_SOURCE_FILES   = ram.v traceIF.v frameBuffer.v
+ICE40_SOURCE_FILES = toplevel_ice40.v
+ECP5_SOURCE_FILES  = toplevel_ecp5.v
 
 ifdef USE_UART_FEEDER
 ifdef USE_SPI_FEEDER
@@ -69,43 +74,73 @@ clean:
 	@-rm -f *.asc
 	@-rm -f *.bin
 
-$(SUPPORTED_HARDWARE):%:%.bin
+# ----------- ICE40 TOOLING ---------------------------------
+$(ICE_HARDWARE):%:%.bin
 	iceprog -S $<
 
 # bitmap conversion stage:
 
-%.bin: %.asc
+ICE%.bin: ICE%.asc
 	icepack $< $@
 
 # place and route stage:
 
-%.asc:
+ICE%.asc:
 	nextpnr-ice40 --seed $(RVAL) $(DEVICE) --package $(PACKAGE) --pcf $(subst .asc,.pcf,$@) --json $< --asc $@
+# ----------- ICE40 TOOLING ENDS ---------------------------
+
+# ------------ ECP5 TOOLING --------------------------------
+
+$(ECP_HARDWARE):%:%.bin
+	ecpprog -S $<
+
+# bitmap conversion stage:
+
+ECP%.bin: ECP%.asc
+	ecppack --compress $< $@
+
+ECP%.asc:
+	nextpnr-ecp5 --seed $(RVAL) $(DEVICE) --package $(PACKAGE) --lpf $(subst .asc,.lpf,$@) --json $< --textcfg $@
+
+# ------------ ECP5 TOOLING ENDS ---------------------------
 
 ICE40HX1K_STICK_EVN.asc: DEVICE := --hx1k
 ICE40HX1K_STICK_EVN.asc: PACKAGE := tq144
-ICE40HX1K_STICK_EVN.asc: BUFFER_FLAGS += -DICE40HX1K_STICK
-ICE40HX1K_STICK_EVN.asc: traceIF_GB.json
+ICE40HX1K_STICK_EVN.asc: BUFFER_FLAGS += -DICE40HX1K_STICK -DICE40
+ICE40HX1K_STICK_EVN.asc: icetraceIF_GB.json
 
 ICE40HX8K_B_EVN.asc: DEVICE := --hx8k
 ICE40HX8K_B_EVN.asc: PACKAGE := ct256
-ICE40HX8K_B_EVN.asc: BUFFER_FLAGS += -DICE40HX8K_EVN
-ICE40HX8K_B_EVN.asc: traceIF_GBIO.json
+ICE40HX8K_B_EVN.asc: BUFFER_FLAGS += -DICE40HX8K_EVN -DICE40
+ICE40HX8K_B_EVN.asc: icetraceIF_GBIO.json
 
 ICEBREAKER.asc: DEVICE := --up5k
 ICEBREAKER.asc: PACKAGE := sg48
-ICEBREAKER.asc: BUFFER_FLAGS += -DICEBREAKER
-ICEBREAKER.asc: traceIF_GB.json
+ICEBREAKER.asc: BUFFER_FLAGS += -DICEBREAKER -DICE40
+ICEBREAKER.asc: icetraceIF_GB.json
+
+ECPIX_5_85F.asc: DEVICE := --um5g-85k
+ECPIX_5_85F.asc: PACKAGE := CABGA554
+ECPIX_5_85F.asc: BUFFER_FLAGS += -DECPIX_5_85F -DECP5
+ECPIX_5_85F.asc: ecp5traceIF_GB.json
 
 # verilog synthesis stage:
 
-%.json:
+ecp%.json:
+	yosys -f "verilog $(BUFFER_FLAGS)" -p "synth_ecp5 -json $@" $^
+
+
+ice%.json:
 	yosys -f "verilog $(BUFFER_FLAGS)" -p "synth_ice40 -json $@" $^
 
-traceIF_GBIO.json: BUFFER_FLAGS+=
-traceIF_GBIO.json: $(SOURCE_FILES)
+ecp5traceIF_GB.json: BUFFER_FLAGS+=
+ecp5traceIF_GB.json: $(SOURCE_FILES) $(ECP5_SOURCE_FILES)
 
-traceIF_GB.json: BUFFER_FLAGS+=-DNO_GB_IO_AVAILABLE
-traceIF_GB.json: $(SOURCE_FILES)
+icetraceIF_GBIO.json: BUFFER_FLAGS+=
+icetraceIF_GBIO.json: $(SOURCE_FILES) $(ICE40_SOURCE_FILES)
 
+icetraceIF_GB.json: BUFFER_FLAGS+=-DNO_GB_IO_AVAILABLE
+icetraceIF_GB.json: $(SOURCE_FILES) $(ICE40_SOURCE_FILES)
 
+print-%:
+	@echo $* is $($*)

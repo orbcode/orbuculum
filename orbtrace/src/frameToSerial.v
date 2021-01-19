@@ -11,7 +11,7 @@ module frameToSerial (
 		input            rst,
 
         // Command and Control
-                output [1:0]     Width,            // Width setting to hardware
+                output reg [1:0] Width,            // Width setting to hardware
 
         // Downwards interface to frame buffer
 		input [127:0]    Frame,            // Input frame

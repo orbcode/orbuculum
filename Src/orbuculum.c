@@ -203,6 +203,7 @@ struct
     bool      ending;                                                  /* Flag indicating app is terminating */
 
     /* Transfer buffers from the receiver */
+    sem_t dataWaiting;
     uint32_t wp;
     uint32_t rp;
     uint8_t buffer[TRANSFER_BUFFER];
@@ -845,12 +846,14 @@ static void _processBlock( int s, unsigned char *cbw )
 static void *_bufferFeeder( void *arg )
 
 {
-  /* Pump a block of data from the buffer into the various handlers. */
+    /* Pump a block of data from the buffer into the various handlers. */
     uint32_t span;
 
     while ( !_r.ending )
     {
-        if ( _r.wp != _r.rp )
+        sem_wait( &_r.dataWaiting );
+
+        while ( _r.wp != _r.rp )
         {
             if ( _r.wp > _r.rp )
             {
@@ -874,10 +877,6 @@ static void *_bufferFeeder( void *arg )
             _r.rp = ( _r.rp + span ) % TRANSFER_BUFFER;
             _r.intervalBytes += span;
         }
-        else
-        {
-            usleep( 1000 );
-        }
     }
 
     return 0;
@@ -886,25 +885,53 @@ static void *_bufferFeeder( void *arg )
 static void _submitBlock( uint32_t t, uint8_t *p )
 
 {
-    /* Load new frame bytes into transfer buffer */
-    uint32_t nwp = ( _r.wp + 1 ) % TRANSFER_BUFFER;
+    uint32_t writeLen, space;
 
-    while ( t-- )
+    while ( t )
     {
-        while ( nwp == _r.rp )
+        /* Spin until there is room in the buffer for the data */
+        do
         {
-            usleep( 10 );
+            /* Amount of space in the buffer is size of the buffer take away what is used */
+            space = TRANSFER_BUFFER - ( ( TRANSFER_BUFFER + _r.wp - _r.rp ) % TRANSFER_BUFFER );
+
+            if ( space >= t )
+            {
+                break;
+            }
+            else
+            {
+                usleep( 100 );
+            }
+        }
+        while ( true );
+
+        /* Write just the bit we've got room for before the end of the circular buffer */
+        if ( _r.wp + t > TRANSFER_BUFFER )
+        {
+            writeLen = TRANSFER_BUFFER - _r.wp;
+        }
+        else
+        {
+            writeLen = t;
         }
 
-        _r.buffer[_r.wp] = *p++;
-        _r.wp = nwp;
-        nwp = ( nwp + 1 ) % TRANSFER_BUFFER;
+        memcpy( &_r.buffer[_r.wp], p, writeLen );
+        t -= writeLen;
+        p += writeLen;
+
+        _r.wp = ( _r.wp + writeLen ) % TRANSFER_BUFFER;
     }
+
+    /* Make sure the reader knows there are data here */
+    sem_post( &_r.dataWaiting );
 }
 // ====================================================================================================
 static void _createBufferFeeder( void )
 
 {
+    sem_init( &_r.dataWaiting, 0, 0 );
+
     if ( pthread_create( &( _r.bufferFeederHandle ), NULL, &_bufferFeeder, NULL ) )
     {
         genericsExit( -1, "Failed to create buffer feeder" EOL );
