@@ -78,32 +78,23 @@ define prepareSWD
        quit
 end
 # ====================================================================
+set $CDBBASE=0xE000EDF0
+set $DWTBASE=0xE0001000
+set $ITMBASE=0xE0000000
+set $TPIUBASE=0xE0040000
+set $ETMBASE=0xE0041000
+
 define _setAddressesSTM32
 
 # Locations in the memory map for interesting things on STM32
-set $ITMBASE=0xE0000000
-set $DWTBASE=0xE0001000
-set $CDBBASE=0xE000EDF0
-set $TPIUBASE=0xE0040000
-set $ETMBASE=0xE0041000
 end
 
 define _setAddressesIMXRT
 # Locations in the memory map for interesting things on IMXRT
-set $ITMBASE=0xE0000000
-set $DWTBASE=0xE0001000
-set $CDBBASE=0xE000EDF0
-set $TPIUBASE=0xE0040000
-set $ETMBASE=0xE0041000
 end
 
 define _setAddressesNRF
 # Locations in the memory map for interesting things on NRF
-set $ITMBASE=0xE0000000
-set $DWTBASE=0xE0001000
-set $CDBBASE=0xE000EDF0
-set $TPIUBASE=0xE0040000
-set $ETMBASE=0xE0041000
 end
 
 define _setAddressesNRF52
