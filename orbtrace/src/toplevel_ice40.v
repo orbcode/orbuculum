@@ -28,6 +28,7 @@ module topLevel(
 		// Config and housekeeping
 		input             clkIn,
 
+
 		// Other indicators
 `ifndef ICEBREAKER                 
 		output reg        D3,
@@ -53,6 +54,11 @@ module topLevel(
 
    // Internals =============================================================================
 
+                                  `ifdef ICEBREAKER
+   reg                            D5;          // Fake wire for inversion
+   
+                                  `endif
+   
    wire 		   lock;               // Indicator that PLL has locked
    wire 		   rst;
    wire 		   clk;
