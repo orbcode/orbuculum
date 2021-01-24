@@ -3,8 +3,7 @@
 module topLevel(
                 input             rstfpga,
 
-		input [3:0]       traceDin, // Port is always 4 bits wide, even if we use less
-		input             traceClk, // Supporting clock for input - global clock pin
+                input [4:0]       PMOD7,    
 
 `ifdef USE_UART_TRANSPORT
                 // UART Connection
@@ -38,18 +37,22 @@ module topLevel(
                                   `endif
 		);      
 
-   wire                           data_led;
-   wire                           txInd_led;
-   wire                           D5;
-   wire                           txOvf_led;
-   wire                          heartbeat_led;
+   // Ports Mapping
+   wire                           data_indic;          // Indication we have data
+   wire                           tx_indic;            // Indication we are transmitting
+   wire                           phaseinv_indic;      // Indication of phase inversion on rxed trace
+   wire                           txOvf_indic;         // Indication of overflow
+   wire                           hb_indic;            // Indication of heartbeat
+   wire [3:0]                     traceDin=PMOD7[3:0]; // Port is always 4 bits wide, even if we use less
+   wire                           traceClk=PMOD7[4];   // Supporting clock for input - global clock pin
 
-   assign led1={rstfpga,1'b1,!heartbeat_led};
-   assign led3={!txInd_led,1'b1,!D5};
-   assign led0={!txOvf_led,1'b1,1'b1};
-   assign led2={1'b1,1'b1,!data_led};
-   
-   assign PMOD4 = {6'h0,clkOut};
+   // Led indicator mapping (active low)
+   //              Red          Green            Blue
+   assign led0={!txOvf_indic,   !tx_indic,       1'b1           };
+   assign led1={rstfpga,        !hb_indic,       1'b1           };
+   assign led2={  1'b1,         1'b1,       !data_indic         };
+   assign led3={  1'b1,         1'b1,       !phaseinv_indic     };
+  
    	    
    // Parameters =============================================================================
 
@@ -59,19 +62,15 @@ module topLevel(
    // Internals =============================================================================
 
    wire 		   lock;               // Indicator that PLL has locked
-   wire 		   clk;
    wire 		   clkOut;             // Buffered clock for use across system
-   wire 		   BtraceClk;          // Buffered trace input clock
 
-   reg                     ovf_strobe;         // Strobe indicating overflow condition
+// Trace input pins config 
+//
 
-   reg                     cts;
-   
-// Trace input pins config   
 IDDRX1F MtraceIn0
 (
  .D (traceDin[0]),
- .SCLK (BtraceClk),
+ .SCLK (traceClk),
  .Q0 (tTraceDina[0]),
  .Q1 (tTraceDinb[0])
  );
@@ -79,7 +78,7 @@ IDDRX1F MtraceIn0
 IDDRX1F MtraceIn1
 (
  .D (traceDin[1]),
- .SCLK (BtraceClk),
+ .SCLK (traceClk),
  .Q0 (tTraceDina[1]),
  .Q1 (tTraceDinb[1])
   );
@@ -87,7 +86,7 @@ IDDRX1F MtraceIn1
 IDDRX1F MtraceIn2
 (
  .D (traceDin[2]),
- .SCLK (BtraceClk),
+ .SCLK (traceClk),
  .Q0 (tTraceDina[2]),
  .Q1 (tTraceDinb[2])
  );
@@ -95,7 +94,7 @@ IDDRX1F MtraceIn2
 IDDRX1F MtraceIn3 
 (
  .D (traceDin[3]),
- .SCLK (BtraceClk),
+ .SCLK (traceClk),
  .Q0 (tTraceDina[3]),
  .Q1 (tTraceDinb[3])
  );
@@ -108,7 +107,6 @@ IDDRX1F MtraceIn3
    wire 		    pkavail;              // Toggle of packet availability
    wire [127:0] 	    packet;               // Packet delivered from trace interface
    reg  [1:0] 		    widthSet;             // Current width of the interface
-   wire [1:0]               widthCmd;             // Commanded width
 
    wire [15:0]              lostFrames;           // Number of frames lost due to lack of space
    wire [31:0]              totalFrames;          // Number of frames received overall
@@ -120,9 +118,9 @@ IDDRX1F MtraceIn3
            // Downwards interface to trace pins
                    .traceDina(tTraceDina),          // Tracedata rising edge ... 1-n bits
                    .traceDinb(tTraceDinb),          // Tracedata falling edge (LSB) ... 1-n bits
-                   .traceClkin(BtraceClk),          // Tracedata clock
+                   .traceClkin(traceClk),           // Tracedata clock
 		   .width(widthSet),                // Current trace buffer width 
-                   .edgeOutput(D5),                 // DIAGNOSTIC for inverted sync
+                   .edgeOutput(phaseinv_indic),     // DIAGNOSTIC for inverted sync
 
            // Upwards interface to packet processor
 		   .FrAvail(pkavail),               // Toggling flag indicating next packet
@@ -137,7 +135,7 @@ IDDRX1F MtraceIn3
    wire                     frameNext;
    wire [BUFFLENLOG2-1:0]   framesCnt;              // No of frames available
    wire                     frameReady;
-   wire [7:0]               leds  = { heartbeat_led, D5, txOvf_led, 1'b0, 1'b0, 1'b0, txInd_led, data_led };
+   wire [7:0]               leds  = { hb_indic, phaseinv_indic, txOvf_indic, 1'b0, 1'b0, 1'b0, tx_indic, data_indic };
    
    frameBuffer #(.BUFFLENLOG2(BUFFLENLOG2)) marshall (
 		      .clk(clkOut), 
@@ -154,7 +152,7 @@ IDDRX1F MtraceIn3
 		      .FramesCnt(framesCnt),         // Number of frames available
 
            // Status indicators
-                      .DataInd(data_led),            // LED indicating data sync status
+                      .DataInd(data_indic),          // LED indicating data sync status
                       .DataOverf(txOvf_strobe),      // Too much data in buffer
 
            // Stats
@@ -165,11 +163,11 @@ IDDRX1F MtraceIn3
    wire                     frameReady = (framesCnt != 0);
 
 `ifdef USE_UART_TRANSPORT
-   wire 		    txFree;                 // Request for more data to tx
-   wire [7:0] 		    tx_data;                // Data byte to be sent to serial
-   wire 		    dataReady;              // Indicator that data is available
-   reg [7:0]                rxSerial;               // Input from serial
-   wire                     rxedEvent;              // Indicator of a byte received
+   wire 		    txFree;                  // Request for more data to tx
+   wire [7:0] 		    tx_data;                 // Data byte to be sent to serial
+   wire 		    dataReady;               // Indicator that data is available
+   reg [7:0]                rxSerial;                // Input from serial
+   wire                     rxedEvent;               // Indicator of a byte received
 
   frameToSerial #(.BUFFLENLOG2(BUFFLENLOG2)) serialPrepare (
 		      .clk(clkOut),
@@ -209,7 +207,7 @@ IDDRX1F MtraceIn3
 	             .transmit(dataReady),           // Signal to transmit
 	             .tx_byte(tx_data),              // Byte to transmit
 	             .tx_free(txFree),               // Indicator that transmit register is available
-	             .is_transmitting(txInd_led)     // Low when transmit line is idle.
+	             .is_transmitting(tx_indic)      // Low when transmit line is idle.
                   );
 `endif //  `ifdef USE_UART_TRANSPORT
 
@@ -224,47 +222,45 @@ IDDRX1F MtraceIn3
 		.clk(clkOut),
 		.rst(rst),
 
-                .Width(widthSet),                  // Trace port width
-                .Transmitting(txInd_led),          // Indication of transmit activity
+                .Width(widthSet),                    // Trace port width
+                .Transmitting(tx_indic),             // Indication of transmit activity
 
         // Downwards interface to packet buffer
-		.Frame(frame),                     // Input frame
-		.FrameNext(frameNext),             // Request for next data element
-		.FrameReady(frameReady),           // Next data element is available
-                .FramesCnt(framesCnt),             // No of frames available
+		.Frame(frame),                       // Input frame
+		.FrameNext(frameNext),               // Request for next data element
+		.FrameReady(frameReady),             // Next data element is available
+                .FramesCnt(framesCnt),               // No of frames available
 
 	// Upwards interface to SPI
-		.TxFrame(txFrame),                 // Output data frame
-                .TxGetNext(txGetNext),             // Toggle to request next frame
+		.TxFrame(txFrame),                   // Output data frame
+                .TxGetNext(txGetNext),               // Toggle to request next frame
 
-		.RxPacket(rxPacket),               // Input data packet
-		.PktComplete(pktComplete),         // Request for next data element
-                .CS(SPIcs),                        // Current Chip Select state
+		.RxPacket(rxPacket),                 // Input data packet
+		.PktComplete(pktComplete),           // Request for next data element
+                .CS(SPIcs),                          // Current Chip Select state
 
         // Stats out
-                .Leds(leds),                       // Led values on the board
-                .TotalFrames(totalFrames),         // Number of frames received
-                .LostFrames(lostFrames)            // Number of frames lost
+                .Leds(leds),                         // Led values on the board
+                .TotalFrames(totalFrames),           // Number of frames received
+                .LostFrames(lostFrames)              // Number of frames lost
 	     );
 
     spi transceiver (
 	        .rst(rst),
                 .clk(clkOut),
 
-	        .Tx(SPItx),                        // Outgoing SPI serial line (MISO)
-                .Rx(SPIrx),                        // Incoming SPI serial line (MOSI)
+	        .Tx(SPItx),                          // Outgoing SPI serial line (MISO)
+                .Rx(SPIrx),                          // Incoming SPI serial line (MOSI)
                 .Cs(SPIcs),
-	        .DClk(SPIclk),                     // Clock for SPI
+	        .DClk(SPIclk),                       // Clock for SPI
 
-	        .Tx_packet(txFrame),               // Frame to transmit
-                .TxGetNext(txGetNext),             // Toggle to request next frame
+	        .Tx_packet(txFrame),                 // Frame to transmit
+                .TxGetNext(txGetNext),               // Toggle to request next frame
 
-                .PktComplete(pktComplete),         // Toggle indicating data received
-                .RxedFrame(rxPacket)               // The frame of data received
+                .PktComplete(pktComplete),           // Toggle indicating data received
+                .RxedFrame(rxPacket)                 // The frame of data received
 	    );
 `endif
-
-   wire                     CLKOP;
 
 (* FREQUENCY_PIN_CLKI="100" *)
 (* FREQUENCY_PIN_CLKOP="192" *)
@@ -307,8 +303,8 @@ EHXPLLL #(
    reg [27:0] 		   clkCount;       // Clock for heartbeat
    reg [23:0] 		   ovfCount;       // LED stretch for overflow indication
 
-   assign heartbeat_led=clkCount[27];
-   assign txOvf_led = (ovfCount!=0);
+   assign hb_indic=clkCount[27];
+   assign txOvf_indic = (ovfCount!=0);
 
    // We don't want anything awake until the clocks are stable
    wire                    rst=(!rstfpga || !lock);
@@ -317,7 +313,6 @@ EHXPLLL #(
      begin
 	if (rst)
 	  begin
-	     cts<=1'b0;
 	     clkCount <= ~0;
              ovfCount <= 0;
 	  end

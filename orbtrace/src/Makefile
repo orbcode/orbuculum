@@ -1,16 +1,18 @@
 # Define the line below to get SUMP2 incorporated
 #INCLUDE_SUMP2=1  WARNING: Probably bitrotted a bit
+
+# Note that SPI_FEEDER is only for ICE40, ECP5 hardware doesn't support it
 USE_UART_FEEDER=1
 #USE_SPI_FEEDER=1
 
-RVAL ?= 27833 # Replace with $$RANDOM to get a randomised build
+RVAL ?= 56734 # Replace with $$RANDOM to get a randomised build
            # In general, for a release, set this to a value that
            # results in the timing minima being met, to make life
            # easy for people to rebuild the bitfile
 
 $(echo Build number is $RVAL)
 
-ICE_HARDWARE=ICE40HX8K_B_EVN ICE40HX1K_STICK_EVN ICEBREAKER
+ICE_HARDWARE=ICE40HX8K_B_EVN ICEBREAKER
 ECP_HARDWARE=ECPIX_5_85F
 
 SUPPORTED_HARDWARE=$(ICE_HARDWARE) $(ECP_HARDWARE)
@@ -104,11 +106,6 @@ ECP%.asc:
 
 # ------------ ECP5 TOOLING ENDS ---------------------------
 
-ICE40HX1K_STICK_EVN.asc: DEVICE := --hx1k
-ICE40HX1K_STICK_EVN.asc: PACKAGE := tq144
-ICE40HX1K_STICK_EVN.asc: BUFFER_FLAGS += -DICE40HX1K_STICK -DICE40
-ICE40HX1K_STICK_EVN.asc: icetraceIF_GB.json
-
 ICE40HX8K_B_EVN.asc: DEVICE := --hx8k
 ICE40HX8K_B_EVN.asc: PACKAGE := ct256
 ICE40HX8K_B_EVN.asc: BUFFER_FLAGS += -DICE40HX8K_EVN -DICE40
@@ -127,8 +124,10 @@ ECPIX_5_85F.asc: ecp5traceIF_GB.json
 # verilog synthesis stage:
 
 ecp%.json:
+ifdef USE_SPI_FEEDER
+	$(error Cannot build ECP5 for SPI feeder)
+endif
 	yosys -f "verilog $(BUFFER_FLAGS)" -p "synth_ecp5 -json $@" $^
-
 
 ice%.json:
 	yosys -f "verilog $(BUFFER_FLAGS)" -p "synth_ice40 -json $@" $^

@@ -617,7 +617,7 @@ int _processOptions( int argc, char *argv[] )
         return false;
     }
 
-    if ( !options.port )
+    if ( ( options.orbtrace ) && ( !options.port ) )
     {
         genericsReport( V_ERROR, "Supporting serial port needs to be specified for orbtrace" EOL );
         return false;
