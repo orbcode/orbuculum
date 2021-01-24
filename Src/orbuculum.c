@@ -779,7 +779,7 @@ void *_checkInterval( void *params )
         if ( options.orbtrace )
         {
             struct TPIUCommsStats *c = fifoGetCommsStats( _r.f );
-            genericsPrintf( C_RESET " LEDS: %s%s%s%s" C_RESET " Frames: "C_YELLOW "%d" C_RESET,
+            genericsPrintf( C_RESET " LEDS: %s%s%s%s" C_RESET " Frames: "C_YELLOW "%u" C_RESET,
                             c->leds & 1 ? C_YELLOW "d" : C_RESET "-",
                             c->leds & 2 ? C_YELLOW "t" : C_RESET "-",
                             c->leds & 0x20 ? C_LRED "O" : C_RESET "-",
