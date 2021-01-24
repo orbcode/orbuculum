@@ -202,6 +202,10 @@ Dependencies
 * libbfd (binutils-devel)
 * libelf (elfutils-libelf)
 * libftdi (For FPGA support only)
+* libiberty (libiberty-dev)
+
+Build
+-----
 
 The command line to build the Orbuculum tool suite is;
 
@@ -215,7 +219,7 @@ make WITH_FIFOS=0 if you don't want fifos in orbuculum itself.
 ...you may need to change the paths to your libusb files, depending on
 how well your build environment is set up.
 
-To build the FPGA and load it into the board, install the incredible icestorm tools from Clifford
+To build the FPGA and load it into the board, install the incredible [icestorm](https://github.com/YosysHQ/icestorm) tools from Claire
 Wolf, then go into the `orbtrace/src` directory and type `./create`. It will take about 30 seconds
 to compile the image and burn it to the board.
 
