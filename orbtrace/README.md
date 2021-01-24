@@ -16,7 +16,7 @@ Outstanding development actions;
  
 Current testing status;
 
- * Tested on ICE40HX8K at 1, 2 & 4 bit depths
+ * Tested on ICE40HX8K and ECPIX-5 at 1, 2 & 4 bit depths
  * Tested against Rising Edge and Falling edge synced flows
  * Tested with STM32F427 CPU running at 16MHz & 160MHz.
  * Tested with NRF5340 running at 32MHz
@@ -40,9 +40,11 @@ make ECPIX_5_85F
 
 ..You can also do `make ICEBREAKER` but that will just get you a broken result at the moment.
 
-For ICE40 the system can be built using either an SPI or a UART transport layer. SPI is potentially capable of better performance (30MHz line rate). Testing shows that around 26Mbps is realistically acheivable. Both the serial and SPI interfaces are fully tested on ICE40. For ECP5 only UART is supported at the moment since the hardware doesn't support the SPI.
+For ICE40 the system can be built using either an SPI or a UART transport layer. SPI is potentially capable of better performance (30MHz line rate). Testing shows that around 26Mbps is realistically acheivable. Both the serial and SPI interfaces are fully tested on ICE40.
 
-Using UART data is presented at 12Mbaud over the serial port of the HX8 board. You can simply copy the frames of data to somewhere with something like this;
+For ECP5 only UART is supported at the moment since the hardware doesn't support the SPI.
+
+Using UART data is presented at 12Mbaud over the serial port of the board. You can simply copy the frames of data to somewhere with something like this;
 
 ```
 cat /dev/ttyUSB1 > myfile

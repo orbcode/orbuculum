@@ -47,11 +47,11 @@ module topLevel(
    wire                           traceClk=PMOD7[4];   // Supporting clock for input - global clock pin
 
    // Led indicator mapping (active low)
-   //              Red          Green            Blue
-   assign led0={!txOvf_indic,   !tx_indic,       1'b1           };
-   assign led1={rstfpga,        !hb_indic,       1'b1           };
-   assign led2={  1'b1,         1'b1,       !data_indic         };
-   assign led3={  1'b1,         1'b1,       !phaseinv_indic     };
+   //              Red                      Green                   Blue
+   assign led0={!txOvf_indic,    (!tx_indic) | (txOvf_indic),       1'b1           };
+   assign led1={rstfpga,                 !hb_indic,                 1'b1           };
+   assign led2={  1'b1,                     1'b1,                !data_indic       };
+   assign led3={  1'b1,                     1'b1,              !phaseinv_indic     };
   
    	    
    // Parameters =============================================================================
