@@ -218,7 +218,7 @@ void genericsReport( enum verbLevel l, const char *fmt, ... )
 
 {
     static char op[MAX_STRLEN];
-    static char *colours[V_MAX_VERBLEVEL] = {C_LRED, C_YELLOW, C_LCYAN, C_LGREEN};
+    static char *colours[V_MAX_VERBLEVEL] = {C_VERB_ERROR, C_VERB_WARN, C_VERB_INFO, C_VERB_DEBUG};
 
     if ( l <= lstore )
     {

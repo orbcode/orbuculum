@@ -54,7 +54,12 @@ extern "C" {
 #ifdef SCREEN_HANDLING
 #define C_PREV_LN "\033[1F"
 #define C_CLR_LN "\033[K"
-#define C_RESET   "\033[0m"
+#else
+#define C_PREV_LN ""
+#define C_CLR_LN  ""
+#endif
+
+#define C_RES     "\033[0m"
 #define C_RED     "\033[0;31m"
 #define C_GREEN   "\033[0;32m"
 #define C_BROWN   "\033[0;33m"
@@ -69,25 +74,7 @@ extern "C" {
 #define C_LPURPLE "\033[1;35m"
 #define C_LCYAN   "\033[1;36m"
 #define C_WHITE   "\033[1;37m"
-#else
-#define C_PREV_LN ""
-#define C_CLR_LN  ""
-#define C_RESET   ""
-#define C_RED     ""
-#define C_GREEN   ""
-#define C_BROWN   ""
-#define C_BLUE    ""
-#define C_PURPLE  ""
-#define C_CYAN    ""
-#define C_GRAY    ""
-#define C_LRED    ""
-#define C_LGREEN  ""
-#define C_YELLOW  ""
-#define C_LBLUE   ""
-#define C_LPURPLE ""
-#define C_LCYAN   ""
-#define C_WHITE   ""
-#endif
+#define C_MONO    ""
 
 // ====================================================================================================
 enum verbLevel {V_ERROR, V_WARN, V_INFO, V_DEBUG, V_MAX_VERBLEVEL};

@@ -245,52 +245,10 @@ static int _setSerialConfig ( int f, speed_t speed )
     settings.c_cflag |= CS8 | CLOCAL; /* 8 bits */
     settings.c_oflag &= ~OPOST; /* raw output */
 
-    const unsigned int speed1[] =
-    {
-        B115200, B230400, 0, B460800, B576000,
-        0, 0, B921600, 0, B1152000
-    };
-    const unsigned int speed2[] =
-    {
-        B500000,  B1000000, B1500000, B2000000,
-        B2500000, B3000000, B3500000, B4000000
-    };
-    int speed_ok = 0;
+    settings.c_cflag |= BOTHER;
+    settings.c_ispeed = speed;
+    settings.c_ospeed = speed;
 
-    if ( ( speed % 500000 ) == 0 )
-    {
-        // speed is multiple of 500000, use speed2 table.
-        int i = speed / 500000;
-
-        if ( i <= 8 )
-        {
-            speed_ok = speed2[i - 1];
-        }
-    }
-    else if ( ( speed % 115200 ) == 0 )
-    {
-        int i = speed / 115200;
-
-        if ( i <= 10 && speed1[i - 1] )
-        {
-            speed_ok = speed2[i - 1];
-        }
-    }
-
-    if ( speed_ok )
-    {
-        settings.c_cflag |= speed_ok;
-    }
-    else
-    {
-        settings.c_cflag |= BOTHER;
-        settings.c_ispeed = speed;
-        settings.c_ospeed = speed;
-    }
-
-    // Ensure input baud is same than output.
-    settings.c_cflag |= ( settings.c_cflag & CBAUD ) << IBSHIFT;
-    // Now configure port.
     ret = ioctl( f, TCSETS2, &settings );
 
     if ( ret < 0 )
@@ -307,19 +265,10 @@ static int _setSerialConfig ( int f, speed_t speed )
         return ( -3 );
     }
 
-    if ( speed_ok )
+    if ( ( settings.c_ispeed != speed ) || ( settings.c_ospeed != speed ) )
     {
-        if ( ( settings.c_cflag & CBAUD ) != speed_ok )
-        {
-            genericsReport( V_WARN, "Fail to set baudrate" EOL );
-        }
-    }
-    else
-    {
-        if ( ( settings.c_ispeed != speed ) || ( settings.c_ospeed != speed ) )
-        {
-            genericsReport( V_WARN, "Fail to set baudrate" EOL );
-        }
+        genericsReport( V_ERROR, "Failed to set baudrate" EOL );
+        return -4;
     }
 
     // Flush port.
@@ -361,6 +310,7 @@ static int _setSerialConfig ( int f, speed_t speed )
     return 0;
 }
 #endif
+
 // ====================================================================================================
 void _printHelp( char *progName )
 
@@ -751,7 +701,7 @@ void *_checkInterval( void *params )
 
         /* Async channel, so each byte is 10 bits */
         snapInterval *= 10;
-        genericsPrintf( C_PREV_LN C_CLR_LN C_YELLOW );
+        genericsPrintf( C_PREV_LN C_CLR_LN C_DATA );
 
         if ( snapInterval / 1000000 )
         {
@@ -770,7 +720,7 @@ void *_checkInterval( void *params )
         {
             /* Conversion to percentage done as a division to avoid overflow */
             uint32_t fullPercent = ( snapInterval * 100 ) / options.dataSpeed;
-            genericsPrintf( "(" C_YELLOW " %3d%% " C_RESET "full)", ( fullPercent > 100 ) ? 100 : fullPercent );
+            genericsPrintf( "(" C_DATA " %3d%% " C_RESET "full)", ( fullPercent > 100 ) ? 100 : fullPercent );
         }
 
 #ifdef WITH_FIFOS
@@ -779,11 +729,11 @@ void *_checkInterval( void *params )
         if ( options.orbtrace )
         {
             struct TPIUCommsStats *c = fifoGetCommsStats( _r.f );
-            genericsPrintf( C_RESET " LEDS: %s%s%s%s" C_RESET " Frames: "C_YELLOW "%u" C_RESET,
-                            c->leds & 1 ? C_YELLOW "d" : C_RESET "-",
-                            c->leds & 2 ? C_YELLOW "t" : C_RESET "-",
-                            c->leds & 0x20 ? C_LRED "O" : C_RESET "-",
-                            c->leds & 0x80 ? C_YELLOW "h" : C_RESET "-",
+            genericsPrintf( C_RESET " LEDS: %s%s%s%s" C_RESET " Frames: "C_DATA "%u" C_RESET,
+                            c->leds & 1 ? C_DATA_IND "d" : C_RESET "-",
+                            c->leds & 2 ? C_TX_IND "t" : C_RESET "-",
+                            c->leds & 0x20 ? C_OVF_IND "O" : C_RESET "-",
+                            c->leds & 0x80 ? C_HB_IND "h" : C_RESET "-",
                             c->totalFrames );
 
             genericsReport( V_INFO, " Pending:%5d Lost:%5d",
@@ -1173,6 +1123,8 @@ int fpgaFeeder( void )
     assert( ( options.orbtraceWidth == 1 ) || ( options.orbtraceWidth == 2 ) || ( options.orbtraceWidth == 4 ) );
     uint8_t wwString[] = { 'w', 0xA0 | ( ( options.orbtraceWidth == 4 ) ? 3 : options.orbtraceWidth ) };
 
+    _createBufferFeeder();
+
     while ( !_r.ending )
     {
 #ifdef OSX
@@ -1226,7 +1178,7 @@ int fpgaFeeder( void )
                 break;
             }
 
-            _processBlock( t, cbw );
+            _submitBlock( t, cbw );
         }
 
         if ( !_r.ending )
@@ -1237,6 +1189,7 @@ int fpgaFeeder( void )
         close( f );
     }
 
+    _destroyBufferFeeder();
     return 0;
 }
 #endif

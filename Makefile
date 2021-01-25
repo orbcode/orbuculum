@@ -7,11 +7,14 @@ WITH_UART_FEEDER?=1
 #WITH_SPI_FEEDER?=1
 
 
-
 # Build configuration
 VERBOSE?=0
 DEBUG=1
 SCREEN_HANDLING=1
+
+# Set your preferred screen colours here, or create a new palette by copying the file to a new one
+SCREEN_PALETTE="uicolours_default.h"
+#SCREEN_PALETTE="uicolours_mono.h"
 
 CFLAGS=-DVERSION="\"1.20InProgress\""
 
@@ -174,9 +177,10 @@ HOST=-lc -lusb
 GIT_HASH_FILENAME=git_version_info.h
 
 CFLAGS +=  $(ARCH_FLAGS) $(STARTUP_DEFS) $(OPT_LEVEL) $(DEBUG_OPTS) \
-		-ffunction-sections -fdata-sections -Wall -Wno-unused-result $(INCLUDE_PATHS)  $(GCC_DEFINE)
+           -ffunction-sections -fdata-sections -Wall -Wno-unused-result $(INCLUDE_PATHS) \
+           -include $(SCREEN_PALETTE) $(GCC_DEFINE)
 ASFLAGS += -c $(DEBUG_OPTS) $(INCLUDE_PATHS) $(ARCH_FLAGS) $(GCC_DEFINE) \
-          -x assembler-with-cpp
+           -x assembler-with-cpp
 LDFLAGS += $(CFLAGS)
 
 OCFLAGS += --strip-unneeded

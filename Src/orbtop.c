@@ -640,21 +640,21 @@ static void _outputTop( uint32_t total, uint32_t reportLines, struct reportLine 
                     dispSamples += report[n].count;
                     totPercent += percentage;
 
-                    fprintf( stdout, C_YELLOW "%3d.%02d%% " C_LBLUE " %" PRIu64 " ", percentage / 100, percentage % 100, report[n].count );
+                    fprintf( stdout, C_DATA "%3d.%02d%% " C_SUPPORT " %" PRIu64 " ", percentage / 100, percentage % 100, report[n].count );
 
 
                     if ( ( options.reportFilenames ) && ( report[n].n->filename ) )
                     {
-                        fprintf( stdout, C_CYAN "%s" C_RESET "::", report[n].n->filename );
+                        fprintf( stdout, C_CONTEXT "%s" C_RESET "::", report[n].n->filename );
                     }
 
                     if ( ( options.lineDisaggregation ) && ( report[n].n->line ) )
                     {
-                        fprintf( stdout, C_LCYAN "%s" C_RESET "::" C_CYAN "%d" EOL, d ? d : report[n].n->function, report[n].n->line );
+                        fprintf( stdout, C_SUPPORT2 "%s" C_RESET "::" C_CONTEXT "%d" EOL, d ? d : report[n].n->function, report[n].n->line );
                     }
                     else
                     {
-                        fprintf( stdout, C_LCYAN "%s" C_RESET EOL, d ? d : report[n].n->function );
+                        fprintf( stdout, C_SUPPORT2 "%s" C_RESET EOL, d ? d : report[n].n->function );
                     }
 
                     printed++;
@@ -696,7 +696,7 @@ static void _outputTop( uint32_t total, uint32_t reportLines, struct reportLine 
 
     fprintf( stdout, C_RESET "-----------------" EOL );
 
-    fprintf( stdout, C_YELLOW "%3d.%02d%% " C_LBLUE " %8" PRIu64 " " C_RESET "of "C_YELLOW" %" PRIu64 " "C_RESET" Samples" EOL, totPercent / 100, totPercent % 100, dispSamples, samples );
+    fprintf( stdout, C_DATA "%3d.%02d%% " C_SUPPORT " %8" PRIu64 " " C_RESET "of "C_DATA" %" PRIu64 " "C_RESET" Samples" EOL, totPercent / 100, totPercent % 100, dispSamples, samples );
 
     if ( p )
     {
@@ -726,25 +726,25 @@ static void _outputTop( uint32_t total, uint32_t reportLines, struct reportLine 
 
             if ( _r.er[e].visits )
             {
-                fprintf( stdout, C_YELLOW "%3" PRIu32 C_RESET " | " C_YELLOW "%8" PRIu64 C_RESET " |" C_YELLOW " %5"
-                         PRIu32 C_RESET " | "C_YELLOW " %9" PRIu64 C_RESET "  |  " C_YELLOW "%9" PRIu64 C_RESET " | " C_YELLOW "%9" PRIu64 C_RESET "  | " C_YELLOW" %9" PRIu64 C_RESET EOL,
+                fprintf( stdout, C_DATA "%3" PRIu32 C_RESET " | " C_DATA "%8" PRIu64 C_RESET " |" C_DATA " %5"
+                         PRIu32 C_RESET " | "C_DATA " %9" PRIu64 C_RESET "  |  " C_DATA "%9" PRIu64 C_RESET " | " C_DATA "%9" PRIu64 C_RESET "  | " C_DATA" %9" PRIu64 C_RESET EOL,
                          e, _r.er[e].visits, _r.er[e].maxDepth, _r.er[e].totalTime, _r.er[e].totalTime / _r.er[e].visits, _r.er[e].minTime, _r.er[e].maxTime );
             }
         }
     }
 
     fprintf( stdout, EOL C_RESET "[%s%s%s%s" C_RESET "] ",
-             ( _r.ITMoverflows != ITMDecoderGetStats( &_r.i )->overflow ) ? C_LRED "V" : C_RESET "-",
-             ( _r.SWPkt != ITMDecoderGetStats( &_r.i )->SWPkt ) ? C_LGREEN "S" : C_RESET "-",
-             ( _r.TSPkt != ITMDecoderGetStats( &_r.i )->TSPkt ) ? C_LBLUE "T" : C_RESET "-",
-             ( _r.HWPkt != ITMDecoderGetStats( &_r.i )->HWPkt ) ? C_LCYAN "H" : C_RESET "-" );
+             ( _r.ITMoverflows != ITMDecoderGetStats( &_r.i )->overflow ) ? C_OVF_IND "V" : C_RESET "-",
+             ( _r.SWPkt != ITMDecoderGetStats( &_r.i )->SWPkt ) ? C_SOFT_IND "S" : C_RESET "-",
+             ( _r.TSPkt != ITMDecoderGetStats( &_r.i )->TSPkt ) ? C_TSTAMP_IND "T" : C_RESET "-",
+             ( _r.HWPkt != ITMDecoderGetStats( &_r.i )->HWPkt ) ? C_HW_IND "H" : C_RESET "-" );
 
     if ( _r.lastReportTicks )
-        fprintf( stdout, "Interval = " C_YELLOW "%" PRIu64 "mS " C_RESET "/ "C_YELLOW "%" PRIu64 C_RESET " (~" C_YELLOW "%" PRIu64 C_RESET " Ticks/mS)" EOL,
+        fprintf( stdout, "Interval = " C_DATA "%" PRIu64 "mS " C_RESET "/ "C_DATA "%" PRIu64 C_RESET " (~" C_DATA "%" PRIu64 C_RESET " Ticks/mS)" EOL,
                  lastTime - _r.lastReportmS, _r.timeStamp - _r.lastReportTicks, ( _r.timeStamp - _r.lastReportTicks ) / ( lastTime - _r.lastReportmS ) );
     else
     {
-        fprintf( stdout, C_RESET "Interval = " C_YELLOW "%" PRIu64 C_RESET "mS" EOL, lastTime - _r.lastReportmS );
+        fprintf( stdout, C_RESET "Interval = " C_DATA "%" PRIu64 C_RESET "mS" EOL, lastTime - _r.lastReportmS );
     }
 
     genericsReport( V_INFO, "         Ovf=%3d  ITMSync=%3d TPIUSync=%3d ITMErrors=%3d" EOL,
