@@ -977,7 +977,7 @@ int fpgaFeeder( void )
         {
             /* Try and read some data */
             t = ftdispi_write_read( &_r.ftdifsc, initSequence, 4,
-                                    transferBlock,
+                                    cbw,
                                     ( readableFrames + 2 ) * FTDI_PACKET_SIZE,
                                     FPGA_AWAKE );
 
@@ -992,7 +992,7 @@ int fpgaFeeder( void )
             _processBlock( ( readableFrames + 1 )*FTDI_PACKET_SIZE, cbw );
 
             /* Get pointer to after last valid frame */
-            uint8_t *s = &transferBlock[ ( readableFrames + 1 ) * FTDI_PACKET_SIZE ];
+            uint8_t *s = &cbw[ ( readableFrames + 1 ) * FTDI_PACKET_SIZE ];
 
             /* Final protocol frame should contain number of frames available in next run */
             if ( ( *s != 0xA6 ) || ( *( s + 12 ) != 0xff ) || ( *( s + 13 ) != 0xff ) ||

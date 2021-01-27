@@ -116,7 +116,7 @@ endif
 
 ORBLIB_CFILES = $(App_DIR)/itmDecoder.c $(App_DIR)/tpiuDecoder.c $(App_DIR)/msgDecoder.c $(App_DIR)/msgSeq.c
 
-ORBUCULUM_CFILES = $(App_DIR)/$(ORBUCULUM).c $(App_DIR)/filewriter.c $(FPGA_CFILES) $(App_DIR)/nwclient.c
+ORBUCULUM_CFILES = $(App_DIR)/$(ORBUCULUM).c $(FPGA_CFILES) $(App_DIR)/nwclient.c
 ORBFIFO_CFILES   = $(App_DIR)/$(ORBFIFO).c $(App_DIR)/filewriter.c $(App_DIR)/fifos.c
 ORBCAT_CFILES    = $(App_DIR)/$(ORBCAT).c
 ORBTOP_CFILES    = $(App_DIR)/$(ORBTOP).c $(App_DIR)/symbols.c $(EXT)/cJSON.c
