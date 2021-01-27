@@ -280,8 +280,7 @@ it.  Orbuculum does _not_ require gdb to be running, but you may need a
 gdb session to start the output.  BMP needs traceswo to be turned on
 at the command line before it capture data from the port, for example.
 
-Command Line Options
---------------------
+*Command Line Options*
 
 For `orbuculum`, the specific command line options of note are;
 
@@ -330,7 +329,6 @@ legal channel specifiers;
 
 Be aware that if you start making the formatting or screen handling too complex
 its quite possible your machine might not keep up...and then you will loose data!
-
 
 While you've got `orbfifo` running a further fifo `hwevent` will be found in
 the output directory, which reports on events from the hardware, one event per line as follows;
