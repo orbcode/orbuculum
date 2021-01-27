@@ -32,15 +32,15 @@ supports hardware for parallel tracing through the TRACE pins too using the iCE4
 FPGA Boards. Numerous types of data can be output through these
 pins, from multiple channels of text messages through to Program Counter samples. Processing
 these data gives you a huge amount of insight into what is really going on inside
-your CPU. The current tools are;
+your CPU. The tools are all mix-and-match according to what you are trying to do. The current set is;
 
 * orbuculum: The main program which interfaces to the trace probe and then issues a network
 interface to which an arbitary number of clients can connect, by default on TCP/3443. This is
 used by a base interface to the target by other programmes in the suite. Generally you configure
-this for the interface you're using and then you can just leave it running and it'll grab
+this for the TRACE tool you're using and then you can just leave it running and it'll grab
 data from the target and make it available to clients whenever it can. Note that some
-debug probes can now issue an orbuculum-compatible interface on TCP/3443, and then you can
-connect the rest of the suite to that directly, without using orbuculum itself.
+debug probes can now create an orbuculum-compatible interface on TCP/3443, and then you can
+connect the rest of the suite to that directly, without using the orbuculum mux itself.
 
 * orbfifo: The fifo pump: Turns a trace feed into a set of fifos (or permanent files).
 
@@ -58,7 +58,7 @@ is a very powerful code performance analysis tool.
 
 A few simple use cases are documented in the last section of this
 document, as are example outputs of using orbtop to report on the
-activity of BMP while emitting SWO packets. More will be added.
+activity of BMP while emitting SWO packets.
 
 The data flowing from the SWO pin can be encoded
 either using NRZ (UART) or RZ (Manchester) formats.  The pin is a
@@ -68,10 +68,10 @@ in JTAG mode.
 The data flowing from the TRACE pins is clocked using a separate TRACECLK pin. There can
 be 1-4 TRACE pins which obviously give you much higher bandwidth than the single SWO.
 
-Orbuculum takes this output and makes it accessible to tools on the host
-PC. At its core it takes the data from the source, decodes it and presents it on  network
-interface. Orbuculum itself doesn't care if the data
-originates from a RZ or NRZ port, or at what speed....that's the job
+Whatever it's source, orbuculum takes this data flow and makes it accessible to tools on the host
+PC. At its core it takes the data from the source, decodes it and presents it on a network
+interface. The Orbuculum suite tools don't care if the data
+originates from a RZ or NRZ port, SWO or TRACE, or at what speed....that's all the job
 of the interface.
 
 At the present time Orbuculum supports ten devices for collecting trace
@@ -83,8 +83,8 @@ from the target;
 * FTDI High speed serial interfaces
 * OpenOCD (Add a line like `tpiu config internal :3443 uart off 32000000` to your openocd config to use it.)
 * PyOCD (Add options like `enable_swv: True`, `swv_system_clock: 32000000` to your `pyocd.yml` to use it.)
-* The ice40-HX8K Breakout Board for parallel trace.
-* The ECPIX-5 ECP5 Breakout Board for parallel trace.
+* The ice40-HX8K Breakout Board for parallel trace
+* The ECPIX-5 ECP5 Breakout Board for parallel trace
 * Anything capable of saving the raw SWO data to a file
 * Anything capable of offering SWO on a TCP port
 
@@ -114,7 +114,8 @@ When using parallel trace you are limited by the capabilities of the FPGA config
 the speed you can get data off the chip. The current maximum speed supported for the
 target is around 150MHz but you will swamp the chip very quickly if you start streaming
 data at that speed. The offboard link is curently limited to about 22Mbps serial. This issue will be
-resolved when dedicated FPGA target hardware is available (it's on its way).
+resolved when dedicated FPGA target hardware is available. Hardware in the lab is currently
+streaming to a PC at around 270 Mbps, and there's plenty more to come.
 
 Configuring the Target
 ======================
@@ -122,7 +123,9 @@ Configuring the Target
 Generally speaking, you will need to configure the target device to output
 SWD or parallel data. You can either do that through program code, or through magic
 incantations in gdb. The gdb approach is more flexible and the program code
-version is grandfathered. It's in the support directory if you want it.
+version is grandfathered. It's in the support directory if you want it...but I would advice
+you take the gdb script and turn it into code manually, that is maintained and the code
+in the support directory will eventually rust...only use it for guidance.
 
 In the support directory you will find a script `gdbtrace.init` which contains a
 set of setup macros for the SWO functionality. Full details of how to set up these
@@ -135,7 +138,7 @@ that in the program!
 
 Information about the contents of this file can be found by importing it into your
 gdb session with `source gdbtrace.init` and then typing `help orbuculum`. Help on the
-parameters for each macro are available via the help system too.
+parameters for each macro are available via the help system too (e.g. `help enableSTM32SWO`).
 
 In general, you will configure orbuculum via your local `.gdbinit` file. Several example files are 
 also in the Support directory. There you will find a `gdbtrace.init` file for 'regular' gcc
@@ -213,18 +216,18 @@ Build
 
 The command line to build the Orbuculum tool suite is;
 
-make
+>make
 
 or
 
-make WITH_FPGA=0 if you don't need the fpga trace capture support.
+>make WITH_FPGA=0
 
-...you may need to change the paths to your libusb files, depending on
+if you don't need the fpga trace capture support....you may need to change the paths to your libusb files, depending on
 how well your build environment is set up.
 
 To build the FPGA and load it into the board, install the incredible [icestorm](https://github.com/YosysHQ/icestorm) tools from Claire
 Wolf, then go into the `orbtrace/src` directory and type `make ICE40HX8K_B_EVN` or `make ECPIX_5_85F`. It will take about 30 seconds
-to compile the image and burn it to the board.
+to compile the image and burn it to the appropriate board.
 
 Building on OSX
 ===============
@@ -251,8 +254,8 @@ Using
 
 The command line options for Orbuculum are available by running
 orbuculum with the -h option. Orbuculum is just the multiplexer, the
-fifos are now provided by `orbfifo`. This is a change to the previous
-way the suite was configured.
+fifos are now provided by `orbfifo`. *This is a change to the previous
+way the suite was configured where the fifos were integrated into `orbuculum` itself*.
 
 Simply start orbuculum with the correct options for your trace probe and
 then you can start of stop other utilities as you wish. A typical command
@@ -268,36 +271,6 @@ client that is connected (such as orbcat, orbfifo or orbtop).
 The practical limit to the number of clients that can connect is set by the speed of the host machine....but there's
 nothing stopping you using another one on the local network :-)
 
-Orbfifo
-=======
-
-The easiest way to use the output from orbuculum is with one of the utilities
-such as orbfifo. This creates a set of fifos or permanent files in a given
-directory containing the decoded streams.
-
-A typical command line would be;
-
->orbfifo -b swo/ -c 0,text,"%c" -v 1
-
-The directory 'swo/' is expected to already exist, into which will be placed
-a file 'text' which delivers the output from swo channel 0 in character
-format.  Multiple -c options can be provided to set up fifos for individual channels
-from the debug device. The format of the -c option is;
-
- ChannelNum,ChannelName,FormatString
-
-ChannelNum is 0..31 and corresponds to the ITM channel. The name is the one
-that will appear in the directory and the FormatString can present the data
-using any printf-compatable formatting you prefer, so, the following are all 
-legal channel specifiers;
-
-    -c 7,temperature,"%d \260C\n"
-    -c 2,hexAddress,"%08x,"
-    -c 0,volume,"\l%d\b\n"
-
-Be aware that if you start making the formatting or screen handling too complex
-its quite possible your machine might not keep up...and then you will loose data!
-
 Information about command line options can be found with the -h
 option.  Orbuculum itself is specifically designed to be 'hardy' to probe and
 target disconnects and restarts (y'know, like you get in the real
@@ -307,22 +280,8 @@ it.  Orbuculum does _not_ require gdb to be running, but you may need a
 gdb session to start the output.  BMP needs traceswo to be turned on
 at the command line before it capture data from the port, for example.
 
-While you've got `orbfifo` running a further fifo `hwevent` will be found in
-the output directory, which reports on events from the hardware, one event per line as follows;
-
-* `0,[Status],[TS]` : Time status and timestamp.
-* `1,[PCAddr]` : Report Program Counter Sample.
-* `2,[DWTEvent]` : Report on DWT event from the set [CPI,Exc,Sleep,LSU,Fold and Cyc].
-* `3,[EventType],[ExceptionNumber]` : Hardware exception. Event type is one of [Enter, Exit, Resume].
-* `4,[Comp],[RW],[Data]` : Report Read/Write event.
-* `5,[Comp],[Addr]` : Report data access watchpoint event.
-* `6,[Comp],[Ofs]` : Report data offset event.
-* `7` : Currently unused.
-* `8,[Status],[Address]` : ISYNC event.
-
-
 Command Line Options
-====================
+--------------------
 
 For `orbuculum`, the specific command line options of note are;
 
@@ -337,15 +296,56 @@ For `orbuculum`, the specific command line options of note are;
   `-p [serialPort]`: to use. If not specified then the program defaults to Blackmagic probe.
 
   `-s [address]:[port]`: Set address for explicit TCP Source connection, (default none:2332).
-  
+
 
 Orbfifo
 =======
 
-Orbfifo provides a set of fifos that scripts and apps can exploit directly. It also has
+The easiest way to use the output from orbuculum is with one of the utilities
+such as orbfifo. This creates a set of fifos or permanent files in a given
+directory containing the decoded streams which apps can exploit directly. It also has
 a few other tricks up it's sleeve like filewriter capability. It used to be integrated into
 `orbuculum` but seperating it out splits the trace interface from the user space utilities, which
-is a Good Thing(tm). The command line options are;
+is a Good Thing(tm). 
+
+A typical command line would be;
+
+>orbfifo -b swo/ -c 0,text,"%c" -v 1
+
+The directory 'swo/' is expected to already exist, into which will be placed
+a file 'text' which delivers the output from swo channel 0 in character
+format.  Multiple -c options can be provided to set up fifos for individual channels
+from the debug device. The format of the -c option is;
+
+>-c ChannelNum,ChannelName,FormatString
+
+ChannelNum is 0..31 and corresponds to the ITM channel. The name is the one
+that will appear in the directory and the FormatString can present the data
+using any printf-compatable formatting you prefer, so, the following are all 
+legal channel specifiers;
+
+    -c 7,temperature,"%d \260C\n"
+    -c 2,hexAddress,"%08x,"
+    -c 0,volume,"\l%d\b\n"
+
+Be aware that if you start making the formatting or screen handling too complex
+its quite possible your machine might not keep up...and then you will loose data!
+
+
+While you've got `orbfifo` running a further fifo `hwevent` will be found in
+the output directory, which reports on events from the hardware, one event per line as follows;
+
+* `0,[Status],[TS]` : Time status and timestamp.
+* `1,[PCAddr]` : Report Program Counter Sample.
+* `2,[DWTEvent]` : Report on DWT event from the set [CPI,Exc,Sleep,LSU,Fold and Cyc].
+* `3,[EventType],[ExceptionNumber]` : Hardware exception. Event type is one of [Enter, Exit, Resume].
+* `4,[Comp],[RW],[Data]` : Report Read/Write event.
+* `5,[Comp],[Addr]` : Report data access watchpoint event.
+* `6,[Comp],[Ofs]` : Report data offset event.
+* `7` : Currently unused.
+* `8,[Status],[Address]` : ISYNC event.
+  
+The command line options are;
 
  `-b [basedir]`: for channels. Note that this is actually just leading text on the channel
      name, so if you put xyz/chan then all ITM software channels will end up in a directory
