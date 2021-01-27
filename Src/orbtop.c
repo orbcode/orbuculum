@@ -81,8 +81,6 @@
 
 #define MSG_REORDER_BUFLEN  (10)             /* Maximum number of samples to re-order for timekeeping */
 
-#define CLEAR_SCREEN        "\033[2J\033[;H" /* ASCII Sequence for clear screen */
-
 struct visitedAddr                           /* Structure for Hashmap of visited/observed addresses */
 {
     uint64_t visits;

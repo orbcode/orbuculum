@@ -73,25 +73,8 @@
 
 #include "git_version_info.h"
 #include "generics.h"
-#include "fileWriter.h"
 
-#ifdef WITH_FIFOS
-    #include "fifos.h"
-    #define IF_WITH_FIFOS(...) __VA_ARGS__
-    #define IF_NOT_WITH_FIFOS(...)
-#else
-    #define IF_WITH_FIFOS(...)
-    #define IF_NOT_WITH_FIFOS(...) __VA_ARGS__
-#endif
-
-#ifdef WITH_NWCLIENT
-    #include "nwclient.h"
-    #define IF_WITH_NWCLIENT(...) __VA_ARGS__
-    #define IF_NOT_WITH_NWCLIENT(...)
-#else
-    #define IF_WITH_NWCLIENT(...)
-    #define IF_NOT_WITH_NWCLIENT(...) __VA_ARGS__
-#endif
+#include "nwclient.h"
 
 #ifdef INCLUDE_FPGA_SUPPORT
     #define FPGA_MAX_FRAMES (0x1ff)
@@ -102,14 +85,14 @@
     #define FPGA_SERIAL_INTERFACE_SPEED (12000000)
 
     #ifdef FPGA_UART_FEEDER
-        #define EFFECTIVE_DATA_TRANSFER_SPEED FPGA_SERIAL_INTERFACE_SPEED
+        #define EFFECTIVE_DATA_TRANSFER_SPEED ((FPGA_SERIAL_INTERFACE_SPEED/10)*8)
         #define FPGA_HS_TRANSFER_SIZE (512)
     #endif
 
     #ifdef FPGA_SPI_FEEDER
         #define FTDI_INTERFACE (INTERFACE_A)
         #define FTDI_INTERFACE_SPEED CLOCK_MAX_SPEEDX5
-        #define EFFECTIVE_DATA_TRANSFER_SPEED (27000000)
+        #define EFFECTIVE_DATA_TRANSFER_SPEED (21600000)
         #define FTDI_VID  (0x0403)
         #define FTDI_PID  (0x6010)
         #define FTDI_PACKET_SIZE  (16)
@@ -145,7 +128,7 @@ static const struct deviceList
 #ifndef TRANSFER_SIZE
     #define TRANSFER_SIZE (4096)
 #endif
-#define TRANSFER_BUFFER (200000)
+#define TRANSFER_BUFFER_COUNT (256)
 
 //#define DUMP_BLOCK
 
@@ -154,9 +137,6 @@ struct
 {
     /* Config information */
     bool segger;                                         /* Using a segger debugger */
-    IF_WITH_FIFOS( bool filewriter; )                    /* Supporting filewriter functionality */
-    IF_WITH_FIFOS( char *fwbasedir; )                    /* Base directory for filewriter output */
-    IF_WITH_FIFOS( bool permafile; )                     /* Use permanent files rather than fifos */
 
     /* FPGA Information */
     IF_INCLUDE_FPGA_SUPPORT( bool orbtrace; )            /* In trace mode? */
@@ -174,31 +154,32 @@ struct
     uint32_t intervalReportTime;                         /* If we want interval reports about performance */
 
     /* Network link */
-    IF_WITH_NWCLIENT( int listenPort );                  /* Listening port for network */
+    int listenPort;                                      /* Listening port for network */
 } options =
 {
-    IF_WITH_NWCLIENT( .listenPort = NWCLIENT_SERVER_PORT, )
+    .listenPort = NWCLIENT_SERVER_PORT,
     .seggerHost = SEGGER_HOST,
 #ifdef INCLUDE_FPGA_SUPPORT
     .orbtraceWidth = 4
 #endif
 };
 
+struct dataBlock
+{
+    uint32_t fillLevel;
+    uint8_t buffer[TRANSFER_SIZE];
+};
+
 struct
 {
-    /* Link to the fifo subsystem */
-    IF_WITH_FIFOS( struct fifosHandle *f );
-
     /* Link to the network client subsystem */
-    IF_WITH_NWCLIENT( struct nwclientsHandle *n );
+    struct nwclientsHandle *n;
 
     /* Link to the FPGA subsystem */
     IF_INCLUDE_FPGA_SUPPORT( struct ftdi_context *ftdi );              /* Connection materials for ftdi fpga interface */
     IF_INCLUDE_FPGA_SUPPORT( struct ftdispi_context ftdifsc );
 
     uint64_t  intervalBytes;                                           /* Number of bytes transferred in current interval */
-
-    pthread_t bufferFeederHandle;                                      /* Handle to any established buffer feeder */
 
     pthread_t intervalThread;                                          /* Thread reporting on intervals */
     bool      ending;                                                  /* Flag indicating app is terminating */
@@ -207,8 +188,7 @@ struct
     sem_t dataWaiting;
     uint32_t wp;
     uint32_t rp;
-    uint8_t buffer[TRANSFER_BUFFER];
-
+    struct dataBlock bufSet[TRANSFER_BUFFER_COUNT];
 } _r;
 
 // ====================================================================================================
@@ -317,27 +297,17 @@ void _printHelp( char *progName )
 
 {
 
-    IF_WITH_FIFOS( fprintf( stdout, "Usage: %s <hntv> <s name:number> <b basedir> <f filename>  <i channel> <p port> <a speed>" EOL, progName ) );
-    IF_NOT_WITH_FIFOS( fprintf( stdout, "Usage: %s <hv> <s name:number> <f filename>  <p port> <a speed>" EOL, progName ) );
-    fprintf( stdout, "        a: <serialSpeed> to use" EOL );
-    IF_WITH_FIFOS( fprintf( stdout, "        b: <basedir> for channels" EOL ) );
-    IF_WITH_FIFOS( fprintf( stdout, "        c: <Number>,<Name>,<Format> of channel to populate (repeat per channel)" EOL ) );
-    fprintf( stdout, "        e: When reading from file, terminate at end of file rather than waiting for further input" EOL );
-    fprintf( stdout, "        f: <filename> Take input from specified file" EOL );
-    fprintf( stdout, "        h: This help" EOL );
-    IF_WITH_FIFOS( fprintf( stdout, "        i: <channel> Set ITM Channel in TPIU decode (defaults to 1)" EOL ) );
-    IF_WITH_NWCLIENT( fprintf( stdout, "        l: <port> Listen port for the incoming connections (defaults to %d)" EOL, NWCLIENT_SERVER_PORT ) );
-    fprintf( stdout, "        m: <interval> Output monitor information about the link at <interval>ms" EOL );
-    IF_WITH_FIFOS( fprintf( stdout, "        n: Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL ) );
-    IF_INCLUDE_FPGA_SUPPORT( fprintf( stdout, "        o: <num> Use traceport FPGA custom interface with 1, 2 or 4 bits width" EOL ) );
-    fprintf( stdout, "        p: <serialPort> to use" EOL );
-    IF_WITH_FIFOS( fprintf( stdout, "        P: Create permanent files rather than fifos" EOL ) );
-    fprintf( stdout, "        s: <address>:<port> Set address for SEGGER JLink connection (default none:%d)" EOL, SEGGER_PORT );
-    IF_WITH_FIFOS( fprintf( stdout, "        t: Use TPIU decoder" EOL ) );
-    fprintf( stdout, "        v: <level> Verbose mode 0(errors)..3(debug)" EOL );
-    IF_WITH_FIFOS( fprintf( stdout, "        w: <path> Enable filewriter functionality using specified base path" EOL ) );
-    IF_WITH_FIFOS( fprintf( stdout, "        (Built with fifo support)" EOL ) );
-    IF_NOT_WITH_FIFOS( fprintf( stdout, "        (Built without fifo support)" EOL ) );
+    genericsPrintf( "Usage: %s <hv> <s name:number> <f filename>  <p port> <a speed>" EOL, progName );
+    genericsPrintf( "        a: <serialSpeed> to use" EOL );
+    genericsPrintf( "        e: When reading from file, terminate at end of file rather than waiting for further input" EOL );
+    genericsPrintf( "        f: <filename> Take input from specified file" EOL );
+    genericsPrintf( "        h: This help" EOL );
+    genericsPrintf( "        l: <port> Listen port for the incoming connections (defaults to %d)" EOL, NWCLIENT_SERVER_PORT );
+    genericsPrintf( "        m: <interval> Output monitor information about the link at <interval>ms" EOL );
+    IF_INCLUDE_FPGA_SUPPORT( genericsPrintf( "        o: <num> Use traceport FPGA custom interface with 1, 2 or 4 bits width" EOL ) );
+    genericsPrintf( "        p: <serialPort> to use" EOL );
+    genericsPrintf( "        s: <Server>:<Port> to use" EOL );
+    genericsPrintf( "        v: <level> Verbose mode 0(errors)..3(debug)" EOL );
 }
 // ====================================================================================================
 int _processOptions( int argc, char *argv[] )
@@ -346,219 +316,111 @@ int _processOptions( int argc, char *argv[] )
     int c;
 #define DELIMITER ','
 
-    IF_WITH_FIFOS( char *chanConfig );
-    IF_WITH_FIFOS( char *chanName );
-    IF_WITH_FIFOS( uint chan );
-    IF_WITH_FIFOS( char *chanIndex );
+    while ( ( c = getopt ( argc, argv, "a:ef:hl:m:no:p:s:v:" ) ) != -1 )
+        switch ( c )
+        {
+            // ------------------------------------
+            case 'a':
+                options.speed = atoi( optarg );
+                options.dataSpeed = options.speed;
+                break;
 
-#ifdef WITH_FIFOS
+            // ------------------------------------
 
-    IF_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:b:c:ef:hi:l:m:no:p:Ps:tv:w:" ) ) != -1 ) )
-        IF_NOT_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:b:c:efi::hm:o:p:Ps:tv:w:" ) ) != -1 ) )
-#else
-    IF_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:ef:hl:m:no:p:s:v:" ) ) != -1 ) )
-        IF_NOT_WITH_NWCLIENT( while ( ( c = getopt ( argc, argv, "a:ef:hm:no:p:s:v:" ) ) != -1 ) )
-#endif
-            switch ( c )
-            {
-                // ------------------------------------
-                case 'a':
-                    options.speed = atoi( optarg );
-                    options.dataSpeed = options.speed;
-                    break;
+            case 'e':
+                options.fileTerminate = true;
+                break;
 
-                    // ------------------------------------
-#ifdef WITH_FIFOS
+            // ------------------------------------
+            case 'f':
+                options.file = optarg;
+                break;
 
-                case 'b':
-                    fifoSetChanPath( _r.f, optarg );
-                    break;
-#endif
+            // ------------------------------------
+            case 'h':
+                _printHelp( argv[0] );
+                return false;
 
-                // ------------------------------------
-                case 'e':
-                    options.fileTerminate = true;
-                    break;
+            // ------------------------------------
 
-                // ------------------------------------
-                case 'f':
-                    options.file = optarg;
-                    break;
+            case 'l':
+                options.listenPort = atoi( optarg );
+                break;
 
-                // ------------------------------------
-                case 'h':
-                    _printHelp( argv[0] );
-                    return false;
+            // ------------------------------------
 
-                    // ------------------------------------
-#ifdef WITH_FIFOS
-
-                case 'i':
-                    fifoSettpiuITMChannel( _r.f, atoi( optarg ) );
-                    break;
-#endif
-                    // ------------------------------------
-#if WITH_NWCLIENT
-
-                case 'l':
-                    options.listenPort = atoi( optarg );
-                    break;
-#endif
+            case 'm':
+                options.intervalReportTime = atoi( optarg );
+                break;
 
                 // ------------------------------------
 
-                case 'm':
-                    options.intervalReportTime = atoi( optarg );
-                    break;
-
-                    // ------------------------------------
-
-#ifdef WITH_FIFOS
-
-                case 'n':
-                    fifoSetForceITMSync( _r.f, false );
-                    break;
-#endif
-                    // ------------------------------------
 #ifdef INCLUDE_FPGA_SUPPORT
 
-                case 'o':
-                    // Generally you need TPIU for orbtrace
-                    IF_WITH_FIFOS( fifoSetUseTPIU( _r.f, true ) );
-                    options.orbtrace = true;
-                    options.orbtraceWidth = atoi( optarg );
-                    break;
+            case 'o':
+                // Generally you need TPIU for orbtrace
+                options.orbtrace = true;
+                options.orbtraceWidth = atoi( optarg );
+                break;
 #endif
 
+            // ------------------------------------
+
+            case 'p':
+                options.port = optarg;
+                break;
+
+            // ------------------------------------
+
+            case 's':
+                options.seggerHost = optarg;
+
+                // See if we have an optional port number too
+                char *a = optarg;
+
+                while ( ( *a ) && ( *a != ':' ) )
+                {
+                    a++;
+                }
+
+                if ( *a == ':' )
+                {
+                    *a = 0;
+                    options.seggerPort = atoi( ++a );
+                }
+
+                if ( !options.seggerPort )
+                {
+                    options.seggerPort = SEGGER_PORT;
+                }
+
+                break;
+
+            // ------------------------------------
+            case 'v':
+                genericsSetReportLevel( atoi( optarg ) );
+                break;
+
+            // ------------------------------------
+
+            case '?':
+                if ( optopt == 'b' )
+                {
+                    genericsReport( V_ERROR, "Option '%c' requires an argument." EOL, optopt );
+                }
+                else if ( !isprint ( optopt ) )
+                {
+                    genericsReport( V_ERROR, "Unknown option character `\\x%x'." EOL, optopt );
+                }
+
+                return false;
+
+            // ------------------------------------
+            default:
+                genericsReport( V_ERROR, "Unrecognised option '%c'" EOL, c );
+                return false;
                 // ------------------------------------
-
-                case 'p':
-                    options.port = optarg;
-                    break;
-
-                    // ------------------------------------
-
-#ifdef WITH_FIFOS
-
-                case 'P':
-                    options.permafile = true;
-                    break;
-#endif
-
-                // ------------------------------------
-                case 's':
-                    IF_WITH_FIFOS( fifoSetForceITMSync( _r.f, true ) );
-                    options.seggerHost = optarg;
-
-                    // See if we have an optional port number too
-                    char *a = optarg;
-
-                    while ( ( *a ) && ( *a != ':' ) )
-                    {
-                        a++;
-                    }
-
-                    if ( *a == ':' )
-                    {
-                        *a = 0;
-                        options.seggerPort = atoi( ++a );
-                    }
-
-                    if ( !options.seggerPort )
-                    {
-                        options.seggerPort = SEGGER_PORT;
-                    }
-
-                    break;
-
-                    // ------------------------------------
-#ifdef WITH_FIFOS
-
-                case 't':
-                    fifoSetUseTPIU( _r.f, true );
-                    break;
-#endif
-
-                // ------------------------------------
-                case 'v':
-                    genericsSetReportLevel( atoi( optarg ) );
-                    break;
-
-                    // ------------------------------------
-
-#ifdef WITH_FIFOS
-
-                case 'w':
-                    options.filewriter = true;
-                    options.fwbasedir = optarg;
-                    break;
-
-                // ------------------------------------
-
-                /* Individual channel setup */
-                case 'c':
-                    chanIndex = chanConfig = strdup( optarg );
-                    chan = atoi( optarg );
-
-                    if ( chan >= NUM_CHANNELS )
-                    {
-                        genericsReport( V_ERROR, "Channel index out of range" EOL );
-                        return false;
-                    }
-
-                    /* Scan for start of filename */
-                    while ( ( *chanIndex ) && ( *chanIndex != DELIMITER ) )
-                    {
-                        chanIndex++;
-                    }
-
-                    if ( !*chanIndex )
-                    {
-                        genericsReport( V_ERROR, "No filename for channel %d" EOL, chan );
-                        return false;
-                    }
-
-                    chanName = ++chanIndex;
-
-                    /* Scan for format */
-                    while ( ( *chanIndex ) && ( *chanIndex != DELIMITER ) )
-                    {
-                        chanIndex++;
-                    }
-
-                    if ( !*chanIndex )
-                    {
-                        genericsReport( V_WARN, "No output format for channel %d, output raw!" EOL, chan );
-                        fifoSetChannel( _r.f, chan, chanName, NULL );
-                        break;
-                    }
-
-                    *chanIndex++ = 0;
-                    fifoSetChannel( _r.f, chan, chanName, genericsUnescape( chanIndex ) );
-                    break;
-#endif
-
-                // ------------------------------------
-
-
-                case '?':
-                    if ( optopt == 'b' )
-                    {
-                        genericsReport( V_ERROR, "Option '%c' requires an argument." EOL, optopt );
-                    }
-                    else if ( !isprint ( optopt ) )
-                    {
-                        genericsReport( V_ERROR, "Unknown option character `\\x%x'." EOL, optopt );
-                    }
-
-                    return false;
-
-                // ------------------------------------
-                default:
-                    genericsReport( V_ERROR, "Unrecognised option '%c'" EOL, c );
-                    return false;
-                    // ------------------------------------
-            }
+        }
 
 #ifdef INCLUDE_FPGA_SUPPORT
 
@@ -584,9 +446,6 @@ int _processOptions( int argc, char *argv[] )
 
     /* ... and dump the config if we're being verbose */
     genericsReport( V_INFO, "Orbuculum V" VERSION " (Git %08X %s, Built " BUILD_DATE ")" EOL, GIT_HASH, ( GIT_DIRTY ? "Dirty" : "Clean" ) );
-    IF_WITH_FIFOS( genericsReport( V_INFO, "BasePath    : %s" EOL, fifoGetChanPath( _r.f ) ) );
-    IF_WITH_FIFOS( genericsReport( V_INFO, "ForceSync   : %s" EOL, fifoGetForceITMSync( _r.f ) ? "true" : "false" ) );
-    IF_WITH_FIFOS( genericsReport( V_INFO, "Permafile   : %s" EOL, options.permafile ? "true" : "false" ) );
 
     if ( options.intervalReportTime )
     {
@@ -629,19 +488,6 @@ int _processOptions( int argc, char *argv[] )
 
 #endif
 
-#ifdef WITH_FIFOS
-
-    if ( fifoGetUseTPIU( _r.f ) )
-    {
-        genericsReport( V_INFO, "Using TPIU  : true (ITM on channel %d)" EOL, fifoGettpiuITMChannel( _r.f ) );
-    }
-    else
-    {
-        genericsReport( V_INFO, "Using TPIU  : false" EOL );
-    }
-
-#endif
-
     if ( options.file )
     {
         genericsReport( V_INFO, "Input File  : %s", options.file );
@@ -655,20 +501,6 @@ int _processOptions( int argc, char *argv[] )
             genericsReport( V_INFO, " (Ongoing read)" EOL );
         }
     }
-
-#ifdef WITH_FIFOS
-    genericsReport( V_INFO, "Channels    :" EOL );
-
-    for ( int g = 0; g < NUM_CHANNELS; g++ )
-    {
-        if ( fifoGetChannelName( _r.f, g ) )
-        {
-            genericsReport( V_INFO, "         %02d [%s] [%s]" EOL, g, genericsEscape( fifoGetChannelFormat( _r.f, g ) ? : "RAW" ), fifoGetChannelName( _r.f, g ) );
-        }
-    }
-
-    genericsReport( V_INFO, "         HW [Predefined] [" HWFIFO_NAME "]" EOL );
-#endif
 
     if ( ( options.file ) && ( ( options.port ) || ( options.seggerPort ) ) )
     {
@@ -700,8 +532,7 @@ void *_checkInterval( void *params )
         snapInterval = _r.intervalBytes * 1000 / options.intervalReportTime;
         _r.intervalBytes = 0;
 
-        /* Async channel, so each byte is 10 bits */
-        snapInterval *= 10;
+        snapInterval *= 8;
         genericsPrintf( C_PREV_LN C_CLR_LN C_DATA );
 
         if ( snapInterval / 1000000 )
@@ -724,26 +555,6 @@ void *_checkInterval( void *params )
             genericsPrintf( "(" C_DATA " %3d%% " C_RESET "full)", ( fullPercent > 100 ) ? 100 : fullPercent );
         }
 
-#ifdef WITH_FIFOS
-#ifdef INCLUDE_FPGA_SUPPORT
-
-        if ( options.orbtrace )
-        {
-            struct TPIUCommsStats *c = fifoGetCommsStats( _r.f );
-            genericsPrintf( C_RESET " LEDS: %s%s%s%s" C_RESET " Frames: "C_DATA "%u" C_RESET,
-                            c->leds & 1 ? C_DATA_IND "d" : C_RESET "-",
-                            c->leds & 2 ? C_TX_IND "t" : C_RESET "-",
-                            c->leds & 0x20 ? C_OVF_IND "O" : C_RESET "-",
-                            c->leds & 0x80 ? C_HB_IND "h" : C_RESET "-",
-                            c->totalFrames );
-
-            genericsReport( V_INFO, " Pending:%5d Lost:%5d",
-                            c->pendingCount,
-                            c->lostFrames );
-        }
-
-#endif
-#endif
         genericsPrintf( C_RESET EOL );
     }
 
@@ -757,11 +568,12 @@ static void _processBlock( int s, unsigned char *cbw )
 {
     genericsReport( V_DEBUG, "RXED Packet of %d bytes" EOL, s );
 
-    /* Account for this reception */
-    _r.intervalBytes += s;
 
     if ( s )
     {
+        /* Account for this reception */
+        _r.intervalBytes += s;
+
 #ifdef DUMP_BLOCK
         uint8_t *c = cbw;
         uint32_t y = s;
@@ -779,137 +591,20 @@ static void _processBlock( int s, unsigned char *cbw )
         }
 
 #endif
-        IF_WITH_NWCLIENT( nwclientSend( _r.n, s, cbw ) );
-
-#ifdef WITH_FIFOS
-
-        while ( s-- )
-        {
-            fifoProtocolPump( _r.f, *cbw++ );
-        }
-
-#endif
-
+        nwclientSend( _r.n, s, cbw );
     }
 
-}
-// ====================================================================================================
-static void *_bufferFeeder( void *arg )
-
-{
-    /* Pump a block of data from the buffer into the various handlers. */
-    uint32_t span;
-
-    while ( !_r.ending )
-    {
-        sem_wait( &_r.dataWaiting );
-
-        while ( _r.wp != _r.rp )
-        {
-            if ( _r.wp > _r.rp )
-            {
-                span = _r.wp - _r.rp;
-            }
-            else
-            {
-                span = TRANSFER_BUFFER - _r.rp;
-            }
-
-            IF_WITH_NWCLIENT( nwclientSend( _r.n, span, &_r.buffer[_r.rp] ) );
-
-#ifdef WITH_FIFOS
-
-            for ( uint32_t r = 0; r < span; r++ )
-            {
-                fifoProtocolPump( _r.f, _r.buffer[_r.rp + r] );
-            }
-
-#endif
-            _r.rp = ( _r.rp + span ) % TRANSFER_BUFFER;
-            _r.intervalBytes += span;
-        }
-    }
-
-    return 0;
-}
-// ====================================================================================================
-static void _submitBlock( uint32_t t, uint8_t *p )
-
-{
-    uint32_t writeLen, space;
-
-    while ( t )
-    {
-        /* Spin until there is room in the buffer for the data */
-        do
-        {
-            /* Amount of space in the buffer is size of the buffer take away what is used */
-            space = TRANSFER_BUFFER - ( ( TRANSFER_BUFFER + _r.wp - _r.rp ) % TRANSFER_BUFFER );
-
-            if ( space >= t )
-            {
-                break;
-            }
-            else
-            {
-                usleep( 100 );
-            }
-        }
-        while ( true );
-
-        /* Write just the bit we've got room for before the end of the circular buffer */
-        if ( _r.wp + t > TRANSFER_BUFFER )
-        {
-            writeLen = TRANSFER_BUFFER - _r.wp;
-        }
-        else
-        {
-            writeLen = t;
-        }
-
-        memcpy( &_r.buffer[_r.wp], p, writeLen );
-        t -= writeLen;
-        p += writeLen;
-
-        _r.wp = ( _r.wp + writeLen ) % TRANSFER_BUFFER;
-    }
-
-    /* Make sure the reader knows there are data here */
-    sem_post( &_r.dataWaiting );
-}
-// ====================================================================================================
-static void _createBufferFeeder( void )
-
-{
-    sem_init( &_r.dataWaiting, 0, 0 );
-
-    if ( pthread_create( &( _r.bufferFeederHandle ), NULL, &_bufferFeeder, NULL ) )
-    {
-        genericsExit( -1, "Failed to create buffer feeder" EOL );
-    }
-}
-// ====================================================================================================
-static void _destroyBufferFeeder( void )
-
-{
-    if ( _r.bufferFeederHandle )
-    {
-        pthread_cancel( _r.bufferFeederHandle );
-        _r.bufferFeederHandle = 0;
-    }
 }
 // ====================================================================================================
 int usbFeeder( void )
 
 {
-    unsigned char cbw[TRANSFER_SIZE];
+    uint8_t cbw[TRANSFER_SIZE];
     libusb_device_handle *handle = NULL;
     libusb_device *dev;
-    int size;
+    int32_t size;
     const struct deviceList *p;
     int32_t err;
-
-    _createBufferFeeder();
 
     while ( !_r.ending )
     {
@@ -959,13 +654,11 @@ int usbFeeder( void )
             continue;
         }
 
-        int32_t r;
-
         genericsReport( V_DEBUG, "USB Interface claimed, ready for data" EOL );
 
         while ( !_r.ending )
         {
-            r = libusb_bulk_transfer( handle, p->ep, cbw, TRANSFER_SIZE, &size, 10 );
+            int32_t r = libusb_bulk_transfer( handle, p->ep, cbw, TRANSFER_SIZE, ( int * )&size, 10 );
 
             if ( ( r < 0 ) && ( r != LIBUSB_ERROR_TIMEOUT ) )
             {
@@ -973,17 +666,12 @@ int usbFeeder( void )
                 break;
             }
 
-            if ( size )
-            {
-                _submitBlock( size, cbw );
-            }
+            _processBlock( size, cbw );
         }
 
         libusb_close( handle );
         genericsReport( V_INFO, "USB Interface closed" EOL );
     }
-
-    _destroyBufferFeeder();
 
     return 0;
 }
@@ -1036,8 +724,6 @@ int seggerFeeder( void )
         }
 
         genericsReport( V_INFO, "Established Segger Link" EOL );
-
-        IF_WITH_FIFOS( fifoForceSync( _r.f, true ) );
 
         while ( !_r.ending && ( ( t = read( sockfd, cbw, TRANSFER_SIZE ) ) > 0 ) )
         {
@@ -1128,8 +814,6 @@ int fpgaFeeder( void )
     assert( ( options.orbtraceWidth == 1 ) || ( options.orbtraceWidth == 2 ) || ( options.orbtraceWidth == 4 ) );
     uint8_t wwString[] = { 'w', 0xA0 | ( ( options.orbtraceWidth == 4 ) ? 3 : options.orbtraceWidth ) };
 
-    _createBufferFeeder();
-
     while ( !_r.ending )
     {
 #ifdef OSX
@@ -1163,7 +847,6 @@ int fpgaFeeder( void )
 
 #endif
 
-
         if ( ( ret = _setSerialConfig ( f, FPGA_SERIAL_INTERFACE_SPEED ) ) < 0 )
         {
             genericsExit( ret, "fpga setSerialConfig failed" EOL );
@@ -1183,7 +866,7 @@ int fpgaFeeder( void )
                 break;
             }
 
-            _submitBlock( t, cbw );
+            _processBlock( t, cbw );
         }
 
         if ( !_r.ending )
@@ -1194,7 +877,6 @@ int fpgaFeeder( void )
         close( f );
     }
 
-    _destroyBufferFeeder();
     return 0;
 }
 #endif
@@ -1205,7 +887,7 @@ int fpgaFeeder( void )
 
 {
     int f;
-    uint8_t transferBlock[FTDI_HS_TRANSFER_SIZE];
+    uint8_t cbw[FTDI_HS_TRANSFER_SIZE];
     int t = 0;
 
     /* Init sequence is <INIT> <0xA0|BITS> <TFR-H> <TFR-L> */
@@ -1269,10 +951,6 @@ int fpgaFeeder( void )
 
         genericsReport( V_INFO, "All parameters configured" EOL );
 
-        IF_WITH_FIFOS( fifoForceSync( _r.f, true ) );
-
-        _createBufferFeeder();
-
         /* First time through, we need to read one frame. The way this protocol works is;    */
         /* Each frame that comes from the FPGA is 16 bytes long. A frame sync is an explicit */
         /* value that cannot appear in a frame (fffffff7) that is used to 'reset' the frame  */
@@ -1311,14 +989,14 @@ int fpgaFeeder( void )
             genericsReport( V_DEBUG, "RXED frame of %d packets" EOL, readableFrames );
 
             /* We deliberately include the first element in the transfer so there's a frame sync (0xfffffff7) in the flow */
-            _submitBlock( ( readableFrames + 1 )*FTDI_PACKET_SIZE, transferBlock );
+            _processBlock( ( readableFrames + 1 )*FTDI_PACKET_SIZE, cbw );
 
             /* Get pointer to after last valid frame */
-            uint8_t *cbw = &transferBlock[ ( readableFrames + 1 ) * FTDI_PACKET_SIZE ];
+            uint8_t *s = &transferBlock[ ( readableFrames + 1 ) * FTDI_PACKET_SIZE ];
 
             /* Final protocol frame should contain number of frames available in next run */
-            if ( ( *cbw != 0xA6 ) || ( *( cbw + 12 ) != 0xff ) || ( *( cbw + 13 ) != 0xff ) ||
-                    ( *( cbw + 14 ) != 0xff ) || ( *( cbw + 15 ) != 0x7f ) )
+            if ( ( *s != 0xA6 ) || ( *( s + 12 ) != 0xff ) || ( *( s + 13 ) != 0xff ) ||
+                    ( *( s + 14 ) != 0xff ) || ( *( s + 15 ) != 0x7f ) )
             {
                 genericsReport( V_INFO, "Protocol error" EOL );
 
@@ -1327,7 +1005,7 @@ int fpgaFeeder( void )
             }
             else
             {
-                readableFrames = ( *( cbw + 2 ) ) + 256 * ( *( cbw + 1 ) );
+                readableFrames = ( *( s + 2 ) ) + 256 * ( *( s + 1 ) );
 
                 /* Max out the readable frames in case it exceeds our buffers */
                 readableFrames = ( readableFrames > FTDI_NUM_FRAMES ) ? FTDI_NUM_FRAMES : readableFrames;
@@ -1344,7 +1022,6 @@ int fpgaFeeder( void )
         ftdispi_close( &_r.ftdifsc, 1 );
     }
 
-    _destroyBufferFeeder();
     return 0;
 }
 #endif
@@ -1397,8 +1074,7 @@ static void _doExit( void )
 {
     _r.ending = true;
 
-    IF_WITH_FIFOS( fifoShutdown( _r.f ) );
-    IF_WITH_NWCLIENT( nwclientShutdown( _r.n ) );
+    nwclientShutdown( _r.n );
     /* Give them a bit of time, then we're leaving anyway */
     usleep( 200 );
 }
@@ -1407,8 +1083,6 @@ int main( int argc, char *argv[] )
 
 {
     /* Setup fifos with forced ITM sync, no TPIU and TPIU on channel 1 if its engaged later */
-    IF_WITH_FIFOS( _r.f = fifoInit( true, false, 1 ) );
-    IF_WITH_FIFOS( assert( _r.f ) );
 
     if ( !_processOptions( argc, argv ) )
     {
@@ -1416,9 +1090,7 @@ int main( int argc, char *argv[] )
         genericsExit( -1, "" EOL );
     }
 
-    IF_WITH_FIFOS( fifoUsePermafiles( _r.f, options.permafile ) );
-
-    /* Make sure the fifos get removed at the end */
+    /* Make sure the network clients get removed at the end */
     atexit( _doExit );
 
     /* This ensures the atexit gets called */
@@ -1433,26 +1105,10 @@ int main( int argc, char *argv[] )
         genericsExit( -1, "Failed to ignore SIGPIPEs" EOL );
     }
 
-#ifdef WITH_FIFOS
-
-    if ( ! ( fifoCreate( _r.f ) ) )
-    {
-        genericsExit( -1, "Failed to make channel devices" EOL );
-    }
-
-#endif
-
-#ifdef WITH_NWCLIENT
-
     if ( !( _r.n = nwclientStart( options.listenPort ) ) )
     {
         genericsExit( -1, "Failed to make network server" EOL );
     }
-
-#endif
-
-    /* Start the filewriter */
-    IF_WITH_FIFOS( fifoFilewriter( _r.f, options.filewriter, options.fwbasedir ) );
 
     if ( options.intervalReportTime )
     {

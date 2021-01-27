@@ -1,7 +1,3 @@
-# Optional components of the build
-WITH_NWCLIENT?=1
-WITH_FIFOS?=1
-
 # Define only one of these
 WITH_UART_FEEDER?=1
 #WITH_SPI_FEEDER?=1
@@ -22,10 +18,11 @@ CROSS_COMPILE=
 # Output Files
 ORBLIB = orb
 ORBUCULUM = orbuculum
-ORBCAT = orbcat
-ORBTOP = orbtop
-ORBDUMP = orbdump
-ORBSTAT = orbstat
+ORBCAT    = orbcat
+ORBFIFO   = orbfifo
+ORBTOP    = orbtop
+ORBDUMP   = orbdump
+ORBSTAT   = orbstat
 
 ##########################################################################
 # Check Host OS
@@ -118,20 +115,13 @@ endif
 # ==========
 
 ORBLIB_CFILES = $(App_DIR)/itmDecoder.c $(App_DIR)/tpiuDecoder.c $(App_DIR)/msgDecoder.c $(App_DIR)/msgSeq.c
-ORBUCULUM_CFILES = $(App_DIR)/$(ORBUCULUM).c $(App_DIR)/filewriter.c $(FPGA_CFILES)
-ifeq ($(WITH_FIFOS),1)
-ORBUCULUM_CFILES += $(App_DIR)/fifos.c
-endif
-ifeq ($(WITH_NWCLIENT),1)
-ORBUCULUM_CFILES += $(App_DIR)/nwclient.c
-endif
-ifeq ($(WITH_FPGA),1)
-ORBUCULUM_CFILES += $(EXT)/ftdispi.c
-endif
-ORBCAT_CFILES = $(App_DIR)/$(ORBCAT).c 
-ORBTOP_CFILES = $(App_DIR)/$(ORBTOP).c $(App_DIR)/symbols.c $(EXT)/cJSON.c
-ORBDUMP_CFILES = $(App_DIR)/$(ORBDUMP).c
-ORBSTAT_CFILES = $(App_DIR)/$(ORBSTAT).c $(App_DIR)/symbols.c
+
+ORBUCULUM_CFILES = $(App_DIR)/$(ORBUCULUM).c $(App_DIR)/filewriter.c $(FPGA_CFILES) $(App_DIR)/nwclient.c
+ORBFIFO_CFILES   = $(App_DIR)/$(ORBFIFO).c $(App_DIR)/filewriter.c $(App_DIR)/fifos.c
+ORBCAT_CFILES    = $(App_DIR)/$(ORBCAT).c
+ORBTOP_CFILES    = $(App_DIR)/$(ORBTOP).c $(App_DIR)/symbols.c $(EXT)/cJSON.c
+ORBDUMP_CFILES   = $(App_DIR)/$(ORBDUMP).c
+ORBSTAT_CFILES   = $(App_DIR)/$(ORBSTAT).c $(App_DIR)/symbols.c
 
 # FPGA Files
 # ==========
@@ -139,6 +129,7 @@ ORBSTAT_CFILES = $(App_DIR)/$(ORBSTAT).c $(App_DIR)/symbols.c
 ifeq ($(WITH_FPGA),1)
 CFLAGS+=-DINCLUDE_FPGA_SUPPORT
 LDLIBS += -lftdi1
+ORBUCULUM_CFILES += $(EXT)/ftdispi.c
 endif
 
 ##########################################################################
@@ -199,6 +190,10 @@ ORBUCULUM_OBJS =  $(OBJS) $(patsubst %.c,%.o,$(ORBUCULUM_CFILES))
 ORBUCULUM_POBJS = $(POJBS) $(patsubst %,$(OLOC)/%,$(ORBUCULUM_OBJS))
 ORBUCULUM_PDEPS = $(PDEPS) $(ORBUCULUM_POBJS:.o=.d)
 
+ORBFIFO_OBJS =  $(OBJS) $(patsubst %.c,%.o,$(ORBFIFO_CFILES))
+ORBFIFO_POBJS = $(POJBS) $(patsubst %,$(OLOC)/%,$(ORBFIFO_OBJS))
+ORBFIFO_PDEPS = $(PDEPS) $(ORBFIFO_POBJS:.o=.d)
+
 ORBCAT_OBJS =  $(OBJS) $(patsubst %.c,%.o,$(ORBCAT_CFILES))
 ORBCAT_POBJS = $(POJBS) $(patsubst %,$(OLOC)/%,$(ORBCAT_OBJS))
 ORBCAT_PDEPS = $(PDEPS) $(ORBCAT_POBJS:.o=.d)
@@ -232,7 +227,7 @@ $(OLOC)/%.o : %.c
 	$(call cmd, \$(CC) -c $(CFLAGS) -MMD -o $@ $< ,\
 	Compiling $<)
 
-build: $(ORBUCULUM) $(ORBCAT) $(ORBTOP) $(ORBDUMP) $(ORBSTAT)
+build: $(ORBUCULUM) $(ORBFIFO) $(ORBCAT) $(ORBTOP) $(ORBDUMP) $(ORBSTAT)
 
 $(ORBLIB) : get_version $(ORBLIB_POBJS)
 	$(Q)$(AR) rcs $(OLOC)/lib$(ORBLIB).a  $(ORBLIB_POBJS)
@@ -241,6 +236,10 @@ $(ORBLIB) : get_version $(ORBLIB_POBJS)
 $(ORBUCULUM) : $(ORBLIB) $(ORBUCULUM_POBJS) 
 	$(Q)$(LD) $(LDFLAGS) -o $(OLOC)/$(ORBUCULUM) $(MAP) $(ORBUCULUM_POBJS)  $(LDLIBS)
 	-@echo "Completed build of" $(ORBUCULUM)
+
+$(ORBFIFO) : $(ORBLIB) $(ORBFIFO_POBJS)
+	$(Q)$(LD) $(LDFLAGS) -o $(OLOC)/$(ORBFIFO) $(MAP) $(ORBFIFO_POBJS)  $(LDLIBS)
+	-@echo "Completed build of" $(ORBFIFO)
 
 $(ORBCAT) : $(ORBLIB) $(ORBCAT_POBJS)
 	$(Q)$(LD) $(LDFLAGS) -o $(OLOC)/$(ORBCAT) $(MAP) $(ORBCAT_POBJS) $(LDLIBS)
@@ -262,7 +261,7 @@ tags:
 	-@etags $(CFILES) 2> /dev/null
 
 clean:
-	-$(call cmd, \rm -f $(POBJS) $(LD_TEMP) $(ORBUCULUM) $(ORBCAT) $(ORBDUMP) $(ORBSTAT) $(OUTFILE).map $(EXPORT) ,\
+	-$(call cmd, \rm -f $(POBJS) $(LD_TEMP) $(ORBUCULUM) $(ORBFIFO) $(ORBCAT) $(ORBDUMP) $(ORBSTAT) $(OUTFILE).map $(EXPORT) ,\
 	Cleaning )
 	$(Q)-rm -rf SourceDoc/*
 	$(Q)-rm -rf *~ core

@@ -696,6 +696,13 @@ struct TPIUCommsStats *fifoGetCommsStats( struct fifosHandle *f )
     return TPIUGetCommsStats( &f->t );
 }
 // ====================================================================================================
+struct ITMDecoderStats *fiifoGetITMDecoderStats( struct fifosHandle *f )
+
+{
+    return ITMDecoderGetStats( &f->i );
+}
+
+// ====================================================================================================
 // Main interface components
 // ====================================================================================================
 void fifoProtocolPump( struct fifosHandle *f, uint8_t c )

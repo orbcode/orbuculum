@@ -66,6 +66,7 @@ char *fifoGetChannelFormat( struct fifosHandle *f, int chan );
 char *fifoGetChanPath( struct fifosHandle *f );
 bool fifoGetUseTPIU( struct fifosHandle *f );
 struct TPIUCommsStats *fifoGetCommsStats( struct fifosHandle *f );
+struct ITMDecoderStats *fiifoGetITMDecoderStats( struct fifosHandle *f );
 bool fifoGetForceITMSync( struct fifosHandle *f );
 int fifoGettpiuITMChannel( struct fifosHandle *f );
 void fifoUsePermafiles( struct fifosHandle *f, bool usePermafilesSet );

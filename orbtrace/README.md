@@ -40,6 +40,21 @@ make ECPIX_5_85F
 
 ..You can also do `make ICEBREAKER` but that will just get you a broken result at the moment.
 
+One the ICE40HX8 For normal operation you can burn the program image into the configuration serial memory
+(J7:1-2, J6:2-4, and J6:1-3). For development just load it directly (J6:1-2 and
+J6:3-4. Jumper J7 not installed). See Pg. 5 of the iCE40HX-8K Breakout Board User's Guide for
+more information.
+
+The ice40 breakout board is connected to the target via J2 as follows;
+
+   * traceDin[0] C16
+   * traceDin[1] D16
+   * traceDin[2] E16
+   * traceDin[3] F16
+   * traceClk    H16
+
+Obviously you don't need the whole of traceDin[0..3] if you're only using 1 or 2 bit trace.
+
 For ICE40 the system can be built using either an SPI or a UART transport layer. SPI is potentially capable of better performance (30MHz line rate). Testing shows that around 26Mbps is realistically acheivable. Both the serial and SPI interfaces are fully tested on ICE40.
 
 For ECP5 only UART is supported at the moment since the hardware doesn't support the SPI.

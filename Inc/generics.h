@@ -52,9 +52,11 @@ extern "C" {
 #define ERR       -1
 
 #ifdef SCREEN_HANDLING
-#define C_PREV_LN "\033[1F"
-#define C_CLR_LN "\033[K"
+#define CLEAR_SCREEN  "\033[2J\033[;H"
+#define C_PREV_LN     "\033[1F"
+#define C_CLR_LN      "\033[K"
 #else
+#define CLEAR_SCREEN  ""
 #define C_PREV_LN ""
 #define C_CLR_LN  ""
 #endif
