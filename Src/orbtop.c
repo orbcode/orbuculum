@@ -1234,7 +1234,7 @@ int main( int argc, char *argv[] )
                    server->h_length );
             serv_addr.sin_port = htons( options.port );
 
-            while ( connect( sourcefd, ( struct sockaddr * ) &serv_addr, sizeof( serv_addr ) ) < 0 )
+            if ( connect( sourcefd, ( struct sockaddr * ) &serv_addr, sizeof( serv_addr ) ) < 0 )
             {
                 if ( ( !options.json ) || ( options.json[0] != '-' ) )
                 {
@@ -1242,7 +1242,9 @@ int main( int argc, char *argv[] )
                 }
 
                 perror( "Could not connect" );
+                close( sourcefd );
                 usleep( 1000000 );
+                continue;
             }
         }
         else

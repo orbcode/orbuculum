@@ -5,7 +5,7 @@ WITH_UART_FEEDER?=1
 
 # Build configuration
 VERBOSE?=0
-DEBUG=1
+#DEBUG=1
 SCREEN_HANDLING=1
 
 # Set your preferred screen colours here, or create a new palette by copying the file to a new one
