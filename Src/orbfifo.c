@@ -563,18 +563,21 @@ int main( int argc, char *argv[] )
                         genericsPrintf( "(" C_DATA " %3d%% " C_RESET "full)", ( fullPercent > 100 ) ? 100 : fullPercent );
                     }
 
-                    struct TPIUCommsStats *c = fifoGetCommsStats( _r.f );
+                    if ( fifoGetUseTPIU( _r.f ) )
+                    {
+                        struct TPIUCommsStats *c = fifoGetCommsStats( _r.f );
 
-                    genericsPrintf( C_RESET " LEDS: %s%s%s%s" C_RESET " Frames: "C_DATA "%u" C_RESET,
-                                    c->leds & 1 ? C_DATA_IND "d" : C_RESET "-",
-                                    c->leds & 2 ? C_TX_IND "t" : C_RESET "-",
-                                    c->leds & 0x20 ? C_OVF_IND "O" : C_RESET "-",
-                                    c->leds & 0x80 ? C_HB_IND "h" : C_RESET "-",
-                                    c->totalFrames );
+                        genericsPrintf( C_RESET " LEDS: %s%s%s%s" C_RESET " Frames: "C_DATA "%u" C_RESET,
+                                        c->leds & 1 ? C_DATA_IND "d" : C_RESET "-",
+                                        c->leds & 2 ? C_TX_IND "t" : C_RESET "-",
+                                        c->leds & 0x20 ? C_OVF_IND "O" : C_RESET "-",
+                                        c->leds & 0x80 ? C_HB_IND "h" : C_RESET "-",
+                                        c->totalFrames );
 
-                    genericsReport( V_INFO, " Pending:%5d Lost:%5d",
-                                    c->pendingCount,
-                                    c->lostFrames );
+                        genericsReport( V_INFO, " Pending:%5d Lost:%5d",
+                                        c->pendingCount,
+                                        c->lostFrames );
+                    }
 
                     genericsPrintf( C_RESET EOL );
                 }
