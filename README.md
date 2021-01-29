@@ -331,12 +331,13 @@ Be aware that if you start making the formatting or screen handling too complex
 its quite possible your machine might not keep up...and then you will loose data!
 
 While you've got `orbfifo` running a further fifo `hwevent` will be found in
-the output directory, which reports on events from the hardware, one event per line as follows;
+the output directory, which reports on events from the hardware, one event per line as follows (note that
+the order of these has changed);
 
 * `0,[Status],[TS]` : Time status and timestamp.
-* `1,[PCAddr]` : Report Program Counter Sample.
-* `2,[DWTEvent]` : Report on DWT event from the set [CPI,Exc,Sleep,LSU,Fold and Cyc].
-* `3,[EventType],[ExceptionNumber]` : Hardware exception. Event type is one of [Enter, Exit, Resume].
+* `1,[EventType],[ExceptionNumber]` : Hardware exception. Event type is one of [Enter, Exit, Resume].
+* `2,[PCAddr]` : Report Program Counter Sample.
+* `3,[DWTEvent]` : Report on DWT event from the set [CPI,Exc,Sleep,LSU,Fold and Cyc].
 * `4,[Comp],[RW],[Data]` : Report Read/Write event.
 * `5,[Comp],[Addr]` : Report data access watchpoint event.
 * `6,[Comp],[Ofs]` : Report data offset event.

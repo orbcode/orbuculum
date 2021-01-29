@@ -155,13 +155,15 @@ static void *_runFifo( void *arg )
     int opfile;
     size_t readDataLen, writeDataLen, written = 0;
 
+    assert( &params->c->params == params );
+
     /* Remove the file if it exists */
     unlink( c->fifoName );
 
     if ( !params->permafile )
     {
         /* This is a 'conventional' fifo, so it must be created */
-        if ( mkfifo( c->fifoName, 0666 ) < 0 )
+        if ( mkfifo( c->fifoName, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH ) < 0 )
         {
             pthread_exit( NULL );
         }
@@ -176,13 +178,13 @@ static void *_runFifo( void *arg )
         }
         else
         {
-            opfile = open( c->fifoName, O_WRONLY | O_CREAT, 0666 );
+            opfile = open( c->fifoName, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH );
         }
 
         do
         {
             /* ....get the packet */
-            readDataLen = read( params->listenHandle, &m, sizeof( struct msg ) );
+            readDataLen = read( params->listenHandle, &m, sizeof( struct swMsg ) );
 
             if ( readDataLen <= 0 )
             {
@@ -252,7 +254,7 @@ static void *_runHWFifo( void *arg )
     if ( !params->permafile )
     {
         /* This is a 'conventional' fifo, so it must be created */
-        if ( mkfifo( c->fifoName, 0666 ) < 0 )
+        if ( mkfifo( c->fifoName, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH ) < 0 )
         {
             pthread_exit( NULL );
         }
@@ -266,7 +268,7 @@ static void *_runHWFifo( void *arg )
         }
         else
         {
-            opfile = open( c->fifoName, O_WRONLY | O_CREAT, 0666 );
+            opfile = open( c->fifoName, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH );
         }
 
         do
@@ -438,7 +440,7 @@ void _handleSW( struct swMsg *m, struct fifosHandle *f )
     {
         if ( ( m->srcAddr < NUM_CHANNELS ) && ( f->c[m->srcAddr].handle ) )
         {
-            write( f->c[m->srcAddr].handle, m, sizeof( struct msg ) );
+            write( f->c[m->srcAddr].handle, m, sizeof( struct swMsg ) );
         }
     }
 }
@@ -774,7 +776,7 @@ bool fifoCreate( struct fifosHandle *f )
                 strcpy( f->c[t].fifoName, f->chanPath );
                 strcat( f->c[t].fifoName, f->c[t].chanName );
 
-                if ( pthread_create( &( f->c[t].thread ), NULL, &_runFifo, &f->c[t].params ) )
+                if ( pthread_create( &( f->c[t].thread ), NULL, &_runFifo, &( f->c[t].params ) ) )
                 {
                     return false;
                 }
@@ -805,7 +807,7 @@ bool fifoCreate( struct fifosHandle *f )
             strcpy( f->c[t].fifoName, f->chanPath );
             strcat( f->c[t].fifoName, HWFIFO_NAME );
 
-            if ( pthread_create( &( f->c[t].thread ), NULL, &_runHWFifo, &f->c[t].params ) )
+            if ( pthread_create( &( f->c[t].thread ), NULL, &_runHWFifo, &( f->c[t].params ) ) )
             {
                 return false;
             }

@@ -135,7 +135,7 @@ static int _processOptions( int argc, char *argv[] )
     uint chan;
     char *chanIndex;
 
-    while ( ( c = getopt ( argc, argv, "a:b:c:efi::hm:o:p:Ps:tv:w:" ) ) != -1 )
+    while ( ( c = getopt ( argc, argv, "a:b:c:ef:i:hm:n:Ptv:w:" ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -370,7 +370,6 @@ static void _doExit( void )
 
 {
     _r.ending = true;
-
     fifoShutdown( _r.f );
     /* Give them a bit of time, then we're leaving anyway */
     usleep( 200 );
@@ -391,6 +390,7 @@ int main( int argc, char *argv[] )
     int r;
     struct timeval tv;
     fd_set readfds;
+    int32_t remainTime;
 
     /* Setup fifos with forced ITM sync, no TPIU and TPIU on channel 1 if its engaged later */
     _r.f = fifoInit( true, false, 1 );
@@ -487,7 +487,15 @@ int main( int argc, char *argv[] )
 
         while ( !_r.ending )
         {
-            int32_t remainTime = ( ( lastTime + options.intervalReportTime - genericsTimestampmS() ) * 1000 ) - 500;
+            if ( options.intervalReportTime )
+            {
+                remainTime = ( ( lastTime + options.intervalReportTime - genericsTimestampmS() ) * 1000 ) - 500;
+            }
+            else
+            {
+                remainTime = ( ( lastTime + 1000 - genericsTimestampmS() ) * 1000 ) - 500;
+            }
+
             r = t = 0;
 
             if ( remainTime > 0 )
@@ -574,6 +582,11 @@ int main( int argc, char *argv[] )
         }
 
         close( sourcefd );
+
+        if ( options.fileTerminate )
+        {
+            _r.ending = true;
+        }
     }
 
     return -ESRCH;
