@@ -45,13 +45,19 @@ module topLevel(
 		input wire [15:0] events_din
                                   `endif
 		);      
-
-	    
    // Parameters =============================================================================
 
    parameter MAX_BUS_WIDTH=4;  // Maximum bus width that system is set for...not more than 4!! 
    parameter BUFFLENLOG2=9;    // Depth of packet frame buffer (512 bytes)
-
+`ifndef ICEBREAKER
+   parameter SYSTEM_CLK_MHZ=96_000_000;
+   parameter UART_BAUDRATE=12_000_000;
+   parameter TRACEIF_SYNC_BITS=27;
+`else
+   parameter SYSTEM_CLK_MHZ=48_000_000;
+   parameter UART_BAUDRATE=4_000_000;
+   parameter TRACEIF_SYNC_BITS=28;
+`endif
    // Internals =============================================================================
 
                                   `ifdef ICEBREAKER
@@ -129,7 +135,7 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b0)) MtraceIn3
    wire [31:0]              totalFrames;          // Number of frames received overall
    
   // -----------------------------------------------------------------------------------------
-  traceIF #(.MAXBUSWIDTH(MAX_BUS_WIDTH)) traceif (
+  traceIF #(.MAXBUSWIDTH(MAX_BUS_WIDTH),.SYNC_BITS(TRACEIF_SYNC_BITS)) traceif (
                    .rst(rst), 
 
            // Downwards interface to trace pins
@@ -212,7 +218,7 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b0)) MtraceIn3
                       .LostFrames(lostFrames)        // Number of frames lost
  		);
    
-   uart #(.CLOCKFRQ(96_000_000), .BAUDRATE(12_000_000)) transceiver (
+   uart #(.CLOCKFRQ(SYSTEM_CLK_MHZ), .BAUDRATE(UART_BAUDRATE)) transceiver (
 	             .clk(clkOut),                   // The master clock for this module
 	             .rst(rst),                      // Synchronous reset.
 	             .rx(uartrx),                    // Incoming serial line
@@ -280,6 +286,7 @@ SB_IO #(.PULLUP(1), .PIN_TYPE(6'b0)) MtraceIn3
 `endif
 
 `ifdef ICEBREAKER
+    // Fout = 12MHz * (0b0111111 + 1) / (2^0b100 * (0b0000 + 1)) = 48MHz
 	SB_PLL40_2F_PAD #(
 		.DIVR(4'b0000),
 		.DIVF(7'b0111111),

@@ -9,7 +9,7 @@
 // 
 // Working from CoreSight TPIU-Lite Technical Reference Manual Revision: r0p0
 
-module traceIF # (parameter MAXBUSWIDTH = 4) (
+module traceIF # (parameter MAXBUSWIDTH = 4, SYNC_BITS=27) (
 		input                   rst, // Reset synchronised to clock
 
 	// Downwards interface to the trace pins (1-n bits max, can be less)
@@ -33,7 +33,7 @@ module traceIF # (parameter MAXBUSWIDTH = 4) (
    reg [111:0]  cFrame;                   // Entire TPIU frame being constructed
    reg [2:0]    remainingClocks;          // Number of elements remaining for word
    reg [2:0]    elemCount;                // Element we're currently waiting to store
-   reg [26:0]   syncInd;                  // Stretcher since last sync (~0.7s @ 96MHz)
+   reg [SYNC_BITS-1:0]   syncInd;         // Stretcher since last sync (~0.7s @ 96MHz)
    reg [7:0]    edgeBalance;              // Are we tending towards RE or FE sync?
    
    // Flag indicating we've got a new full sync
