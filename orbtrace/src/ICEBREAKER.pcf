@@ -1,8 +1,8 @@
 # Trace signals PMOD1A 1-4, 10
-set_io traceDin[3]              4
-set_io traceDin[2]              2
-set_io traceDin[1]             47
-set_io traceDin[0]             45
+set_io traceDin[0]              4
+set_io traceDin[1]              2
+set_io traceDin[2]             47
+set_io traceDin[3]             45
 set_io traceClk                44
 
 # UART connection to PC
