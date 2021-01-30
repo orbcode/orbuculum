@@ -49,7 +49,7 @@ module uart(
    parameter CLOCKFRQ=48_000_000;         // Frequency of the oscillator
    parameter BAUDRATE=12_000_000;         // Required baudrate
    
-   parameter COUNTDOWN=2;
+   parameter COUNTDOWN=1;
    parameter CLOCK_DIVIDE=(CLOCKFRQ/(BAUDRATE*COUNTDOWN))-1; // clock rate / (baud rate * 4)  
    
    
@@ -225,7 +225,7 @@ module uart(
 		       tx_data <= tx_byte;
 		       // Send the initial, low pulse of 1 bit period
 		       // to signal the start, followed by the data
-		       tx_clk_divider <= CLOCK_DIVIDE;
+		       tx_clk_divider <= CLOCK_DIVIDE-1;
 		       tx_countdown <= COUNTDOWN;
 		       tx <= 0;
 		       tx_bits_remaining <= 9; // This includes the stopbit
