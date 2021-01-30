@@ -1,7 +1,7 @@
 ORBTrace Development
 ====================
 
-This is the development status for the ORBTrace parallel TRACE hardware. You're only here 'cos you're brave. This is built using Clifford Wolfs' icestorm toolchain and currently targets a either a lattice iCE40HX-8K board or an Lambda Concept ECPIX-5 board (by default a -85F, but that's a trivial change in the makefile).
+This is the development status for the ORBTrace parallel TRACE hardware. You're only here 'cos you're brave. This is built using Claire Wolfs' icestorm toolchain and currently targets a either a lattice iCE40HX-8K board or an Lambda Concept ECPIX-5 board (by default a -85F, but that's a trivial change in the makefile).
 
 This is now mostly complete (24th Jan 2021). In theory, on an ECP5  or ICE40 HX8 part, it will work with any trace port operating up to at least 106MHz. Some stroking of the logic may make it a bit faster but there's no point doing that until everything else is done.   Early work on UP5K suggests it will run there up to around 50MHz, but work on that is incomplete at the moment.
 
