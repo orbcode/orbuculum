@@ -48,10 +48,8 @@ module uart(
    
    parameter CLOCKFRQ=48_000_000;         // Frequency of the oscillator
    parameter BAUDRATE=12_000_000;         // Required baudrate
-   
-   parameter COUNTDOWN=1;
-   parameter CLOCK_DIVIDE=(CLOCKFRQ/(BAUDRATE*COUNTDOWN))-1; // clock rate / (baud rate * 4)  
-   
+
+   parameter TICKS_PER_BIT = (CLOCKFRQ/BAUDRATE)-1;
    
    // States for the receiving state machine.
    // These are just constants, not parameters to override.
@@ -68,16 +66,13 @@ module uart(
    parameter TX_IDLE          = 0;
    parameter TX_SENDING       = 1;
    
-   reg [14:0] 		 rx_clk_divider;
-   reg [14:0] 		 tx_clk_divider;
-   
    reg [2:0] 		 rx_state;
-   reg [5:0] 		 rx_countdown;
+   reg [12:0] 		 rx_countdown;
    reg [3:0] 		 rx_bits_remaining;
    reg [7:0] 		 rx_data;
    
    reg  		 tx_state;
-   reg [5:0] 		 tx_countdown;
+   reg [12:0] 		 tx_countdown;
    reg [3:0] 		 tx_bits_remaining;
    reg [7:0] 		 tx_data;
    
@@ -96,8 +91,7 @@ module uart(
       if (rst) begin
 	 rx_state       <= RX_IDLE;
 	 tx_state       <= TX_IDLE;
-	 rx_clk_divider <= CLOCK_DIVIDE;
-	 tx_clk_divider <= CLOCK_DIVIDE;
+         tx_countdown   <= 0;
 	 rx_ledstretch  <= 0;
 	 tx_ledstretch  <= 0;
 	 tx             <= 1;
@@ -107,26 +101,8 @@ module uart(
 
 	   if (rx_ledstretch!=0) rx_ledstretch <= rx_ledstretch-1;
 	   if (tx_ledstretch!=0) tx_ledstretch <= tx_ledstretch-1;
-	   
-	   // The clk_divider counter counts down from
-	   // the CLOCK_DIVIDE constant. Whenever it
-	   // reaches 0, 1/x of the bit period has elapsed.
-	   // Countdown timers for the receiving and transmitting
-	   // state machines are decremented.
-	   rx_clk_divider <= rx_clk_divider - 1;
-	   tx_clk_divider <= tx_clk_divider - 1;
-
-	   if (rx_clk_divider==0) 
-	     begin
-		rx_clk_divider <= CLOCK_DIVIDE;
-		rx_countdown <= rx_countdown - 1;
-	     end
-	   
-	   if (tx_clk_divider==0) 
-	     begin
-		tx_clk_divider <= CLOCK_DIVIDE;
-		tx_countdown <= tx_countdown - 1;
-	     end
+           if (rx_countdown!=0) rx_countdown<=rx_countdown-1;
+           if (tx_countdown!=0) tx_countdown<=tx_countdown-1;
 
 	   // Receive state machine
 	   case (rx_state)
@@ -138,8 +114,7 @@ module uart(
 		    begin
 		       // Wait half the period - should resume in the
 		       // middle of this first pulse.
-		       rx_clk_divider <= CLOCK_DIVIDE;
-		       rx_countdown <= (COUNTDOWN/2);
+		       rx_countdown <= TICKS_PER_BIT/2;
 		       rx_state <= RX_CHECK_START;
 		    end
 	       end // case: RX_IDLE
@@ -152,7 +127,7 @@ module uart(
 		      begin
 			 // Wait the bit period to resume half-way
 			 // through the first bit.
-			 rx_countdown <= COUNTDOWN;
+			 rx_countdown <= TICKS_PER_BIT;
 			 rx_bits_remaining <= 7;
 			 rx_ledstretch <= ~0;
 			 rx_state <= RX_READ_BITS;
@@ -170,7 +145,7 @@ module uart(
 	       if (rx_countdown==0)
 		 begin
 		    rx_data <= {rx, rx_data[7:1]};
-		    rx_countdown <= COUNTDOWN;
+		    rx_countdown <= TICKS_PER_BIT;
 		    rx_bits_remaining <= rx_bits_remaining - 1;
 		    rx_state <= (rx_bits_remaining!=0) ? RX_READ_BITS : RX_CHECK_STOP;
 		 end
@@ -180,7 +155,10 @@ module uart(
 	       // This should be high - if not, reject the
 	       // transmission and signal an error.
 	       if (rx_countdown==0)
-		 rx_state=rx?RX_RECEIVED:RX_ERROR;
+                 begin
+                    rx_countdown<=TICKS_PER_BIT;
+                    rx_state=rx?RX_RECEIVED:RX_ERROR;
+                 end
 
 	     RX_DELAY_RESTART: // --------------------------------------------------
 	       // Waits a set number of cycles before accepting
@@ -194,7 +172,7 @@ module uart(
 	       // 2 bit periods before accepting another
 	       // transmission.
                begin
-		  rx_countdown <= (2*COUNTDOWN);
+		  rx_countdown <= TICKS_PER_BIT;
 		  rx_state <= RX_DELAY_RESTART;
 	       end
 
@@ -207,9 +185,6 @@ module uart(
              default: // -----------------------------------------------------------
                rx_state <= RX_ERROR;
 	   endcase
-
-
-
 	   
 	   // Transmit state machine
 	   case (tx_state)
@@ -225,8 +200,8 @@ module uart(
 		       tx_data <= tx_byte;
 		       // Send the initial, low pulse of 1 bit period
 		       // to signal the start, followed by the data
-		       tx_clk_divider <= CLOCK_DIVIDE-1;
-		       tx_countdown <= COUNTDOWN;
+
+		       tx_countdown <= TICKS_PER_BIT;
 		       tx <= 0;
 		       tx_bits_remaining <= 9; // This includes the stopbit
 		       tx_state <= TX_SENDING;
@@ -238,15 +213,15 @@ module uart(
 	       end
 	     
 	     TX_SENDING: // --------------------------------------------------------
-	       begin
-		  if (tx_countdown==0) 
-		    begin
+               begin
+                  if (tx_countdown==0)
+                    begin
 		       if (tx_bits_remaining!=0) 
 			 begin
 			    tx_bits_remaining <= tx_bits_remaining - 4'd1;
 			    tx <= tx_data[0];
 			    tx_data <= {1'b1, tx_data[7:1]}; // By shifting 1's we get stopbits automatically
-			    tx_countdown <= COUNTDOWN;
+			    tx_countdown <= TICKS_PER_BIT;
 			    tx_state <= TX_SENDING;
 			 end 
 		       else 
@@ -254,7 +229,7 @@ module uart(
 			    tx_state<=TX_IDLE;
 			 end
 		    end
-	       end
+              end
 	   endcase // case (tx_state)
 	end // else: !if(rst)
    end
