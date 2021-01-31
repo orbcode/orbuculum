@@ -78,7 +78,7 @@ clean:
 
 # ----------- ICE40 TOOLING ---------------------------------
 $(ICE_HARDWARE):%:%.bin
-	iceprog -S $<
+	iceprog $(PROG_FLAGS) $<
 
 # bitmap conversion stage:
 
@@ -94,7 +94,7 @@ ICE%.asc:
 # ------------ ECP5 TOOLING --------------------------------
 
 $(ECP_HARDWARE):%:%.bin
-	ecpprog -S $<
+	ecpprog $(PROG_FLAGS) $<
 
 # bitmap conversion stage:
 
@@ -110,16 +110,22 @@ ICE40HX8K_B_EVN.asc: DEVICE := --hx8k
 ICE40HX8K_B_EVN.asc: PACKAGE := ct256
 ICE40HX8K_B_EVN.asc: BUFFER_FLAGS += -DICE40HX8K_EVN -DICE40
 ICE40HX8K_B_EVN.asc: icetraceIF_GBIO.json
+ICE40HX8K_B_EVN.asc: ICE40HX8K_B_EVN.pcf
+ICE40HX8K_B_EVN: PROG_FLAGS := -S
 
 ICEBREAKER.asc: DEVICE := --up5k
 ICEBREAKER.asc: PACKAGE := sg48
 ICEBREAKER.asc: BUFFER_FLAGS += -DICEBREAKER -DICE40
 ICEBREAKER.asc: icetraceIF_GB.json
+ICEBREAKER.asc: ICEBREAKER.pcf
+ICEBREAKER: PROG_FLAGS :=
 
 ECPIX_5_85F.asc: DEVICE := --um5g-85k
 ECPIX_5_85F.asc: PACKAGE := CABGA554
 ECPIX_5_85F.asc: BUFFER_FLAGS += -DECPIX_5_85F -DECP5
 ECPIX_5_85F.asc: ecp5traceIF_GB.json
+ECPIX_5_85F.asc: ECPIX_5_85F.lpf
+ECPIX_5_85F: PROG_FLAGS := -S
 
 # verilog synthesis stage:
 
