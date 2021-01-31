@@ -49,13 +49,12 @@ module topLevel(
 
    parameter MAX_BUS_WIDTH=4;  // Maximum bus width that system is set for...not more than 4!! 
    parameter BUFFLENLOG2=9;    // Depth of packet frame buffer (512 bytes)
+   parameter UART_BAUDRATE=12_000_000;
 `ifndef ICEBREAKER
    parameter SYSTEM_CLK_MHZ=96_000_000;
-   parameter UART_BAUDRATE=12_000_000;
    parameter TRACEIF_SYNC_BITS=27;
 `else
    parameter SYSTEM_CLK_MHZ=48_000_000;
-   parameter UART_BAUDRATE=4_000_000;
    parameter TRACEIF_SYNC_BITS=28;
 `endif
    // Internals =============================================================================
