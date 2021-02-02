@@ -3,16 +3,15 @@ ORBTrace Development
 
 This is the development status for the ORBTrace parallel TRACE hardware. You're only here 'cos you're brave. This is built using Claire Wolfs' icestorm toolchain and currently targets a either a lattice iCE40HX-8K board or an Lambda Concept ECPIX-5 board (by default a -85F, but that's a trivial change in the makefile).
 
-This is now mostly complete (24th Jan 2021). In theory, on an ECP5  or ICE40 HX8 part, it will work with any trace port operating up to at least 106MHz. Some stroking of the logic may make it a bit faster but there's no point doing that until everything else is done.   Early work on UP5K suggests it will run there up to around 50MHz, but work on that is incomplete at the moment.
+This is now complete (2nd February 2021). In theory, on an ECP5  or ICE40 HX8 part, it will work with any trace port operating up to at least 106MHz. Some stroking of the logic may make it a bit faster but there's no point doing that until everything else is done.  UP5K will run there up to around 50MHz, but if you're going out to buy something to use for running this code, that shouldn't be your first choice (ECPIX-5 should be, at least for now).
 
-This should all be viewed as experimental. There remains work to be done.
+This should all be viewed as experimental. There remains work to be done....but see at the foot of this note. There are now two distinct families of builds; Verilog builds that build the whole stack and rely on the ftdi UART for communicaton, and nmigen builds that use an external ULPI for USB2-HS comms. You really want the nmigen USB2-HS version if you'e got a choice.
 
 Note that ICE40HX1 support has been removed as it was just too snug to fit in the chip. The last version with (experimental) support for that chip can be found at https://github.com/orbcode/orbuculum/commit/58e7c03581231e0a37549060603aed7831c37533
 
 Outstanding development actions;
 
  * Parse TPIU packets to split out ETM data and buffer it on-chip (will allow for post-mortem dumps)
- * Complete UP5K (Icebreaker) support
  
 Current testing status;
 
@@ -21,7 +20,12 @@ Current testing status;
  * Tested with STM32F427 CPU running at 16MHz & 160MHz.
  * Tested with NRF5340 running at 32MHz
 
- * Needs testing at higher speeds and on more CPUs
+ * Needs testing at higher speeds and on more CPUs...this will be here forever, I guess
+
+Verilog Builds
+==============
+
+This section is applicable to the ICE40HX8K, ICEBREAKER and ECPIX_5 boards.  It will result in comms over the ftdi link using either UART or SPI based communication. Note that SPI is faster, but only available on the ICE40.
 
 To build it perform;
 
@@ -37,8 +41,12 @@ cd src
 make ECPIX_5_85F
 
 ```
+or;
+```
+cd src
+make ICEBREAKER
+```
 
-..You can also do `make ICEBREAKER` but that will just get you a broken result at the moment.
 
 One the ICE40HX8 For normal operation you can burn the program image into the configuration serial memory
 (J7:1-2, J6:2-4, and J6:1-3). For development just load it directly (J6:1-2 and
@@ -53,11 +61,19 @@ The ice40 breakout board is connected to the target via J2 as follows;
    * traceDin[3] F16
    * traceClk    H16
 
-Obviously you don't need the whole of traceDin[0..3] if you're only using 1 or 2 bit trace.
+The ECPIX-5 is connected to the target via PMOD7 as follows;
+
+   * traceDin[0] 0
+   * traceDin[1] 1
+   * traceDin[2] 2
+   * traceDin[3] 3
+   * traceClk    4
+
+Make your grounds as good as possible...if you can twist a ground and clock together that will be helpful. Obviously you don't need the whole of traceDin[0..3] if you're only using 1 or 2 bit trace.
 
 For ICE40 the system can be built using either an SPI or a UART transport layer. SPI is potentially capable of better performance (30MHz line rate). Testing shows that around 26Mbps is realistically acheivable. Both the serial and SPI interfaces are fully tested on ICE40.
 
-For ECP5 only UART is supported at the moment since the hardware doesn't support the SPI.
+For ECP5 only UART is supported at the moment since the hardware doesn't support the SPI...but you've also got the choice of ULPI for that.
 
 Using UART data is presented at 12Mbaud over the serial port of the board. You can simply copy the frames of data to somewhere with something like this;
 
@@ -128,3 +144,19 @@ LEDs
  - ICE40:D8, ECPIX-5:LD6-Green: Tx. Flashes while data is being sent over the serial link, `t` in the monitor.
  - ICE40:D9, ECPIX-5:LD8-Blue: Data. A 'sticky' version of D8 which will stay illuminated for about 0.7Secs after any data, `d` in the monitor.
  
+
+ULPI Builds
+===========
+
+This is the preferred route since it offers much faster comms. At the moment it's only available on the ECPIX-5-85F board. To use it;
+
+```
+cd orbtrace/nmigen
+python3 orbtrace_builder.py
+```
+
+...the image will be built and installed onto a connected ECPIX-5. By default it will burn the image to RAM. You will need to edit the build scripts to burn to flash (not advisable for now).
+
+`orbuculum` will detect the Orbtrace board automatically, so no command line options are mandatory to use it.
+
+IT IS VERY EXPERIMENTAL. CATS ARE AT RISK.

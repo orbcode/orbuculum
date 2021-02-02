@@ -119,9 +119,9 @@ static const struct deviceList
     char *name;
 } _deviceList[] =
 {
-    { 0x1209, 0x000a, 0, 0x81, "Orbtrace-TemporaryID" },
-    { 0x1d50, 0x6018, 5, 0x85, "Blackmagic Probe"     },
-    { 0x2b3e, 0xc610, 3, 0x85, "Phywhisperer-UDT"     },
+    { 0x1209, 0x3443, 0, 0x81, "Orbtrace"         },
+    { 0x1d50, 0x6018, 5, 0x85, "Blackmagic Probe" },
+    { 0x2b3e, 0xc610, 3, 0x85, "Phywhisperer-UDT" },
     { 0, 0, 0, 0 }
 };
 

@@ -2,6 +2,7 @@ ofiles
 .cproject
 .project
 .settings/*
+build/
 .DS_Store
 *.bin
 *.hex
@@ -14,4 +15,5 @@ tags
 .gdbinit
 *.s#*
 *.b#*
+\#*\#
 
