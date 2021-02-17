@@ -312,7 +312,9 @@ class _ECPIXExtensions:
         Resource("user_io", 3, Pins("B16", dir="io"), Attrs(IO_TYPE="LVCMOS33")),
 
         # trace resources
-        Resource("tracein", 0, Subsignal("clk", Pins("C14", dir="i")), Subsignal("dat", Pins("D14 B14 E14 B16", dir="i")))
+        Resource("tracein", 0, Subsignal("clk", Pins("C14", dir="i")), Subsignal("dat", Pins("D14 B14 E14 B16", dir="i"))),
+
+        Resource("canary", 0, Pins("E26", dir="o"), Attrs(IO_TYPE="LVCMOS33"))
     ]
 
 

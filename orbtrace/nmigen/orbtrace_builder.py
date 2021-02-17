@@ -13,14 +13,19 @@ from nmigen.hdl.xfrm         import DomainRenamer, ClockDomain
 from usb_protocol.emitters   import DeviceDescriptorCollection
 
 
-from luna.usb2               import USBDevice, USBMultibyteStreamInEndpoint
+from luna.usb2               import USBDevice, USBMultibyteStreamInEndpoint, USBStreamInEndpoint, USBStreamOutEndpoint
 
 from orbtrace_platform_ecp5  import orbtrace_ECPIX5_85_Platform
 from traceIF                 import TRACE_TO_USB
+from cmsis_dap               import CMSIS_DAP
 
 # USB Endpoint configuration
-TRACE_ENDPOINT_NUMBER = 1
-TRACE_ENDPOINT_SIZE   = 512
+TRACE_ENDPOINT_NUMBER         = 3
+TRACE_ENDPOINT_SIZE           = 512
+
+CMSIS_DAP_IN_ENDPOINT_NUMBER  = 1
+CMSIS_DAP_OUT_ENDPOINT_NUMBER = 2
+CMSIS_DAP_ENDPOINT_SIZE       = 512
 
 # Length of various bit indicators
 RX_LED_STRETCH_BITS   = 26
@@ -47,7 +52,6 @@ class OrbtraceDevice(Elaboratable):
 
         # ... and a description of the USB configuration we'll provide.
         with descriptors.ConfigurationDescriptor() as c:
-
             with c.InterfaceDescriptor() as i:
                 i.bInterfaceNumber = 0
 
@@ -55,8 +59,14 @@ class OrbtraceDevice(Elaboratable):
                     e.bEndpointAddress = 0x80 | TRACE_ENDPOINT_NUMBER
                     e.wMaxPacketSize   = TRACE_ENDPOINT_SIZE
 
-        return descriptors
+                with i.EndpointDescriptor() as e:
+                    e.bEndpointAddress = 0x80 | CMSIS_DAP_IN_ENDPOINT_NUMBER
+                    e.wMaxPacketSize   = CMSIS_DAP_ENDPOINT_SIZE
 
+                with i.EndpointDescriptor() as e:
+                    e.bEndpointAddress = CMSIS_DAP_OUT_ENDPOINT_NUMBER
+                    e.wMaxPacketSize   = CMSIS_DAP_ENDPOINT_SIZE
+        return descriptors
 
     def elaborate(self, platform):
         self.rx_stretch  = Signal(RX_LED_STRETCH_BITS)
@@ -98,16 +108,31 @@ class OrbtraceDevice(Elaboratable):
         usb.add_standard_control_endpoint(descriptors)
 
         # Add a stream endpoint to our device.
-        stream_ep = USBMultibyteStreamInEndpoint(
+        trace_ep = USBMultibyteStreamInEndpoint(
             endpoint_number=TRACE_ENDPOINT_NUMBER,
             max_packet_size=TRACE_ENDPOINT_SIZE,
             byte_width=16
         )
-        usb.add_endpoint(stream_ep)
+        usb.add_endpoint(trace_ep)
+
+        cmsisdapIn = USBStreamInEndpoint(
+            endpoint_number=CMSIS_DAP_IN_ENDPOINT_NUMBER,
+            max_packet_size=CMSIS_DAP_ENDPOINT_SIZE
+        )
+        usb.add_endpoint(cmsisdapIn)
+
+        cmsisdapOut = USBStreamOutEndpoint(
+            endpoint_number=CMSIS_DAP_OUT_ENDPOINT_NUMBER,
+            max_packet_size=CMSIS_DAP_ENDPOINT_SIZE
+        )
+        usb.add_endpoint(cmsisdapOut)
 
         # Create a tracing instance
         tracepins=platform.request("tracein",0,xdr={"dat":2})
-        m.submodules.trace = trace = TRACE_TO_USB(tracepins, stream_ep, self.leds_out)
+        m.submodules.trace = trace = TRACE_TO_USB(tracepins, trace_ep, self.leds_out)
+
+        # Create a CMSIS DAP instance
+        m.submodules.cmsisdap = cmsisdap = CMSIS_DAP( cmsisdapIn, cmsisdapOut )
 
         # Connect our device as a high speed device by default.
         m.d.comb += [
