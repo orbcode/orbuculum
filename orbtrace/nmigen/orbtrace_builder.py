@@ -132,7 +132,7 @@ class OrbtraceDevice(Elaboratable):
         m.submodules.trace = trace = TRACE_TO_USB(tracepins, trace_ep, self.leds_out)
 
         # Create a CMSIS DAP instance
-        m.submodules.cmsisdap = cmsisdap = CMSIS_DAP( cmsisdapIn, cmsisdapOut )
+        m.submodules.cmsisdap = cmsisdap = CMSIS_DAP( cmsisdapIn.stream, cmsisdapOut.stream )
 
         # Connect our device as a high speed device by default.
         m.d.comb += [

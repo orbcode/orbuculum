@@ -124,3 +124,53 @@ write_to_usb(device,bytes( [0x00,0xff] ))
 r=read_from_usb(device,1000)
 op_response(r, bytes( [0x00,0x02,0x40,0x00] ))
 
+print("\n=============Sending set connect led")
+write_to_usb(device,bytes( [0x01,0x0,0x1] ))
+r=read_from_usb(device,1000)
+op_response(r, bytes( [0x01,0x00] ))
+
+print("\n=============Sending set running led")
+write_to_usb(device,bytes( [0x01,0x01,0x01] ))
+r=read_from_usb(device,1000)
+op_response(r, bytes( [0x01,0x00] ))
+
+print("\n=============Sending set illegal led")
+write_to_usb(device,bytes( [0x01,0x02,0x01] ))
+r=read_from_usb(device,1000)
+op_response(r, bytes( [0xff] ))
+
+print("\n=============Sending connect swd")
+write_to_usb(device,bytes( [0x02,0x01] ))
+r=read_from_usb(device,1000)
+op_response(r, bytes( [0x02,0x01] ))
+
+print("\n=============Sending connect default")
+write_to_usb(device,bytes( [0x02,0x00] ))
+r=read_from_usb(device,1000)
+op_response(r, bytes( [0x02,0x01] ))
+
+print("\n=============Sending connect JTAG")
+write_to_usb(device,bytes( [0x02,0x02] ))
+r=read_from_usb(device,1000)
+op_response(r, bytes( [0xff] ))
+
+print("\n=============Sending disconnect")
+write_to_usb(device,bytes( [0x03] ))
+r=read_from_usb(device,1000)
+op_response(r, bytes( [0x03,0x00] ))
+
+print("\n=============Sending WriteABORT")
+write_to_usb(device,bytes( [0x08,0x00,0x01,0x02,0x03,0x04] ))
+r=read_from_usb(device,1000)
+op_response(r, bytes( [0x08,0x00] ))
+
+print("\n=============Sending Delay")
+write_to_usb(device,bytes( [0x09,0x01,0x02,0x03,0x04] ))
+r=read_from_usb(device,1000)
+op_response(r, bytes( [0x09,0x00] ))
+
+print("\n=============Sending ResetTarget")
+write_to_usb(device,bytes( [0x0A] ))
+r=read_from_usb(device,1000)
+op_response(r, bytes( [0x0A,0x00,0x00] ))
+
