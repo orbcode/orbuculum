@@ -50,6 +50,7 @@ class CMSIS_DAP(Elaboratable):
         self.rxBlock      = Signal( 7*8 )  # Longest message we pickup is 6 bytes + command
         self.rxLen        = Signal(3)      # Rxlen to pick up
         self.rxedLen      = Signal(3)      # Rxlen picked up so far
+        self.swjbits      = Signal(8)      # Number of bits of SWJ remaining outstanding
 
         self.txBlock      = Signal( 6*8 )  # Response to be returned
         self.txLen        = Signal(3)      # Length of response to be returned
@@ -129,35 +130,76 @@ class CMSIS_DAP(Elaboratable):
                 m.next = 'RESPOND'
     # -------------------------------------------------------------------------------------
     def RESP_Disconnect(self, m):
-                m.d.usb += [
-                    self.txBlock.word_select(0,16).eq(Cat(C(DAP_Disconnect,8),C(0,8))),
-                    self.txLen.eq(2)
-                ]
-                m.next = 'RESPOND'
+        m.d.usb += [
+            self.txBlock.word_select(0,16).eq(Cat(C(DAP_Disconnect,8),C(0,8))),
+            self.txLen.eq(2)
+        ]
+        m.next = 'RESPOND'
     # -------------------------------------------------------------------------------------    
     def RESP_WriteABORT(self, m):
-                m.d.usb += [
-                    self.txBlock.word_select(0,16).eq(Cat(C(DAP_WriteABORT,8),C(0,8))),
-                    self.txLen.eq(2)
-                ]
-                m.next = 'RESPOND'
+        m.d.usb += [
+            self.txBlock.word_select(0,16).eq(Cat(C(DAP_WriteABORT,8),C(0,8))),
+            self.txLen.eq(2)
+        ]
+        m.next = 'RESPOND'
     # -------------------------------------------------------------------------------------
     def RESP_Delay(self, m):
-                m.d.usb += [
-                    self.txBlock.word_select(0,16).eq(Cat(C(DAP_Delay,8),C(0,8))),
-                    self.txLen.eq(2)
-                ]
-                m.next = 'RESPOND'
+        m.d.usb += [
+            self.txBlock.word_select(0,16).eq(Cat(C(DAP_Delay,8),C(0,8))),
+            self.txLen.eq(2)
+        ]
+        m.next = 'RESPOND'
     # -------------------------------------------------------------------------------------
     def RESP_ResetTarget(self, m):
-                m.d.usb += [
-                    self.txBlock.word_select(0,24).eq(Cat(C(DAP_ResetTarget,8),C(0,8),C(0,8))),
-                    self.txLen.eq(3)
-                ]
+        m.d.usb += [
+            self.txBlock.word_select(0,24).eq(Cat(C(DAP_ResetTarget,8),C(0,8),C(0,8))),
+            self.txLen.eq(3)
+        ]
+        m.next = 'RESPOND'
+    # -------------------------------------------------------------------------------------
+    def RESP_SWJ_Pins(self, m):
+        m.d.usb += [
+            self.txBlock.word_select(0,16).eq(Cat(C(DAP_SWJ_Pins,8),C(0x99,8))),
+            self.txLen.eq(2)
+        ]
+        m.next = 'RESPOND'
+    # -------------------------------------------------------------------------------------
+    def RESP_SWJ_Clock(self, m):
+        m.d.usb += [
+            self.txBlock.word_select(0,16).eq(Cat(C(DAP_SWJ_Clock,8),C(0x0,8))),
+            self.txLen.eq(2)
+        ]
+        m.next = 'RESPOND'
+    # -------------------------------------------------------------------------------------
+    # -------------------------------------------------------------------------------------
+    def RESP_SWJ_Sequence_Setup(self, m):
+        # Triggered at the start of a RESP_SWJ Sequence
+        m.d.usb += [
+            self.txBlock.word_select(0,8).eq(C(DAP_SWJ_Sequence,8)),
+            self.txLen.eq(2),
+            self.swjbits.eq(self.rxBlock.word_select(1,8))
+        ]
+        m.next = 'DAP_SWJ_Sequence_PROCESS'
+
+    def RESP_SWJ_Sequence_Process(self, m):
+        with m.If(self.streamOut.valid):
+            # Triggered for each octet of a RESP_SWJ Sequence
+            m.d.usb += self.swjbits.eq(self.swjbits-8)
+
+            with m.If(self.swjbits<9):
+                # We think it should be the end of the command
+                m.d.usb+=self.txBlock.word_select(1,8).eq(~self.streamOut.last)
                 m.next = 'RESPOND'
+            
+        with m.If(self.streamOut.last):
+            # End of the command, if we like it or not!
+            m.d.usb+=self.txBlock.word_select(1,8).eq(self.swjbits!=0)
+            m.next = 'RESPOND'
 
+            
+    # -------------------------------------------------------------------------------------
+    # -------------------------------------------------------------------------------------
 
-        
     def elaborate(self,platform):
         self.can = platform.request("canary")
 
@@ -171,7 +213,6 @@ class CMSIS_DAP(Elaboratable):
         ]
         
         m.d.usb += self.can.eq(0)
-        m.d.usb += self.rxBlock.bit_select(self.rxedLen<<3,8).eq(self.streamOut.payload)
 
         with m.FSM(domain="usb") as decoder:
             with m.State('IDLE'):
@@ -181,13 +222,14 @@ class CMSIS_DAP(Elaboratable):
                 with m.If((self.streamOut.valid) & (self.streamOut.first==1)):
                     m.next = 'ProtocolError'
                     m.d.usb+=self.rxedLen.eq(1)
+                    m.d.usb += self.rxBlock.word_select(0,8).eq(self.streamOut.payload)
                     
-                    with m.Switch(self.rxBlock.word_select(0,8)):
+                    with m.Switch(self.streamOut.payload):
                         with m.Case(DAP_Disconnect, DAP_ResetTarget, DAP_SWO_Status, DAP_TransferAbort):
                             m.d.usb+=self.rxLen.eq(1)
                             m.next='RxParams'
 
-                        with m.Case(DAP_Info, DAP_Connect, DAP_SWJ_Clock, DAP_SWD_Configure, DAP_SWO_Transport,
+                        with m.Case(DAP_Info, DAP_Connect, DAP_SWD_Configure, DAP_SWO_Transport,
                                     DAP_SWO_Mode, DAP_SWO_Control, DAP_SWO_ExtendedStatus, DAP_JTAG_IDCODE):
                             m.d.usb+=self.rxLen.eq(2)
                             with m.If(~self.streamOut.last):
@@ -198,12 +240,12 @@ class CMSIS_DAP(Elaboratable):
                             with m.If(~self.streamOut.last):
                                 m.next = 'RxParams'
 
-                        with m.Case(DAP_Delay):
-                            m.d.usb+=self.rxLen.eq(4)
-                            with m.If(~self.streamOut.last):
-                                m.next = 'RxParams'
+#                        with m.Case():
+#                            m.d.usb+=self.rxLen.eq(4)
+#                            with m.If(~self.streamOut.last):
+#                                m.next = 'RxParams'
                             
-                        with m.Case(DAP_SWO_Baudrate):
+                        with m.Case(DAP_SWO_Baudrate, DAP_SWJ_Clock, DAP_Delay):
                             m.d.usb+=self.rxLen.eq(5)
                             with m.If(~self.streamOut.last):
                                 m.next = 'RxParams'
@@ -219,8 +261,9 @@ class CMSIS_DAP(Elaboratable):
                                 m.next = 'RxParams'
 
                         with m.Case(DAP_SWJ_Sequence):
+                            m.d.usb+=self.rxLen.eq(2)
                             with m.If(~self.streamOut.last):
-                                m.next = 'DAP_SWJ_Sequence_GetLen'
+                                m.next = 'RxParams'
 
                         with m.Case(DAP_SWD_Sequence):
                             with m.If(~self.streamOut.last):
@@ -298,24 +341,36 @@ class CMSIS_DAP(Elaboratable):
 
                         with m.Case(DAP_ResetTarget):
                             self.RESP_ResetTarget(m)
+
+                        with m.Case(DAP_SWJ_Pins):
+                            self.RESP_SWJ_Pins(m)
+                            
+                        with m.Case(DAP_SWJ_Clock):
+                            self.RESP_SWJ_Clock(m)
+
+                        with m.Case(DAP_SWJ_Sequence):
+                            self.RESP_SWJ_Sequence_Setup(m)
                             
                         with m.Default():
                             self.RESP_Invalid(m)
 
                 # Grab next byte in this packet
                 with m.Elif(self.streamOut.valid):
-                    m.d.usb += self.rxedLen.eq(self.rxedLen+1)
+                    m.d.usb += [
+                        self.rxBlock.word_select(self.rxedLen,8).eq(self.streamOut.payload),
+                        self.rxedLen.eq(self.rxedLen+1)
+                    ]
 
-                    # Check to make sure this packet isn't foreshortened
-                    with m.If(self.streamOut.last):
-                        with m.If(self.rxedLen+1!=self.rxLen):
-                            self.RESP_Invalid(m)
+                # Check to make sure this packet isn't foreshortened
+                with m.If(self.streamOut.last):
+                    with m.If(self.rxedLen+1!=self.rxLen):
+                        self.RESP_Invalid(m)
 
 
     #########################################################################################
     
-            with m.State('DAP_SWJ_Sequence_GetLen'):
-                self.RESP_Invalid(m)
+            with m.State('DAP_SWJ_Sequence_PROCESS'):
+                self.RESP_SWJ_Sequence_Process(m)
                             
             with m.State('DAP_SWD_Sequence_GetCount'):
                 self.RESP_Invalid(m)

@@ -49,6 +49,37 @@ def op_response( d, compareStr ):
         print(" ]")
 
 
+tests = (
+    ( "Short Request",              b"\x19\x19",                    b"\xff"                     ),
+    ( "Vendor ID",                  b"\x00\x01",                    b"\x00\x00"                 ),
+    ( "Product ID",                 b"\x00\x02",                    b"\x00\x00"                 ),
+    ( "Serial Number",              b"\x00\x03",                    b"\x00\x00"                 ),
+    ( "Target Device Vendor",       b"\x00\x05",                    b"\x00\x00"                 ),
+    ( "Target Device Name",         b"\x00\x06",                    b"\x00\x00"                 ),
+    ( "FW version",                 b"\x00\x04",                    b"\x00\x04\x31\x2e\x30\x30" ),
+    ( "Illegal command",            b"\x42",                        b"\xff"                     ),
+    ( "Request CAPABILITIES",       b"\x00\xf0",                    b"\x00\x01\x01"             ),
+    ( "Request TEST DOMAIN TIMER",  b"\x00\xf1",                    b"\x00\x08\x00\xca\x9a\x3b" ),
+    ( "Request SWO Trace Buffer Size", b"\x00\xfd",                 b"\x00\x04\xe8\x03\x00\x00" ),
+    ( "Request Packet Count",       b"\x00\xFE",                    b"\x00\x01\x40"             ),
+    ( "Request Packet Size",        b"\x00\xff",                    b"\x00\x02\x40\x00"         ),
+    ( "Set connect led",            b"\x01\x00\x01",                b"\x01\x00"                 ),
+    ( "Set running led",            b"\x01\x01\x01",                b"\x01\x00"                 ),
+    ( "Set illegal led",            b"\x01\x02\x01",                b"\xff"                     ),
+    ( "Connect swd",                b"\x02\x01",                    b"\x02\x01"                 ),
+    ( "Connect default",            b"\x02\x00",                    b"\x02\x01"                 ),
+    ( "Connect JTAG",               b"\x02\x02",                    b"\xff"                     ),
+    ( "Disconnect",                 b"\x03",                        b"\x03\x00"                 ),
+    ( "WriteABORT",                 b"\x08\x00\x01\x02\x03\x04",    b"\x08\x00"                 ),
+    ( "Delay",                      b"\x09\x01\x02\x03\x04",        b"\x09\x00"                 ),
+    ( "ResetTarget",                b"\x0A" ,                       b"\x0A\x00\x00"             ),
+    ( "DAP_SWJ_Pins",               b"\x10\x17\x17\x00\01\x02\x03", b"\x10\x99"                 ),
+    ( "DAP_SWJ_Clock",              b"\x11\x00\x01\x02\x03",        b"\x11\x00"                 ),
+    ( "DAP_SWJ_Sequence",           b"\x12\x20\x01\x02\x03\x04",    b"\x12\x00"                 ),
+    ( "DAP_SWJ_Sequence (Long)",    b"\x12\xf8\x01\x02\x03\x04\x01\x02\x03\x04\x01\x02\x03\x04\x01\x02\x03\x04\x01\x02\x03\x04\x01\x02\x03\x04\x01\x02\x03\x04\x01\x02\x03",    b"\x12\x00"                 ),    
+    ( "Vendor ID",                  b"\x00\x01",                    b"\x00\x00"                 ),
+)
+
 device = usb.core.find(idVendor=VENDOR_ID, idProduct=PRODUCT_ID)
 
 if device is None:
@@ -59,118 +90,8 @@ if device is None:
 u=usb.util.claim_interface(device, 0)
 print("Interface claimed")
 
-print("\n=============Sending short request")
-write_to_usb(device,bytes( {0x19,0x19} ))
-r=read_from_usb(device,1000)
-op_response(r,bytes( {0xff} ))
-
-print("\n=============Sending request Vendor ID")
-write_to_usb(device,bytes( [0x00,0x01] ))
-r=read_from_usb(device,1000)
-op_response(r, bytes( [0x00,0x00] ))
-
-print("\n=============Sending request Product ID")
-write_to_usb(device,bytes( [0x00,0x02] ))
-r=read_from_usb(device,1000)
-op_response(r, bytes( [0x00,0x00] ))
-
-print("\n=============Sending request Serial Number")
-write_to_usb(device,bytes( [0x00,0x03] ))
-r=read_from_usb(device,1000)
-op_response(r, bytes( [0x00,0x00] ))
-
-print("\n=============Sending request Target Device Vendor")
-write_to_usb(device,bytes( [0x00,0x05] ))
-r=read_from_usb(device,1000)
-op_response(r, bytes( [0x00,0x00] ))
-
-print("\n=============Sending request Target Device Name")
-write_to_usb(device,bytes( [0x00,0x06] ))
-r=read_from_usb(device,1000)
-op_response(r, bytes( [0x00,0x00] ))
-
-print("\n=============Sending request fw version")
-write_to_usb(device,bytes( [0x00,0x04] ))
-r=read_from_usb(device,1000)
-op_response(r, bytes( [0x00,0x04,0x31,0x2e,0x30,0x30] ))
-
-print("\n=============Sending illegal command")
-print("Wrote "+str(write_to_usb(device,bytes( {0x42} )))+" bytes")
-r=read_from_usb(device,1000)
-op_response(r, bytes( [0xfF] ))
-
-print("\n=============Sending request CAPABILITIES")
-write_to_usb(device,bytes( [0x00,0xf0] ))
-r=read_from_usb(device,1000)
-op_response(r, bytes( [0x00,0x01,0x01] ))
-
-print("\n=============Sending request TEST DOMAIN TIMER")
-write_to_usb(device,bytes( [0x00,0xf1] ))
-r=read_from_usb(device,1000)
-op_response(r, bytes( [0x00,0x08,0x00,0xca,0x9a,0x3b] ))
-
-print("\n=============Sending request SWO Trace Buffer Size")
-write_to_usb(device,bytes( [0x00,0xfD] ))
-r=read_from_usb(device,1000)
-op_response(r, bytes( [0x00,0x04,0xe8,0x03,0x00,0x00] ))
-
-print("\n=============Sending request Packet Count")
-write_to_usb(device,bytes( [0x00,0xfE] ))
-r=read_from_usb(device,1000)
-op_response(r, bytes( [0x00,0x01,0x40] ))
-
-print("\n=============Sending request Packet Size")
-write_to_usb(device,bytes( [0x00,0xff] ))
-r=read_from_usb(device,1000)
-op_response(r, bytes( [0x00,0x02,0x40,0x00] ))
-
-print("\n=============Sending set connect led")
-write_to_usb(device,bytes( [0x01,0x0,0x1] ))
-r=read_from_usb(device,1000)
-op_response(r, bytes( [0x01,0x00] ))
-
-print("\n=============Sending set running led")
-write_to_usb(device,bytes( [0x01,0x01,0x01] ))
-r=read_from_usb(device,1000)
-op_response(r, bytes( [0x01,0x00] ))
-
-print("\n=============Sending set illegal led")
-write_to_usb(device,bytes( [0x01,0x02,0x01] ))
-r=read_from_usb(device,1000)
-op_response(r, bytes( [0xff] ))
-
-print("\n=============Sending connect swd")
-write_to_usb(device,bytes( [0x02,0x01] ))
-r=read_from_usb(device,1000)
-op_response(r, bytes( [0x02,0x01] ))
-
-print("\n=============Sending connect default")
-write_to_usb(device,bytes( [0x02,0x00] ))
-r=read_from_usb(device,1000)
-op_response(r, bytes( [0x02,0x01] ))
-
-print("\n=============Sending connect JTAG")
-write_to_usb(device,bytes( [0x02,0x02] ))
-r=read_from_usb(device,1000)
-op_response(r, bytes( [0xff] ))
-
-print("\n=============Sending disconnect")
-write_to_usb(device,bytes( [0x03] ))
-r=read_from_usb(device,1000)
-op_response(r, bytes( [0x03,0x00] ))
-
-print("\n=============Sending WriteABORT")
-write_to_usb(device,bytes( [0x08,0x00,0x01,0x02,0x03,0x04] ))
-r=read_from_usb(device,1000)
-op_response(r, bytes( [0x08,0x00] ))
-
-print("\n=============Sending Delay")
-write_to_usb(device,bytes( [0x09,0x01,0x02,0x03,0x04] ))
-r=read_from_usb(device,1000)
-op_response(r, bytes( [0x09,0x00] ))
-
-print("\n=============Sending ResetTarget")
-write_to_usb(device,bytes( [0x0A] ))
-r=read_from_usb(device,1000)
-op_response(r, bytes( [0x0A,0x00,0x00] ))
-
+for desc,inseq,outsq in tests:
+    print("==============",desc)
+    write_to_usb(device,bytes(inseq))
+    r=read_from_usb(device,1000)
+    op_response(r,bytes(outsq))
