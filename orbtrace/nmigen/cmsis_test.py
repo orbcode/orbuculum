@@ -22,8 +22,8 @@ def write_to_usb(dev, msg_str):
 
 def read_from_usb(dev, timeout):
     try:
-	# try to read a maximum of 64 bytes from 0x81 (IN endpoint)
-        data = dev.read(0x81, 64, timeout)
+	# try to read a maximum of 2^16-1 bytes from 0x81 (IN endpoint)
+        data = dev.read(0x81, 65535, timeout)
     except usb.core.USBError as e:
         print ("Error reading response: {}".format(e.args))
         exit(-1)
@@ -75,9 +75,26 @@ tests = (
     ( "ResetTarget",                b"\x0A" ,                       b"\x0A\x00\x00"             ),
     ( "DAP_SWJ_Pins",               b"\x10\x17\x17\x00\01\x02\x03", b"\x10\x99"                 ),
     ( "DAP_SWJ_Clock",              b"\x11\x00\x01\x02\x03",        b"\x11\x00"                 ),
-    ( "DAP_SWJ_Sequence",           b"\x12\x20\x01\x02\x03\x04",    b"\x12\x00"                 ),
-    ( "DAP_SWJ_Sequence (Long)",    b"\x12\xf8\x01\x02\x03\x04\x01\x02\x03\x04\x01\x02\x03\x04\x01\x02\x03\x04\x01\x02\x03\x04\x01\x02\x03\x04\x01\x02\x03\x04\x01\x02\x03",    b"\x12\x00"                 ),    
-    ( "Vendor ID",                  b"\x00\x01",                    b"\x00\x00"                 ),
+    ( "DAP_SWJ_Sequence",           b"\x12\x03\x01",    b"\x12\x00"                 ),
+    ( "DAP_SWJ_Sequence (Long)",    b"\x12\x00\x01\x02\x03\x04\x01\x02\x03\x04\x01\x02\x03\x04\x01\x02\x03\x04\x01\x02\x03\x04\x01\x02\x03\x04\x01\x02\x03\x04\x01\x02\x03\x04",    b"\x12\x00"                 ),    
+    ( "DAP_SWO_Transport (None)",   b"\x17\x00",                    b"\x17\x00"                 ),
+    ( "DAP_SWO_Transport (Cmd)",    b"\x17\x01",                    b"\x17\x00"                 ),
+    ( "DAP_SWO_Transport (EP)",     b"\x17\x02",                    b"\x17\x00"                 ),    
+    ( "DAP_SWO_Transport (Bad)",    b"\x17\x03",                    b"\x17\xff"                 ),
+    ( "DAP_SWO_Mode (Off)",         b"\x18\x00",                    b"\x18\x00"                 ),
+    ( "DAP_SWO_Mode (Uart)",        b"\x18\x01",                    b"\x18\x00"                 ),
+    ( "DAP_SWO_Mode (Manch)",       b"\x18\x02",                    b"\x18\x00"                 ),
+    ( "DAP_SWO_Mode (Bad)",         b"\x18\x03",                    b"\x18\xff"                 ),
+    ( "DAP_SWO_Baudrate",           b"\x19\x01\x02\x03\x04",        b"\x19\x01\x02\x03\x04"     ),    
+    ( "DAP_SWO_Control (Start)",    b"\x1a\x01",                    b"\x1a\x00"                 ),
+    ( "DAP_SWO_Control (Stop)",     b"\x1a\x00",                    b"\x1a\x00"                 ),
+    ( "DAP_SWO_Control (Bad)",      b"\x1a\x02",                    b"\x1a\xff"                 ),
+    ( "DAP_SWO_Status",             b"\x1b",                        b"\x1b\x00\x44\x33\x22\x11" ),
+    ( "DAP_SWO_ExtendedStatus",     b"\x1e\x07",                    b"\x1e\x00\x44\x33\x22\x11\x88\x77\x66\x55\xcc\xbb\xaa\x99" ),
+    ( "DAP_SWO_ExtendedStatus (Bad)", b"\x1e\x08",                  b"\xff"                     ),
+    ( "DAP_SWO_Data (Short)",       b"\x1c\x04\x00",                b"\x1c\x00\x04\x00\x2a\x2a\x2a\x2a" ),
+    ( "DAP_SWO_Data (Long)",        b"\x1c\x63\x00",                b"\x1c\x00\x63\x00\x2a\x2a\x2a\x2a" ),
+    ( "DAP_SWO_Data (Too Long)",    b"\x1c\x65\x00",                b"\x1c\x00\x64\x00\x2a\x2a\x2a\x2a" ),    
 )
 
 device = usb.core.find(idVendor=VENDOR_ID, idProduct=PRODUCT_ID)
