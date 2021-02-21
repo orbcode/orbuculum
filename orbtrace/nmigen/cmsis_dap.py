@@ -39,6 +39,27 @@ DAP_ExecuteCommands      = 0x7f
 DAP_QueueCommands        = 0x7e
 DAP_Invalid              = 0xff
 
+class WideRam(Elaboratable):
+    def __init__(self):
+        self.adr   = Signal(8)
+        self.dat_r = Signal(32)
+        self.dat_w = Signal(32)
+        self.we    = Signal()
+        self.mem   = Memory(width=32, depth=8, init=[0xdeadbeef])
+
+    def elaborate(self, platform):
+        m = Module()
+        m.submodules.rdport = rdport = self.mem.read_port()
+        m.submodules.wrport = wrport = self.mem.write_port()
+        m.d.comb += [
+            rdport.addr.eq(self.adr),
+            self.dat_r.eq(rdport.data),
+            wrport.addr.eq(self.adr),
+            wrport.data.eq(self.dat_w),
+            wrport.en.eq(self.we),
+        ]
+        return m
+
 class CMSIS_DAP(Elaboratable):
     def __init__(self, streamIn, streamOut):
         # External interface
@@ -58,7 +79,7 @@ class CMSIS_DAP(Elaboratable):
         self.busy         = Signal()       # Indicator that we can't receive USB traffic at the moment
 
         self.maxSWObytes  = Signal(16)     # Maximum number of receivable SWO bytes from protocol packet
-        self.txb          = Signal(3)      # State of SWO data tx state machine
+        self.txb          = Signal(4)      # State of various orthogonal state machines
 
         # Support for JTAG_Sequence
         self.tmsValue     = Signal()       # TMS value while performing JTAG sequence
@@ -69,10 +90,23 @@ class CMSIS_DAP(Elaboratable):
         self.tckCycles    = Signal(6)      # Number of tckCycles in this sequence
         self.bytebits     = Signal(4)      # Number of bits in this byte that have been transmitted
 
+        # Support for DAP_Transfer
+        self.dapIndex     = Signal(8)      # Index of selected JTAG device
+        self.transferCount= Signal(8)      # Number of transfers 1..255
+        self.ramwpos      = Signal(8)      # Current position in ram for write
+        self.lastack      = Signal(3)      # Last ack returned by target
+        self.memaddr      = Signal(8)
+        
+        self.tfrReq       = Signal(8)      # Transfer request from controller
+        self.tfrData      = Signal(32)     # Transfer data from controller
+        
         # CMSIS-DAP Configuration info
         self.ndev         = Signal(8)      # Number of devices in signal chain
         self.irlength     = Signal(8)      # JTAG IR register length for each device
-        
+
+        self.idleCycles   = Signal(8)      # Number of extra idle cycles after each transfer
+        self.waitRetry    = Signal(16)     # Number of transfer retries after WAIT response
+        self.matchRetry   = Signal(16)     # Number of retries on reads with Value Match in DAP_Transfer
     # -------------------------------------------------------------------------------------
     def RESP_Invalid(self, m):
         # Simply transmit an 'invalid' packet back
@@ -201,6 +235,111 @@ class CMSIS_DAP(Elaboratable):
             m.d.usb += self.txBlock.bit_select(8,104).eq( Cat(C(0,8),C(0x11223344,32),C(0x55667788,32),C(0x99aabbcc,32) ))
             m.d.usb += self.txLen.eq(14)
             m.next = 'RESPOND'
+    # -------------------------------------------------------------------------------------
+    def RESP_TransferConfigure(self, m):
+        m.d.usb += [
+            self.idleCycles.eq(self.rxBlock.bit_select(8,8)),
+            self.waitRetry.eq(self.rxBlock.bit_select(16,16)),
+            self.matchRetry.eq(self.rxBlock.bit_select(32,16))
+        ]
+        m.next = 'RESPOND'
+    # -------------------------------------------------------------------------------------
+    # -------------------------------------------------------------------------------------
+    def RESP_Transfer_Setup(self, m):
+        # Triggered at start of a Transfer data sequence
+        # We have the command, index and transfer count, need to set up to get the transfers
+        m.d.usb += [
+            self.dapIndex.eq(self.rxBlock.word_select(1,8)),
+            self.transferCount.eq(self.rxBlock.word_select(2,8)),
+            self.memaddr.eq(0),
+            self.ramwpos.eq(0),
+            self.busy.eq(0),
+            self.txb.eq(0)
+        ]
+
+        # Filter for case someone tries to send us no transfers to perform
+        with m.If(self.rxBlock.word_select(2,8)):
+            m.next = 'DAP_Transfer_PROCESS'
+        with m.Else():
+            m.d.usb += [
+                self.txBlock.word_select(2,8).eq(self.lastack),
+                self.txLen.eq(3)
+                ]
+            m.next = 'RESPOND'
+
+    def RESP_Transfer_Process(self, m):
+        m.d.comb += self.tfrram.dat_w.eq(self.tfrData)
+        m.d.usb += [
+            self.busy.eq(1),
+            self.tfrram.we.eq(0)
+            ]
+
+        with m.Switch(self.txb):
+            with m.Case(0): # Get transfer request
+                m.d.usb += self.busy.eq(0)                
+                with m.If(self.streamOut.ready):
+                    m.d.usb += self.tfrReq.eq(self.streamOut.payload)
+                    with m.If ((~self.streamOut.payload[1]) | (self.streamOut.payload[4]) | (self.streamOut.payload[5] )):
+                        # Need to collect the value
+                        m.d.usb += self.txb.eq(1)
+                    with m.Else():
+                        m.d.usb += [
+                            self.txb.eq(5),
+                            self.busy.eq(1)
+                            ]
+    
+            with m.Case(1,2,3,4): # Collect the 32 bit tfrData to go with the command
+                m.d.usb +=self.busy.eq(self.txb==4)
+                with m.If(self.streamOut.ready):
+                    m.d.usb+=[
+                        self.tfrData.word_select(self.txb-1,8).eq(self.streamOut.payload),
+                        self.tfrram.adr.eq(self.memaddr),
+                        self.txb.eq(self.txb+1)
+                        ]
+                    
+            with m.Case(5): # We have the command and any needed data, action it
+                m.d.usb += [                    
+                    self.memaddr.eq(self.memaddr+1),
+                    self.tfrram.we.eq(1),
+                    self.transferCount.eq(self.transferCount-1),
+                    self.txBlock.word_select(2,8).eq(self.lastack),
+                    self.txb.eq(Mux((self.transferCount==1),6,1)),
+                    self.ramwpos.eq(self.memaddr+1),
+                    ]
+
+            with m.Case(6,7,8): # Transfer completed, start sending data back
+                with m.If(self.streamIn.ready):
+                    m.d.usb += [
+                        self.memaddr.eq(0),
+                        self.tfrram.adr.eq(0),
+                        self.streamIn.payload.eq(self.rxBlock.word_select(self.txb-6,8)),
+                        self.streamIn.valid.eq(1),
+                        self.txb.eq(self.txb+1)
+                    ]
+
+            with m.Case(9): # Collect transfer value from RAM store
+                m.d.usb += [
+                    self.tfrData.eq(self.tfrram.dat_r),
+                    self.memaddr.eq(self.memaddr+1),
+                    self.tfrram.adr.eq(self.memaddr+1),
+                    self.txb.eq(10)
+                ]
+
+            with m.Case(10,11,12,13): # Send 32 bit value to usb
+                with m.If(self.streamIn.ready):
+                    m.d.usb += [
+                        self.streamIn.payload.eq(self.tfrData[0:8]),
+                        self.tfrData.eq(self.tfrData>>8),
+                        self.streamIn.valid.eq(1),
+                        self.txb.eq(self.txb+1)
+                        ]
+                    with m.If(self.txb==13):
+                        with m.If(self.memaddr==self.ramwpos):
+                            m.d.usb += self.streamIn.last.eq(1)
+                            m.next = 'IDLE'
+                        with m.Else():
+                            m.d.usb += self.txb.eq(9)
+                             
     # -------------------------------------------------------------------------------------
     # -------------------------------------------------------------------------------------        
     def RESP_SWO_Data_Setup(self, m):
@@ -371,7 +510,8 @@ class CMSIS_DAP(Elaboratable):
         m.d.comb += [
             self.streamOut.ready.eq(~self.busy),
         ]
-        
+
+        m.submodules.tfrram = self.tfrram = WideRam()
         m.d.usb += self.can.eq(0)
 
         with m.FSM(domain="usb") as decoder:
@@ -399,7 +539,7 @@ class CMSIS_DAP(Elaboratable):
                             with m.If(~self.streamOut.last):
                                 m.next = 'RxParams'
 
-                        with m.Case(DAP_HostStatus, DAP_SWO_Data, DAP_JTAG_Configure):
+                        with m.Case(DAP_HostStatus, DAP_SWO_Data, DAP_JTAG_Configure,DAP_Transfer):
                             m.d.usb+=self.rxLen.eq(3)                            
                             with m.If(~self.streamOut.last):
                                 m.next = 'RxParams'
@@ -423,10 +563,6 @@ class CMSIS_DAP(Elaboratable):
                             with m.If(~self.streamOut.last):
                                 m.next = 'DAP_SWD_Sequence_GetCount'
 
-                        with m.Case(DAP_Transfer):
-                            with m.If(~self.streamOut.last):
-                                m.next = 'DAP_Transfer'
-                            
                         with m.Case(DAP_TransferBlock):
                             with m.If(~self.streamOut.last):
                                 m.next = 'DAP_TransferBlock'
@@ -538,7 +674,15 @@ class CMSIS_DAP(Elaboratable):
 
                         with m.Case(DAP_JTAG_IDCODE):
                             self.RESP_JTAG_IDCODE(m)
-                                
+
+                        # Transfer Commands
+                        # =================
+                        with m.Case(DAP_TransferConfigure):
+                            self.RESP_TransferConfigure(m)
+
+                        with m.Case(DAP_Transfer):
+                            self.RESP_Transfer_Setup(m)
+                            
                         with m.Default():
                             self.RESP_Invalid(m)
 
@@ -568,13 +712,13 @@ class CMSIS_DAP(Elaboratable):
 
             with m.State('DAP_JTAG_Sequence_PROCESS'):
                 self.RESP_JTAG_Sequence_PROCESS(m)
+
+            with m.State('DAP_Transfer_PROCESS'):
+                self.RESP_Transfer_Process(m)
                             
             with m.State('DAP_SWD_Sequence_GetCount'):
                 self.RESP_Invalid(m)
 
-            with m.State('DAP_Transfer'):
-                self.RESP_Invalid(m)
-                            
             with m.State('DAP_TransferBlock'):
                 self.RESP_Invalid(m)
                 
