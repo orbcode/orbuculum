@@ -97,9 +97,15 @@ tests = (
     ( "DAP_SWO_Data (Too Long)",    b"\x1c\x65\x00",                b"\x1c\x00\x64\x00\x2a\x2a\x2a\x2a" ),    
 
     ( "DAP_JTAG_Sequence (Simple)", b"\x14\x01\x08\x01",            b"\x14\x00" ),
-    ( "DAP_JTAG_Sequence (W/TDO-R)",b"\x14\x01\x88\x91",            b"\x14\x00\x91" ),
-    ( "DAP_JTAG_Sequence (W/2TDO)", b"\x14\x02\x88\x91\x02\x13",    b"\x14\x00\x91" ),
-    ( "DAP_JTAG_Sequence (W/2TDO-R)",b"\x14\x02\x88\x91\x82\x13",   b"\x14\x00\x91\x13" ),    
+    ( "DAP_JTAG_Sequence (W/TDO-R)",b"\x14\x01\x88\x91",        b"\x14\x00\x80" ),
+    ( "DAP_JTAG_Sequence (W/2TDO)", b"\x14\x02\x88\x91\x88\x13",    b"\x14\x00\x80\x80" ),
+    ( "DAP_JTAG_Sequence (W/2TDO-R)",b"\x14\x02\x87\x91\x83\x13",   b"\x14\x00\x40\x04" ),
+    ( "DAP_JTAG_Sequence (W/TDO2-R)",b"\x14\x02\x8a\x91\x92",       b"\x14\x00\x80\x02" ),
+    ( "DAP_JTAG_Sequence (W/2TDO2-R)",b"\x14\x02\x8f\x91\x92\x88\x13",b"\x14\x00\x80\x40\x80" ),
+    ( "DAP_JTAG_Sequence (Long)",   b"\x14\x01\x80\x00\x00\x00\x00\x00\x00\x00\x00",b"\x14\x00\x80\x80\x80\x80\x80\x80\x80\x80" ),
+    ( "DAP_JTAG_Sequence (Long)",   b"\x14\x01\xbf\x00\x00\x00\x00\x00\x00\x00\x00",b"\x14\x00\x80\x80\x80\x80\x80\x80\x80\x40" ),
+    ( "DAP_JTAG_Configure",         b"\x15\x03\x10",                b"\x15\x00" ),
+    ( "DAP_JTAG_IDCODE",            b"\x16\x00",                    b"\x16\x00\x11\x22\x33\x44" ),
 )
 
 device = usb.core.find(idVendor=VENDOR_ID, idProduct=PRODUCT_ID)

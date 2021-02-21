@@ -67,6 +67,11 @@ class CMSIS_DAP(Elaboratable):
         self.tdoCount     = Signal(7)      # Count of tdi bits being sent (in txBlock)
         self.seqCount     = Signal(8)      # Number of sequences that follow
         self.tckCycles    = Signal(6)      # Number of tckCycles in this sequence
+        self.bytebits     = Signal(4)      # Number of bits in this byte that have been transmitted
+
+        # CMSIS-DAP Configuration info
+        self.ndev         = Signal(8)      # Number of devices in signal chain
+        self.irlength     = Signal(8)      # JTAG IR register length for each device
         
     # -------------------------------------------------------------------------------------
     def RESP_Invalid(self, m):
@@ -178,6 +183,16 @@ class CMSIS_DAP(Elaboratable):
         m.d.usb += self.txBlock.bit_select(8,40).eq( Cat(C(0,8),C(0x11223344,32) ))
         m.d.usb += self.txLen.eq(6)
         m.next = 'RESPOND'
+    # -------------------------------------------------------------------------------------
+    def RESP_JTAG_Configure(self, m):
+        m.d.usb += self.irlength.eq(self.rxBlock.word_select(2,8))
+        m.d.usb += self.ndev.eq(self.rxBlock.word_select(1,8))                               
+        m.next = 'RESPOND'
+    # -------------------------------------------------------------------------------------
+    def RESP_JTAG_IDCODE(self, m):
+        m.d.usb += self.txBlock.bit_select(16,32).eq(0x44332211)
+        m.d.usb += self.txLen.eq(6)
+        m.next = 'RESPOND'
     # -------------------------------------------------------------------------------------    
     def RESP_SWO_ExtendedStatus(self, m):
         with m.If((self.rxBlock.word_select(1,8)&0xf8)!=0):
@@ -247,6 +262,7 @@ class CMSIS_DAP(Elaboratable):
         m.d.usb += [
             self.seqCount.eq(self.rxBlock.word_select(1,8)),
             self.tdoCount.eq(16),  # TDI Data goes after packet ID and status
+            self.txBlock[16:].eq(0), # Blank out any TDI storage
             self.txb.eq(0)
             ]
         m.next = 'DAP_JTAG_Sequence_PROCESS'
@@ -259,7 +275,7 @@ class CMSIS_DAP(Elaboratable):
         with m.If(self.seqCount == 0):
             # Packet response has been built in this state machine, so send it
             m.d.usb += [
-                self.txLen.eq(self.tdoCount>>3),
+                self.txLen.eq((self.tdoCount+7)>>3),
                 self.busy.eq(0)
                 ]
             m.next = 'RESPOND'
@@ -276,6 +292,9 @@ class CMSIS_DAP(Elaboratable):
                             self.tdoCapture.eq(self.streamOut.payload[7]),
                             self.txb.eq(1)
                         ]
+                    # Just in case a previous sequence had tdoCapture on, round up the bits
+                    m.d.usb += self.tdoCount.eq((self.tdoCount+7)&0x78)
+                        
                 # --------------
                 with m.Case(1): # Waiting for TDI byte to arrive
                     m.d.usb += self.busy.eq(0)
@@ -283,22 +302,24 @@ class CMSIS_DAP(Elaboratable):
                         m.d.usb += [
                             self.tdiData.eq(self.streamOut.payload),
                             self.txb.eq(2),
-                            self.busy.eq(1)
+                            self.busy.eq(1),
+                            self.bytebits.eq(Mux(((self.tckCycles==0) | (self.tckCycles>7)),8,self.tckCycles))
                             ]
                 # --------------
                 with m.Case(2): # Clocking out TDI and, perhaps, receiving TDO
                     # We still need to deal with this bit...
                     m.d.usb += self.tckCycles.eq(self.tckCycles-1)
+                    m.d.usb += self.bytebits.eq(self.bytebits-1)
 
                     # If this is the last bit of this byte, best go get another one
-                    with m.If(self.tckCycles[0:3]==C(1,3)):
+                    with m.If(self.bytebits==1):
                         m.d.usb += self.txb.eq(1)
 
                     # ...and if we've got anything to record
                     with m.If(self.tdoCapture):
                         m.d.usb += [
                             self.tdoCount.eq(self.tdoCount+1),
-                            self.txBlock.bit_select(self.tdoCount,1).eq(self.tdiData[0])
+                            self.txBlock.bit_select(self.tdoCount,1).eq(self.bytebits==1)
                         ]
                         # Add code here for I/O
                     m.d.usb += self.tdiData.eq(self.tdiData>>1)
@@ -307,10 +328,6 @@ class CMSIS_DAP(Elaboratable):
                         # This sequence is done, so move to next transmission
                         m.d.usb += self.seqCount.eq(self.seqCount-1)
                         m.d.usb += self.txb.eq(0)
-
-                        # and make sure next transaction tdo starts on a byte boundry
-                        with m.If((self.tdoCapture) & (self.tdoCount[0:3]!=0)):
-                            self.tdoCount.eq((self.tdoCount&~7)+8)
                 # --------------
                 
     # -------------------------------------------------------------------------------------
@@ -453,6 +470,9 @@ class CMSIS_DAP(Elaboratable):
                 # If we've got everything for this packet then let's process it
                 with m.If(self.rxedLen==self.rxLen):
                     with m.Switch(self.rxBlock.word_select(0,8)):
+
+                        # General Commands
+                        # ================
                         with m.Case(DAP_Info):
                             self.RESP_Info(m)
 
@@ -474,6 +494,8 @@ class CMSIS_DAP(Elaboratable):
                         with m.Case(DAP_ResetTarget):
                             self.RESP_ResetTarget(m)
 
+                        # Common SWD/JTAG Commands
+                        # ========================
                         with m.Case(DAP_SWJ_Pins):
                             self.RESP_SWJ_Pins(m)
                             
@@ -483,6 +505,8 @@ class CMSIS_DAP(Elaboratable):
                         with m.Case(DAP_SWJ_Sequence):
                             self.RESP_SWJ_Sequence_Setup(m)
 
+                        # SWO Commands
+                        # ============
                         with m.Case(DAP_SWO_Transport):
                             self.RESP_SWO_Transport(m)
 
@@ -504,9 +528,17 @@ class CMSIS_DAP(Elaboratable):
                         with m.Case(DAP_SWO_Data):
                             self.RESP_SWO_Data_Setup(m)
 
+                        # JTAG Commands
+                        # =============
                         with m.Case(DAP_JTAG_Sequence):
                             self.RESP_JTAG_Sequence_Setup(m)
-                            
+
+                        with m.Case(DAP_JTAG_Configure):
+                            self.RESP_JTAG_Configure(m)
+
+                        with m.Case(DAP_JTAG_IDCODE):
+                            self.RESP_JTAG_IDCODE(m)
+                                
                         with m.Default():
                             self.RESP_Invalid(m)
 
