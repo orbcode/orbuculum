@@ -3,7 +3,9 @@
 
 `timescale 1ns/100ps
 
-// Tests for swdIF
+// Tests for swdIF.
+// Make STATETRACE equal to 1 for detail tracing inside swdIF.v.
+//
 // Run with
 //  iverilog -o r swdIF.v ../testbeds/swdIF_tb.v  ; vvp r
 
@@ -35,7 +37,7 @@ module swdIF_tb;
    assign swdi_tb = rx[0];
    
    
-   swdIF DUT (
+   swdIF #(.STATETRACE(1)) DUT (
 	      .rst(rst_tb),        // Reset synchronised to clock
               .clk(clk_tb),
                 
@@ -93,7 +95,8 @@ module swdIF_tb;
 
       clkDiv_tb=11'd2;
 
-      // Simple read
+      // =========================================== Simple read
+      $display("Simple read");
       rx = { 1'b1, 32'habcdef12, 3'b001, 1'bx, 8'bx };
       addr32_tb=2'b01;
       rnw_tb<=1'b1;
@@ -105,8 +108,34 @@ module swdIF_tb;
       if (err_tb)
         $display("\nReturned Parity Error");
       else
-        $display("\nReturned [ACK %3b %08x]",ack_tb,dout_tb);
+        begin
+           if ((ack_tb==3'b100) && (dout_tb==32'habcdef12))
+             $write("\nOK ");
+           else
+             $write("\nFAULT ");
+             $display("Returned [ACK %3b %08x]",ack_tb,dout_tb);
+        end
 
+      #10;
+      
+      // ======================================== Parity error read
+      $display("\nParity error read");
+      rx = { 1'b0, 32'habcdef12, 3'b001, 1'bx, 8'bx };
+      addr32_tb=2'b01;
+      rnw_tb<=1'b1;
+      apndp_tb<=1;
+      go_tb<=1;
+      while (done_tb==1) #1;
+      go_tb<=0;
+      while (done_tb==0) #1;
+      if (err_tb)
+        $display("\nOK Returned Parity Error");
+      else
+        begin
+           $write("\nFAULT ");
+           $display("Returned [ACK %3b %08x]",ack_tb,dout_tb);
+        end
+      
       
       #50;
       

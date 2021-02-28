@@ -8,7 +8,7 @@
 // which in Apache 2.0 Licence.
 // This gateware uses (obviously!) uses no code from DAPLink and is under BSD licence.
 
-module swdIF (
+module swdIF # (parameter STATETRACE = 0) (
 		input             rst,      // Reset synchronised to clock
                 input             clk,
                 
@@ -45,9 +45,7 @@ module swdIF (
    reg [31:0]                     bits;        // The bits being transferred
    reg                            par;         // Parity construct
 
-`ifndef SYNTHESIS   
    reg [3:0]                      swd_state_change;
-`endif
 
    parameter ST_IDLE=0;
    parameter ST_HDR_TX=1;
@@ -80,29 +78,30 @@ module swdIF (
 	  begin
              go_cdc = {go,go_cdc[1]};
 
-`ifndef SYNTHESIS
-             // Print out state changes for testbench purposes
-             swd_state_change<=swd_state;
-             if (swd_state_change!=swd_state)
+             if (STATETRACE==1)
                begin
-                  $display("");
-                  $write("ST_");
-                  case (swd_state)
-                    ST_IDLE:         $write("IDLE");
-                    ST_HDR_TX:       $write("HDR_TX");
-                    ST_TRN1:         $write("TRN1");
-                    ST_ACK:          $write("ACK");
-                    ST_TRN2:         $write("TRN2");
-                    ST_DWRITE:       $write("DWRITE");
-                    ST_DWRITEPARITY: $write("DWRITEPARITY");
-                    ST_DREAD:        $write("DREAD");
-                    ST_DREADPARITY:  $write("DREADPARITY");
-                    ST_COOLING:      $write("COOLING");
-                    default:         $write("UNKNOWN!!");
-                  endcase // case (swd_state)
-                  $write(":");
-               end // if (swd_state_change!=swd_state)
-`endif
+                  // Print out state changes for testbench purposes
+                  swd_state_change<=swd_state;
+                  if (swd_state_change!=swd_state)
+                    begin
+                       $display("");
+                       $write("ST_");
+                       case (swd_state)
+                         ST_IDLE:         $write("IDLE");
+                         ST_HDR_TX:       $write("HDR_TX");
+                         ST_TRN1:         $write("TRN1");
+                         ST_ACK:          $write("ACK");
+                         ST_TRN2:         $write("TRN2");
+                         ST_DWRITE:       $write("DWRITE");
+                         ST_DWRITEPARITY: $write("DWRITEPARITY");
+                         ST_DREAD:        $write("DREAD");
+                         ST_DREADPARITY:  $write("DREADPARITY");
+                         ST_COOLING:      $write("COOLING");
+                         default:         $write("UNKNOWN!!");
+                       endcase // case (swd_state)
+                       $write(":");
+                    end // if (swd_state_change!=swd_state)
+               end
 
              // Run clock when we are not in idle state
              if (swd_state!=ST_IDLE)
