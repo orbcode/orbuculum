@@ -4,10 +4,10 @@
 `timescale 1ns/100ps
 
 // Tests for swdIF.
-// Make STATETRACE equal to 1 for detail tracing inside swdIF.v.
 //
 // Run with
 //  iverilog -o r swdIF.v ../testbeds/swdIF_tb.v  ; vvp r
+// Make -DSTATETRACE=1 for detail tracing inside swdIF.v.
 
 module swdIF_tb;
 
@@ -25,19 +25,19 @@ module swdIF_tb;
    reg [1:0]   addr32_tb;
    reg         rnw_tb;
    reg         apndp_tb;
-   reg [31:0]  din_tb;
+   reg [31:0]  dwrite_tb;
    wire [2:0]  ack_tb;
-   wire [31:0] dout_tb;
+   wire [31:0] dread_tb;
    reg         go_tb;
    wire        done_tb;
    reg [44:0]  rx;
-   wire        err_tb;
+   wire        perr_tb;
    
    assign swdio_tb = (swwr_tb==1)?swdo_tb:swdi_tb;
    assign swdi_tb = rx[0];
    
    
-   swdIF #(.STATETRACE(1)) DUT (
+   swdIF DUT (
 	      .rst(rst_tb),        // Reset synchronised to clock
               .clk(clk_tb),
                 
@@ -54,11 +54,11 @@ module swdIF_tb;
               .addr32(addr32_tb),  // Address bits 3:2 for message
               .rnw(rnw_tb),        // Set for read, clear for write
               .apndp(apndp_tb),    // AP(1) or DP(0) access?
-              .din(din_tb),        // Most recent data in
+              .dread(dread_tb),    // Most recent data in
 
               .ack(ack_tb),        // Most recent ack status
-              .dout(dout_tb),      // Data out to be written
-              .err(err_tb),        // Error status
+              .dwrite(dwrite_tb),  // Data out to be written
+              .perr(perr_tb),      // Parity Error status
               
               .go(go_tb),          // Trigger
               .done(done_tb)       // Response
@@ -75,11 +75,11 @@ module swdIF_tb;
 	  end
      end
 
-   always @(posedge swclk_tb)
+   always @(negedge swclk_tb)
      begin
         rx<={1'b1,rx[45:1]};
      end
-   always @(negedge swclk_tb)
+   always @(posedge swclk_tb)
         $write("%d",swdio_tb);
    
    initial begin
@@ -96,7 +96,7 @@ module swdIF_tb;
       clkDiv_tb=11'd2;
 
       // =========================================== Simple read
-      $display("Simple read");
+      $display("Simple read;");
       rx = { 1'b1, 32'habcdef12, 3'b001, 1'bx, 8'bx };
       addr32_tb=2'b01;
       rnw_tb<=1'b1;
@@ -105,21 +105,21 @@ module swdIF_tb;
       while (done_tb==1) #1;
       go_tb<=0;
       while (done_tb==0) #1;
-      if (err_tb)
+      if (perr_tb)
         $display("\nReturned Parity Error");
       else
         begin
-           if ((ack_tb==3'b100) && (dout_tb==32'habcdef12))
+           if ((ack_tb==3'b001) && (dread_tb==32'habcdef12))
              $write("\nOK ");
            else
              $write("\nFAULT ");
-             $display("Returned [ACK %3b %08x]",ack_tb,dout_tb);
+             $display("Returned [ACK %3b %08x]",ack_tb,dread_tb);
         end
 
       #10;
       
       // ======================================== Parity error read
-      $display("\nParity error read");
+      $display("\n\nParity error read;");
       rx = { 1'b0, 32'habcdef12, 3'b001, 1'bx, 8'bx };
       addr32_tb=2'b01;
       rnw_tb<=1'b1;
@@ -128,13 +128,55 @@ module swdIF_tb;
       while (done_tb==1) #1;
       go_tb<=0;
       while (done_tb==0) #1;
-      if (err_tb)
+      if (perr_tb)
         $display("\nOK Returned Parity Error");
       else
         begin
            $write("\nFAULT ");
-           $display("Returned [ACK %3b %08x]",ack_tb,dout_tb);
+           $display("Returned [ACK %3b %08x]",ack_tb,dread_tb);
         end
+
+      // ======================================== Wait read
+      $display("\n\nWait read;");
+      rx = { 1'b0, 32'habcdef12, 3'b010, 1'bx, 8'bx };
+      addr32_tb=2'b01;
+      rnw_tb<=1'b1;
+      apndp_tb<=1;
+      go_tb<=1;
+      while (done_tb==1) #1;
+      go_tb<=0;
+      while (done_tb==0) #1;
+      if (ack_tb==3'b010)
+        $display("\nOK Returned WAIT");
+      else
+        begin
+           $write("\nFAULT ");
+           $display("Returned [ACK %3b %08x]",ack_tb,dread_tb);
+        end
+      
+      // =========================================== Simple write
+      $display("\n\nSimple write;");
+      rx = { 1'b1, 32'hx, 3'b001, 1'bx, 8'bx };
+      addr32_tb=2'b01;
+      rnw_tb<=1'b0;
+      apndp_tb<=1;
+      dwrite_tb<=32'habcdef12;
+      go_tb<=1;
+      while (done_tb==1) #1;
+      go_tb<=0;
+      while (done_tb==0) #1;
+      if (perr_tb)
+        $display("\nReturned Parity Error");
+      else
+        begin
+           if (ack_tb==3'b001)
+             $write("\nOK ");
+           else
+             $write("\nFAULT ");
+           $display("Returned [ACK %3b]",ack_tb);
+        end
+
+      #10;
       
       
       #50;

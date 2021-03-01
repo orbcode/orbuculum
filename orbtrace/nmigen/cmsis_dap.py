@@ -1,4 +1,5 @@
 from nmigen                  import *
+from swdIF                   import SWDIF
 
 DAP_CONNECT_DEFAULT      = 1                # Default connect is SWD
 DAP_VERSION_STRING       = Cat(C(0x31,8),C(0x2e,8),C(0x30,8),C(0x30,8))
@@ -61,7 +62,7 @@ class WideRam(Elaboratable):
         return m
 
 class CMSIS_DAP(Elaboratable):
-    def __init__(self, streamIn, streamOut):
+    def __init__(self, streamIn, streamOut, dbgpins):
         # External interface
         self.running      = Signal()       # Flag for if target is running
         self.connected    = Signal()       # Flag for if target is connected
@@ -99,6 +100,7 @@ class CMSIS_DAP(Elaboratable):
         
         self.tfrReq       = Signal(8)      # Transfer request from controller
         self.tfrData      = Signal(32)     # Transfer data from controller
+        self.dwrite       = Signal(32,reset=0xabcdef12)
         
         # CMSIS-DAP Configuration info
         self.ndev         = Signal(8)      # Number of devices in signal chain
@@ -107,6 +109,8 @@ class CMSIS_DAP(Elaboratable):
         self.idleCycles   = Signal(8)      # Number of extra idle cycles after each transfer
         self.waitRetry    = Signal(16)     # Number of transfer retries after WAIT response
         self.matchRetry   = Signal(16)     # Number of retries on reads with Value Match in DAP_Transfer
+
+        self.dbgpins      = dbgpins
     # -------------------------------------------------------------------------------------
     def RESP_Invalid(self, m):
         # Simply transmit an 'invalid' packet back
@@ -298,16 +302,34 @@ class CMSIS_DAP(Elaboratable):
                         ]
                     
             with m.Case(5): # We have the command and any needed data, action it
-                m.d.usb += [                    
-                    self.memaddr.eq(self.memaddr+1),
-                    self.tfrram.we.eq(1),
-                    self.transferCount.eq(self.transferCount-1),
-                    self.txBlock.word_select(2,8).eq(self.lastack),
-                    self.txb.eq(Mux((self.transferCount==1),6,1)),
-                    self.ramwpos.eq(self.memaddr+1),
+                m.d.usb += [
+                    self.dbgif.apndp.eq(self.tfrReq[0]),
+                    self.dbgif.rnw.eq(self.tfrReq[1]),
+                    self.dbgif.addr32.eq(self.tfrReq[2:3]),
+                    self.dbgif.dwrite.eq(self.dwrite),
+                    self.dbgif.go.eq(1),
+                    self.txb.eq(6)
+                ]
+
+            with m.Case(6): # We sent a command, wait for it to start being executed
+                with m.If(self.dbgif.done==0):
+                    m.d.usb+=[
+                        self.dbgif.go.eq(0),
+                        self.txb.eq(7)
+                        ]
+
+            with m.Case(7): # Wait for command to complete
+                with m.If(self.dbgif.done==1):
+                    m.d.usb += [                    
+                        self.memaddr.eq(self.memaddr+1),
+                        self.tfrram.we.eq(1),
+                        self.transferCount.eq(self.transferCount-1),
+                        self.txBlock.word_select(2,8).eq(self.lastack),
+                        self.txb.eq(Mux((self.transferCount==1),8,1)),
+                        self.ramwpos.eq(self.memaddr+1),
                     ]
 
-            with m.Case(6,7,8): # Transfer completed, start sending data back
+            with m.Case(8,9,10): # Transfer completed, start sending data back
                 with m.If(self.streamIn.ready):
                     m.d.usb += [
                         self.memaddr.eq(0),
@@ -317,15 +339,15 @@ class CMSIS_DAP(Elaboratable):
                         self.txb.eq(self.txb+1)
                     ]
 
-            with m.Case(9): # Collect transfer value from RAM store
+            with m.Case(11): # Collect transfer value from RAM store
                 m.d.usb += [
                     self.tfrData.eq(self.tfrram.dat_r),
                     self.memaddr.eq(self.memaddr+1),
                     self.tfrram.adr.eq(self.memaddr+1),
-                    self.txb.eq(10)
+                    self.txb.eq(12)
                 ]
 
-            with m.Case(10,11,12,13): # Send 32 bit value to usb
+            with m.Case(12,13,14,15): # Send 32 bit value to usb
                 with m.If(self.streamIn.ready):
                     m.d.usb += [
                         self.streamIn.payload.eq(self.tfrData[0:8]),
@@ -333,12 +355,12 @@ class CMSIS_DAP(Elaboratable):
                         self.streamIn.valid.eq(1),
                         self.txb.eq(self.txb+1)
                         ]
-                    with m.If(self.txb==13):
+                    with m.If(self.txb==15):
                         with m.If(self.memaddr==self.ramwpos):
                             m.d.usb += self.streamIn.last.eq(1)
                             m.next = 'IDLE'
                         with m.Else():
-                            m.d.usb += self.txb.eq(9)
+                            m.d.usb += self.txb.eq(11)
                              
     # -------------------------------------------------------------------------------------
     # -------------------------------------------------------------------------------------        
@@ -514,6 +536,11 @@ class CMSIS_DAP(Elaboratable):
         m.submodules.tfrram = self.tfrram = WideRam()
         m.d.usb += self.can.eq(0)
 
+        m.submodules.dbgif = self.dbgif = SWDIF(self.dbgpins)
+
+        # Turn on power (Drive to Vsen since that appears on op pin)
+        m.d.comb += [ self.dbgpins.nvsen.eq(1), self.dbgpins.nvdriveen.eq(0) ]
+        
         with m.FSM(domain="usb") as decoder:
             with m.State('IDLE'):
                 m.d.usb += [ self.txedLen.eq(0), self.busy.eq(0) ]

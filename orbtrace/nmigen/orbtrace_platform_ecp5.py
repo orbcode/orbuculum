@@ -312,7 +312,30 @@ class _ECPIXExtensions:
         Resource("user_io", 3, Pins("B16", dir="io"), Attrs(IO_TYPE="LVCMOS33")),
 
         # trace resources
-        Resource("tracein", 0, Subsignal("clk", Pins("C14", dir="i")), Subsignal("dat", Pins("D14 B14 E14 B16", dir="i"))),
+        Resource("tracein", 0,
+                 Subsignal("clk", Pins("E14", dir="i")),
+                 Subsignal("dat", Pins("A15 B14 A14 C16", dir="i"), Attrs(IO_TYPE="LVCMOS33"))
+        ),
+
+        # swd resources
+        Resource("dbgif", 0,
+                 Subsignal("tck_swclk",Pins("B17", dir="o"), Attrs(IO_TYPE="LVCMOS33")),
+                 Subsignal("nvdriveen", Pins("C18", dir="o"), Attrs(IO_TYPE="LVCMOS33")),
+                 Subsignal("swdwr", Pins("B19", dir="o"), Attrs(IO_TYPE="LVCMOS33")),
+                 Subsignal("reseten", Pins("A17", dir="o"), Attrs(IO_TYPE="LVCMOS33")),
+                 Subsignal("nvsen", Pins("A18", dir="o"), Attrs(IO_TYPE="LVCMOS33")),
+                 Subsignal("tdi", Pins("A19", dir="o"), Attrs(IO_TYPE="LVCMOS33")),
+                 Subsignal("tms_swdio",Pins("C19", dir="io"), Attrs(IO_TYPE="LVCMOS33")),
+                 
+                 Subsignal("tdo_swo", Pins("B16", dir="i"), Attrs(IO_TYPE="LVCMOS33")),
+                 Subsignal("nreset", Pins("A16", dir="i"), Attrs(IO_TYPE="LVCMOS33")),
+        ),
+
+        # debug serial resources
+        Resource("dbguart",
+                 Subsignal("txd", Pins("C16", dir="o")),
+                 Subsignal("rxd", Pins("D14", dir="i"))
+        ),
 
         Resource("canary", 0, Pins("E26", dir="o"), Attrs(IO_TYPE="LVCMOS33"))
     ]

@@ -17,6 +17,7 @@ from luna.usb2               import USBDevice, USBMultibyteStreamInEndpoint, USB
 
 from orbtrace_platform_ecp5  import orbtrace_ECPIX5_85_Platform
 from traceIF                 import TRACE_TO_USB
+
 from cmsis_dap               import CMSIS_DAP
 
 # USB Endpoint configuration
@@ -131,8 +132,9 @@ class OrbtraceDevice(Elaboratable):
         tracepins=platform.request("tracein",0,xdr={"dat":2})
         m.submodules.trace = trace = TRACE_TO_USB(tracepins, trace_ep, self.leds_out)
 
+        dbgpins = platform.request("dbgif",0)
         # Create a CMSIS DAP instance
-        m.submodules.cmsisdap = cmsisdap = CMSIS_DAP( cmsisdapIn.stream, cmsisdapOut.stream )
+        m.submodules.cmsisdap = cmsisdap = CMSIS_DAP( cmsisdapIn.stream, cmsisdapOut.stream, dbgpins )
 
         # Connect our device as a high speed device by default.
         m.d.comb += [
@@ -179,5 +181,7 @@ if __name__ == "__main__":
     platform = orbtrace_ECPIX5_85_Platform()
     with open('../src/traceIF.v') as f:
         platform.add_file("traceIF.v",f)
+    with open('../src/swdIF.v') as f:
+        platform.add_file("swdIF.v",f)
     platform.build(OrbtraceDevice(), build_dir='build', do_program=True)
 
