@@ -328,7 +328,7 @@ class _ECPIXExtensions:
                  Subsignal("tms_swdio",Pins("C19", dir="io"), Attrs(IO_TYPE="LVCMOS33")),
                  
                  Subsignal("tdo_swo", Pins("B16", dir="i"), Attrs(IO_TYPE="LVCMOS33")),
-                 Subsignal("nreset", Pins("A16", dir="i"), Attrs(IO_TYPE="LVCMOS33")),
+                 Subsignal("nreset_sense", Pins("A16", dir="i"), Attrs(IO_TYPE="LVCMOS33")),
         ),
 
         # debug serial resources

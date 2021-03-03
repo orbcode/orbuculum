@@ -183,5 +183,7 @@ if __name__ == "__main__":
         platform.add_file("traceIF.v",f)
     with open('../src/swdIF.v') as f:
         platform.add_file("swdIF.v",f)
+    with open('../src/dbgIF.v') as f:
+        platform.add_file("dbgIF.v",f)
     platform.build(OrbtraceDevice(), build_dir='build', do_program=True)
 

@@ -87,7 +87,9 @@ module traceIF # (parameter MAXBUSWIDTH = 4, SYNC_BITS=27) (
              if (( REsyncPacket &&  isREsync ) ||
                  ( FEsyncPacket && !isREsync ))
                begin
+`ifndef SYNTHESIS
                   $display("Got sync");
+`endif
                   remainingClocks <= packetClocks; // We need to grab the whole packet
                   elemCount <= 0;                  // erase any partial packet
                   syncInd <= ~0;                   // ..and max the stretch count
@@ -104,7 +106,9 @@ module traceIF # (parameter MAXBUSWIDTH = 4, SYNC_BITS=27) (
 
                        if (packet != 16'h7fff)
                          begin
+`ifndef SYNTHESIS
                             $display("Got word: %04X",packet);
+`endif
                             elemCount <= elemCount + 1;
 
                             /* Put this word to correct place in constructed frame */
@@ -119,7 +123,9 @@ module traceIF # (parameter MAXBUSWIDTH = 4, SYNC_BITS=27) (
                                 6: cFrame[ 15: 0]<={packet[7:0],packet[15:8]};
                                 7:
                                   begin
+`ifndef SYNTHESIS
                                      $display("Complete, sending (%d)",FrAvail);
+`endif
                                      Frame <= {cFrame,{packet[7:0],packet[15:8]}};
                                      FrAvail <= !FrAvail;
                                   end

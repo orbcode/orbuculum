@@ -19,8 +19,7 @@ module swdIF (
                 output reg        swwr,     // Direction of DIO pin
 
         // Configuration
-                input [10:0]      clkDiv,   // Divisor per clock change to target
-                input [3:0] turnaround,
+                input [3:0]       turnaround, // Clock ticks per turnaround
                 
 	// Upwards interface to command controller
                 input [1:0]       addr32,   // Address bits 3:2 for message
@@ -32,15 +31,12 @@ module swdIF (
                 output reg        perr,     // Indicator of a parity error in the transfer
 
                 input             go,       // Trigger
-                output            done      // Response
+                output            idle      // Response
 		);		  
    
    // Internals =======================================================================
-   reg [10:0]                     cdivcount;   // divisor for external clock
-   
    reg [3:0]                      swd_state;   // current state of machine
    reg [2:0]                      ack_in;      // ack coming in from target
-   reg [1:0]                      go_cdc;      // cdc from go trigger
    reg [5:0]                      bitcount;    // Counter for bits being transferred
    reg [31:0]                     bits;        // The bits being transferred
    reg                            par;         // Parity construct
@@ -49,21 +45,23 @@ module swdIF (
    reg [3:0]                      swd_state_change;
 `endif
 
-   parameter ST_IDLE=0;
-   parameter ST_HDR_TX=1;
-   parameter ST_TRN1=2;
-   parameter ST_ACK=3;
-   parameter ST_TRN2=4;
-   parameter ST_DWRITE=5;
-   parameter ST_DWRITEPARITY=6;
-   parameter ST_DREAD=7;
-   parameter ST_DREADPARITY=8;   
-   parameter ST_COOLING=9;
+   parameter ST_IDLE         = 0;
+   parameter ST_HDR_TX       = 1;
+   parameter ST_TRN1         = 2;
+   parameter ST_ACK          = 3;
+   parameter ST_TRN2         = 4;
+   parameter ST_DWRITE       = 5;
+   parameter ST_DWRITEPARITY = 6;
+   parameter ST_DREAD        = 7;
+   parameter ST_DREADPARITY  = 8;   
+   parameter ST_COOLING      = 9;
 
-   wire   risingedge = ((!cdivcount) & (!swclk));
-   wire   fallingedge = ((!cdivcount) & (swclk));
+   wire   risingedge = (!swclk);
+   wire   fallingedge = swclk;
+
    assign swdo = bits[0];
-   assign done = (swd_state==ST_IDLE);
+
+   assign idle = (swd_state==ST_IDLE);
    
    always @(posedge clk, posedge rst)
      begin
@@ -73,13 +71,10 @@ module swdIF (
              swd_state<=ST_IDLE;
              swclk<=1'b1;
              swwr<=0;
-             go_cdc<=0;
              perr<=0;
 	  end
 	else
 	  begin
-             go_cdc = {go,go_cdc[1]};
-
 `ifdef STATETRACE
              // Print out state changes for testbench purposes
              swd_state_change<=swd_state;
@@ -105,25 +100,17 @@ module swdIF (
 `endif
 
              // Run clock when we are not in idle state
-             if (!done)
-               if (cdivcount) cdivcount <= cdivcount-1;
-               else
-                 begin
-                    cdivcount <= clkDiv;
-                    swclk <= ~swclk;
-                 end
+             swclk<=idle?1'b1:~swclk;
              
              case (swd_state)
                ST_IDLE: // Idle waiting for something to happen ===============================
                  begin
                     swwr <= 1;      // While idle we're in output mode
-                    cdivcount<=0;   // ...and we're ready to start clocking
-                    swclk<=1'b1;    // ...with a -ve edge
-
+                    
                     // Additional high order bit is for '1' during turnaround
                     bits <= { 1'b1, 1'b1, 1'b0, apndp^rnw^addr32[1]^addr32[0], addr32[1], addr32[0], rnw, apndp, 1'b1 };
                   
-                    if (go_cdc==2'b11)
+                    if (go)
                       begin
                          // Request to start a transfer
                          bitcount  <= 6'h8;      // 8 bits, first one is leaving now
@@ -231,7 +218,7 @@ module swdIF (
                     if (risingedge)
                       begin
                          // If we have another write pending then go fetch it after turnaround, otherwise cool the link
-                         bitcount <= (go_cdc==2'b11)?1:8;
+                         bitcount <= (go)?1:8;
                          swwr<=1;
                          bits[0]<=1'b1;
                          swd_state <= ST_COOLING;

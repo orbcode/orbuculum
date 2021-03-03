@@ -1,5 +1,5 @@
 from nmigen                  import *
-from swdIF                   import SWDIF
+from dbgIF                   import DBGIF
 
 DAP_CONNECT_DEFAULT      = 1                # Default connect is SWD
 DAP_VERSION_STRING       = Cat(C(0x31,8),C(0x2e,8),C(0x30,8),C(0x30,8))
@@ -177,8 +177,16 @@ class CMSIS_DAP(Elaboratable):
     def RESP_WriteABORT(self, m):
         m.next = 'RESPOND'
     # -------------------------------------------------------------------------------------
-    def RESP_Delay(self, m):
-        m.next = 'RESPOND'
+    def RESP_Delay_Setup(self, m):
+        m.d.usb += [
+            self.dbgif.dwrite.eq( C(0,32) ),
+            self.dbgif.countdown.eq( Cat(C(0,8),self.txBlock.bit_select(8,16) ))
+        ]
+        m.next = 'DAP_Delay_PROCESS';
+
+    def RESP_Delay_Process(self, m):
+        with m.If (self.dbgif.done):
+            m.next = 'RESPOND'
     # -------------------------------------------------------------------------------------
     def RESP_ResetTarget(self, m):
         m.d.usb += [
@@ -187,11 +195,21 @@ class CMSIS_DAP(Elaboratable):
         ]
         m.next = 'RESPOND'
     # -------------------------------------------------------------------------------------
-    def RESP_SWJ_Pins(self, m):
+    def RESP_SWJ_Pins_Setup(self, m):
+        # BYTE 1 = Pins output, BYTE 2 = Pins to modify, BYTES 3,4,5,6 = length of time to wait
         m.d.usb += [
-            self.txBlock.word_select(1,8).eq(C(0x99,8)),
-            self.txLen.eq(2)
-        ]
+            self.dbgif.dwrite.eq( Cat(C(0,16),self.rxBlock.bit_select(8,16)) ),
+            self.dbgif.countdown.eq( self.txBlock.bit_select(24,32) )
+            ]
+        m.next = 'DAP_SWJ_Pins_PROCESS';
+
+    def RESP_SWJ_Pins_Process(self, m):
+        # Spin waiting for debug interface to do its thing
+        with m.If (self.dbgif.done):
+            m.d.usb += [
+                self.txBlock.word_select(1,8).eq(self.dbgif.dread[0:8]),
+                self.txLen.eq(2)
+            ]
         m.next = 'RESPOND'
     # -------------------------------------------------------------------------------------
     def RESP_SWJ_Clock(self, m):
@@ -312,14 +330,14 @@ class CMSIS_DAP(Elaboratable):
                 ]
 
             with m.Case(6): # We sent a command, wait for it to start being executed
-                with m.If(self.dbgif.done==0):
+                with m.If(self.dbg_done==0):
                     m.d.usb+=[
                         self.dbgif.go.eq(0),
                         self.txb.eq(7)
                         ]
 
             with m.Case(7): # Wait for command to complete
-                with m.If(self.dbgif.done==1):
+                with m.If(self.dbg_done==1):
                     m.d.usb += [                    
                         self.memaddr.eq(self.memaddr+1),
                         self.tfrram.we.eq(1),
@@ -522,7 +540,9 @@ class CMSIS_DAP(Elaboratable):
     # -------------------------------------------------------------------------------------
 
     def elaborate(self,platform):
-        self.can = platform.request("canary")
+        self.can      = platform.request("canary")
+        done_cdc      = Signal(2)
+        self.dbg_done = Signal()
 
         m = Module()
         # Reset everything before we start
@@ -536,11 +556,14 @@ class CMSIS_DAP(Elaboratable):
         m.submodules.tfrram = self.tfrram = WideRam()
         m.d.usb += self.can.eq(0)
 
-        m.submodules.dbgif = self.dbgif = SWDIF(self.dbgpins)
+        m.submodules.dbgif = self.dbgif = DBGIF(self.dbgpins)
 
-        # Turn on power (Drive to Vsen since that appears on op pin)
-        m.d.comb += [ self.dbgpins.nvsen.eq(1), self.dbgpins.nvdriveen.eq(0) ]
-        
+        m.d.usb += [
+            done_cdc.eq(Cat(done_cdc[1],self.dbgif.done)),
+            self.dbg_done.eq(done_cdc==0b11)
+        ]
+
+                                      
         with m.FSM(domain="usb") as decoder:
             with m.State('IDLE'):
                 m.d.usb += [ self.txedLen.eq(0), self.busy.eq(0) ]
@@ -652,7 +675,7 @@ class CMSIS_DAP(Elaboratable):
                             self.RESP_WriteABORT(m)         
 
                         with m.Case(DAP_Delay):
-                            self.RESP_Delay(m)         
+                            self.RESP_Delay_Setup(m)         
 
                         with m.Case(DAP_ResetTarget):
                             self.RESP_ResetTarget(m)
@@ -660,7 +683,7 @@ class CMSIS_DAP(Elaboratable):
                         # Common SWD/JTAG Commands
                         # ========================
                         with m.Case(DAP_SWJ_Pins):
-                            self.RESP_SWJ_Pins(m)
+                            self.RESP_SWJ_Pins_Setup(m)
                             
                         with m.Case(DAP_SWJ_Clock):
                             self.RESP_SWJ_Clock(m)
@@ -734,8 +757,14 @@ class CMSIS_DAP(Elaboratable):
             with m.State('DAP_SWJ_Sequence_PROCESS'):
                 self.RESP_SWJ_Sequence_Process(m)
 
+            with m.State('DAP_SWJ_Pins_PROCESS'):
+                self.RESP_SWJ_Pins_Process(m)
+            
             with m.State('DAP_SWO_Data_PROCESS'):
                 self.RESP_SWO_Data_Process(m)
+
+            with m.State('DAP_Delay_PROCESS'):
+                self.RESP_Delay_Process(m)
 
             with m.State('DAP_JTAG_Sequence_PROCESS'):
                 self.RESP_JTAG_Sequence_PROCESS(m)
