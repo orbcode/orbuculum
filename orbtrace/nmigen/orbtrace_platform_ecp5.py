@@ -314,7 +314,7 @@ class _ECPIXExtensions:
         # trace resources
         Resource("tracein", 0,
                  Subsignal("clk", Pins("E14", dir="i")),
-                 Subsignal("dat", Pins("A15 B14 A14 C16", dir="i"), Attrs(IO_TYPE="LVCMOS33"))
+                 Subsignal("dat", Pins("A15 B14 A14 C14", dir="i"), Attrs(IO_TYPE="LVCMOS33"))
         ),
 
         # swd resources

@@ -20,10 +20,10 @@ def write_to_usb(dev, msg_str):
     print(f" [{num_bytes_written}]")
     return num_bytes_written
 
-def read_from_usb(dev, timeout):
+def read_from_usb(dev, rxlen, timeout):
     try:
 	# try to read a maximum of 2^16-1 bytes from 0x81 (IN endpoint)
-        data = dev.read(0x81, 65535, timeout)
+        data = dev.read(0x81, 6000, timeout)
     except usb.core.USBError as e:
         print ("Error reading response: {}".format(e.args))
         exit(-1)
@@ -42,14 +42,14 @@ def op_response( d, compareStr ):
             print(f' 0x{p:02x}', end="")
         else:
             duff=True
-            print(f' !!0x{p:02x}/0x{x:02x}!!', end="")
+            print(f' Got:0x{p:02x}/0x{x:02x}!!', end="")
     if (duff):
         print(" ] *********************** FAULT **********************")
     else:
         print(" ]")
 
 
-tests = (
+tests2 = (
     ( "Short Request",              b"\x19\x19",                    b"\xff"                     ),
     ( "Vendor ID",                  b"\x00\x01",                    b"\x00\x00"                 ),
     ( "Product ID",                 b"\x00\x02",                    b"\x00\x00"                 ),
@@ -114,6 +114,15 @@ tests = (
       
 )
 
+tests = (
+#    ( "FW version",                 b"\x00\x04",                    b"\x00\x04\x31\x2e\x30\x30" ),
+    ( "Connect swd",                b"\x02\x01",                    b"\x02\x01"                 ),
+    ( "DAP_Transfer (ReadDP0)",     b"\x05\x00\x01\x02",            b"\x05\x00\x00\x00\x00\x00\x00\x00"     ),
+    ( "DAP_Transfer (ReadDP0)",     b"\x05\x00\x01\x02",            b"\x05\x00\x00\x00\x00\x00\x00\x00"     ),
+    ( "DAP_Transfer (ReadDP0)",     b"\x05\x00\x01\x02",            b"\x05\x00\x00\x00\x00\x00\x00\x00"     ),    
+    )
+
+
 device = usb.core.find(idVendor=VENDOR_ID, idProduct=PRODUCT_ID)
 
 if device is None:
@@ -127,5 +136,5 @@ print("Interface claimed")
 for desc,inseq,outsq in tests:
     print("==============",desc)
     write_to_usb(device,bytes(inseq))
-    r=read_from_usb(device,1000)
+    r=read_from_usb(device,len(outsq),1000)
     op_response(r,bytes(outsq))

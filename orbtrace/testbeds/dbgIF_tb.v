@@ -25,6 +25,8 @@ module dbgIF_tb;
    reg         tgt_reset_state_tb;
    wire        tck_swclk_tb;
    reg         tdo_swo_tb;
+   reg [15:0]  pinsin_tb;
+   wire [7:0]  pinsout_tb;
    
    wire        swwr_tb;
    wire        nvsen_pin_tb;
@@ -42,7 +44,7 @@ module dbgIF_tb;
    reg [1:0]   addr32_tb;
    reg         rnw_tb;
    reg         apndp_tb;
-   reg [39:0]  dwrite_tb;
+   reg [31:0]  dwrite_tb;
    wire [2:0]  ack_tb;
    wire [31:0] dread_tb;
 
@@ -59,7 +61,7 @@ module dbgIF_tb;
    assign swdi_tb = rx[0];
    
    
-   dbgIF #(.TICKS_PER_USEC(50)) DUT (
+   dbgIF #(.TICKS_PER_USEC(500)) DUT (
 	      .rst(rst_tb),        // Reset synchronised to clock
               .clk(clk_tb),
 
@@ -87,7 +89,9 @@ module dbgIF_tb;
               .ack(ack_tb),        // Most recent ack status
               .dwrite(dwrite_tb),  // Data/Parameter out to be written
               .dread(dread_tb),    // Data/Result in
-
+              .pinsin(pinsin_tb),  // Pin setting information
+              .pinsout(pinsout_tb),// Current state of pins
+                                      
               .command(command_tb),// Command out
               .go(go_tb),          // Trigger
               .done(done_tb),      // Response
@@ -95,6 +99,17 @@ module dbgIF_tb;
 	      );		  
 
    integer c=0;
+   integer pc=0;
+
+`define go\
+   go_tb<=1;\
+   while (done_tb==1) #1;\
+   go_tb<=0;\
+   while (done_tb==0) #1;
+
+`define report\
+   $display("Complete, err=%d",perr_tb);\
+   if (perr_tb) $finish;
    
    always
      begin
@@ -114,7 +129,7 @@ module dbgIF_tb;
    realtime t;
    
    initial begin
-      $timeformat( -6, 2," uS", 5);
+      $timeformat( -6, 1," uS", 5);
 
 
       go_tb=0;
@@ -131,36 +146,138 @@ module dbgIF_tb;
       #2;
 
       // =========================================== Perform a reset
-      $display("Performing Reset;");
+      $display("\nPerforming Reset;");
       command_tb=DUT.CMD_RESET;
       tgt_reset_state_tb<=1;
       t=$realtime;
-      go_tb<=1;
-      while (done_tb==1) #1;
-      go_tb<=0;
-      while (done_tb==0) #1;
-      $display("Complete, err=%d, time=%t\n\n",perr_tb,$realtime-t);
+      `go;
+      `report;
+      $display("time=%t",$realtime-t);
+
+      // =========================================== Update timer, another reset
+      command_tb=DUT.CMD_SET_RST_TMR;
+      dwrite_tb=750;
+      `go;
+      $display("\nElongated Reset;");
+      command_tb=DUT.CMD_RESET;
+      tgt_reset_state_tb<=1;
+      t=$realtime;
+      `go;
+      `report;
+      $display("time=%t",$realtime-t);
+
+      // =========================================== Wait for a while
+      $display("\nProgrammed wait;");
       
+      command_tb=DUT.CMD_WAIT;
+      dwrite_tb=1234;
+      t=$realtime;
+      `go;
+      `report;
+      $display("time=%t\n",$realtime-t);
+
+      // =========================================== Check error
+      $display("\nCheck error;");
+      command_tb=15;
+      `go;
+      if (perr_tb!=1)
+        begin
+           $display("Deliberate error failed");
+           $finish;
+        end
+      else
+        $display("CORRECT");
+
+      // =========================================== Clear error
+      $display("\nClear error;");
+      command_tb=DUT.CMD_CLR_ERR;
+      `go;
+      `report;
+
+      // =========================================== Individual pins
+      $display("\nPins Setting checks;");
+
+      pc=0;
+      
+      dwrite_tb<=32'd100;
+      command_tb=DUT.CMD_PINS_WRITE;
+
+      // SWCLK
+      pinsin_tb={7'b0,1'b1,7'b0,1'b1};
+      `go;
+      pc|=(tck_swclk_tb!=1);
+      
+      if (tck_swclk_tb!=1)
+        $display("ERROR, SWCLK not at 1");
+      pinsin_tb={7'b0,1'b1,7'b0,1'b0};
+      `go;
+      pc|=(tck_swclk_tb!=0);      
+      if (tck_swclk_tb!=0)
+        $display("ERROR, SWCLK not at 0");
+
+      // SWDO
+      pinsin_tb={6'b0,1'b1,1'b0,  6'b0,1'b1,1'b0};
+      `go;
+      pc|=(tms_swdo_tb!=1);
+      
+      if (tms_swdo_tb!=1)
+        $display("ERROR, TMS_SWDO not at 1");
+      pinsin_tb={6'b0,1'b1,1'b0,  6'b0,1'b0,1'b0};
+      `go;
+      pc|=(tms_swdo_tb!=0);      
+      if (tms_swdo_tb!=0)
+        $display("ERROR, TMS_SWDO not at 0");
+
+      // TDI
+      pinsin_tb={5'b0,1'b1,2'b0,  5'b0,1'b1,2'b0};
+      `go;
+      pc|=(tdi_tb!=1);
+      
+      if (tdi_tb!=1)
+        $display("ERROR, TDI not at 1");
+      pinsin_tb={5'b0,1'b1,2'b0,  5'b0,1'b0,2'b0};      
+      `go;
+      pc|=(tdi_tb!=0);      
+      if (tdi_tb!=0)
+        $display("ERROR, TDI not at 0");
+
+      // RESET
+      pinsin_tb={1'b1, 7'b0,  1'b1,7'b0};
+      `go;
+      pc|=(tgt_reset_tb!=1);
+      
+      if (tgt_reset_tb!=1)
+        $display("ERROR, TGT_RESET not at 1");
+      pinsin_tb={1'b1, 7'b0,  1'b0,7'b0};      
+      `go;
+      pc|=(tgt_reset_tb!=0);      
+      if (tgt_reset_tb!=0)
+        $display("ERROR, TGT_RESET not at 0");
+      
+      if (!pc)
+        $display("CORRECT, pinsetting passed");
+      else
+        begin
+           $display("ERROR, pinsetting failed");
+           $finish();
+        end
+
       // =========================================== Set SWD
-      $display("Setting SWD;");
+      $display("\nSetting SWD;");
       command_tb=DUT.CMD_SET_SWD;
-      go_tb<=1;
-      while (done_tb==1) #1;
-      go_tb<=0;
-      while (done_tb==0) #1;
-      $display("Complete, err=%d\n\n",perr_tb);
+      `go;
+      `report;
       
       // =========================================== Simple read
-      $display("Simple read;");
+      $display("\nSimple read;");
       rx = { 1'b1, 32'habcdef12, 3'b001, 1'bx, 8'bx };
       addr32_tb=2'b01;
       rnw_tb<=1'b1;
       apndp_tb<=1;
       command_tb<=DUT.CMD_TRANSACT;
-      go_tb<=1;
-      while (done_tb==1) #1;
-      go_tb<=0;
-      while (done_tb==0) #1;
+      `go;
+      `report;
+      
       if (perr_tb)
         $display("\nReturned Parity Error");
       else
@@ -180,10 +297,7 @@ module dbgIF_tb;
       addr32_tb=2'b01;
       rnw_tb<=1'b1;
       apndp_tb<=1;
-      go_tb<=1;
-      while (done_tb==1) #1;
-      go_tb<=0;
-      while (done_tb==0) #1;
+      `go;
       if (perr_tb)
         $display("\nOK Returned Parity Error");
       else
@@ -198,10 +312,7 @@ module dbgIF_tb;
       addr32_tb=2'b01;
       rnw_tb<=1'b1;
       apndp_tb<=1;
-      go_tb<=1;
-      while (done_tb==1) #1;
-      go_tb<=0;
-      while (done_tb==0) #1;
+      `go;
       if (ack_tb==3'b010)
         $display("\nOK Returned WAIT");
       else
@@ -217,10 +328,7 @@ module dbgIF_tb;
       rnw_tb<=1'b0;
       apndp_tb<=1;
       dwrite_tb<=32'habcdef12;
-      go_tb<=1;
-      while (done_tb==1) #1;
-      go_tb<=0;
-      while (done_tb==0) #1;
+      `go
       if (perr_tb)
         $display("\nReturned Parity Error");
       else
@@ -232,9 +340,6 @@ module dbgIF_tb;
            $display("Returned [ACK %3b]",ack_tb);
         end
 
-      #10;
-      
-      
       #50;
       
       $finish;
