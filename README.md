@@ -4,7 +4,7 @@
 
 * Latest Changes:
 
-This is the development branch for V1.20. There has been a lot of work on the FPGA (orbtrace) recently (1st Feb 2021) with good progress on high speed support. See the README in the orbtrace directory for more information on that.
+This is the development branch for V1.20. The work on the FPGA (orbtrace) has now been moved into its own separate repository as it's grown considerably and really needs its own identity. History for orbtrace until the split point is maintained here for provenance purposes, but new work is now done over in the new location.
 
 The CHANGES file now tells you what's been done when.
 

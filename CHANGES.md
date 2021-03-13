@@ -1,5 +1,6 @@
 Version 1.20 in Progress
 
+* Orbtrace split off into separate repository
 * Split of orbuculum into the network server (orbuculum) and the fifo server (orbfifo).
 * Extensive changes to support orbtrace
 * (From V1.12) Update gdbtrace.init to remove `with` syntax. This remains available in the `gdbinit_withwith.init` file, but that syntax breaks older versions of gdb.
