@@ -57,10 +57,9 @@ output reg c,
    parameter ST_ACK          = 3;
    parameter ST_TRN2         = 4;
    parameter ST_DWRITE       = 5;
-   parameter ST_DWRITEPARITY = 6;
-   parameter ST_DREAD        = 7;
-   parameter ST_DREADPARITY  = 8;   
-   parameter ST_COOLING      = 9;
+   parameter ST_DREAD        = 6;
+   parameter ST_DREADPARITY  = 7;   
+   parameter ST_COOLING      = 8;
 
    assign idle = (swd_state==ST_IDLE);     // Definition for idleness
              
@@ -105,7 +104,7 @@ output reg c,
                ST_IDLE: // Idle waiting for something to happen ===============================
                  begin
                     swwr    <= 1'b1;      // While idle we're in output mode
-
+                    
                     // Things are about to kick off, put the leading 1 on the line
                     if ((go) && (fallingedge))
                       swdo <= 1'b1;
@@ -145,7 +144,7 @@ output reg c,
                          bitcount <= bitcount - 1;
                       end
                
-                      if ((risingedge) && (!bitcount))
+                      if (!bitcount)
                         begin
                            swwr      <= 1'b0;                         
                            bitcount  <= 3;
@@ -155,8 +154,7 @@ output reg c,
 
                ST_ACK: // Collect the ack bits ===============================================
                  begin
-                    // READING, ON RISING EDGE
-                    if (risingedge)
+                    if (fallingedge)
                       begin
                          ack_in   <= {swdi,ack_in[2:1]};
                          bitcount <= bitcount-1;
@@ -181,6 +179,7 @@ output reg c,
                          else
                            begin
                               // Wasn't good, give up and return idle, via cooloff
+                              swwr      <= 1'b1;
                               bitcount  <= dataphase?33:1;
                               swd_state <= ST_COOLING;
                            end // else: !if(ack_in==3'b001)
@@ -195,16 +194,17 @@ output reg c,
                          bitcount <= bitcount - 1;
                       end
                
-                      if (risingedge && (!bitcount))
+                      if (!bitcount)
                         begin
-                           bitcount  <= 3;
+                           bitcount  <= 32;
+                           bits      <= dwrite;
                            swd_state <= ST_DWRITE;
                         end
                  end // case: ST_TRN2
                
                ST_DREAD: // Reading 32 bit value ======================================
                  begin
-                    if (risingedge)
+                    if (fallingedge)
                       begin
                          bits     <= {swdi,bits[31:1]};
                          par      <= par^swdi;
@@ -227,40 +227,22 @@ output reg c,
                            begin
                               // This is the cycle after full word transmission
                               swdo <= par;
-                              bitcount  <= (go)?1:8;                              
+                              bitcount  <= go?1:8;
                               swd_state <= ST_COOLING;
                            end
                       end
                  end
                
                ST_DREADPARITY: // Reading parity ======================================
-                 if (risingedge)
+                 if (fallingedge)
                    begin
                       // Need to turn the link so it's ready for next tx
                       perr      <= par^swdi;
-                      bitcount  <= 1;
+                      bitcount  <= 2;
                       swd_state <= ST_COOLING;
+                      swwr      <= 1'b1;
+                      swdo      <= 1'b0;
                    end
-
-               ST_DWRITEPARITY: // Writing parity ======================================
-                 begin
-                    if (fallingedge)
-                      swdo   <= par;
-
-                    if (risingedge)
-                      begin
-                         // If we have another write pending then go fetch it after turnaround, otherwise cool the link
-                         bitcount  <= (go)?1:8;
-                         swwr      <= 1'b1;
-                         swdo      <= 1'b0;
-                      end
-
-                    if (fallingedge)
-                      begin
-                         swwr      <= 1'b0;
-                         swd_state <= ST_COOLING;
-                      end
-                 end // case: ST_DWRITEPARITY
 
                ST_COOLING: // Cooling the link before shutting it =====================
                  begin
@@ -270,19 +252,12 @@ output reg c,
                          dread     <= bits;
                          swdo      <= 1'b0;
                          swwr      <= 1'b1;
-                         if (!bitcount)
-                           swd_state <= ST_IDLE;
-                      end
-
-                    if (risingedge)
                          bitcount<=bitcount-1;
+                      end
+                    if (!bitcount)
+                      swd_state <= ST_IDLE;
                  end
              endcase // case (swd_state)
           end // else: !if(rst)
      end // always @ (posedge clk, posedge rst)
 endmodule // swdIF
-
-
-             
-
-                         

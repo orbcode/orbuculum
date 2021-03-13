@@ -45,7 +45,7 @@ class OrbtraceDevice(Elaboratable):
             d.idProduct          = 0x3443  # Allocated from pid.codes
 
             d.iManufacturer      = "Orbcode"
-            d.iProduct           = "Orbtrace"
+            d.iProduct           = "Orbtrace with CMSIS-DAP"
             d.iSerialNumber      = "No.1"
 
             d.bNumConfigurations = 1
@@ -54,11 +54,13 @@ class OrbtraceDevice(Elaboratable):
         # ... and a description of the USB configuration we'll provide.
         with descriptors.ConfigurationDescriptor() as c:
             with c.InterfaceDescriptor() as i:
+                i._collection = descriptors
                 i.bInterfaceNumber = 0
+                i.iInterface = "CMSIS-DAP"
 
-                with i.EndpointDescriptor() as e:
-                    e.bEndpointAddress = 0x80 | TRACE_ENDPOINT_NUMBER
-                    e.wMaxPacketSize   = TRACE_ENDPOINT_SIZE
+          #      with i.EndpointDescriptor() as e:
+          #          e.bEndpointAddress = 0x80 | TRACE_ENDPOINT_NUMBER
+          #          e.wMaxPacketSize   = TRACE_ENDPOINT_SIZE
 
                 with i.EndpointDescriptor() as e:
                     e.bEndpointAddress = 0x80 | CMSIS_DAP_IN_ENDPOINT_NUMBER

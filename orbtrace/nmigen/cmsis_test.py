@@ -117,9 +117,50 @@ tests2 = (
 tests = (
 #    ( "FW version",                 b"\x00\x04",                    b"\x00\x04\x31\x2e\x30\x30" ),
     ( "Connect swd",                b"\x02\x01",                    b"\x02\x01"                 ),
-    ( "DAP_Transfer (ReadDP0)",     b"\x05\x00\x01\x02",            b"\x05\x00\x00\x00\x00\x00\x00\x00"     ),
-    ( "DAP_Transfer (ReadDP0)",     b"\x05\x00\x01\x02",            b"\x05\x00\x00\x00\x00\x00\x00\x00"     ),
-    ( "DAP_Transfer (ReadDP0)",     b"\x05\x00\x01\x02",            b"\x05\x00\x00\x00\x00\x00\x00\x00"     ),    
+    #( "Set clock to 100Hz",        b"\x11\x64\x00\x00\x00",         b"\x11\x01" ),
+    #( "Set clock to 90MHz",        b"\x11\x80\x4A\x5D\x05",         b"\x11\x01" ),
+    #( "Set clock to 10MHz",        b"\x11\x80\x96\x98\x00",         b"\x11\x00" ),
+    #( "Set clock to 30MHz",        b"\x11\x80\xC3\xC9\x01",         b"\x11\x00" ),
+     ( "Set clock to 192305Hz",       b"\x11\x31\xef\x02\x00",         b"\x11\x00" ),
+#    ( "DAP_Transfer (ReadDP0)",     b"\x05\x00\x01\x02",            b"\x05\x01\x01\x77\x14\xa0\x2b"     ),
+#    ( "DAP_Delay",                   b"\x09\x00\x01",                 b"\x09\x00" ),
+#    ( "DAP_Transfer (WriteDP4)",     b"\x05\x00\x01\x08\x00\x00\x00\x54",            b"\x05\x00\x01"     ),
+
+#    ( "DAP_SWJ_Sequence (8 bits)",     b"\x12\x10\xff\xaa",            b"\x12\x00"     ),
+#    ( "DAP_SWJ_Sequence (51 bits)",     b"\x12\x21\x01\x00\x00\x40\x01", b"\x12\x00"),
+
+    ( "DAP_SWJ_Sequence (Reset)",     b"\x12\x33\x01\x01\x01\x01\x01\xff\x00", b"\x12\x00"),    
+###########################    
+#    ( "DAP_SWJ_Sequence (Reset)",     b"\x12\x33\xff\xff\xff\xff\xff\xff\xff", b"\x12\x00"),
+#    ( "DAP_SWJ_Sequence (JTAG->SWD)",     b"\x12\x10\x9e\xe7", b"\x12\x00"),
+    
+#    ( "DAP_SWJ_Sequence (Reset)",     b"\x12\x33\xff\xff\xff\xff\xff\xff\xff", b"\x12\x00"),    
+#    ( "DAP_SWJ_Sequence (JTAG->SWD)",     b"\x12\x08\x00", b"\x12\x00"),
+    
+#    ( "DAP_SWJ_Sequence (Reset)",     b"\x12\x33\xff\xff\xff\xff\xff\xff\xff", b"\x12\x00"),
+#    ( "DAP_SWJ_Sequence (JTAG->SWD)",     b"\x12\x10\x9e\xe7", b"\x12\x00"),
+    
+#    ( "DAP_SWJ_Sequence (Reset)",     b"\x12\x33\xff\xff\xff\xff\xff\xff\xff", b"\x12\x00"),
+#    ( "DAP_SWJ_Sequence (8 Zeros)",     b"\x12\x08\x00", b"\x12\x00"),
+    
+#    ( "DAP_SWJ_Sequence (Reset)",     b"\x12\x33\xff\xff\xff\xff\xff\xff\xff", b"\x12\x00"),
+
+#    ( "DAP_sWJ_Sequence (??)",        b"\x12\x27\x33\xba\xbb\xbb", b"\x12\x00"),
+#    ( "DAP_SWJ_Sequence (??2)",       b"\x12\x88\xff\x92\xf3\x09\x62\x95\x2d\x85\x86\xe9\xaf\xdd\xe3\xa2\x0e\xbc\x19", b"\x12\x00"),
+    
+#    ( "DAP_SWJ_Sequence (??3)",       b"\x12\x0c\x01\xa0", b"\x12\x00"),
+
+##########################
+    
+#    ( "DAP_SWJ_Sequence (51 bits)",     b"\x12\x33\x72\x05\x75\x94\x03\x79\x27\x93\x05", b"\x12\x00"),
+    
+#    ( "DAP_Transfer (ReadDP4)",     b"\x05\x00\x01\x0A",            b"\x05\x01\x01\x00\x00\x00\x04"     ),
+#    ( "DAP_Transfer (ReadDP4)",     b"\x05\x00\x01\x0A",            b"\x05\x01\x01\x00\x00\x00\xf4"     ),    
+#    ( "DAP_Transfer (ReadDP0)",     b"\x05\x00\x01\x02",            b"\x05\x00\x00\x00\x00\x00\x00\x00"     ),
+#    ( "DAP_Transfer (ReadDP0)",     b"\x05\x00\x01\x02",            b"\x05\x00\x00\x00\x00\x00\x00\x00"     ),    
+#    ( "DAP_Abort",                   b"\x08\x00\x11\x22\x33\x44",    b"\x08\x00" ),
+#    ( "DAP_TransferBlock (ReadDP0)",     b"\x06\x00\x05\x00\x02",            b"\x06\x01\x00\x01\x77\x14\xa0\x2b"     ),
+#    ( "ResetTarget",                b"\x0A" ,                       b"\x0A\x00\x00"             ),    
     )
 
 

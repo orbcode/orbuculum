@@ -64,7 +64,7 @@
 //  CMD_SET_RST_TMR : Set reset and reset guard time in uS
 //
 
-module dbgIF #(parameter CLK_FREQ=60000000, parameter DEFAULT_RST_TIMEOUT_USEC=300) (
+module dbgIF #(parameter CLK_FREQ=125000000, parameter DEFAULT_SWCLK=1000000, parameter DEFAULT_RST_TIMEOUT_USEC=300) (
 		input             rst,
                 input             clk,
                 
@@ -76,7 +76,7 @@ module dbgIF #(parameter CLK_FREQ=60000000, parameter DEFAULT_RST_TIMEOUT_USEC=3
                 input             swdi,            // DIO pin from target
                 output            tms_swdo,        // TMS or DIO pin to target when in SWD mode
                 output            swwr,            // Direction of DIO pin when in SWD mode
-                output reg        tck_swclk,       // Clock pin to target
+                output            tck_swclk,       // Clock pin to target
                 output            tdi,             // TDI pin to target
                 input             tdo_swo,         // TDO/SWO pin from target
                 input             tgt_reset_state, // Current state of tgt_reset 
@@ -103,8 +103,10 @@ output c,
                 output reg        perr             // Indicator of a error in the transfer
 	      );
 
+   assign c=done;
+   
    parameter TICKS_PER_USEC=CLK_FREQ/1000000;
-   parameter DEFAULT_IF_TICKS_PER_CLK=32;
+   parameter DEFAULT_IF_TICKS_PER_CLK=((CLK_FREQ+(DEFAULT_SWCLK>>1))/(DEFAULT_SWCLK<<1))-1;
    
    // Control commands
    parameter CMD_RESET       = 0;
@@ -114,7 +116,7 @@ output c,
    parameter CMD_SET_JTAG    = 4;
    parameter CMD_SET_SWJ     = 5;
    parameter CMD_SET_PWRDOWN = 6;
-   parameter CMD_SET_CLKDIV  = 7;
+   parameter CMD_SET_CLK     = 7;
    parameter CMD_SET_CFG     = 8;
    parameter CMD_WAIT        = 9;
    parameter CMD_CLR_ERR     = 10;
@@ -125,12 +127,16 @@ output c,
    parameter MODE_SWJ     = 1;
    parameter MODE_SWD     = 2;
    parameter MODE_JTAG    = 3;
-                      
+
+   // Slowest clock we will accept
+   parameter CDIV_LOG2    = 11;
+   parameter MIN_CLOCK    = CLK_FREQ/(2**CDIV_LOG2);
+   parameter MAX_CLOCK    = CLK_FREQ;
+   
    // Internals =======================================================================
-   reg [10:0]                     cdivcount;       // divisor for external clock
+   reg [CDIV_LOG2:0]              cdivcount;       // divisor for external clock
    reg [10:0]                     usecsdiv;        // Divider for usec
-   reg [31:0]                     usecs;           // usec continuous counter
-   reg [15:0]                     modechange;      // Shift register for changing mode
+   reg [31:0]                     scratchpad;      // Shift register for changing mode
    reg [22:0]                     usecsdown;       // usec downcounter
    
    reg [1:0]                      cdc_go;          // Clock domain crossed go
@@ -151,16 +157,18 @@ output c,
    reg                           pinw_nreset;
    reg                           pinw_tdi;
    reg                           pinw_swwr;
+   reg                           normal_swclk;
 
    assign nvsen_pin     = ~vsen;
    assign nvdrive_pin   = ~vdrive;
-   
+
+   assign tck_swclk = (active_mode==MODE_SWJ)?pinw_swclk:normal_swclk;
    // Mux submodule outputs to this module outputs
    assign tms_swdo  = (active_mode==MODE_SWD)?swd_swdo  :(active_mode==MODE_SWJ)?pinw_swdo :1'b0;
    assign swwr      = (active_mode==MODE_SWD)?swd_swwr  :(active_mode==MODE_SWJ)?pinw_swwr :1'b1;
    assign tdi       = (active_mode==MODE_SWD)?1'b1      :(active_mode==MODE_SWJ)?pinw_tdi  :1'b1;
    assign ack       = (active_mode==MODE_SWD)?swd_ack   :0;
-   assign dread     = (active_mode==MODE_SWD)?swd_dread :0;
+   assign dread     = (active_mode==MODE_SWD)?swd_dread :32'h10203040;
 
    assign done = (dbg_state==ST_DBG_IDLE);
 
@@ -196,7 +204,7 @@ output c,
    reg [1:0]                      active_mode;     // Mode that the interface is actually in
    reg [1:0]                      commanded_mode;  // Mode that the interface is requested to be in
    reg [3:0]                      dbg_state;       // Current state of debug handler
-   reg [6:0]                      switch_step;     // Stepping through mode switch
+   reg [8:0]                      state_step;      // Stepping through comms states
    reg                            next_swclk;      // swclk pre-calcuation
 
    parameter ST_DBG_IDLE                 = 0;
@@ -209,17 +217,18 @@ output c,
    parameter ST_DBG_WAIT_TIMEOUT         = 7;
    parameter ST_DBG_WAIT_CLKCHANGE       = 8;
    parameter ST_DBG_ESTABLISH_MODE       = 9;
-
+   parameter ST_DBG_CALC_DIV             = 10;
+   
    // Active low reset on target
    assign tgt_reset_pin = (active_mode==MODE_SWJ)?pinw_nreset:(dbg_state!=ST_DBG_RESETTING);
 
    // Always reflect current state of pins
    assign pinsout={ tgt_reset_pin, tgt_reset_state, 1'b1, swwr, tdo_swo, tdi, swdi, tck_swclk };
 
-   // Edge flagging
-   wire                           risingedge=((!cdivcount) && (!next_swclk));
-   wire                           fallingedge=((!cdivcount) && (next_swclk));
+   // Edge flagging (These are the opposite of what you expect because of clock delay)
    wire                           anedge=(!cdivcount);
+   wire                           risingedge  = (anedge && (!next_swclk));
+   wire                           fallingedge = (anedge && next_swclk);
    
    always @(posedge clk, posedge rst)
 
@@ -230,7 +239,9 @@ output c,
              dataphase   <= 0;
              turnaround  <= 0;
              next_swclk  <= 1;
-             tck_swclk   <= 1;
+             normal_swclk<= 1;
+             pinw_swdo   <= 0;
+             pinw_swwr   <= 1;
              cdivcount   <= 1;
              clkDiv      <= DEFAULT_IF_TICKS_PER_CLK;
              rst_timeout <= DEFAULT_RST_TIMEOUT_USEC;
@@ -244,61 +255,79 @@ output c,
           begin
              // CDC the go signal
              cdc_go <= {cdc_go[0],go};
-             
-             // Run clock for sub-modules constantly while not idle
-             cdivcount <= cdivcount-1;
-             if (!cdivcount)
-               begin
-                  next_swclk <= (dbg_state!=ST_DBG_IDLE)?~next_swclk:1'b0;
-                  cdivcount <= clkDiv;
-               end
 
+             // Run clock constantly if not idle, or if we are idle and it's not high yet
+             if (cdivcount)
+               cdivcount <= cdivcount-1;
+             else
+               begin
+                  next_swclk <= ~next_swclk;
+                  cdivcount  <= clkDiv;
+               end // else: !if(cdivcount)
+             
+               
+             // The usecs counter can run all of the time, it's independent
+             //usecsdiv<=usecsdiv?usecsdiv-1:TICKS_PER_USEC-1;
+             
              if (usecsdiv)
                usecsdiv <= usecsdiv - 1;
              else
                begin
-                  usecs <= usecs + 1;
-                  usecsdiv <= TICKS_PER_USEC;
+                  usecsdiv <= TICKS_PER_USEC-1;
                   usecsdown <= usecsdown - 1;
                end
 
-             // This is deliberately registered to keep it in sync with inferior timing
-             tck_swclk<=next_swclk;
+             normal_swclk <= next_swclk;
              
+             // We change state on a falling edge
+             // We write to line on a rising edge
              case(dbg_state)
                ST_DBG_IDLE: // Command request ========================================================
-                 if ((cdc_go==2'b11) && (!next_swclk))
+                 if (cdc_go==2'b11)
                    begin
-                      // This is only processed at a rising clock edge
-                      perr       <= 0;
-                      pinw_swdo  <= 1'b0;
-                      pinw_swclk <= 1'b1;
-                      pinw_swwr  <= 1'b1;
-                      
+                      perr       <= 0;                      
                       case(command)
                         CMD_PINS_WRITE: // Write pins specified in call -----------
                           begin
-                             active_mode <= MODE_SWJ;
+                             // This is a special case because it writes immediately
+                             if (active_mode!=MODE_SWJ)
+                               begin
+                                  // We're going into SWJ, so start with the defined states of the pins
+                                  active_mode <= MODE_SWJ;
+                                  pinw_swdo   <= tms_swdo;
+                                  //pinw_swclk  <= next_swclk;
+                                  pinw_swwr   <= swwr;
+                                  pinw_nreset <= tgt_reset_pin;
+                               end
+                             
                              usecsdown   <= dwrite[31:0];
                              
-                             // Update these bits if they're requested for updating
-                             pinw_swclk  <= pinsin[8] ?pinsin[0]:1'b1;  // This is about to become 1, so make it so here
+                             // Now update these bits if they're requested for updating
+                             pinw_swclk  <= pinsin[8] ?pinsin[0]:1'b1;
                              pinw_swdo   <= pinsin[9] ?pinsin[1]:tms_swdo;
                              pinw_tdi    <= pinsin[10]?pinsin[2]:tdi;
                              pinw_swwr   <= pinsin[12]?pinsin[4]:swwr;
                              pinw_nreset <= pinsin[15]?pinsin[7]:tgt_reset_pin;
-                             
-                             dbg_state   <= (dwrite)?ST_DBG_WAIT_TIMEOUT:ST_DBG_WAIT_CLKCHANGE;
-                             
+
+                             if (dwrite)
+                               dbg_state <= ST_DBG_WAIT_TIMEOUT;
+                             else
+                               begin
+                                  cdivcount  <= clkDiv;
+                                  dbg_state  <= ST_DBG_WAIT_CLKCHANGE;
+                               end
                           end // case: CMD_PINS_WRITE
-                        
+               
                         CMD_RESET: // Reset target ---------------------------------
+                          if (fallingedge)
                           begin
                              usecsdown <= rst_timeout;
+                             usecsdiv <= TICKS_PER_USEC-1;                             
                              dbg_state <= ST_DBG_RESETTING;
                           end
                         
                         CMD_TRANSACT: // Execute transaction on target interface ---
+                          if (fallingedge)
                           begin
                              if_go       <= 1'b1;
                              active_mode <= commanded_mode;
@@ -306,26 +335,30 @@ output c,
                           end
                         
                         CMD_SET_SWD: // Set SWD mode -------------------------------
+                          if (fallingedge)
                           begin
                              commanded_mode <= MODE_SWD;
                              active_mode    <= MODE_SWJ;
-                             pinw_swclk     <= 1;
-                             pinw_swdo      <= 0;
-                             pinw_swwr      <= 1;                             
-                             switch_step    <= 0;
-                             modechange     <= 16'he79e;
+                             pinw_swdo      <= tms_swdo;
+                             pinw_swwr      <= swwr;
+                             pinw_nreset    <= tgt_reset_pin;
+                             state_step     <= 0;
+                             scratchpad     <= 32'h0000e79e;
+                             pinw_swclk     <= next_swclk;
                              dbg_state      <= ST_DBG_ESTABLISH_MODE;
                           end
                           
                         CMD_SET_JTAG: // Set JTAG mode -----------------------------
+                          if (fallingedge)
                           begin
                              commanded_mode <= MODE_JTAG;
                              active_mode    <= MODE_SWJ;
-                             pinw_swclk     <= 1;
-                             pinw_swdo      <= 0;
-                             pinw_swwr      <= 1;                             
-                             switch_step    <= 0;
-                             modechange     <= 16'hE73C;
+                             pinw_swdo      <= tms_swdo;
+                             pinw_swwr      <= swwr;
+                             pinw_nreset    <= tgt_reset_pin;
+                             state_step     <= 0;
+                             scratchpad     <= 32'h0000E73C;
+                             pinw_swclk     <= next_swclk;
                              dbg_state      <= ST_DBG_ESTABLISH_MODE;
                           end
                         
@@ -333,6 +366,10 @@ output c,
                           begin
                              commanded_mode <= MODE_SWJ;
                              active_mode    <= MODE_SWJ;
+                             pinw_swdo      <= tms_swdo;
+                             pinw_swwr      <= swwr;
+                             pinw_nreset    <= tgt_reset_pin;
+                             pinw_swclk     <= next_swclk;
                              dbg_state      <= ST_DBG_WAIT_GOCLEAR;
                           end
 
@@ -340,30 +377,48 @@ output c,
                           begin
                              commanded_mode <= MODE_PWRDOWN;
                              active_mode    <= MODE_PWRDOWN;
+                             pinw_swdo      <= tms_swdo;
+                             pinw_swwr      <= swwr;
+                             pinw_nreset    <= tgt_reset_pin;
+                             pinw_swclk     <= next_swclk;                             
                              dbg_state      <= ST_DBG_WAIT_GOCLEAR;
                           end
 
-                        CMD_SET_CLKDIV: // Set clock divisor -----------------------
+                        CMD_SET_CLK: // Set clock -----------------------------------
                           begin
-                             clkDiv    <= dwrite;
-                             dbg_state <= ST_DBG_WAIT_GOCLEAR;
+                             if ((dwrite<MIN_CLOCK) || (dwrite>MAX_CLOCK))
+                               begin
+                                  perr <= 1'b1;
+                                  dbg_state <= ST_DBG_WAIT_GOCLEAR;
+                               end
+                             else
+                               begin
+                                  clkDiv     <= 0;
+                                  // Make sure we tend to closest value rather than one below
+                                  // (We borrow the scratchpad register for the division)
+                                  scratchpad <= (CLK_FREQ>>1)+dwrite[31:2];
+                                  
+                                  dbg_state  <= ST_DBG_CALC_DIV;
+                               end
                           end
 
                         CMD_SET_CFG: // Set SWD Config ----------------------
                           begin
-                             turnaround <= dwrite[1:0];
-                             dataphase  <= dwrite[2];
-                             dbg_state  <= ST_DBG_WAIT_GOCLEAR;
+                             turnaround   <= dwrite[1:0];
+                             dataphase    <= dwrite[2];
+                             dbg_state    <= ST_DBG_WAIT_GOCLEAR;
                           end
 
                         CMD_WAIT: // Wait for specified number of uS ---------------
                           begin
-                             usecsdown <= dwrite;
+                             usecsdown    <= dwrite;
+                             usecsdiv     <= TICKS_PER_USEC-1;
                              dbg_state <= ST_DBG_WAIT_TIMEOUT;
                           end
 
                         CMD_CLR_ERR: // Clear error status -------------------------
                           begin
+                             perr      <= 0;
                              dbg_state <= ST_DBG_WAIT_GOCLEAR;
                           end
 
@@ -375,54 +430,73 @@ output c,
                         
                         default: // Unknown, set an error --------------------------
                           begin
-                             perr      <= 1;
+                             perr         <= 1;
                              dbg_state <= ST_DBG_WAIT_GOCLEAR;
                           end
                       endcase // case (command)
                    end // if (cdc_go==2'b11)
 
                ST_DBG_WAIT_GOCLEAR: // Waiting for go indication to clear =================================
+                 begin
                  if (cdc_go!=2'b11)
                    dbg_state <= ST_DBG_IDLE;
+                 end
                
+               ST_DBG_CALC_DIV: // Calculate division for debug clock =====================================
+                 if (scratchpad>=dwrite)
+                   begin
+                      scratchpad <= scratchpad-dwrite;
+                      clkDiv     <= clkDiv+1;
+                   end
+                 else
+                   begin
+                      clkDiv    <= clkDiv-1;
+                      cdivcount <= clkDiv-1;
+                      dbg_state <= ST_DBG_WAIT_GOCLEAR;
+                   end
+
                ST_DBG_WAIT_INFERIOR_FINISH: // Waiting for inferior to complete its task ===================
-                 case (active_mode)
-                   MODE_SWD:
-                     if (swd_idle)
-                       begin
-                          // This delberately goes to IDLE and not GO_CLEAR for streaming purposes
-                          dbg_state <= ST_DBG_IDLE;
-                          perr      <= swd_perr;
-                       end
-                   default:
-                     begin
-                        perr      <= 1'b1;
-                        dbg_state <= ST_DBG_WAIT_GOCLEAR;
-                     end
-                 endcase
+                 begin
+                    case (active_mode)
+                      MODE_SWD:
+                        if (swd_idle)
+                          begin
+                             // This delberately goes to IDLE and not GO_CLEAR for streaming purposes
+                             dbg_state <= ST_DBG_IDLE;
+                             perr      <= swd_perr;
+                          end
+                      default:
+                        begin
+                           perr      <= 1'b1;
+                           dbg_state <= ST_DBG_WAIT_GOCLEAR;
+                        end
+                    endcase // case (active_mode)
+                 end
 
                ST_DBG_WAIT_INFERIOR_START: // Waiting for inferior to start its task =======================
-                 case (active_mode)
-                   MODE_SWD:
-                     if (~swd_idle)
-                       begin
-                          if_go     <= 0;
-                          dbg_state <= ST_DBG_WAIT_INFERIOR_FINISH;
-                       end
-                   default:
-                     begin
-                        if_go     <= 0;
-                        perr      <= 1'b1;
-                        dbg_state <= ST_DBG_WAIT_GOCLEAR;
-                     end
-                 endcase
+                 begin
+                    case (active_mode)
+                      MODE_SWD:
+                        if (~swd_idle)
+                          begin
+                             if_go     <= 0;
+                             dbg_state <= ST_DBG_WAIT_INFERIOR_FINISH;
+                          end
+                      default:
+                        begin
+                           if_go     <= 0;
+                           perr      <= 1'b1;
+                           dbg_state <= ST_DBG_WAIT_GOCLEAR;
+                        end
+                    endcase // case (active_mode)
+                 end
                
                ST_DBG_WAIT_TIMEOUT: // Waiting for timeout to complete ====================================
                  if (!usecsdown)
-                   dbg_state <= ST_DBG_WAIT_GOCLEAR;
+                      dbg_state <= ST_DBG_WAIT_GOCLEAR;
 
                ST_DBG_WAIT_CLKCHANGE: // Waiting for clock state to change ================================
-                 if (!cdivcount)
+                 if (anedge)
                    dbg_state <= ST_DBG_WAIT_GOCLEAR;
                
                ST_DBG_RESETTING: // We are in reset =======================================================
@@ -439,25 +513,33 @@ output c,
                  end
 
                ST_DBG_ESTABLISH_MODE: // We want to set a specific mode ===================================
-                 if (anedge)
-                   begin
-                      // Stay in sync with clock that is given to inferiors
-                      if (fallingedge)
-                        begin
-                           // Our changes happen on the falling edge (i.e. pinw_swclk currently high)
-                           if ((switch_step<50) || (switch_step>65)) pinw_swdo<=1'b1;
-                           else
+                 begin
+                    pinw_swclk<=next_swclk;
+                    if (anedge)
+                      begin
+                         // Stay in sync with clock that is given to inferiors
+                         if (risingedge)
+                           begin
+                              // Our changes happen on the rising edge (i.e. pinw_swclk currently low)
+                              if ((state_step<50) || (state_step>65)) pinw_swdo<=1'b1;
+                              else
+                                begin
+                                   pinw_swdo<=scratchpad[0];
+                                   scratchpad<={1'b0,scratchpad[15:1]};
+                                end
+                              if (state_step>115)
+                                pinw_swdo<=0;
+                              state_step<=state_step+1;
+                           end // if (risingedge)
+                         else
+                           if (state_step==118)
                              begin
-                                pinw_swdo<=modechange[0];
-                                modechange<={1'b0,modechange[15:1]};
+                                pinw_swdo  <= 0;
+                                pinw_swclk <= 1;
+                                dbg_state<=ST_DBG_WAIT_GOCLEAR;
                              end
-                           if (switch_step>115)
-                             pinw_swdo<=0;
-                           if (switch_step==118)
-                             dbg_state<=ST_DBG_WAIT_GOCLEAR;
-                           switch_step<=switch_step+1;
-                        end // if (fallingedge)
-                   end // if (pinw_swclk)
+                      end // if (pinw_swclk)
+                 end // case: ST_DBG_ESTABLISH_MODE
              endcase // case (dbg_state)
              
           end // else: !if(rst)

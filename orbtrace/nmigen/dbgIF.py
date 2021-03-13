@@ -36,8 +36,8 @@ class DBGIF(Elaboratable):
             i_clk = ClockSignal("sync"),
 
             # Gross control - power etc
-            i_vsen      = 0,
-            i_vdrive    = 1,
+            i_vsen      = 1,
+            i_vdrive    = 0,
 
             # Downwards interface to the pins
             i_swdi            = self.dbgpins.tms_swdio.i,
