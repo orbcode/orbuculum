@@ -114,15 +114,16 @@ static const struct deviceList
 {
     uint32_t vid;
     uint32_t pid;
+    bool autodiscover;
     uint8_t iface;
     uint8_t ep;
     char *name;
 } _deviceList[] =
 {
-    { 0x1209, 0x3443, 0, 0x81, "Orbtrace"         },
-    { 0x1d50, 0x6018, 5, 0x85, "Blackmagic Probe" },
-    { 0x2b3e, 0xc610, 3, 0x85, "Phywhisperer-UDT" },
-    { 0, 0, 0, 0 }
+    { 0x1209, 0x3443, true,  0, 0x81, "Orbtrace"         },
+    { 0x1d50, 0x6018, false, 5, 0x85, "Blackmagic Probe" },
+    { 0x2b3e, 0xc610, false, 3, 0x85, "Phywhisperer-UDT" },
+    { 0, 0, 0, 0, 0 }
 };
 
 #ifndef TRANSFER_SIZE
@@ -604,6 +605,10 @@ int usbFeeder( void )
     libusb_device *dev;
     int32_t size;
     const struct deviceList *p;
+    uint8_t iface;
+    uint8_t ep;
+    uint8_t altsetting = 0;
+    uint8_t num_altsetting = 0;
     int32_t err;
 
     while ( !_r.ending )
@@ -648,17 +653,73 @@ int usbFeeder( void )
             continue;
         }
 
-        if ( ( err = libusb_claim_interface ( handle, p->iface ) ) < 0 )
+        iface = p->iface;
+        ep = p->ep;
+
+        if ( p->autodiscover )
+        {
+            genericsReport( V_DEBUG, "Searching for trace interface" EOL );
+
+            struct libusb_config_descriptor *config;
+
+            if ( ( err = libusb_get_active_config_descriptor( dev, &config ) ) < 0 )
+            {
+                genericsReport( V_WARN, "Failed to get config descriptor (%d)" EOL, err );
+                continue;
+            }
+
+            bool interface_found = false;
+
+            for ( int if_num = 0; if_num < config->bNumInterfaces && !interface_found; if_num++ )
+            {
+                for ( int alt_num = 0; alt_num < config->interface[if_num].num_altsetting && !interface_found; alt_num++ )
+                {
+                    const struct libusb_interface_descriptor *i = &config->interface[if_num].altsetting[alt_num];
+
+                    if (
+                                i->bInterfaceClass != 0xff ||
+                                i->bInterfaceSubClass != 0x54 ||
+                                ( i->bInterfaceProtocol != 0x00 && i->bInterfaceProtocol != 0x01 ) ||
+                                i->bNumEndpoints != 0x01 )
+                    {
+                        continue;
+                    }
+
+                    iface = i->bInterfaceNumber;
+                    altsetting = i->bAlternateSetting;
+                    num_altsetting = config->interface[if_num].num_altsetting;
+                    ep = i->endpoint[0].bEndpointAddress;
+
+                    genericsReport( V_DEBUG, "Found interface %#x with altsetting %#x and ep %#x" EOL, iface, altsetting, ep );
+
+                    interface_found = true;
+                }
+            }
+
+            if ( !interface_found )
+            {
+                genericsReport( V_DEBUG, "No supported interfaces found, falling back to hardcoded values" EOL );
+            }
+
+            libusb_free_config_descriptor( config );
+        }
+
+        if ( ( err = libusb_claim_interface ( handle, iface ) ) < 0 )
         {
             genericsReport( V_WARN, "Failed to claim interface (%d)" EOL, err );
             continue;
+        }
+
+        if ( num_altsetting > 1 && ( err = libusb_set_interface_alt_setting ( handle, iface, altsetting ) ) < 0 )
+        {
+            genericsReport( V_WARN, "Failed to set altsetting (%d)" EOL, err );
         }
 
         genericsReport( V_DEBUG, "USB Interface claimed, ready for data" EOL );
 
         while ( !_r.ending )
         {
-            int32_t r = libusb_bulk_transfer( handle, p->ep, cbw, TRANSFER_SIZE, ( int * )&size, 10 );
+            int32_t r = libusb_bulk_transfer( handle, ep, cbw, TRANSFER_SIZE, ( int * )&size, 10 );
 
             if ( ( r < 0 ) && ( r != LIBUSB_ERROR_TIMEOUT ) )
             {
