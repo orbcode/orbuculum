@@ -120,7 +120,7 @@ __dll int ftdispi_open( struct ftdispi_context *fsc,
     fsc->bitini = BIT_P_CS;
 
 #ifdef SIO_TCOFLUSH
-    FTDI_CHECK( ftdi_tcioflush( &fsc->fc ), "PURGE", fsc->fc );
+    //    FTDI_CHECK( ftdi_tcioflush( &fsc->fc ), "PURGE", fsc->fc );
 #else
     /* Removed due to depreciation via patch from Eric Schott 18 Oct 2018 */
     /* unfortuantely doesn't seem to be across all libraries yet. */

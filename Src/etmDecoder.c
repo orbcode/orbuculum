@@ -1,0 +1,674 @@
+/*
+ * ETM Decoder Module
+ * ==================
+ *
+ * Copyright (C) 2017, 2019, 2021  Dave Marples  <dave@marples.net>
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *
+ * * Redistributions of source code must retain the above copyright
+ *   notice, this list of conditions and the following disclaimer.
+ * * Redistributions in binary form must reproduce the above copyright
+ *   notice, this list of conditions and the following disclaimer in the
+ *   documentation and/or other materials provided with the distribution.
+ * * Neither the names Orbtrace, Orbuculum nor the names of its
+ *   contributors may be used to endorse or promote products derived from
+ *   this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+ * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+ * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+ * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ * SUCH DAMAGE.
+ */
+
+/*
+ * Implementation of ITM/DWT decode according to the specification in Appendix D4
+ * of the ARMv7-M Architecture Refrence Manual document available
+ * from https://static.docs.arm.com/ddi0403/e/DDI0403E_B_armv7m_arm.pdf
+ */
+#include <string.h>
+#include <stdio.h>
+#include "etmDecoder.h"
+#include "msgDecoder.h"
+
+#ifdef DEBUG
+    #include <stdio.h>
+    #include "generics.h"
+#else
+    #define genericsReport(x...)
+#endif
+
+#define MAX_PACKET            (10)
+
+// Define this to get transitions printed out
+// ====================================================================================================
+void ETMDecoderInit( struct ETMDecoder *i, bool usingAltAddrEncodeSet )
+
+/* Reset a ETMDecoder instance */
+
+{
+    memset( i, 0, sizeof( struct ETMDecoder ) );
+    ETMDecoderZeroStats( i );
+    ETMDecodeUsingAltAddrEncode( i, usingAltAddrEncodeSet );
+}
+// ====================================================================================================
+void ETMDecodeUsingAltAddrEncode( struct ETMDecoder *i, bool usingAltAddrEncodeSet )
+
+{
+    i->usingAltAddrEncode = usingAltAddrEncodeSet;
+}
+// ====================================================================================================
+
+void ETMDecoderZeroStats( struct ETMDecoder *i )
+
+{
+    memset( &i->stats, 0, sizeof( struct ETMDecoderStats ) );
+}
+// ====================================================================================================
+bool ETMDecoderIsSynced( struct ETMDecoder *i )
+
+{
+    return i->p != ETM_UNSYNCED;
+}
+// ====================================================================================================
+struct ETMDecoderStats *ETMDecoderGetStats( struct ETMDecoder *i )
+{
+    return &i->stats;
+}
+// ====================================================================================================
+void ETMDecoderForceSync( struct ETMDecoder *i, bool isSynced )
+
+/* Force the decoder into a specific sync state */
+
+{
+    if ( i->p == ETM_UNSYNCED )
+    {
+        if ( isSynced )
+        {
+            i->p = ETM_IDLE;
+            i->stats.syncCount++;
+        }
+    }
+    else
+    {
+        if ( !isSynced )
+        {
+            i->stats.lostSyncCount++;
+            i->p = ETM_UNSYNCED;
+        }
+    }
+}
+// ====================================================================================================
+#ifdef DEBUG
+static char *_protoNames[] = {ETM_PROTO_NAME_LIST};
+#endif
+
+enum ETMDecoderPumpEvent ETMDecoderPump( struct ETMDecoder *i, uint8_t c )
+
+/* Pump next byte into the protocol decoder */
+
+{
+    bool C;
+    uint8_t ofs;
+    uint8_t mask;
+    enum ETMprotoState newState = i->p;
+    struct ETMCPUState *cpu = &i->cpu;
+
+    enum ETMDecoderPumpEvent retVal = ETM_EV_NONE;
+
+
+    /* Perform A-Sync accumulation check */
+    if ( ( i->asyncCount >= 5 ) && ( c == 0x80 ) )
+    {
+        retVal =   ETM_EV_SYNCED;
+        /* If we're already idle then stay there, otherwise wait for an ISYNC */
+        newState = ( i->p == ETM_IDLE ) ? ETM_IDLE : ETM_WAIT_ISYNC;
+    }
+    else
+    {
+        i->asyncCount = c ? 0 : i->asyncCount + 1;
+
+        switch ( i->p )
+        {
+            // -----------------------------------------------------
+            case ETM_UNSYNCED:
+                break;
+
+            // -----------------------------------------------------
+            case ETM_IDLE:
+
+                /* Start off by making sure entire received packet changes are 0'ed */
+                cpu->changeRecord = 0;
+
+                // *************************************************
+                // ************** A-SYNC PACKET ********************
+                // *************************************************
+                if ( c == 0b00000000 )
+                {
+                    break;
+                }
+
+                // *************************************************
+                // ************** IGNORE PACKET ********************
+                // *************************************************
+                if ( c == 0b01100110 )
+                {
+                    break;
+                }
+
+                // *************************************************
+                // ************** ISYNC PACKETS ********************
+                // *************************************************
+                if ( c == 0b00001000 ) /* Normal ISYNC */
+                {
+                    /* Collect either the context or the Info Byte next */
+                    i->byteCount = 0;
+                    i->contextConstruct = 0;
+                    newState = i->contextBytes ? ETM_GET_CONTEXTBYTE : ETM_GET_INFOBYTE;
+                    break;
+                }
+
+                if ( c == 0b01110000 ) /* ISYNC with Cycle Count */
+                {
+                    /* Collect the cycle count next */
+                    i->byteCount = 0;
+                    i->cycleConstruct = 0;
+                    newState = ETM_GET_ICYCLECOUNT;
+                    break;
+                }
+
+                // *************************************************
+                // ************ CYCLECOUNT PACKET ******************
+                // *************************************************
+                if ( c == 0b00000100 )
+                {
+                    i->byteCount = 0;
+                    i->cycleConstruct = 0;
+                    newState = ETM_GET_CYCLECOUNT;
+                    break;
+                }
+
+                // *************************************************
+                // ************** TRIGGER PACKET *******************
+                // *************************************************
+                if ( c == 0b00001100 )
+                {
+                    retVal = ETM_EV_MSG_RXED;
+                    break;
+                }
+
+                // *************************************************
+                // ******** EXCEPTION ENTRY PACKET *****************
+                // *************************************************
+                if ( c == 0b01111110 )
+                {
+                    cpu->changeRecord |= ( 1 << ETM_CH_EX_ENTRY );
+                    retVal = ETM_EV_MSG_RXED;
+                    break;
+                }
+
+                // *************************************************
+                // ******** EXCEPTION EXIT PACKET ******************
+                // *************************************************
+                if ( c == 0b01110110 )
+                {
+                    cpu->changeRecord |= ( 1 << ETM_CH_EX_EXIT );
+                    retVal = ETM_EV_MSG_RXED;
+                    break;
+                }
+
+                // *************************************************
+                // **************** VMID PACKET ********************
+                // *************************************************
+                if ( c == 0b00111100 )
+                {
+                    newState = ETM_GET_VMID;
+                    break;
+                }
+
+                // *************************************************
+                // ************ CONTEXTID PACKET *******************
+                // *************************************************
+                if ( c == 0b01101110 )
+                {
+                    newState = ETM_GET_CONTEXTID;
+                    cpu->contextID = 0;
+                    i->byteCount = 0;
+                    break;
+                }
+
+                // *************************************************
+                // *********** TIMESTAMP PACKET ********************
+                // *************************************************
+                if ( ( c & 0b01111011 ) == 0b01000010 )
+                {
+                    newState = ETM_GET_TSTAMP;
+
+                    if ( ( c & 4 ) != 0 )
+                    {
+                        cpu->changeRecord |= ( 1 << ETM_CH_CLOCKSPEED );
+                    }
+
+                    i->byteCount = 0;
+                    break;
+                }
+
+                // *************************************************
+                // ************** P-HEADER PACKET ******************
+                // *************************************************
+                if ( ( c & 0b10000001 ) == 0b10000000 )
+                {
+                    if ( !i->cycleAccurate )
+                    {
+                        if ( ( c & 0b10000011 ) == 0b10000000 )
+                        {
+                            /* Format-1 P-header */
+                            cpu->eatoms = ( c & 0x3C ) >> 2;
+                            cpu->natoms = ( c & ( 1 << 7 ) ) ? 1 : 0;
+
+                            /* Put a 1 in each element of disposition if was executed */
+                            cpu->disposition = ( 1 << cpu->eatoms ) - 1;
+                            cpu->changeRecord |= ( 1 << EV_CH_ENATOMS );
+                            retVal = ETM_EV_MSG_RXED;
+                            break;
+                        }
+
+                        if ( ( c & 0b11110011 ) == 0b10000010 )
+                        {
+                            /* Format-2 P-header */
+                            cpu->eatoms = ( ( c & ( 1 << 2 ) ) != 0 ) + ( ( c & ( 1 << 3 ) ) != 0 );
+                            cpu->natoms = 2 - cpu->eatoms;
+                            cpu->disposition = ( ( c & ( 1 << 3 ) ) != 0 ) | ( ( c & ( 1 << 2 ) ) != 0 );
+                            cpu->changeRecord |= ( 1 << EV_CH_ENATOMS );
+                            retVal = ETM_EV_MSG_RXED;
+                            break;
+                        }
+
+                        genericsReport( V_ERROR, "Unprocessed P-Header (%02X)" EOL, c );
+                    }
+                    else
+                    {
+                        if ( c == 0b10000000 )
+                        {
+                            /* Format 0 cycle-accurate P-header */
+                            cpu->watoms = 1;
+                            cpu->eatoms = cpu->natoms = 0;
+                            cpu->changeRecord |= ( 1 << EV_CH_ENATOMS );
+                            cpu->changeRecord |= ( 1 << EV_CH_WATOMS );
+                            retVal = ETM_EV_MSG_RXED;
+                            break;
+                        }
+
+                        if ( ( c & 0b10100011 ) == 0b10000000 )
+                        {
+                            /* Format 1 cycle-accurate P-header */
+                            cpu->eatoms = ( c & 0x1c ) >> 2;
+                            cpu->natoms = ( c & 0x40 ) != 0;
+                            cpu->watoms = cpu->eatoms + cpu->natoms;
+                            cpu->disposition = ( 1 << cpu->eatoms ) - 1;
+                            cpu->changeRecord |= ( 1 << EV_CH_ENATOMS );
+                            cpu->changeRecord |= ( 1 << EV_CH_WATOMS );
+                            retVal = ETM_EV_MSG_RXED;
+                            break;
+                        }
+
+                        if ( ( c & 0b11110011 ) == 0b10000010 )
+                        {
+                            /* Format 2 cycle-accurate P-header */
+                            cpu->eatoms = ( ( c & ( 1 << 2 ) ) != 0 ) + ( ( c & ( 1 << 3 ) ) != 0 );
+                            cpu->natoms = 2 - cpu->eatoms;
+                            cpu->watoms = 1;
+                            cpu->disposition = ( ( c & ( 1 << 3 ) ) != 0 ) | ( ( c & ( 1 << 2 ) ) != 0 );
+                            cpu->changeRecord |= ( 1 << EV_CH_ENATOMS );
+                            cpu->changeRecord |= ( 1 << EV_CH_WATOMS );
+                            retVal = ETM_EV_MSG_RXED;
+                            break;
+                        }
+
+                        if ( ( c & 0b10100000 ) == 0b10100000 )
+                        {
+                            /* Format 3 cycle-accurate P-header */
+                            cpu->eatoms = ( c & 0x40 ) != 0;
+                            cpu->natoms = 0;
+                            cpu->watoms = ( c & 0x1c ) >> 2;
+                            /* Either 1 or 0 eatoms */
+                            cpu->disposition = cpu->eatoms;
+                            cpu->changeRecord |= ( 1 << EV_CH_ENATOMS );
+                            cpu->changeRecord |= ( 1 << EV_CH_WATOMS );
+                            retVal = ETM_EV_MSG_RXED;
+                            break;
+                        }
+
+                        if ( ( c & 0b11111011 ) == 0b10010010 )
+                        {
+                            /* Format 4 cycle-accurate P-header */
+                            cpu->eatoms = ( c & 0x4 ) != 0;
+                            cpu->natoms = ( c & 0x4 ) == 0;
+                            cpu->watoms = 0;
+
+                            /* Either 1 or 0 eatoms */
+                            cpu->disposition = cpu->eatoms;
+                            cpu->changeRecord |= ( 1 << EV_CH_ENATOMS );
+                            cpu->changeRecord |= ( 1 << EV_CH_WATOMS );
+                            retVal = ETM_EV_MSG_RXED;
+                            break;
+                        }
+
+                        genericsReport( V_ERROR, "Unprocessed Cycle-accurate P-Header (%02X)" EOL, c );
+                    }
+
+                    break;
+                }
+
+                // *************************************************
+                // ************** BRANCH PACKET ********************
+                // *************************************************
+                if ( c & 0b1 )
+                {
+                    /* The lowest order 6 bits of address info... */
+                    switch ( cpu->addrMode )
+                    {
+                        case ETM_ADDRMODE_ARM:
+                            i->addrConstruct = ( i->addrConstruct & ~( 0b11111100 ) ) | ( ( c & 0b01111110 ) << 1 );
+                            break;
+
+                        case ETM_ADDRMODE_THUMB:
+                            i->addrConstruct = ( i->addrConstruct & ~( 0b01111110 ) ) | ( c & 0b01111110 );
+                            break;
+
+                        case ETM_ADDRMODE_JAZELLE:
+                            i->addrConstruct = ( i->addrConstruct & ~( 0b00111111 ) ) | ( ( c & 0b01111110 ) >> 1 );
+                            break;
+                    }
+
+                    i->byteCount = 1;
+                    C = c & 0x80;
+                    cpu->changeRecord |= ( 1 << EV_CH_ADDRESS );
+
+                    newState = ( i->usingAltAddrEncode ) ? ETM_COLLECT_BA_ALT_FORMAT : ETM_COLLECT_BA_STD_FORMAT;
+                    goto terminateAddrByte;
+                }
+
+                break;
+
+            // -----------------------------------------------------
+            // ADDRESS COLLECTION RELATED ACTIVITIES
+            // -----------------------------------------------------
+
+            case ETM_COLLECT_BA_ALT_FORMAT: /* Collecting a branch address, alt format */
+                C = c & 0x80;
+                /* This is a proper mess. Mask and collect bits according to address mode in use and if it's the last byte of the sequence */
+                mask = C ? 0x7F : 0x3F;
+                ofs = ( cpu->addrMode == ETM_ADDRMODE_ARM ) ? 2 : ( cpu->addrMode == ETM_ADDRMODE_THUMB ) ? 1 : 0;
+                i->addrConstruct = ( i->addrConstruct &  ~( mask << ( ( 7 * i->byteCount ) + ofs ) ) ) | ( c & ( mask <<  ( ( 7 * i->byteCount ) + ofs ) ) );
+                i->byteCount++;
+                goto terminateAddrByte;
+
+            // -----------------------------------------------------
+
+            case ETM_COLLECT_BA_STD_FORMAT: /* Collecting a branch address, standard format */
+                /* This will potentially connect too many bits, but that is OK */
+                ofs = ( cpu->addrMode == ETM_ADDRMODE_ARM ) ? 2 : ( cpu->addrMode == ETM_ADDRMODE_THUMB ) ? 1 : 0;
+                i->addrConstruct = ( i->addrConstruct &  ~( 0x7F << ( ( 7 * i->byteCount ) + ofs ) ) ) | ( c & ( 0x7F <<  ( ( 7 * i->byteCount ) + ofs ) ) );
+                i->byteCount++;
+                C = ( i->byteCount < 5 ) ? c & 0x80 : c & 0x40;
+                goto terminateAddrByte;
+
+
+            terminateAddrByte:
+
+                /* Check to see if this packet is complete, and encode to return if so */
+                if ( ( !C ) || ( i->byteCount == 5 ) )
+                {
+                    cpu->addr = i->addrConstruct;
+
+                    if ( ( i->byteCount == 5 ) && ( cpu->addrMode == ETM_ADDRMODE_ARM ) && C )
+                    {
+                        /* There is (legacy) exception information in here */
+                        cpu->exception = ( c >> 4 ) & 0x07;
+                        cpu->cancelled = ( c & 0x40 ) != 0;
+                        cpu->changeRecord |= ( 1 << EV_CH_EXCEPTION ) | ( 1 << EV_CH_CANCELLED );
+                        C = false;
+                    }
+
+                    if ( !C )
+                    {
+                        /* This packet is complete, so can return it */
+                        newState = ETM_IDLE;
+                        retVal = ETM_EV_MSG_RXED;
+                    }
+                    else
+                    {
+                        /* This packet also contains exception information, so collect it */
+                        newState = ETM_COLLECT_EXCEPTION;
+                    }
+                }
+
+                break;
+
+            case ETM_COLLECT_EXCEPTION: /* Collecting exception information */
+                cpu->changeRecord |= ( 1 << EV_CH_EXCEPTION ) | ( 1 << EV_CH_CANCELLED );
+                break;
+
+
+            // -----------------------------------------------------
+            // VMID RELATED ACTIVITIES
+            // -----------------------------------------------------
+            case ETM_GET_VMID: /* Collecting virtual machine ID */
+                cpu->vmid = c;
+                cpu->changeRecord |= ( 1 << EV_CH_VMID );
+                newState = ETM_IDLE;
+                retVal = ETM_EV_MSG_RXED;
+                break;
+
+            // -----------------------------------------------------
+            // TIMESTAMP RELATED ACTIVITIES
+            // -----------------------------------------------------
+
+            case ETM_GET_TSTAMP: /* Collecting current timestamp */
+                if ( i->byteCount < 8 )
+                {
+                    i->tsConstruct = ( i->tsConstruct & ( ~( 0x7F << i->byteCount ) ) ) | ( ( c & 0x7f ) << i->byteCount );
+                }
+                else
+                {
+                    i->tsConstruct = ( i->tsConstruct & ( ~( 0xff << i->byteCount ) ) ) | ( ( c & 0xff ) << i->byteCount );
+                }
+
+                i->byteCount++;
+
+                if ( ( !( c & 0x80 ) ) || ( i->byteCount == 9 ) )
+                {
+                    newState = ETM_IDLE;
+                    cpu->ts = i->tsConstruct;
+                    cpu->changeRecord |= ( 1 << EV_CH_TSTAMP );
+                    retVal = ETM_EV_MSG_RXED;
+                }
+
+                break;
+
+            // -----------------------------------------------------
+            // CYCLECOUNT RELATED ACTIVITIES
+            // -----------------------------------------------------
+
+            case ETM_GET_CYCLECOUNT: /* Collecting cycle count as standalone packet */
+                i->cycleConstruct = ( i->cycleConstruct & ~( 0x7f << ( ( i->byteCount ) * 7 ) ) ) | ( ( c & 0x7f ) << ( ( i->byteCount ) * 7 ) );
+                i->byteCount++;
+
+                if ( ( !( c & ( 1 << 7 ) ) ) || ( i->byteCount == 5 ) )
+                {
+                    newState = ETM_IDLE;
+                    cpu->cycleCount = i->cycleConstruct;
+                    cpu->changeRecord |= EV_CH_CYCLECOUNT;
+                    retVal = ETM_EV_MSG_RXED;
+                }
+
+                break;
+
+
+            // -----------------------------------------------------
+            // CONTEXTID RELATED ACTIVITIES
+            // -----------------------------------------------------
+
+            case ETM_GET_CONTEXTID: /* Collecting contextID */
+                i->contextConstruct = i->contextConstruct + ( c << ( 8 * i->byteCount ) );
+                i->byteCount++;
+
+                if ( i->byteCount == i->contextBytes )
+                {
+                    cpu->contextID = i->contextConstruct;
+                    retVal = ETM_EV_MSG_RXED;
+                    cpu->changeRecord |= EV_CH_CONTEXTID;
+                    newState = ETM_IDLE;
+                }
+
+                break;
+
+
+            // -----------------------------------------------------
+            // I-SYNC RELATED ACTIVITIES
+            // -----------------------------------------------------
+
+            case ETM_WAIT_ISYNC:
+                if ( c == 0b00001000 )
+                {
+                    i->byteCount = i->contextBytes;
+                    i->contextConstruct = 0;
+                    newState = i->contextBytes ? ETM_GET_CONTEXTBYTE : ETM_GET_INFOBYTE;
+                }
+
+                break;
+
+            // -----------------------------------------------------
+
+            case ETM_GET_CONTEXTBYTE: /* Collecting I-Sync contextID bytes */
+                i->contextConstruct = i->contextConstruct + ( c << ( 8 * i->byteCount ) );
+                i->byteCount++;
+
+                if ( i->byteCount == i->contextBytes )
+                {
+                    cpu->contextID = i->contextConstruct;
+                    cpu->changeRecord |= EV_CH_CONTEXTID;
+                    newState = ETM_GET_INFOBYTE;
+                }
+
+                break;
+
+            // -----------------------------------------------------
+
+            case ETM_GET_INFOBYTE: /* Collecting I-Sync Information byte */
+                cpu->changeRecord |= EV_CH_INFOBYTE;
+                cpu->isLSiP    = ( c & 0x10000000 ) != 0;
+                cpu->reason    = ( c & 0x01100000 ) >> 5;
+                cpu->jazelle   = ( c & 0x00010000 ) != 0;
+                cpu->nonSecure = ( c & 0x00001000 ) != 0;
+                cpu->altISA    = ( c & 0x00000100 ) != 0;
+                cpu->hyp       = ( c & 0x00000010 ) != 0;
+                cpu->thumb     = ( c & 0x00000001 ) != 0;
+                i->byteCount = 0;
+
+                if ( i->dataOnlyMode )
+                {
+                    retVal = ETM_EV_MSG_RXED;
+                    newState = ETM_IDLE;
+                }
+                else
+                {
+                    newState = ETM_GET_IADDRESS;
+                }
+
+                break;
+
+            // -----------------------------------------------------
+
+            case ETM_GET_IADDRESS: /* Collecting I-Sync Address bytes */
+                // WORKING CASE
+                i->addrConstruct = ( i->addrConstruct & ( ~( 0xff << ( 8 * i->byteCount ) ) ) )  | ( c << ( 8 * i->byteCount ) ) ;
+                i->byteCount++;
+
+                if ( i->byteCount == 4 )
+                {
+                    cpu->changeRecord |= ( 1 << EV_CH_ADDRESS );
+
+                    if ( cpu->jazelle )
+                    {
+                        /* This is Jazelle mode..can ignore the AltISA bit */
+                        /* and bit 0 is bit 0 of the address */
+                        cpu->addrMode = ETM_ADDRMODE_JAZELLE;
+                        cpu->addr = i->addrConstruct;
+                    }
+                    else
+                    {
+                        if ( i->addrConstruct & ( 1 << 0 ) )
+                        {
+                            cpu->addrMode = ETM_ADDRMODE_THUMB;
+                            cpu->addr = i->addrConstruct & 0xFFFFFFFE;
+                        }
+                        else
+                        {
+                            cpu->addrMode = ETM_ADDRMODE_ARM;
+                            cpu->addr = i->addrConstruct & 0xFFFFFFFC;
+                        }
+                    }
+
+                    if ( cpu->isLSiP )
+                    {
+                        /* If this is an LSiP packet we need to go get the address */
+                        newState = ( i->usingAltAddrEncode ) ? ETM_COLLECT_BA_ALT_FORMAT : ETM_COLLECT_BA_STD_FORMAT;
+                    }
+                    else
+                    {
+                        newState = ETM_IDLE;
+                        retVal = ETM_EV_MSG_RXED;
+                    }
+
+                }
+
+                break;
+
+            // -----------------------------------------------------
+
+            case ETM_GET_ICYCLECOUNT: /* Collecting cycle count on front of ISYNC packet */
+                i->cycleConstruct = ( i->cycleConstruct & ~( 0x7f << ( ( i->byteCount ) * 7 ) ) ) | ( ( c & 0x7f ) << ( ( i->byteCount ) * 7 ) );
+                i->byteCount++;
+
+                if ( ( !( c & ( 1 << 7 ) ) ) || ( i->byteCount == 5 ) )
+                {
+                    /* Now go to get the rest of the ISYNC packet */
+                    /* Collect either the context or the Info Byte next */
+                    cpu->cycleCount = i->cycleConstruct;
+                    i->byteCount = i->contextBytes;
+                    i->contextConstruct = 0;
+                    cpu->changeRecord |= ( 1 << EV_CH_CYCLECOUNT );
+                    newState = i->contextBytes ? ETM_GET_CONTEXTBYTE : ETM_GET_INFOBYTE;
+                    break;
+                }
+
+                break;
+
+                // -----------------------------------------------------
+
+        }
+    }
+
+    if ( i->p != ETM_UNSYNCED )
+    {
+        genericsReport( V_INFO, "%02x %s --> %s %s", c, ( i->p == ETM_IDLE ) ? _protoNames[i->p] : "", _protoNames[newState],
+                        ( ( newState == ETM_IDLE ) ? ( ( retVal == ETM_EV_NONE ) ? "!!!" EOL : "OK" EOL ) : " : " ) );
+    }
+
+    i->p = newState;
+
+    return retVal;
+}
+// ====================================================================================================

@@ -81,7 +81,7 @@ struct
 {
     /* Config information */
     bool useTPIU;
-    uint32_t tpiuITMChannel;
+    uint32_t tpiuChannel;
     bool forceITMSync;
     uint32_t hwOutputs;
 
@@ -94,7 +94,7 @@ struct
 
     char *file;                                          /* File host connection */
     bool fileTerminate;                                  /* Terminate when file read isn't successful */
-} options = {.forceITMSync = true, .tpiuITMChannel = 1, .port = SERVER_PORT, .server = "localhost"};
+} options = {.forceITMSync = true, .tpiuChannel = 1, .port = SERVER_PORT, .server = "localhost"};
 
 struct
 {
@@ -350,7 +350,7 @@ void _protocolPump( uint8_t c )
 
                 for ( uint32_t g = 0; g < _r.p.len; g++ )
                 {
-                    if ( _r.p.packet[g].s == options.tpiuITMChannel )
+                    if ( _r.p.packet[g].s == options.tpiuChannel )
                     {
                         _itmPumpProcess( _r.p.packet[g].d );
                         continue;
@@ -358,7 +358,7 @@ void _protocolPump( uint8_t c )
 
                     if  ( _r.p.packet[g].s != 0 )
                     {
-                        genericsReport( V_WARN, "Unknown TPIU channel %02x" EOL, _r.p.packet[g].s );
+                        genericsReport( V_INFO, "Unknown TPIU channel %02x" EOL, _r.p.packet[g].s );
                     }
                 }
 
@@ -378,16 +378,15 @@ void _protocolPump( uint8_t c )
 void _printHelp( char *progName )
 
 {
-    fprintf( stdout, "Usage: %s <htv> <-i channel> <-p port> <-s server>" EOL, progName );
-    fprintf( stdout, "       c: <Number>,<Format> of channel to add into output stream (repeat per channel)" EOL );
-    fprintf( stdout, "       e: When reading from file, terminate at end of file rather than waiting for further input" EOL );
-    fprintf( stdout, "       f: <filename> Take input from specified file" EOL );
-    fprintf( stdout, "       h: This help" EOL );
-    fprintf( stdout, "       i: <channel> Set ITM Channel in TPIU decode (defaults to 1)" EOL );
-    fprintf( stdout, "       n: Enforce sync requirement for ITM (i.e. ITM needsd to issue syncs)" EOL );
-    fprintf( stdout, "       s: <Server>:<Port> to use" EOL );
-    fprintf( stdout, "       t: Use TPIU decoder" EOL );
-    fprintf( stdout, "       v: <level> Verbose mode 0(errors)..3(debug)" EOL );
+    fprintf( stdout, "Usage: %s [options]" EOL, progName );
+    fprintf( stdout, "      -c: <Number>,<Format> of channel to add into output stream (repeat per channel)" EOL );
+    fprintf( stdout, "      -e: When reading from file, terminate at end of file rather than waiting for further input" EOL );
+    fprintf( stdout, "      -f: <filename> Take input from specified file" EOL );
+    fprintf( stdout, "      -h: This help" EOL );
+    fprintf( stdout, "      -n: Enforce sync requirement for ITM (i.e. ITM needsd to issue syncs)" EOL );
+    fprintf( stdout, "      -s: <Server>:<Port> to use" EOL );
+    fprintf( stdout, "      -t <channel>: Use TPIU decoder on specified channel (normally 1)" EOL );
+    fprintf( stdout, "      -v: <level> Verbose mode 0(errors)..3(debug)" EOL );
 }
 // ====================================================================================================
 int _processOptions( int argc, char *argv[] )
@@ -399,7 +398,7 @@ int _processOptions( int argc, char *argv[] )
     char *chanIndex;
 #define DELIMITER ','
 
-    while ( ( c = getopt ( argc, argv, "c:ef:hi:ns:tv:" ) ) != -1 )
+    while ( ( c = getopt ( argc, argv, "c:ef:hns:t:v:" ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -415,11 +414,6 @@ int _processOptions( int argc, char *argv[] )
             // ------------------------------------
             case 'f':
                 options.file = optarg;
-                break;
-
-            // ------------------------------------
-            case 'i':
-                options.tpiuITMChannel = atoi( optarg );
                 break;
 
             // ------------------------------------
@@ -455,6 +449,7 @@ int _processOptions( int argc, char *argv[] )
             // ------------------------------------
             case 't':
                 options.useTPIU = true;
+                options.tpiuChannel = atoi( optarg );
                 break;
 
             // ------------------------------------
@@ -509,7 +504,7 @@ int _processOptions( int argc, char *argv[] )
                 // ------------------------------------
         }
 
-    if ( ( options.useTPIU ) && ( !options.tpiuITMChannel ) )
+    if ( ( options.useTPIU ) && ( !options.tpiuChannel ) )
     {
         genericsReport( V_ERROR, "TPIU set for use but no channel set for ITM output" EOL );
         return false;
@@ -537,7 +532,7 @@ int _processOptions( int argc, char *argv[] )
 
     if ( options.useTPIU )
     {
-        genericsReport( V_INFO, "Using TPIU : true (ITM on channel %d)" EOL, options.tpiuITMChannel );
+        genericsReport( V_INFO, "Using TPIU : true (ITM on channel %d)" EOL, options.tpiuChannel );
     }
     else
     {

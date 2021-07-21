@@ -1,11 +1,9 @@
 # Define only one of these
-WITH_UART_FEEDER?=1
-#WITH_SPI_FEEDER?=1
-
+WITH_FPGA=1
 
 # Build configuration
 VERBOSE?=0
-#DEBUG=1
+DEBUG=1
 SCREEN_HANDLING=1
 
 # Set your preferred screen colours here, or create a new palette by copying the file to a new one
@@ -23,6 +21,7 @@ ORBFIFO   = orbfifo
 ORBTOP    = orbtop
 ORBDUMP   = orbdump
 ORBSTAT   = orbstat
+ORBFLOW   = orbflow
 
 ##########################################################################
 # Check Host OS
@@ -39,7 +38,7 @@ ifeq ($(UNAME_S),Darwin)
 endif
 
 ##########################################################################
-# User configuration and firmware specific object files	
+# User configuration and firmware specific object files
 ##########################################################################
 
 # Overall system defines for compilation
@@ -51,19 +50,6 @@ else
 GCC_DEFINE=
 DEBUG_OPTS =
 OPT_LEVEL = -O2
-endif
-
-ifeq ($(WITH_UART_FEEDER),1)
-ifeq ($(WITH_SPI_FEEDER),1)
-$(error cannot define both feeders)
-endif
-WITH_FPGA=1
-CFLAGS += -DFPGA_UART_FEEDER
-endif
-
-ifeq ($(WITH_SPI_FEEDER),1)
-WITH_FPGA=1
-CFLAGS += -DFPGA_SPI_FEEDER
 endif
 
 ifeq ($(WITH_FIFOS),1)
@@ -104,24 +90,25 @@ LDLIBS += -lpthread
 endif
 
 ##########################################################################
-# Generic multi-project files 
+# Generic multi-project files
 ##########################################################################
 
 ##########################################################################
-# Project-specific files 
+# Project-specific files
 ##########################################################################
 
 # Main Files
 # ==========
 
-ORBLIB_CFILES = $(App_DIR)/itmDecoder.c $(App_DIR)/tpiuDecoder.c $(App_DIR)/msgDecoder.c $(App_DIR)/msgSeq.c
+ORBLIB_CFILES = $(App_DIR)/itmDecoder.c $(App_DIR)/tpiuDecoder.c $(App_DIR)/msgDecoder.c $(App_DIR)/msgSeq.c $(App_DIR)/etmDecoder.c
 
 ORBUCULUM_CFILES = $(App_DIR)/$(ORBUCULUM).c $(FPGA_CFILES) $(App_DIR)/nwclient.c
-ORBFIFO_CFILES   = $(App_DIR)/$(ORBFIFO).c $(App_DIR)/filewriter.c $(App_DIR)/fifos.c
+ORBFIFO_CFILES   = $(App_DIR)/$(ORBFIFO).c $(App_DIR)/filewriter.c $(App_DIR)/itmfifos.c
 ORBCAT_CFILES    = $(App_DIR)/$(ORBCAT).c
 ORBTOP_CFILES    = $(App_DIR)/$(ORBTOP).c $(App_DIR)/symbols.c $(EXT)/cJSON.c
 ORBDUMP_CFILES   = $(App_DIR)/$(ORBDUMP).c
 ORBSTAT_CFILES   = $(App_DIR)/$(ORBSTAT).c $(App_DIR)/symbols.c
+ORBFLOW_CFILES   = $(App_DIR)/$(ORBFLOW).c $(App_DIR)/etmdec.c
 
 # FPGA Files
 # ==========
@@ -164,7 +151,7 @@ HOST=-lc -lusb
 ##########################################################################
 # Compiler settings, parameters and flags
 ##########################################################################
-# filename for embedded git revision 
+# filename for embedded git revision
 GIT_HASH_FILENAME=git_version_info.h
 
 CFLAGS +=  $(ARCH_FLAGS) $(STARTUP_DEFS) $(OPT_LEVEL) $(DEBUG_OPTS) \
@@ -184,31 +171,35 @@ PDEPS = $(POBJS:.o=.d)
 # Per Target Stuff
 ORBLIB_OBJS =  $(OBJS) $(patsubst %.c,%.o,$(ORBLIB_CFILES))
 ORBLIB_POBJS = $(POJBS) $(patsubst %,$(OLOC)/%,$(ORBLIB_OBJS))
-ORBLIB_PDEPS = $(PDEPS) $(ORBLIB_POBJS:.o=.d)
+PDEPS += $(ORBLIB_POBJS:.o=.d)
 
 ORBUCULUM_OBJS =  $(OBJS) $(patsubst %.c,%.o,$(ORBUCULUM_CFILES))
 ORBUCULUM_POBJS = $(POJBS) $(patsubst %,$(OLOC)/%,$(ORBUCULUM_OBJS))
-ORBUCULUM_PDEPS = $(PDEPS) $(ORBUCULUM_POBJS:.o=.d)
+PDEPS += $(ORBUCULUM_POBJS:.o=.d)
 
 ORBFIFO_OBJS =  $(OBJS) $(patsubst %.c,%.o,$(ORBFIFO_CFILES))
 ORBFIFO_POBJS = $(POJBS) $(patsubst %,$(OLOC)/%,$(ORBFIFO_OBJS))
-ORBFIFO_PDEPS = $(PDEPS) $(ORBFIFO_POBJS:.o=.d)
+PDEPS += $(ORBFIFO_POBJS:.o=.d)
 
 ORBCAT_OBJS =  $(OBJS) $(patsubst %.c,%.o,$(ORBCAT_CFILES))
 ORBCAT_POBJS = $(POJBS) $(patsubst %,$(OLOC)/%,$(ORBCAT_OBJS))
-ORBCAT_PDEPS = $(PDEPS) $(ORBCAT_POBJS:.o=.d)
+PDEPS += $(ORBCAT_POBJS:.o=.d)
 
 ORBTOP_OBJS =  $(OBJS) $(patsubst %.c,%.o,$(ORBTOP_CFILES))
 ORBTOP_POBJS = $(POJBS) $(patsubst %,$(OLOC)/%,$(ORBTOP_OBJS))
-ORBTOP_PDEPS = $(PDEPS) $(ORBTOP_POBJS:.o=.d)
+PDEPS += $(ORBTOP_POBJS:.o=.d)
 
 ORBDUMP_OBJS =  $(OBJS) $(patsubst %.c,%.o,$(ORBDUMP_CFILES))
 ORBDUMP_POBJS = $(POJBS) $(patsubst %,$(OLOC)/%,$(ORBDUMP_OBJS))
-ORBDUMP_PDEPS = $(PDEPS) $(ORBDUMP_POBJS:.o=.d)
+PDEPS += $(ORBDUMP_POBJS:.o=.d)
 
 ORBSTAT_OBJS =  $(OBJS) $(patsubst %.c,%.o,$(ORBSTAT_CFILES))
 ORBSTAT_POBJS = $(POJBS) $(patsubst %,$(OLOC)/%,$(ORBSTAT_OBJS))
-ORBSTAT_PDEPS = $(PDEPS) $(ORBSTAT_POBJS:.o=.d)
+PDEPS += $(ORBSTAT_POBJS:.o=.d)
+
+ORBFLOW_OBJS =  $(OBJS) $(patsubst %.c,%.o,$(ORBFLOW_CFILES))
+ORBFLOW_POBJS = $(POJBS) $(patsubst %,$(OLOC)/%,$(ORBFLOW_OBJS))
+PDEPS += $(ORBFLOW_POBJS:.o=.d)
 
 CFILES += $(App_DIR)/generics.c
 
@@ -216,7 +207,7 @@ CFILES += $(App_DIR)/generics.c
 ##########################################################################
 ##########################################################################
 
-all : build 
+all : build
 
 get_version:
 	$(Q)mkdir -p $(OLOC)
@@ -227,13 +218,13 @@ $(OLOC)/%.o : %.c
 	$(call cmd, \$(CC) -c $(CFLAGS) -MMD -o $@ $< ,\
 	Compiling $<)
 
-build: $(ORBUCULUM) $(ORBFIFO) $(ORBCAT) $(ORBTOP) $(ORBDUMP) $(ORBSTAT)
+build: $(ORBUCULUM) $(ORBFIFO) $(ORBCAT) $(ORBTOP) $(ORBDUMP) $(ORBSTAT) $(ORBFLOW)
 
 $(ORBLIB) : get_version $(ORBLIB_POBJS)
 	$(Q)$(AR) rcs $(OLOC)/lib$(ORBLIB).a  $(ORBLIB_POBJS)
 	-@echo "Completed build of" $(ORBLIB)
 
-$(ORBUCULUM) : $(ORBLIB) $(ORBUCULUM_POBJS) 
+$(ORBUCULUM) : $(ORBLIB) $(ORBUCULUM_POBJS)
 	$(Q)$(LD) $(LDFLAGS) -o $(OLOC)/$(ORBUCULUM) $(MAP) $(ORBUCULUM_POBJS)  $(LDLIBS)
 	-@echo "Completed build of" $(ORBUCULUM)
 
@@ -257,11 +248,15 @@ $(ORBSTAT) : $(ORBLIB) $(ORBSTAT_POBJS)
 	$(Q)$(LD) $(LDFLAGS) -o $(OLOC)/$(ORBSTAT) $(MAP) $(ORBSTAT_POBJS) $(LDLIBS)
 	-@echo "Completed build of" $(ORBSTAT)
 
+$(ORBFLOW) : $(ORBLIB) $(ORBFLOW_POBJS)
+	$(Q)$(LD) $(LDFLAGS) -o $(OLOC)/$(ORBFLOW) $(MAP) $(ORBFLOW_POBJS)  $(LDLIBS)
+	-@echo "Completed build of" $(ORBFLOW)
+
 tags:
 	-@etags $(CFILES) 2> /dev/null
 
 clean:
-	-$(call cmd, \rm -f $(POBJS) $(LD_TEMP) $(ORBUCULUM) $(ORBFIFO) $(ORBCAT) $(ORBDUMP) $(ORBSTAT) $(OUTFILE).map $(EXPORT) ,\
+	-$(call cmd, \rm -f $(POBJS) $(LD_TEMP) $(ORBUCULUM) $(ORBFIFO) $(ORBCAT) $(ORBDUMP) $(ORBSTAT) $(ORBFLOW) $(OUTFILE).map $(EXPORT) ,\
 	Cleaning )
 	$(Q)-rm -rf SourceDoc/*
 	$(Q)-rm -rf *~ core
@@ -271,7 +266,7 @@ clean:
 
 $(generated_dir)/git_head_revision.c:
 	mkdir -p $(dir $@)
-	../Tools/git_hash_to_c.sh > $@    
+	../Tools/git_hash_to_c.sh > $@
 
 doc:
 	doxygen $(DOXCONFIG)

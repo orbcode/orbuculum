@@ -25,6 +25,7 @@ NRF;
 
 All;
   prepareSWO      : Prepare SWO output in specified format
+  startETM        : Start ETM output on channel 2
 
 Configure DWT
 -------------
@@ -54,6 +55,10 @@ ITMTSEna          : Enable local timestamp generation
 ITMEna            : Master Enable for ITM
 ITMTER            : Set Trace Enable Register bitmap for 32*<Block>
 ITMTPR            : Enable block 8*bit access from unprivledged code
+
+Configure ETM
+-------------
+
 end
 # ====================================================================
 # ====================================================================
@@ -113,7 +118,53 @@ set $NRF_P0_S=0x50842500
 set $NRF_SPU_S=0x50003000
 end
 
+
 # ====================================================================
+
+define startETM
+  # Allow access to device
+  set *($ETMBASE+0xfb0) = 0xc5acce55
+
+  # Enter configuration mode
+  set *($ETMBASE) |= 0x400
+
+  # Set busID 2
+  set *($ETMBASE+0x200) = 2
+
+  # Set trigger event
+  set *($ETMBASE+8) = 0x406f
+
+  # Set to always enable in ETM Trace Enable Event
+  set *($ETMBASE+0x20) = 0x6f
+
+  # Trace and stall always enabled
+  set *($ETMBASE+0x24) = 0x020000001
+
+  # Stall when < 24 byes free in fifo
+  set *($ETMBASE+0x2c) = 1
+
+  # Enable trace
+  set *($ETMBASE) = 0x191e | 0x400
+
+  # Essential that this bit is only cleared after everything else is done
+  set *($ETMBASE) &= ~0x400
+
+end
+document startETM
+startETM
+end
+
+# ====================================================================
+
+define stopETM
+  set *($ETMBASE) |= 0x400
+end
+document stopETM
+stopETM
+end
+
+# ====================================================================
+
 define prepareSWO
   set $clockspeed=72000000
   set $speed=2250000
@@ -297,7 +348,7 @@ end
 define enableSTM32TRACE
   set $bits=4
   set $drive=1
-  
+
   if $argc >= 1
     set $bits = $arg0
   end
@@ -679,7 +730,7 @@ define dwtPostTap
     if ($arg0==0)
       set *($DWTBASE) &= ~(1<<9)
     else
-      set *($DWTBASE) |= (1<<9)      
+      set *($DWTBASE) |= (1<<9)
     end
   end
 end
@@ -692,7 +743,7 @@ define dwtPostInit
     help dwtPostInit
   else
     set *($CDBBASE+0xC) |= 0x1000000
-    set *($DWTBASE) &= ~(0x0f<<5)    
+    set *($DWTBASE) &= ~(0x0f<<5)
     set *($DWTBASE) |= (($arg0&0x0f)<<5)
   end
 end
@@ -705,7 +756,7 @@ define dwtPostReset
     help dwtPostReset
   else
     set *($CDBBASE+0xC) |= 0x1000000
-    set *($DWTBASE) &= ~(0x0f<<1)    
+    set *($DWTBASE) &= ~(0x0f<<1)
     set *($DWTBASE) |= (($arg0&0x0f)<<1)
   end
 end
@@ -755,8 +806,8 @@ define ITMGTSFreq
   end
 end
 document ITMGTSFreq
-ITMGTSFreq <0..3> Set Global Timestamp frequency 
-          [0-Disable, 1-Approx 128 Cycles, 
+ITMGTSFreq <0..3> Set Global Timestamp frequency
+          [0-Disable, 1-Approx 128 Cycles,
            2-Approx 8192 Cycles, 3-Whenever possible]
 end
 # ====================================================================
@@ -873,11 +924,10 @@ define ITMTPR
     help ITMTPR
   else
     set *($ITMBASE+0xfb0) = 0xc5acce55
-    set *($ITMBASE+0xe40) = $arg0 
+    set *($ITMBASE+0xe40) = $arg0
   end
 end
 document ITMTPR
 ITMTPR <Bitmask> Enable block 8*bit access from unprivledged code
 end
 # ====================================================================
-

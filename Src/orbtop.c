@@ -934,25 +934,24 @@ void _protocolPump( uint8_t c )
 void _printHelp( char *progName )
 
 {
-    fprintf( stdout, "Usage: %s <htv> <-e ElfFile> <-g filename> <-o filename> -r <routines> <-i channel> <-p port> <-s server>" EOL, progName );
-    fprintf( stdout, "        c: <num> Cut screen output after number of lines" EOL );
-    fprintf( stdout, "        d: <DeleteMaterial> to take off front of filenames" EOL );
-    fprintf( stdout, "        D: Switch off C++ symbol demangling" EOL );
-    fprintf( stdout, "        e: <ElfFile> to use for symbols" EOL );
-    fprintf( stdout, "        E: Include exceptions in output report" EOL );
-    fprintf( stdout, "        f: <filename> Take input from specified file" EOL );
-    fprintf( stdout, "        g: <LogFile> append historic records to specified file" EOL );
-    fprintf( stdout, "        h: This help" EOL );
-    fprintf( stdout, "        i: <channel> Set ITM Channel in TPIU decode (defaults to 1)" EOL );
-    fprintf( stdout, "        I: <interval> Display interval in milliseconds (defaults to %d mS)" EOL, TOP_UPDATE_INTERVAL );
-    fprintf( stdout, "        j: <filename> Output to file in JSON format (or screen if <filename> is '-')" EOL );
-    fprintf( stdout, "        l: Aggregate per line rather than per function" EOL );
-    fprintf( stdout, "        n: Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
-    fprintf( stdout, "        o: <filename> to be used for output live file" EOL );
-    fprintf( stdout, "        r: <routines> to record in live file (default %d routines)" EOL, options.maxRoutines );
-    fprintf( stdout, "        s: <Server>:<Port> to use" EOL );
-    fprintf( stdout, "        t: Use TPIU decoder" EOL );
-    fprintf( stdout, "        v: <level> Verbose mode 0(errors)..3(debug)" EOL );
+    fprintf( stdout, "Usage: %s [options]" EOL, progName );
+    fprintf( stdout, "       -c: <num> Cut screen output after number of lines" EOL );
+    fprintf( stdout, "       -d: <DeleteMaterial> to take off front of filenames" EOL );
+    fprintf( stdout, "       -D: Switch off C++ symbol demangling" EOL );
+    fprintf( stdout, "       -e: <ElfFile> to use for symbols" EOL );
+    fprintf( stdout, "       -E: Include exceptions in output report" EOL );
+    fprintf( stdout, "       -f: <filename> Take input from specified file" EOL );
+    fprintf( stdout, "       -g: <LogFile> append historic records to specified file" EOL );
+    fprintf( stdout, "       -h: This help" EOL );
+    fprintf( stdout, "       -I: <interval> Display interval in milliseconds (defaults to %d mS)" EOL, TOP_UPDATE_INTERVAL );
+    fprintf( stdout, "       -j: <filename> Output to file in JSON format (or screen if <filename> is '-')" EOL );
+    fprintf( stdout, "       -l: Aggregate per line rather than per function" EOL );
+    fprintf( stdout, "       -n: Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
+    fprintf( stdout, "       -o: <filename> to be used for output live file" EOL );
+    fprintf( stdout, "       -r: <routines> to record in live file (default %d routines)" EOL, options.maxRoutines );
+    fprintf( stdout, "       -s: <Server>:<Port> to use" EOL );
+    fprintf( stdout, "       -t: <channel> Use TPIU decoder on specified channel" EOL );
+    fprintf( stdout, "       -v: <level> Verbose mode 0(errors)..3(debug)" EOL );
 }
 // ====================================================================================================
 int _processOptions( int argc, char *argv[] )
@@ -960,7 +959,7 @@ int _processOptions( int argc, char *argv[] )
 {
     int c;
 
-    while ( ( c = getopt ( argc, argv, "c:d:DEe:f:g:hi:I:j:lm:no:r:s:tv:" ) ) != -1 )
+    while ( ( c = getopt ( argc, argv, "c:d:DEe:f:g:hI:j:lm:no:r:s:t:v:" ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -1037,10 +1036,6 @@ int _processOptions( int argc, char *argv[] )
             // ------------------------------------
             case 't':
                 options.useTPIU = true;
-                break;
-
-            // ------------------------------------
-            case 'i':
                 options.tpiuITMChannel = atoi( optarg );
                 break;
 

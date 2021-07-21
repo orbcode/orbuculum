@@ -10,7 +10,7 @@ The CHANGES file now tells you what's been done when.
 
 Orbuculum now has an active Discord channel at https://discord.gg/P7FYThy . Thats the place to go if you need interactive help.
 
-An Orbuculum is a Crystal Ball, used for seeing things that would 
+An Orbuculum is a Crystal Ball, used for seeing things that would
  be otherwise invisible. A  nodding reference to (the) BlackMagic
  (debug probe), BMP.
 
@@ -19,7 +19,7 @@ blog at http://shadetail.com/.
 
 *This program is back in development after far too long away. A new fpga-based trace device is now operational. Functional fixes will continue to be made on main.*
 
-For the current development status you will need to use the `Devel` branch. 
+For the current development status you will need to use the `Devel` branch.
 
 The code is in daily use now and small issues are patched as they are found. The software runs on both Linux and OSX and the whole suite is working OK on most workloads. Any bugs found now will be treated as high priority issues. Functional enhancements will also be folded in as time permits. A contribution offering a build for windows would be gratefully received!
 
@@ -76,7 +76,7 @@ of the interface.
 
 At the present time Orbuculum supports ten devices for collecting trace
 from the target;
- 
+
 * the Black Magic Debug Probe (BMP)
 * the SEGGER JLink
 * generic USB TTL Serial Interfaces
@@ -93,7 +93,7 @@ docs directory. gdb setup files for each device type can be found in the `Suppor
 
 When using SWO Orbuculum can use, or bypass, the TPIU. The TPIU adds (a small amount of) overhead
 to the datastream, but provides better synchronisation if there is corruption
-on the link. To include the TPIU in decode stack, provide the -t 
+on the link. To include the TPIU in decode stack, provide the -t
 option on the command line. If you don't provide it, and the ITM decoder sees
 TPIU syncs in the datastream, it will complain and barf out. This is deliberate
 after I spent two days trying to find an obscure bug 'cos I'd left the `-t` option off...
@@ -140,24 +140,24 @@ Information about the contents of this file can be found by importing it into yo
 gdb session with `source gdbtrace.init` and then typing `help orbuculum`. Help on the
 parameters for each macro are available via the help system too (e.g. `help enableSTM32SWO`).
 
-In general, you will configure orbuculum via your local `.gdbinit` file. Several example files are 
+In general, you will configure orbuculum via your local `.gdbinit` file. Several example files are
 also in the Support directory. There you will find a `gdbtrace.init` file for 'regular' gcc
 use, and a `gdbtrace_withwith.init` file for use with recent versions of gdb that support
 the `with` syntax. The functionality of both is identical, but the `with` syntax allows it
 to be used more easily with non-C languages like Rust...unfortunately that syntax isn't
 supported on older versions of gdb.
 
-Anyway, generically, a configuration looks like this; 
+Anyway, generically, a configuration looks like this;
 
     source Support/gdbtrace.init            <---- Source the trace specific stuff
     target extended-remote /dev/ttyACM0     <-
     monitor swdp_scan                       <-
-    file ofiles/firmware.elf                <- 
+    file ofiles/firmware.elf                <-
     attach 1                                <---- Connect to the target
     set mem inaccessible-by-default off     <-
     set print pretty                        <-
     load                                    <---- Load the program
-    
+
     start                                   <---- and get to main
 
     # ---------- Using Stm32F1 as debuggee---------------------------
@@ -174,7 +174,7 @@ Anyway, generically, a configuration looks like this;
     monitor traceswo                        <*--- Enable BMP traceswo output
     prepareSWO ConfigCoreClock 200000 0 1   <*--- Setup SWO timing (BMP case)
     # ----------END OF ALTERNATIVE-----------------------------------
-    
+
     dwtSamplePC 1                           <-
     dwtSyncTap 3                            <-
     dwtPostTap 1                            <-
@@ -206,8 +206,8 @@ Building on Linux
 Dependencies
 ------------
 * libusb-1.0
-* libbfd (binutils-devel)
-* libelf (elfutils-libelf)
+* libbfd (binutils-dev)
+* libelf (libelf-dev)
 * libftdi (For FPGA support only)
 * libiberty (libiberty-dev)
 
@@ -265,9 +265,9 @@ to run orbuculum would be;
 
 In this case, because no source options were provided on the command line, input
 will be taken from a Blackmagic probe USB SWO feed.
-It will start the daemon with a monitor reporting interval of 100mS.  Orbuculum exposes TCP port 3443 to which 
+It will start the daemon with a monitor reporting interval of 100mS.  Orbuculum exposes TCP port 3443 to which
 network clients can connect. This port delivers raw TPIU frames to any
-client that is connected (such as orbcat, orbfifo or orbtop). 
+client that is connected (such as orbcat, orbfifo or orbtop).
 The practical limit to the number of clients that can connect is set by the speed of the host machine....but there's
 nothing stopping you using another one on the local network :-)
 
@@ -276,7 +276,7 @@ option.  Orbuculum itself is specifically designed to be 'hardy' to probe and
 target disconnects and restarts (y'know, like you get in the real
 world). In general the other programs in the suite will stay alive while
 `orbuculum` itself is available.  The intention being to give you useful information whenever it can get
-it.  Orbuculum does _not_ require gdb to be running, but you may need a 
+it.  Orbuculum does _not_ require gdb to be running, but you may need a
 gdb session to start the output.  BMP needs traceswo to be turned on
 at the command line before it capture data from the port, for example.
 
@@ -305,7 +305,7 @@ such as orbfifo. This creates a set of fifos or permanent files in a given
 directory containing the decoded streams which apps can exploit directly. It also has
 a few other tricks up it's sleeve like filewriter capability. It used to be integrated into
 `orbuculum` but seperating it out splits the trace interface from the user space utilities, which
-is a Good Thing(tm). 
+is a Good Thing(tm).
 
 A typical command line would be;
 
@@ -320,7 +320,7 @@ from the debug device. The format of the -c option is;
 
 ChannelNum is 0..31 and corresponds to the ITM channel. The name is the one
 that will appear in the directory and the FormatString can present the data
-using any printf-compatable formatting you prefer, so, the following are all 
+using any printf-compatable formatting you prefer, so, the following are all
 legal channel specifiers;
 
     -c 7,temperature,"%d \260C\n"
@@ -343,18 +343,18 @@ the order of these has changed);
 * `6,[Comp],[Ofs]` : Report data offset event.
 * `7` : Currently unused.
 * `8,[Status],[Address]` : ISYNC event.
-  
+
 The command line options are;
 
  `-b [basedir]`: for channels. Note that this is actually just leading text on the channel
      name, so if you put xyz/chan then all ITM software channels will end up in a directory
-     xyz, prepended with chan.  If xyz doesn't exist, then the channel creation will 
+     xyz, prepended with chan.  If xyz doesn't exist, then the channel creation will
      fail silently.
 
  `-c [Number],[Name],[Format]`: of channel to populate (repeat per channel) using printf formatting.
 
  `-e`: When reading from file, terminate when file exhausts, rather than waiting for more data to arrive.
- 
+
  `-f [filename]`: Take input from specified file (CTRL-C to abort from this).
 
  `-h`: Brief help.
@@ -367,7 +367,7 @@ The command line options are;
   `-l [port]`: Set listening port for the incoming connections from clients.
 
   `-m`: Monitor interval (in mS) for reporting on state of the link. If baudrate is specified (using `-a`) and is greater than 100bps then the percentage link occupancy is also reported.
- 
+
   `-n`: Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)
 
   `-P`: Create permanent files rather than fifos - useful when you want to use the processed data later.
@@ -384,8 +384,8 @@ The command line options are;
 Orbcat
 ======
 
-orbcat is a simple utility that connects to orbuculum over the network and 
-outputs data from various ITM HW and SW channels that it finds.  This 
+orbcat is a simple utility that connects to orbuculum over the network and
+outputs data from various ITM HW and SW channels that it finds.  This
 output is sent to stdout so the program is very useful for providing direct
 input for other utilities.  There can be any number of instances of orbcat
 running at the same time, and they will all decode data independently. They all get
@@ -395,16 +395,16 @@ of doing this to just replicate the data delivered over ITM Channel 0 would be
 
 `orbcat -c 0,"%c"`
 
-...note that any number of `-c` options can be entered on the command line, which 
+...note that any number of `-c` options can be entered on the command line, which
 will combine data from those individual channels into one stream. Command line
 options for orbcat are;
 
  `-c [Number],[Format]`: of channel to populate (repeat per channel) using printf
-     formatting. Note that the `Name` component is missing in this format because 
+     formatting. Note that the `Name` component is missing in this format because
      orbcat does not create fifos.
 
  `-e`: When reading from file, terminate when file exhausts, rather than waiting for more data to arrive.
- 
+
  `-f [filename]`: Take input from specified file (CTRL-C to abort from this).
 
  `-h`: Brief help.
@@ -425,20 +425,20 @@ options for orbcat are;
 Orbtop
 ======
 
-Orbtop connects to orbuculum over the network and 
+Orbtop connects to orbuculum over the network and
 samples the Program Counter to identify where the program is spending its time. By default
 it will update its statistical output once per second. For code that matches to a function
 the the source file it will totalise all of the samples to tell you how much time is being
 spent in that function.  Any samples that do not match to an identifiable function are
 reported as 'Unknown'.
 
-As with Orbcat there can be any number of instances of orbtop running at the same time, 
+As with Orbcat there can be any number of instances of orbtop running at the same time,
 which might be useful to perform sampling over different time horizons. A typical invocation
 line for orbtop would be;
 
 `orbtop -e ~/Develop/STM32F103-skel/ofiles/firmware.elf`
 
-...the pointer to the elf file is always needed for orbtop to be able to recover symbols from. 
+...the pointer to the elf file is always needed for orbtop to be able to recover symbols from.
 
 One useful command line option for orbtop (and indeed, for the majority of the rest of the
 suite) is -s localhost:2332, which will connect directly to any source you might have exporting
@@ -472,9 +472,9 @@ Command line options for orbtop are;
 
  `-n`: Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)
 
- `-o [filename]`: Set file to be used for output history 
- 
- `-r <routines>`: Number of lines to record in history file 
+ `-o [filename]`: Set file to be used for output history
+
+ `-r <routines>`: Number of lines to record in history file
 
  `-s [server]:[port]`: to connect to. Defaults to localhost:3443
 
@@ -501,7 +501,7 @@ and what the spread is of those. Here's a typical combination output for a simpl
  99.30%     1932 of 1945 Samples
 
 
- Ex |   Count  |  MaxD | TotalTicks  |  AveTicks  |  minTicks  |  maxTicks 
+ Ex |   Count  |  MaxD | TotalTicks  |  AveTicks  |  minTicks  |  maxTicks
 ----+----------+-------+-------------+------------+------------+------------
  11 |        1 |     1 |        263  |        263 |       263  |       263
  15 |      100 |     1 |      10208  |        102 |       100  |       210
@@ -532,10 +532,10 @@ then Orbuculum will be. There are factors outside of our control
 (i.e. the USB bus you are connected to) that could potentially break the
 reliabilty but there's not too much we can do about that since the SWO
 link is unidirectional (no opportunity for re-transmits). The
-following section provides evidence for the claim that the link is good; 
+following section provides evidence for the claim that the link is good;
 
 A test 'mule' sends data flat out to the link at the maximum data rate
-of 2.25Mbps using a loop like the one below; 
+of 2.25Mbps using a loop like the one below;
 
     while (1)
     {
@@ -551,14 +551,14 @@ of 2.25Mbps using a loop like the one below;
 
 100MB of data (more than 200MB of actual SWO packets, due to the
 encoding) was sent from the mule via a BMP where the output from
-swolisten chan00 was cat'ted into a file; 
+swolisten chan00 was cat'ted into a file;
 
 >cat swo/chan00 > o
 
 ....this process was interrupted once the file had grown to 100MB. The
 first and last lines were removed from it (these represent previously
 buffered data and an incomplete packet at the point where the capture
-was interrupted)  and the resulting file analysed for consistency; 
+was interrupted)  and the resulting file analysed for consistency;
 
 > sort o | uniq -c
 
@@ -626,7 +626,7 @@ new routine that can output to a specified channel. Something like;
       {
         while (ITM->PORT[c].u32 == 0);
         ITM->PORT[c].u8 = (uint8_t) ch;
-      }  
+      }
       return (ch);
     }
 
@@ -716,7 +716,7 @@ to 35200 Program Counter samples per second.
 Here's a typical example of orbtop output for a Skeleton application based
 on FreeRTOS with USB over Serial (CDC) support. This table is updated once per second;
 
-     97.90%     4308 ** Sleeping ** 
+     97.90%     4308 ** Sleeping **
       1.25%       55 USB_LP_CAN1_RX0_IRQHandler
       0.20%        9 xTaskIncrementTick
       0.13%        6 Suspend
@@ -746,7 +746,7 @@ Dogfood
 
 Orbuculum was pointed at a a BMP instance (running on a 72MHz
 STM32F103C8) both with and without SWO running in asynchronous mode at
-2.25Mbps. 
+2.25Mbps.
 
 Firstly, without SWO;
 
@@ -774,7 +774,7 @@ sample frequency had to be increased to be able to see the impact,
 which is reflected in `dma1_channel5_isr` and to a much lesser degree
 in `trace_buf_drain`). When this trace was taken the target
 was emitting nearly 18000 PC samples per second, encoded in TPIU
-frames. 
+frames.
 
      18.17%     3198 stm32f103_ep_read_packet
      17.35%     3054 gdb_if_getchar_to

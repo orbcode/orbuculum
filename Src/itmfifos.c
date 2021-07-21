@@ -79,7 +79,7 @@
 #include "tpiuDecoder.h"
 #include "itmDecoder.h"
 #include "fileWriter.h"
-#include "fifos.h"
+#include "itmfifos.h"
 #include "msgDecoder.h"
 
 #define MAX_STRING_LENGTH (100)              /* Maximum length that will be output from a fifo for a single event */
@@ -104,7 +104,7 @@ struct Channel                               /* Information for an individual ch
     char *fifoName;                          /* Constructed fifo name (from chanPath and name) */
 };
 
-struct fifosHandle
+struct itmfifosHandle
 
 {
     /* The decoders and the packets from them */
@@ -298,7 +298,7 @@ static void _intEINTRHandler( int sig )
 // ====================================================================================================
 // Decoders for each message
 // ====================================================================================================
-void _handleException( struct excMsg *m, struct fifosHandle *f )
+void _handleException( struct excMsg *m, struct itmfifosHandle *f )
 
 {
     char outputString[MAX_STRING_LENGTH];
@@ -326,7 +326,7 @@ void _handleException( struct excMsg *m, struct fifosHandle *f )
     write( f->c[HW_CHANNEL].handle, outputString, opLen );
 }
 // ====================================================================================================
-void _handleDWTEvent( struct dwtMsg *m, struct fifosHandle *f )
+void _handleDWTEvent( struct dwtMsg *m, struct itmfifosHandle *f )
 
 {
     char outputString[MAX_STRING_LENGTH];
@@ -359,7 +359,7 @@ void _handleDWTEvent( struct dwtMsg *m, struct fifosHandle *f )
     write( f->c[HW_CHANNEL].handle, EOL, strlen( EOL ) );
 }
 // ====================================================================================================
-void _handlePCSample( struct pcSampleMsg *m, struct fifosHandle *f )
+void _handlePCSample( struct pcSampleMsg *m, struct itmfifosHandle *f )
 
 /* We got a sample of the PC */
 
@@ -384,7 +384,7 @@ void _handlePCSample( struct pcSampleMsg *m, struct fifosHandle *f )
     write( f->c[HW_CHANNEL].handle, outputString, opLen );
 }
 // ====================================================================================================
-void _handleDataRWWP( struct watchMsg *m, struct fifosHandle *f )
+void _handleDataRWWP( struct watchMsg *m, struct itmfifosHandle *f )
 
 /* We got an alert due to a watch pointer */
 
@@ -399,7 +399,7 @@ void _handleDataRWWP( struct watchMsg *m, struct fifosHandle *f )
     write( f->c[HW_CHANNEL].handle, outputString, opLen );
 }
 // ====================================================================================================
-void _handleDataAccessWP( struct wptMsg *m, struct fifosHandle *f )
+void _handleDataAccessWP( struct wptMsg *m, struct itmfifosHandle *f )
 
 /* We got an alert due to a watchpoint */
 
@@ -414,7 +414,7 @@ void _handleDataAccessWP( struct wptMsg *m, struct fifosHandle *f )
     write( f->c[HW_CHANNEL].handle, outputString, opLen );
 }
 // ====================================================================================================
-void _handleDataOffsetWP( struct oswMsg *m, struct fifosHandle *f )
+void _handleDataOffsetWP( struct oswMsg *m, struct itmfifosHandle *f )
 
 /* We got an alert due to an offset write event */
 
@@ -428,7 +428,7 @@ void _handleDataOffsetWP( struct oswMsg *m, struct fifosHandle *f )
     write( f->c[HW_CHANNEL].handle, outputString, opLen );
 }
 // ====================================================================================================
-void _handleSW( struct swMsg *m, struct fifosHandle *f )
+void _handleSW( struct swMsg *m, struct itmfifosHandle *f )
 
 {
     /* Filter off filewriter packets and let the filewriter module deal with those */
@@ -445,7 +445,7 @@ void _handleSW( struct swMsg *m, struct fifosHandle *f )
     }
 }
 // ====================================================================================================
-void _handleNISYNC( struct nisyncMsg *m, struct fifosHandle *f )
+void _handleNISYNC( struct nisyncMsg *m, struct itmfifosHandle *f )
 
 {
     char outputString[MAX_STRING_LENGTH];
@@ -456,7 +456,7 @@ void _handleNISYNC( struct nisyncMsg *m, struct fifosHandle *f )
 }
 
 // ====================================================================================================
-void _handleTS( struct TSMsg *m, struct fifosHandle *f )
+void _handleTS( struct TSMsg *m, struct itmfifosHandle *f )
 
 /* ... a timestamp */
 
@@ -472,14 +472,14 @@ void _handleTS( struct TSMsg *m, struct fifosHandle *f )
     write( f->c[HW_CHANNEL].handle, outputString, opLen );
 }
 // ====================================================================================================
-void _itmPumpProcess( struct fifosHandle *f, char c )
+void _itmPumpProcess( struct itmfifosHandle *f, char c )
 
 /* Handle individual characters into the itm decoder */
 
 {
     struct msg decoded;
 
-    typedef void ( *handlers )( void *decoded, struct fifosHandle * f );
+    typedef void ( *handlers )( void *decoded, struct itmfifosHandle * f );
 
     /* Handlers for each complete message received */
     static const handlers h[MSG_NUM_MSGS] =
@@ -542,7 +542,7 @@ void _itmPumpProcess( struct fifosHandle *f, char c )
     }
 }
 // ====================================================================================================
-static void _tpiuProtocolPump( struct fifosHandle *f, uint8_t c )
+static void _tpiuProtocolPump( struct itmfifosHandle *f, uint8_t c )
 
 {
     switch ( TPIUPump( &f->t, c ) )
@@ -583,6 +583,7 @@ static void _tpiuProtocolPump( struct fifosHandle *f, uint8_t c )
                     continue;
                 }
 
+                /* Its perfectly legal for TPIU channels to arrive that we aren't interested in */
                 if ( ( f->p.packet[g].s != 0 ) && ( f->p.packet[g].s != 0x7f ) )
                 {
                     genericsReport( V_INFO, "Unhandled TPIU channel %02x" EOL, f->p.packet[g].s );
@@ -610,7 +611,7 @@ static void _tpiuProtocolPump( struct fifosHandle *f, uint8_t c )
 // ====================================================================================================
 // Getters and Setters
 // ====================================================================================================
-void fifoSetChanPath( struct fifosHandle *f, char *s )
+void itmfifoSetChanPath( struct itmfifosHandle *f, char *s )
 
 {
     if ( f->chanPath )
@@ -622,7 +623,7 @@ void fifoSetChanPath( struct fifosHandle *f, char *s )
 }
 
 // ====================================================================================================
-void fifoSetChannel( struct fifosHandle *f, int chan, char *n, char *s )
+void itmfifoSetChannel( struct itmfifosHandle *f, int chan, char *n, char *s )
 
 {
     assert( chan <= NUM_CHANNELS );
@@ -636,78 +637,77 @@ void fifoSetChannel( struct fifosHandle *f, int chan, char *n, char *s )
     f->c[chan].presFormat = s ? strdup( s ) : NULL;
 }
 // ====================================================================================================
-void fifoSetUseTPIU( struct fifosHandle *f, bool s )
+void itmfifoSetUseTPIU( struct itmfifosHandle *f, bool s )
 
 {
     f->useTPIU = s;
 }
 // ====================================================================================================
-void fifoSetForceITMSync( struct fifosHandle *f, bool s )
+void itmfifoSetForceITMSync( struct itmfifosHandle *f, bool s )
 
 {
     f->forceITMSync = s;
 }
 // ====================================================================================================
-void fifoSettpiuITMChannel( struct fifosHandle *f, int channel )
+void itmfifoSettpiuITMChannel( struct itmfifosHandle *f, int channel )
 
 {
     f->tpiuITMChannel = channel;
 }
 // ====================================================================================================
-char *fifoGetChannelName( struct fifosHandle *f, int chan )
+char *itmfifoGetChannelName( struct itmfifosHandle *f, int chan )
 
 {
     assert( chan <= NUM_CHANNELS );
     return f->c[chan].chanName;
 }
 // ====================================================================================================
-char *fifoGetChannelFormat( struct fifosHandle *f, int chan )
+char *itmfifoGetChannelFormat( struct itmfifosHandle *f, int chan )
 
 {
     assert( chan <= NUM_CHANNELS );
     return f->c[chan].chanName;
 }
 // ====================================================================================================
-char *fifoGetChanPath( struct fifosHandle *f )
+char *itmfifoGetChanPath( struct itmfifosHandle *f )
 
 {
     return f->chanPath;
 }
 // ====================================================================================================
-bool fifoGetUseTPIU( struct fifosHandle *f )
+bool itmfifoGetUseTPIU( struct itmfifosHandle *f )
 
 {
     return f->useTPIU;
 }
 // ====================================================================================================
-bool fifoGetForceITMSync( struct fifosHandle *f )
+bool itmfifoGetForceITMSync( struct itmfifosHandle *f )
 
 {
     return f->forceITMSync;
 }
 // ====================================================================================================
-int fifoGettpiuITMChannel( struct fifosHandle *f )
+int itmfifoGettpiuITMChannel( struct itmfifosHandle *f )
 
 {
     return f->tpiuITMChannel;
 }
 // ====================================================================================================
-struct TPIUCommsStats *fifoGetCommsStats( struct fifosHandle *f )
+struct TPIUCommsStats *itmfifoGetCommsStats( struct itmfifosHandle *f )
 
 {
     return TPIUGetCommsStats( &f->t );
 }
 // ====================================================================================================
-struct ITMDecoderStats *fiifoGetITMDecoderStats( struct fifosHandle *f )
+struct ITMDecoderStats *fifoGetITMDecoderStats( struct itmfifosHandle *f )
 
 {
     return ITMDecoderGetStats( &f->i );
 }
-
 // ====================================================================================================
 // Main interface components
 // ====================================================================================================
-void fifoProtocolPump( struct fifosHandle *f, uint8_t c )
+void itmfifoProtocolPump( struct itmfifosHandle *f, uint8_t c )
 
 /* Top level protocol pump */
 
@@ -723,7 +723,7 @@ void fifoProtocolPump( struct fifosHandle *f, uint8_t c )
     }
 }
 // ====================================================================================================
-void fifoForceSync( struct fifosHandle *f, bool synced )
+void itmfifoForceSync( struct itmfifosHandle *f, bool synced )
 
 /* Reset TPIU state and put ITM into defined state */
 
@@ -732,7 +732,7 @@ void fifoForceSync( struct fifosHandle *f, bool synced )
     ITMDecoderForceSync( &f->i, synced );
 }
 // ====================================================================================================
-bool fifoCreate( struct fifosHandle *f )
+bool itmfifoCreate( struct itmfifosHandle *f )
 
 /* Create each sub-process that will handle a port */
 
@@ -817,7 +817,7 @@ bool fifoCreate( struct fifosHandle *f )
     return true;
 }
 // ====================================================================================================
-void fifoShutdown( struct fifosHandle *f )
+void itmfifoShutdown( struct itmfifosHandle *f )
 
 /* Destroy the per-port sub-processes. These will terminate when the fifos close */
 
@@ -861,7 +861,7 @@ void fifoShutdown( struct fifosHandle *f )
 }
 // ====================================================================================================
 
-void fifoFilewriter( struct fifosHandle *f, bool useFilewriter, char *workingPath )
+void itmfifoFilewriter( struct itmfifosHandle *f, bool useFilewriter, char *workingPath )
 
 {
     f->filewriter = useFilewriter;
@@ -873,16 +873,16 @@ void fifoFilewriter( struct fifosHandle *f, bool useFilewriter, char *workingPat
 }
 
 // ====================================================================================================
-void fifoUsePermafiles( struct fifosHandle *f, bool usePermafilesSet )
+void itmfifoUsePermafiles( struct itmfifosHandle *f, bool usePermafilesSet )
 
 {
     f->permafile = usePermafilesSet;
 }
 // ====================================================================================================
-struct fifosHandle *fifoInit( bool forceITMSyncSet, bool useTPIUSet, int TPIUchannelSet )
+struct itmfifosHandle *itmfifoInit( bool forceITMSyncSet, bool useTPIUSet, int TPIUchannelSet )
 
 {
-    struct fifosHandle *f = ( struct fifosHandle * )calloc( 1, sizeof( struct fifosHandle  ) );
+    struct itmfifosHandle *f = ( struct itmfifosHandle * )calloc( 1, sizeof( struct itmfifosHandle  ) );
     f->chanPath = strdup( "" );
     f->useTPIU = useTPIUSet;
     f->forceITMSync = forceITMSyncSet;

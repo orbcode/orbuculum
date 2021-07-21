@@ -804,20 +804,19 @@ void _protocolPump( uint8_t c )
 void _printHelp( char *progName )
 
 {
-    fprintf( stdout, "Usage: %s <htv> <-e ElfFile> <-m MaxHistory> -r <routines> <-i channel> <-p port> <-s server>" EOL, progName );
-    fprintf( stdout, "       d: <DeleteMaterial> to take off front of filenames" EOL );
-    fprintf( stdout, "       e: <ElfFile> to use for symbols" EOL );
-    fprintf( stdout, "       f: <FileChannel> for file writing (default %d)" EOL, options.fileChannel );
-    fprintf( stdout, "       g: <TraceChannel> for trace output (default %d)" EOL, options.traceChannel );
-    fprintf( stdout, "       h: This help" EOL );
-    fprintf( stdout, "       i: <channel> Set ITM Channel in TPIU decode (defaults to 1)" EOL );
-    fprintf( stdout, "       l: Aggregate per line rather than per function" EOL );
-    fprintf( stdout, "       n: Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
-    fprintf( stdout, "       s: <Server>:<Port> to use" EOL );
-    fprintf( stdout, "       t: Use TPIU decoder" EOL );
-    fprintf( stdout, "       v: <level> Verbose mode 0(errors)..3(debug)" EOL );
-    fprintf( stdout, "       y: <Filename> dotty filename for structured callgraph output" EOL );
-    fprintf( stdout, "       z: <Filename> profile filename for kcachegrind output" EOL );
+    fprintf( stdout, "Usage: %s [options]" EOL, progName );
+    fprintf( stdout, "      -d: <DeleteMaterial> to take off front of filenames" EOL );
+    fprintf( stdout, "      -e: <ElfFile> to use for symbols" EOL );
+    fprintf( stdout, "      -f: <FileChannel> for file writing (default %d)" EOL, options.fileChannel );
+    fprintf( stdout, "      -g: <TraceChannel> for trace output (default %d)" EOL, options.traceChannel );
+    fprintf( stdout, "      -h: This help" EOL );
+    fprintf( stdout, "      -l: Aggregate per line rather than per function" EOL );
+    fprintf( stdout, "      -n: Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
+    fprintf( stdout, "      -s: <Server>:<Port> to use" EOL );
+    fprintf( stdout, "      -t: <channel> Use TPIU decoder on specified channel" EOL );
+    fprintf( stdout, "      -v: <level> Verbose mode 0(errors)..3(debug)" EOL );
+    fprintf( stdout, "      -y: <Filename> dotty filename for structured callgraph output" EOL );
+    fprintf( stdout, "      -z: <Filename> profile filename for kcachegrind output" EOL );
 }
 // ====================================================================================================
 int _processOptions( int argc, char *argv[] )
@@ -825,7 +824,7 @@ int _processOptions( int argc, char *argv[] )
 {
     int c;
 
-    while ( ( c = getopt ( argc, argv, "d:e:f:g:hi:lnp:s:tvy:z:" ) ) != -1 )
+    while ( ( c = getopt ( argc, argv, "d:e:f:g:hlnp:s:t:vy:z:" ) ) != -1 )
 
         switch ( c )
         {
@@ -853,11 +852,6 @@ int _processOptions( int argc, char *argv[] )
             case 'h':
                 _printHelp( argv[0] );
                 exit( 0 );
-
-            // ------------------------------------
-            case 'i':
-                options.tpiuITMChannel = atoi( optarg );
-                break;
 
             // ------------------------------------
             case 'n':
@@ -892,6 +886,7 @@ int _processOptions( int argc, char *argv[] )
             // ------------------------------------
             case 't':
                 options.useTPIU = true;
+                options.tpiuITMChannel = atoi( optarg );
                 break;
 
             // ------------------------------------

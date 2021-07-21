@@ -202,17 +202,16 @@ void _protocolPump( uint8_t c )
 void _printHelp( char *progName )
 
 {
-    fprintf( stdout, "Usage: %s <htv> <-i channel> <-p port> <-s server>" EOL, progName );
-    fprintf( stdout, "        h: This help" EOL );
-    fprintf( stdout, "        i: <channel> Set ITM Channel in TPIU decode (defaults to 1)" EOL );
-    fprintf( stdout, "        l: <timelen> Length of time in ms to record from point of acheiving sync (defaults to %dmS)" EOL, options.timelen );
-    fprintf( stdout, "        n: Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
-    fprintf( stdout, "        o: <filename> to be used for dump file (defaults to %s)" EOL, options.outfile );
-    fprintf( stdout, "        p: <Port> to use" EOL );
-    fprintf( stdout, "        s: <Server> to use" EOL );
-    fprintf( stdout, "        t: Use TPIU decoder" EOL );
-    fprintf( stdout, "        v: <level> Verbose mode 0(errors)..3(debug)" EOL );
-    fprintf( stdout, "        w: Write syncronously to the output file after every packet" EOL );
+    fprintf( stdout, "Usage: %s [options]" EOL, progName );
+    fprintf( stdout, "       -h: This help" EOL );
+    fprintf( stdout, "       -l: <timelen> Length of time in ms to record from point of acheiving sync (defaults to %dmS)" EOL, options.timelen );
+    fprintf( stdout, "       -n: Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
+    fprintf( stdout, "       -o: <filename> to be used for dump file (defaults to %s)" EOL, options.outfile );
+    fprintf( stdout, "       -p: <Port> to use" EOL );
+    fprintf( stdout, "       -s: <Server> to use" EOL );
+    fprintf( stdout, "       -t: <channel> Use TPIU decoder on specified channel, normally 1" EOL );
+    fprintf( stdout, "       -v: <level> Verbose mode 0(errors)..3(debug)" EOL );
+    fprintf( stdout, "       -w: Write syncronously to the output file after every packet" EOL );
 }
 // ====================================================================================================
 int _processOptions( int argc, char *argv[] )
@@ -220,7 +219,7 @@ int _processOptions( int argc, char *argv[] )
 {
     int c;
 
-    while ( ( c = getopt ( argc, argv, "hti:l:no:p:s:vw" ) ) != -1 )
+    while ( ( c = getopt ( argc, argv, "hl:no:p:s:t:vw" ) ) != -1 )
         switch ( c )
         {
             case 'o':
@@ -245,9 +244,6 @@ int _processOptions( int argc, char *argv[] )
 
             case 't':
                 options.useTPIU = true;
-                break;
-
-            case 'i':
                 options.tpiuITMChannel = atoi( optarg );
                 break;
 

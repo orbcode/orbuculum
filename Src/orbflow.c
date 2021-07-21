@@ -1,8 +1,8 @@
 /*
- * SWO Splitter for Blackmagic Probe and TTL Serial Interfaces
- * ===========================================================
+ * Trace Decoder for parallel trace
+ * ================================
  *
- * Copyright (C) 2017, 2019, 2020  Dave Marples  <dave@marples.net>
+ * Copyright (C) 2017, 2019, 2020, 2021  Dave Marples  <dave@marples.net>
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -53,12 +53,13 @@
 
 #include "git_version_info.h"
 #include "generics.h"
-#include "fileWriter.h"
 
-#include "itmfifos.h"
+#include "tpiuDecoder.h"
+#include "etmdec.h"
 
 #define TRANSFER_SIZE       (4096)
-#define SERVER_PORT         (3443)           /* Server port definition */
+#define REMOTE_ETM_PORT     (3443)            /* Server port definition */
+#define REMOTE_SERVER       "localhost"
 
 //#define DUMP_BLOCK
 
@@ -66,27 +67,30 @@
 struct
 {
     /* Config information */
-    bool filewriter;                    /* Supporting filewriter functionality */
-    char *fwbasedir;                    /* Base directory for filewriter output */
-    bool permafile;                     /* Use permanent files rather than fifos */
 
     /* Source information */
     char *file;                         /* File host connection */
     bool fileTerminate;                 /* Terminate when file read isn't successful */
 
+
+    bool useTPIU;                       /* Are we using TPIU, and stripping TPIU frames? */
+    uint8_t channel;                    /* When TPIU is in use, which channel to decode? */
+    uint32_t intervalReportTime;        /* If we want interval reports about performance */
     int port;                           /* Source information */
     char *server;
 
 } options =
 {
-    .port = SERVER_PORT,
-    .server = "localhost"
+    .port = REMOTE_ETM_PORT,
+    .server = REMOTE_SERVER,
+    .channel = 2
 };
 
 struct
 {
-    struct itmfifosHandle *f;           /* Link to the itmfifo subsystem */
+    struct etmdecHandle f;              /* Link to the etmdecoder subsystem */
     bool      ending;                   /* Flag indicating app is terminating */
+    uint64_t intervalBytes;             /* Number of bytes transferred in current interval */
 } _r;
 
 // ====================================================================================================
@@ -106,38 +110,24 @@ static void _intHandler( int sig )
 static void _printHelp( char *progName )
 
 {
-    genericsPrintf( "Usage: %s [Options]" EOL, progName );
-    genericsPrintf( "       -b <basedir> for channels" EOL );
-    genericsPrintf( "       -c <Number>,<Name>,<Format> of channel to populate (repeat per channel)" EOL );
-    genericsPrintf( "       -e When reading from file, terminate at end of file rather than waiting for further input" EOL );
-    genericsPrintf( "       -f <filename> Take input from specified file" EOL );
-    genericsPrintf( "       -h This help" EOL );
-    genericsPrintf( "       -P Create permanent files rather than fifos" EOL );
-    genericsPrintf( "       -t <channel> Use TPIU decoder on specified channel (normally 1)" EOL );
-    genericsPrintf( "       -v <level> Verbose mode 0(errors)..3(debug)" EOL );
-    genericsPrintf( "       -w <path> Enable filewriter functionality using specified base path" EOL );
+    genericsPrintf( "Usage: %s <ehntv> <b basedir> <f filename> <i channel>" EOL, progName );
+    genericsPrintf( "       -e: When reading from file, terminate at end of file rather than waiting for further input" EOL );
+    genericsPrintf( "       -f <filename>: Take input from specified file" EOL );
+    genericsPrintf( "       -h: This help" EOL );
+    genericsPrintf( "       -s: <Server>:<Port> to use" EOL );
+    genericsPrintf( "       -t <channel>: Use TPIU to strip TPIU on specfied channel (defaults to 2)" EOL );
+    genericsPrintf( "       -v: <level> Verbose mode 0(errors)..3(debug)" EOL );
+    genericsPrintf( EOL "(Will connect one port higher than that set in -s when TPIU is not used)" EOL );
 }
 // ====================================================================================================
 static int _processOptions( int argc, char *argv[] )
 
 {
     int c;
-#define DELIMITER ','
 
-    char *chanConfig;
-    char *chanName;
-    uint chan;
-    char *chanIndex;
-
-    while ( ( c = getopt ( argc, argv, "b:c:ef:hn:Pt:v:w:" ) ) != -1 )
+    while ( ( c = getopt ( argc, argv, "ef:hs:t:v:" ) ) != -1 )
         switch ( c )
         {
-            // ------------------------------------
-
-            case 'b':
-                itmfifoSetChanPath( _r.f, optarg );
-                break;
-
             // ------------------------------------
             case 'e':
                 options.fileTerminate = true;
@@ -157,78 +147,41 @@ static int _processOptions( int argc, char *argv[] )
 
             // ------------------------------------
 
-            case 'n':
-                itmfifoSetForceITMSync( _r.f, false );
-                break;
+            case 's':
+                options.server = optarg;
 
-            // ------------------------------------
+                // See if we have an optional port number too
+                char *a = optarg;
 
-            case 'P':
-                options.permafile = true;
+                while ( ( *a ) && ( *a != ':' ) )
+                {
+                    a++;
+                }
+
+                if ( *a == ':' )
+                {
+                    *a = 0;
+                    options.port = atoi( ++a );
+                }
+
+                if ( !options.port )
+                {
+                    options.port = REMOTE_ETM_PORT;
+                }
+
                 break;
 
             // ------------------------------------
 
             case 't':
-                itmfifoSetUseTPIU( _r.f, true );
-                itmfifoSettpiuITMChannel( _r.f, atoi( optarg ) );
+                options.useTPIU = true;
+                options.channel = atoi( optarg );
                 break;
 
             // ------------------------------------
 
             case 'v':
                 genericsSetReportLevel( atoi( optarg ) );
-                break;
-
-            // ------------------------------------
-
-            case 'w':
-                options.filewriter = true;
-                options.fwbasedir = optarg;
-                break;
-
-            // ------------------------------------
-
-            /* Individual channel setup */
-            case 'c':
-                chanIndex = chanConfig = strdup( optarg );
-                chan = atoi( optarg );
-
-                if ( chan >= NUM_CHANNELS )
-                {
-                    genericsReport( V_ERROR, "Channel index out of range" EOL );
-                    return false;
-                }
-
-                /* Scan for start of filename */
-                while ( ( *chanIndex ) && ( *chanIndex != DELIMITER ) )
-                {
-                    chanIndex++;
-                }
-
-                if ( !*chanIndex )
-                {
-                    genericsReport( V_ERROR, "No filename for channel %d" EOL, chan );
-                    return false;
-                }
-
-                chanName = ++chanIndex;
-
-                /* Scan for format */
-                while ( ( *chanIndex ) && ( *chanIndex != DELIMITER ) )
-                {
-                    chanIndex++;
-                }
-
-                if ( !*chanIndex )
-                {
-                    genericsReport( V_WARN, "No output format for channel %d, output raw!" EOL, chan );
-                    itmfifoSetChannel( _r.f, chan, chanName, NULL );
-                    break;
-                }
-
-                *chanIndex++ = 0;
-                itmfifoSetChannel( _r.f, chan, chanName, genericsUnescape( chanIndex ) );
                 break;
 
             // ------------------------------------
@@ -254,17 +207,10 @@ static int _processOptions( int argc, char *argv[] )
 
     /* ... and dump the config if we're being verbose */
     genericsReport( V_INFO, "%s V" VERSION " (Git %08X %s, Built " BUILD_DATE ")" EOL, argv[0], GIT_HASH, ( GIT_DIRTY ? "Dirty" : "Clean" ) );
-    genericsReport( V_INFO, "BasePath    : %s" EOL, itmfifoGetChanPath( _r.f ) );
-    genericsReport( V_INFO, "ForceSync   : %s" EOL, itmfifoGetForceITMSync( _r.f ) ? "true" : "false" );
-    genericsReport( V_INFO, "Permafile   : %s" EOL, options.permafile ? "true" : "false" );
 
-    if ( itmfifoGetUseTPIU( _r.f ) )
+    if ( options.intervalReportTime )
     {
-        genericsReport( V_INFO, "Using TPIU  : true (ITM on channel %d)" EOL, itmfifoGettpiuITMChannel( _r.f ) );
-    }
-    else
-    {
-        genericsReport( V_INFO, "Using TPIU  : false" EOL );
+        genericsReport( V_INFO, "Report Intv : %d mS" EOL, options.intervalReportTime );
     }
 
     if ( options.file )
@@ -281,18 +227,6 @@ static int _processOptions( int argc, char *argv[] )
         }
     }
 
-    genericsReport( V_INFO, "Channels    :" EOL );
-
-    for ( int g = 0; g < NUM_CHANNELS; g++ )
-    {
-        if ( itmfifoGetChannelName( _r.f, g ) )
-        {
-            genericsReport( V_INFO, "         %02d [%s] [%s]" EOL, g, genericsEscape( itmfifoGetChannelFormat( _r.f, g ) ? : "RAW" ), itmfifoGetChannelName( _r.f, g ) );
-        }
-    }
-
-    genericsReport( V_INFO, "         HW [Predefined] [" HWFIFO_NAME "]" EOL );
-
     return true;
 }
 // ====================================================================================================
@@ -302,6 +236,9 @@ static void _processBlock( int s, unsigned char *cbw )
 
 {
     genericsReport( V_DEBUG, "RXED Packet of %d bytes" EOL, s );
+
+    /* Account for this reception */
+    _r.intervalBytes += s;
 
     if ( s )
     {
@@ -325,7 +262,7 @@ static void _processBlock( int s, unsigned char *cbw )
 
         while ( s-- )
         {
-            itmfifoProtocolPump( _r.f, *cbw++ );
+            etmdecProtocolPump( &_r.f, *cbw++ );
         }
     }
 
@@ -335,7 +272,6 @@ static void _doExit( void )
 
 {
     _r.ending = true;
-    itmfifoShutdown( _r.f );
     /* Give them a bit of time, then we're leaving anyway */
     usleep( 200 );
 }
@@ -351,25 +287,24 @@ int main( int argc, char *argv[] )
 
     ssize_t t;
     int64_t lastTime;
+    int64_t snapInterval;
     int r;
     struct timeval tv;
     fd_set readfds;
     int32_t remainTime;
 
-    /* Setup fifos with forced ITM sync, no TPIU and TPIU on channel 1 if its engaged later */
-    _r.f = itmfifoInit( true, false, 1 );
-    assert( _r.f );
 
     if ( !_processOptions( argc, argv ) )
     {
         /* processOptions generates its own error messages */
-        genericsExit( -1, "" EOL );
+        //  genericsExit( -1, "" EOL );
     }
-
-    itmfifoUsePermafiles( _r.f, options.permafile );
 
     /* Make sure the fifos get removed at the end */
     atexit( _doExit );
+
+    /* Setup etmdecode with ETM on channel 2 */
+    etmdecInit( &_r.f, options.useTPIU, options.channel );
 
     /* Fill in a time to start from */
     lastTime = genericsTimestampmS();
@@ -385,14 +320,6 @@ int main( int argc, char *argv[] )
     {
         genericsExit( -1, "Failed to ignore SIGPIPEs" EOL );
     }
-
-    if ( ! ( itmfifoCreate( _r.f ) ) )
-    {
-        genericsExit( -1, "Failed to make channel devices" EOL );
-    }
-
-    /* Start the filewriter */
-    itmfifoFilewriter( _r.f, options.filewriter, options.fwbasedir );
 
     while ( !_r.ending )
     {
@@ -431,7 +358,7 @@ int main( int argc, char *argv[] )
             bcopy( ( char * )server->h_addr,
                    ( char * )&serv_addr.sin_addr.s_addr,
                    server->h_length );
-            serv_addr.sin_port = htons( options.port );
+            serv_addr.sin_port = htons( options.port + ( options.useTPIU ? 0 : 1 ) );
 
             if ( connect( sourcefd, ( struct sockaddr * ) &serv_addr, sizeof( serv_addr ) ) < 0 )
             {
@@ -453,7 +380,14 @@ int main( int argc, char *argv[] )
 
         while ( !_r.ending )
         {
-            remainTime = ( ( lastTime + 1000 - genericsTimestampmS() ) * 1000 ) - 500;
+            if ( options.intervalReportTime )
+            {
+                remainTime = ( ( lastTime + options.intervalReportTime - genericsTimestampmS() ) * 1000 ) - 500;
+            }
+            else
+            {
+                remainTime = ( ( lastTime + 1000 - genericsTimestampmS() ) * 1000 ) - 500;
+            }
 
             r = t = 0;
 
@@ -485,6 +419,54 @@ int main( int argc, char *argv[] )
 
                 /* Pump all of the data through the protocol handler */
                 _processBlock( t, cbw );
+            }
+
+            /* See if its time to report on the past seconds stats */
+            if ( r == 0 )
+            {
+                lastTime = genericsTimestampmS();
+
+                if ( options.intervalReportTime )
+                {
+
+                    /* Grab the interval and scale to 1 second */
+                    snapInterval = _r.intervalBytes * 1000 / options.intervalReportTime;
+                    _r.intervalBytes = 0;
+
+                    snapInterval *= 8;
+                    genericsPrintf( C_PREV_LN C_CLR_LN C_DATA );
+
+                    if ( snapInterval / 1000000 )
+                    {
+                        genericsPrintf( "%4d.%d " C_RESET "MBits/sec ", snapInterval / 1000000, ( snapInterval * 1 / 100000 ) % 10 );
+                    }
+                    else if ( snapInterval / 1000 )
+                    {
+                        genericsPrintf( "%4d.%d " C_RESET "KBits/sec ", snapInterval / 1000, ( snapInterval / 100 ) % 10 );
+                    }
+                    else
+                    {
+                        genericsPrintf( "  %4d " C_RESET " Bits/sec ", snapInterval );
+                    }
+
+
+                    {
+                        struct TPIUCommsStats *c = etmdecCommsStats( &_r.f );
+
+                        genericsPrintf( C_RESET " LEDS: %s%s%s%s" C_RESET " Frames: "C_DATA "%u" C_RESET,
+                                        c->leds & 1 ? C_DATA_IND "d" : C_RESET "-",
+                                        c->leds & 2 ? C_TX_IND "t" : C_RESET "-",
+                                        c->leds & 0x20 ? C_OVF_IND "O" : C_RESET "-",
+                                        c->leds & 0x80 ? C_HB_IND "h" : C_RESET "-",
+                                        c->totalFrames );
+
+                        genericsReport( V_INFO, " Pending:%5d Lost:%5d",
+                                        c->pendingCount,
+                                        c->lostFrames );
+                    }
+
+                    genericsPrintf( C_RESET EOL );
+                }
             }
         }
 

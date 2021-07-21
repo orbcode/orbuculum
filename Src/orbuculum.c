@@ -73,41 +73,29 @@
 
 #include "git_version_info.h"
 #include "generics.h"
+#include "tpiuDecoder.h"
 
 #include "nwclient.h"
 
-#ifdef INCLUDE_FPGA_SUPPORT
+#ifdef INCLUDE_SERIAL_FPGA_SUPPORT
     #define FPGA_MAX_FRAMES (0x1ff)
 
     #include <libftdi1/ftdi.h>
     #include "ftdispi.h"
-    #define IF_INCLUDE_FPGA_SUPPORT(...) __VA_ARGS__
+    #define IF_INCLUDE_SERIAL_FPGA_SUPPORT(...) __VA_ARGS__
     #define FPGA_SERIAL_INTERFACE_SPEED (12000000)
 
-    #ifdef FPGA_UART_FEEDER
-        #define EFFECTIVE_DATA_TRANSFER_SPEED ((FPGA_SERIAL_INTERFACE_SPEED/10)*8)
-        #define FPGA_HS_TRANSFER_SIZE (512)
-    #endif
-
-    #ifdef FPGA_SPI_FEEDER
-        #define FTDI_INTERFACE (INTERFACE_A)
-        #define FTDI_INTERFACE_SPEED CLOCK_MAX_SPEEDX5
-        #define EFFECTIVE_DATA_TRANSFER_SPEED (21600000)
-        #define FTDI_VID  (0x0403)
-        #define FTDI_PID  (0x6010)
-        #define FTDI_PACKET_SIZE  (16)
-        #define FTDI_NUM_FRAMES   (511)  // If you make this too large the driver drops frames
-        #define FTDI_HS_TRANSFER_SIZE (FTDI_PACKET_SIZE*(FTDI_NUM_FRAMES+2))
-        #define FPGA_AWAKE  (0x80)
-        #define FPGA_ASLEEP (0x90)
-    #endif
+    #define EFFECTIVE_DATA_TRANSFER_SPEED ((FPGA_SERIAL_INTERFACE_SPEED/10)*8)
+    #define FPGA_HS_TRANSFER_SIZE (512)
 
 #else
-    #define IF_INCLUDE_FPGA_SUPPORT(...)
+    #define IF_INCLUDE_SERIAL_FPGA_SUPPORT(...)
 #endif
 
 #define SEGGER_HOST "localhost"               /* Address to connect to SEGGER */
 #define SEGGER_PORT (2332)
+
+#define NUM_TPIU_CHANNELS 0x80
 
 /* Table of known devices to try opening */
 static const struct deviceList
@@ -126,71 +114,81 @@ static const struct deviceList
     { 0, 0, 0, 0, 0 }
 };
 
-#ifndef TRANSFER_SIZE
-    #define TRANSFER_SIZE (4096)
-#endif
-#define TRANSFER_BUFFER_COUNT (256)
-
 //#define DUMP_BLOCK
 
 /* Record for options, either defaults or from command line */
-struct
+struct Options
 {
     /* Config information */
     bool segger;                                         /* Using a segger debugger */
 
     /* FPGA Information */
-    IF_INCLUDE_FPGA_SUPPORT( bool orbtrace; )            /* In trace mode? */
-    IF_INCLUDE_FPGA_SUPPORT( uint32_t orbtraceWidth; )   /* Trace pin width */
+    IF_INCLUDE_SERIAL_FPGA_SUPPORT( bool orbtrace; )            /* In trace mode? */
+    IF_INCLUDE_SERIAL_FPGA_SUPPORT( uint32_t orbtraceWidth; )   /* Trace pin width */
 
     /* Source information */
     char *seggerHost;                                    /* Segger host connection */
     int32_t seggerPort;                                  /* ...and port */
     char *port;                                          /* Serial host connection */
     int speed;                                           /* Speed of serial link */
+    bool useTPIU;                                        /* Are we using TPIU, and stripping TPIU frames? */
     uint32_t dataSpeed;                                  /* Effective data speed (can be less than link speed!) */
     char *file;                                          /* File host connection */
     bool fileTerminate;                                  /* Terminate when file read isn't successful */
 
     uint32_t intervalReportTime;                         /* If we want interval reports about performance */
 
+    char *channelList;                                   /* List of TPIU channels to be serviced */
+
     /* Network link */
     int listenPort;                                      /* Listening port for network */
-} options =
+} _options =
 {
     .listenPort = NWCLIENT_SERVER_PORT,
     .seggerHost = SEGGER_HOST,
-#ifdef INCLUDE_FPGA_SUPPORT
+#ifdef INCLUDE_SERIAL_FPGA_SUPPORT
     .orbtraceWidth = 4
 #endif
 };
 
 struct dataBlock
 {
-    uint32_t fillLevel;
+    ssize_t fillLevel;
     uint8_t buffer[TRANSFER_SIZE];
 };
 
-struct
+struct handlers
 {
-    /* Link to the network client subsystem */
-    struct nwclientsHandle *n;
+    uint8_t channel;
+    struct dataBlock *strippedBlock;                                         /* Processed buffer for output to clients */
+    struct nwclientsHandle *n;                                               /* Link to the network client subsystem */
+};
+
+struct RunTime
+{
+    struct TPIUDecoder t;                                                    /* TPIU decoder instance, in case we need it */
 
     /* Link to the FPGA subsystem */
-    IF_INCLUDE_FPGA_SUPPORT( struct ftdi_context *ftdi );              /* Connection materials for ftdi fpga interface */
-    IF_INCLUDE_FPGA_SUPPORT( struct ftdispi_context ftdifsc );
+    IF_INCLUDE_SERIAL_FPGA_SUPPORT( struct ftdi_context *ftdi );             /* Connection materials for ftdi fpga interface */
+    IF_INCLUDE_SERIAL_FPGA_SUPPORT( struct ftdispi_context ftdifsc );
 
-    uint64_t  intervalBytes;                                           /* Number of bytes transferred in current interval */
+    uint64_t  intervalBytes;                                                 /* Number of bytes transferred in current interval */
 
-    pthread_t intervalThread;                                          /* Thread reporting on intervals */
-    bool      ending;                                                  /* Flag indicating app is terminating */
+    pthread_t intervalThread;                                                /* Thread reporting on intervals */
+    bool      ending;                                                        /* Flag indicating app is terminating */
+    int f;                                                                   /* File handle to data source */
 
-    /* Transfer buffers from the receiver */
-    sem_t dataWaiting;
-    uint32_t wp;
-    uint32_t rp;
-    struct dataBlock bufSet[TRANSFER_BUFFER_COUNT];
-} _r;
+    struct Options *options;                                                 /* Command line options (reference to above) */
+
+    struct dataBlock rawBlock;                                               /* Transfer buffer from the receiver */
+
+    uint8_t numHandlers;                                                     /* Number of TPIU channel handlers in use */
+    struct handlers *handler;
+    struct nwclientsHandle *n;                                               /* Link to the network client subsystem (used for non-TPIU case) */
+} _r =
+{
+    .options = &_options
+};
 
 // ====================================================================================================
 // ====================================================================================================
@@ -297,44 +295,44 @@ static int _setSerialConfig ( int f, speed_t speed )
 void _printHelp( char *progName )
 
 {
-
-    genericsPrintf( "Usage: %s <hv> <s name:number> <f filename>  <p port> <a speed>" EOL, progName );
-    genericsPrintf( "        a: <serialSpeed> to use" EOL );
-    genericsPrintf( "        e: When reading from file, terminate at end of file rather than waiting for further input" EOL );
-    genericsPrintf( "        f: <filename> Take input from specified file" EOL );
-    genericsPrintf( "        h: This help" EOL );
-    genericsPrintf( "        l: <port> Listen port for the incoming connections (defaults to %d)" EOL, NWCLIENT_SERVER_PORT );
-    genericsPrintf( "        m: <interval> Output monitor information about the link at <interval>ms" EOL );
-    IF_INCLUDE_FPGA_SUPPORT( genericsPrintf( "        o: <num> Use traceport FPGA custom interface with 1, 2 or 4 bits width" EOL ) );
-    genericsPrintf( "        p: <serialPort> to use" EOL );
-    genericsPrintf( "        s: <Server>:<Port> to use" EOL );
-    genericsPrintf( "        v: <level> Verbose mode 0(errors)..3(debug)" EOL );
+    genericsPrintf( "Usage: %s [options]" EOL, progName );
+    genericsPrintf( "       -a: <serialSpeed> to use" EOL );
+    genericsPrintf( "       -e: When reading from file, terminate at end of file" EOL );
+    genericsPrintf( "       -f: <filename> Take input from specified file" EOL );
+    genericsPrintf( "       -h: This help" EOL );
+    genericsPrintf( "       -l: <port> Listen port for the incoming connections (defaults to %d)" EOL, NWCLIENT_SERVER_PORT );
+    genericsPrintf( "       -m: <interval> Output monitor information about the link at <interval>ms" EOL );
+    IF_INCLUDE_SERIAL_FPGA_SUPPORT( genericsPrintf( "        o: <num> Use traceport FPGA custom interface with 1, 2 or 4 bits width" EOL ) );
+    genericsPrintf( "       -p: <serialPort> to use" EOL );
+    genericsPrintf( "       -s: <Server>:<Port> to use" EOL );
+    genericsPrintf( "       -t: <Channel , ...> Use TPIU channels (and strip TIPU framing from output flows)" EOL );
+    genericsPrintf( "       -v: <level> Verbose mode 0(errors)..3(debug)" EOL );
 }
 // ====================================================================================================
-int _processOptions( int argc, char *argv[] )
+int _processOptions( int argc, char *argv[], struct RunTime *r )
 
 {
     int c;
 #define DELIMITER ','
 
-    while ( ( c = getopt ( argc, argv, "a:ef:hl:m:no:p:s:v:" ) ) != -1 )
+    while ( ( c = getopt ( argc, argv, "a:ef:hl:m:no:p:s:t:v:" ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
             case 'a':
-                options.speed = atoi( optarg );
-                options.dataSpeed = options.speed;
+                r->options->speed = atoi( optarg );
+                r->options->dataSpeed = r->options->speed;
                 break;
 
             // ------------------------------------
 
             case 'e':
-                options.fileTerminate = true;
+                r->options->fileTerminate = true;
                 break;
 
             // ------------------------------------
             case 'f':
-                options.file = optarg;
+                r->options->file = optarg;
                 break;
 
             // ------------------------------------
@@ -345,36 +343,37 @@ int _processOptions( int argc, char *argv[] )
             // ------------------------------------
 
             case 'l':
-                options.listenPort = atoi( optarg );
+                r->options->listenPort = atoi( optarg );
                 break;
 
             // ------------------------------------
 
             case 'm':
-                options.intervalReportTime = atoi( optarg );
+                r->options->intervalReportTime = atoi( optarg );
                 break;
 
                 // ------------------------------------
 
-#ifdef INCLUDE_FPGA_SUPPORT
+#ifdef INCLUDE_SERIAL_FPGA_SUPPORT
 
             case 'o':
                 // Generally you need TPIU for orbtrace
-                options.orbtrace = true;
-                options.orbtraceWidth = atoi( optarg );
+                r->options->orbtrace = true;
+                r->options->useTPIU = true;
+                r->options->orbtraceWidth = atoi( optarg );
                 break;
 #endif
 
             // ------------------------------------
 
             case 'p':
-                options.port = optarg;
+                r->options->port = optarg;
                 break;
 
             // ------------------------------------
 
             case 's':
-                options.seggerHost = optarg;
+                r->options->seggerHost = optarg;
 
                 // See if we have an optional port number too
                 char *a = optarg;
@@ -387,14 +386,20 @@ int _processOptions( int argc, char *argv[] )
                 if ( *a == ':' )
                 {
                     *a = 0;
-                    options.seggerPort = atoi( ++a );
+                    r->options->seggerPort = atoi( ++a );
                 }
 
-                if ( !options.seggerPort )
+                if ( !r->options->seggerPort )
                 {
-                    options.seggerPort = SEGGER_PORT;
+                    r->options->seggerPort = SEGGER_PORT;
                 }
 
+                break;
+
+            // ------------------------------------
+            case 't':
+                r->options->useTPIU = true;
+                r->options->channelList = optarg;
                 break;
 
             // ------------------------------------
@@ -423,24 +428,24 @@ int _processOptions( int argc, char *argv[] )
                 // ------------------------------------
         }
 
-#ifdef INCLUDE_FPGA_SUPPORT
+#ifdef INCLUDE_SERIAL_FPGA_SUPPORT
 
-    if ( ( options.orbtrace ) && !( ( options.orbtraceWidth == 1 ) || ( options.orbtraceWidth == 2 ) || ( options.orbtraceWidth == 4 ) ) )
+    if ( ( r->options->orbtrace ) && !( ( r->options->orbtraceWidth == 1 ) || ( r->options->orbtraceWidth == 2 ) || ( r->options->orbtraceWidth == 4 ) ) )
     {
         genericsReport( V_ERROR, "Orbtrace interface illegal port width" EOL );
         return false;
     }
 
-    if ( ( options.orbtrace ) && ( !options.port ) )
+    if ( ( r->options->orbtrace ) && ( !r->options->port ) )
     {
         genericsReport( V_ERROR, "Supporting serial port needs to be specified for orbtrace" EOL );
         return false;
     }
 
     /* Override link speed as primary capacity indicator for orbtrace case */
-    if ( options.orbtrace )
+    if ( r->options->orbtrace )
     {
-        options.dataSpeed = EFFECTIVE_DATA_TRANSFER_SPEED;
+        r->options->dataSpeed = EFFECTIVE_DATA_TRANSFER_SPEED;
     }
 
 #endif
@@ -448,52 +453,54 @@ int _processOptions( int argc, char *argv[] )
     /* ... and dump the config if we're being verbose */
     genericsReport( V_INFO, "Orbuculum V" VERSION " (Git %08X %s, Built " BUILD_DATE ")" EOL, GIT_HASH, ( GIT_DIRTY ? "Dirty" : "Clean" ) );
 
-    if ( options.intervalReportTime )
+    if ( r->options->intervalReportTime )
     {
-        genericsReport( V_INFO, "Report Intv : %d mS" EOL, options.intervalReportTime );
+        genericsReport( V_INFO, "Report Intv    : %d mS" EOL, r->options->intervalReportTime );
     }
 
-    if ( options.port )
+    if ( r->options->port )
     {
-        genericsReport( V_INFO, "Serial Port : %s" EOL, options.port );
+        genericsReport( V_INFO, "Serial Port    : %s" EOL, r->options->port );
     }
 
-    if ( options.speed )
+    if ( r->options->speed )
     {
-        genericsReport( V_INFO, "Serial Speed: %d baud" EOL, options.speed );
+        genericsReport( V_INFO, "Serial Speed   : %d baud" EOL, r->options->speed );
     }
 
-    if ( options.dataSpeed )
+    if ( r->options->dataSpeed )
     {
-        genericsReport( V_INFO, "Max Data Rt : %d bps" EOL, options.dataSpeed );
+        genericsReport( V_INFO, "Max Data Rt    : %d bps" EOL, r->options->dataSpeed );
     }
 
-    if ( options.seggerPort )
+    if ( r->options->seggerPort )
     {
-        genericsReport( V_INFO, "SEGGER H&P : %s:%d" EOL, options.seggerHost, options.seggerPort );
+        genericsReport( V_INFO, "SEGGER H&P    : %s:%d" EOL, r->options->seggerHost, r->options->seggerPort );
     }
 
-#ifdef INCLUDE_FPGA_SUPPORT
-
-    if ( options.orbtrace )
+    if ( r->options->useTPIU )
     {
-        genericsReport( V_INFO, "Orbtrace    : %d bits width, ", options.orbtraceWidth );
-#ifdef FPGA_SPI_FEEDER
-        genericsReport( V_INFO, "SPI Feeder" EOL );
-#elif defined(FPGA_UART_FEEDER)
-        genericsReport( V_INFO, "UART Feeder" EOL );
-#else
-        genericsReport( V_INFO, "NO Feeder" EOL );
+        genericsReport( V_INFO, "Use/Strip TPIU : True (Channel List %s)" EOL, r->options->channelList );
+    }
+    else
+    {
+        genericsReport( V_INFO, "Use/Strip TPIU : False" EOL );
+    }
+
+#ifdef INCLUDE_SERIAL_FPGA_SUPPORT
+
+    if ( r->options->orbtrace )
+    {
+        genericsReport( V_INFO, "Serial Orbtrace: %d bits width, ", r->options->orbtraceWidth );
+    }
+
 #endif
-    }
 
-#endif
-
-    if ( options.file )
+    if ( r->options->file )
     {
-        genericsReport( V_INFO, "Input File  : %s", options.file );
+        genericsReport( V_INFO, "Input File  : %s", r->options->file );
 
-        if ( options.fileTerminate )
+        if ( r->options->fileTerminate )
         {
             genericsReport( V_INFO, " (Terminate on exhaustion)" EOL );
         }
@@ -503,13 +510,13 @@ int _processOptions( int argc, char *argv[] )
         }
     }
 
-    if ( ( options.file ) && ( ( options.port ) || ( options.seggerPort ) ) )
+    if ( ( r->options->file ) && ( ( r->options->port ) || ( r->options->seggerPort ) ) )
     {
         genericsReport( V_ERROR, "Cannot specify file and port or Segger at same time" EOL );
         return false;
     }
 
-    if ( ( options.port ) && ( options.seggerPort ) )
+    if ( ( r->options->port ) && ( r->options->seggerPort ) )
     {
         genericsReport( V_ERROR, "Cannot specify port and Segger at same time" EOL );
         return false;
@@ -523,15 +530,16 @@ void *_checkInterval( void *params )
 /* Perform any interval reporting that may be needed */
 
 {
+    struct RunTime *r = ( struct RunTime * )params;
     uint64_t snapInterval;
 
-    while ( !_r.ending )
+    while ( !r->ending )
     {
-        usleep( options.intervalReportTime * 1000 );
+        usleep( r->options->intervalReportTime * 1000 );
 
         /* Grab the interval and scale to 1 second */
-        snapInterval = _r.intervalBytes * 1000 / options.intervalReportTime;
-        _r.intervalBytes = 0;
+        snapInterval = r->intervalBytes * 1000 / r->options->intervalReportTime;
+        r->intervalBytes = 0;
 
         snapInterval *= 8;
         genericsPrintf( C_PREV_LN C_CLR_LN C_DATA );
@@ -549,11 +557,27 @@ void *_checkInterval( void *params )
             genericsPrintf( "  %4d " C_RESET " Bits/sec ", snapInterval );
         }
 
-        if ( options.dataSpeed > 100 )
+        if ( r->options->dataSpeed > 100 )
         {
             /* Conversion to percentage done as a division to avoid overflow */
-            uint32_t fullPercent = ( snapInterval * 100 ) / options.dataSpeed;
+            uint32_t fullPercent = ( snapInterval * 100 ) / r->options->dataSpeed;
             genericsPrintf( "(" C_DATA " %3d%% " C_RESET "full)", ( fullPercent > 100 ) ? 100 : fullPercent );
+        }
+
+        if ( r->options->useTPIU )
+        {
+            struct TPIUCommsStats *c = TPIUGetCommsStats( &r->t );
+
+            genericsPrintf( C_RESET " LEDS: %s%s%s%s" C_RESET " Frames: "C_DATA "%u" C_RESET,
+                            c->leds & 1 ? C_DATA_IND "d" : C_RESET "-",
+                            c->leds & 2 ? C_TX_IND "t" : C_RESET "-",
+                            c->leds & 0x20 ? C_OVF_IND "O" : C_RESET "-",
+                            c->leds & 0x80 ? C_HB_IND "h" : C_RESET "-",
+                            c->totalFrames );
+
+            genericsReport( V_INFO, " Pending:%5d Lost:%5d",
+                            c->pendingCount,
+                            c->lostFrames );
         }
 
         genericsPrintf( C_RESET EOL );
@@ -562,22 +586,112 @@ void *_checkInterval( void *params )
     return NULL;
 }
 // ====================================================================================================
-static void _processBlock( int s, unsigned char *cbw )
+static void _purgeBlock( struct RunTime *r )
+
+{
+    /* Now send any packets to clients who want it */
+
+    if ( r->options->useTPIU )
+    {
+        struct handlers *h = r->handler;
+        int i = r->numHandlers;
+
+        while ( i-- )
+        {
+            if ( h->strippedBlock->fillLevel )
+            {
+                nwclientSend( h->n, h->strippedBlock->fillLevel, h->strippedBlock->buffer );
+                h->strippedBlock->fillLevel = 0;
+                h++;
+            }
+        }
+    }
+}
+// ====================================================================================================
+static void _stripTPIU( struct RunTime *r )
+
+{
+    struct TPIUPacket p;
+    uint8_t *c = ( uint8_t * )r->rawBlock.buffer;
+    ssize_t bytes = r->rawBlock.fillLevel;
+
+    struct handlers *h = NULL;
+    int cachedChannel;
+    int chIndex = 0;
+
+    cachedChannel = -1;
+
+    while ( bytes-- )
+    {
+        switch ( TPIUPump( &r->t, *c++ ) )
+        {
+            case TPIU_EV_RXEDPACKET:
+                if ( !TPIUGetPacket( &r->t, &p ) )
+                {
+                    genericsReport( V_WARN, "TPIUGetPacket fell over" EOL );
+                }
+
+                /* Iterate through the packet, putting it into the correct output buffers */
+                for ( uint32_t g = 0; g < p.len; g++ )
+                {
+                    if ( cachedChannel != p.packet[g].s )
+                    {
+                        /* Whatever happens, cache this result */
+                        cachedChannel = p.packet[g].s;
+
+                        /* Search for channel */
+                        h = r->handler;
+
+                        for ( chIndex = 0; chIndex < r->numHandlers; chIndex++ )
+                        {
+                            if ( h->channel == p.packet[g].s )
+                            {
+                                break;
+                            }
+
+                            h++;
+                        }
+                    }
+
+                    if ( chIndex != r->numHandlers )
+                    {
+                        /* We must have found a match for this at some point, so add it to the queue */
+                        h->strippedBlock->buffer[h->strippedBlock->fillLevel++] = p.packet[g].d;
+                    }
+                }
+
+                break;
+
+            case TPIU_EV_ERROR:
+                genericsReport( V_WARN, "****ERROR****" EOL );
+                break;
+
+            case TPIU_EV_NEWSYNC:
+            case TPIU_EV_SYNCED:
+            case TPIU_EV_RXING:
+            case TPIU_EV_NONE:
+            case TPIU_EV_UNSYNCED:
+            default:
+                break;
+        }
+    }
+}
+// ====================================================================================================
+static void _processBlock( struct RunTime *r )
 
 /* Generic block processor for received data */
 
 {
-    genericsReport( V_DEBUG, "RXED Packet of %d bytes" EOL, s );
+    genericsReport( V_DEBUG, "RXED Packet of %d bytes" EOL, r->rawBlock.fillLevel );
 
-
-    if ( s )
+    if ( r->rawBlock.fillLevel )
     {
         /* Account for this reception */
-        _r.intervalBytes += s;
+        r->intervalBytes += r->rawBlock.fillLevel;
 
 #ifdef DUMP_BLOCK
-        uint8_t *c = cbw;
-        uint32_t y = s;
+        uint8_t *c = r->rawBlock.buffer;
+        uint32_t y = r->rawBlock.fillLevel;
 
         fprintf( stderr, EOL );
 
@@ -592,18 +706,26 @@ static void _processBlock( int s, unsigned char *cbw )
         }
 
 #endif
-        nwclientSend( _r.n, s, cbw );
-    }
 
+        if ( r-> options->useTPIU )
+        {
+            /* Strip the TPIU framing from this input */
+            _stripTPIU( r );
+            _purgeBlock( r );
+        }
+        else
+        {
+            /* Do it the old fashioned way and send out the unfettered block */
+            nwclientSend( _r.n, r->rawBlock.fillLevel, r->rawBlock.buffer );
+        }
+    }
 }
 // ====================================================================================================
-int usbFeeder( void )
+int usbFeeder( struct RunTime *r )
 
 {
-    uint8_t cbw[TRANSFER_SIZE];
     libusb_device_handle *handle = NULL;
     libusb_device *dev;
-    int32_t size;
     const struct deviceList *p;
     uint8_t iface;
     uint8_t ep;
@@ -611,7 +733,7 @@ int usbFeeder( void )
     uint8_t num_altsetting = 0;
     int32_t err;
 
-    while ( !_r.ending )
+    while ( !r->ending )
     {
         if ( libusb_init( NULL ) < 0 )
         {
@@ -717,17 +839,17 @@ int usbFeeder( void )
 
         genericsReport( V_DEBUG, "USB Interface claimed, ready for data" EOL );
 
-        while ( !_r.ending )
+        while ( !r->ending )
         {
-            int32_t r = libusb_bulk_transfer( handle, ep, cbw, TRANSFER_SIZE, ( int * )&size, 10 );
+            int32_t ret = libusb_bulk_transfer( handle, ep, r->rawBlock.buffer, TRANSFER_SIZE, ( int * )&r->rawBlock.fillLevel, 10 );
 
-            if ( ( r < 0 ) && ( r != LIBUSB_ERROR_TIMEOUT ) )
+            if ( ( ret < 0 ) && ( ret != LIBUSB_ERROR_TIMEOUT ) )
             {
-                genericsReport( V_INFO, "USB data collection failed with error %d" EOL, r );
+                genericsReport( V_INFO, "USB data collection failed with error %d" EOL, ret );
                 break;
             }
 
-            _processBlock( size, cbw );
+            _processBlock( r );
         }
 
         libusb_close( handle );
@@ -737,19 +859,18 @@ int usbFeeder( void )
     return 0;
 }
 // ====================================================================================================
-int seggerFeeder( void )
+int seggerFeeder( struct RunTime *r )
 
 {
-    int sockfd;
+    //int sockfd;
     struct sockaddr_in serv_addr;
     struct hostent *server;
-    uint8_t cbw[TRANSFER_SIZE];
+    //    uint8_t cbw[TRANSFER_SIZE];
 
-    ssize_t t;
     int flag = 1;
 
     bzero( ( char * ) &serv_addr, sizeof( serv_addr ) );
-    server = gethostbyname( options.seggerHost );
+    server = gethostbyname( r->options->seggerHost );
 
     if ( !server )
     {
@@ -761,39 +882,39 @@ int seggerFeeder( void )
     bcopy( ( char * )server->h_addr,
            ( char * )&serv_addr.sin_addr.s_addr,
            server->h_length );
-    serv_addr.sin_port = htons( options.seggerPort );
+    serv_addr.sin_port = htons( r->options->seggerPort );
 
-    while ( !_r.ending )
+    while ( !r->ending )
     {
-        sockfd = socket( AF_INET, SOCK_STREAM, 0 );
-        setsockopt( sockfd, SOL_SOCKET, SO_REUSEPORT, &flag, sizeof( flag ) );
+        r->f = socket( AF_INET, SOCK_STREAM, 0 );
+        setsockopt( r->f, SOL_SOCKET, SO_REUSEPORT, &flag, sizeof( flag ) );
 
-        if ( sockfd < 0 )
+        if ( r->f < 0 )
         {
             genericsReport( V_ERROR, "Error creating socket" EOL );
             return -1;
         }
 
-        while ( ( !_r.ending ) && ( connect( sockfd, ( struct sockaddr * ) &serv_addr, sizeof( serv_addr ) ) < 0 ) )
+        while ( ( !r->ending ) && ( connect( r->f, ( struct sockaddr * ) &serv_addr, sizeof( serv_addr ) ) < 0 ) )
         {
             usleep( 500000 );
         }
 
-        if ( _r.ending )
+        if ( r->ending )
         {
             break;
         }
 
         genericsReport( V_INFO, "Established Segger Link" EOL );
 
-        while ( !_r.ending && ( ( t = read( sockfd, cbw, TRANSFER_SIZE ) ) > 0 ) )
+        while ( !r->ending && ( ( r->rawBlock.fillLevel = read( r->f, r->rawBlock.buffer, TRANSFER_SIZE ) ) > 0 ) )
         {
-            _processBlock( t, cbw );
+            _processBlock( r );
         }
 
-        close( sockfd );
+        close( r->f );
 
-        if ( ! _r.ending )
+        if ( ! r->ending )
         {
             genericsReport( V_INFO, "Lost Segger Link" EOL );
         }
@@ -802,20 +923,18 @@ int seggerFeeder( void )
     return -2;
 }
 // ====================================================================================================
-int serialFeeder( void )
+int serialFeeder( struct RunTime *r )
 {
-    int f, ret;
-    unsigned char cbw[TRANSFER_SIZE];
-    ssize_t t;
+    int ret;
 
-    while ( !_r.ending )
+    while ( !r->ending )
     {
 #ifdef OSX
         int flags;
 
-        while ( !_r.ending && ( f = open( options.port, O_RDONLY | O_NONBLOCK ) ) < 0 )
+        while ( !r->ending && ( r->f = open( r->options->port, O_RDONLY | O_NONBLOCK ) ) < 0 )
 #else
-        while ( !_r.ending && ( f = open( options.port, O_RDONLY ) ) < 0 )
+        while ( !r->ending && ( r->f = open( r->options->port, O_RDONLY ) ) < 0 )
 #endif
         {
             genericsReport( V_WARN, "Can't open serial port" EOL );
@@ -827,62 +946,57 @@ int serialFeeder( void )
 #ifdef OSX
         /* Remove the O_NONBLOCK flag now the port is open (OSX Only) */
 
-        if ( ( flags = fcntl( f, F_GETFL, NULL ) ) < 0 )
+        if ( ( flags = fcntl( r->f, F_GETFL, NULL ) ) < 0 )
         {
             genericsExit( -3, "F_GETFL failed" EOL );
         }
 
         flags &= ~O_NONBLOCK;
 
-        if ( ( flags = fcntl( f, F_SETFL, flags ) ) < 0 )
+        if ( ( flags = fcntl( r->f, F_SETFL, flags ) ) < 0 )
         {
             genericsExit( -3, "F_SETFL failed" EOL );
         }
 
 #endif
 
-        if ( ( ret = _setSerialConfig ( f, options.speed ) ) < 0 )
+        if ( ( ret = _setSerialConfig ( r->f, r->options->speed ) ) < 0 )
         {
             genericsExit( ret, "setSerialConfig failed" EOL );
         }
 
-        while ( ( !_r.ending ) && ( t = read( f, cbw, TRANSFER_SIZE ) ) > 0 )
+        while ( ( !r->ending ) && ( r->rawBlock.fillLevel = read( r->f, r->rawBlock.buffer, TRANSFER_SIZE ) ) > 0 )
         {
-            _processBlock( t, cbw );
+            _processBlock( r );
         }
 
-        if ( ! _r.ending )
+        if ( ! r->ending )
         {
             genericsReport( V_INFO, "Read failed" EOL );
         }
 
-        close( f );
+        close( r->f );
     }
 
     return 0;
 }
 // ====================================================================================================
-#ifdef INCLUDE_FPGA_SUPPORT
-
-#ifdef FPGA_UART_FEEDER
-int fpgaFeeder( void )
+#ifdef INCLUDE_SERIAL_FPGA_SUPPORT
+int serialFpgaFeeder( struct RunTime *r )
 {
-    int f, ret;
+    int ret;
 
-    unsigned char cbw[FPGA_HS_TRANSFER_SIZE];
-    ssize_t t;
+    assert( ( r->options->orbtraceWidth == 1 ) || ( r->options->orbtraceWidth == 2 ) || ( r->options->orbtraceWidth == 4 ) );
+    uint8_t wwString[] = { 'w', 0xA0 | ( ( r->options->orbtraceWidth == 4 ) ? 3 : r->options->orbtraceWidth ) };
 
-    assert( ( options.orbtraceWidth == 1 ) || ( options.orbtraceWidth == 2 ) || ( options.orbtraceWidth == 4 ) );
-    uint8_t wwString[] = { 'w', 0xA0 | ( ( options.orbtraceWidth == 4 ) ? 3 : options.orbtraceWidth ) };
-
-    while ( !_r.ending )
+    while ( !r->ending )
     {
 #ifdef OSX
         int flags;
 
-        while ( ( !_r.ending ) && ( f = open( options.port, O_RDWR | O_NONBLOCK ) ) < 0 )
+        while ( ( !r->ending ) && ( r->f = open( r->options->port, O_RDWR | O_NONBLOCK ) ) < 0 )
 #else
-        while ( ( !_r.ending ) && ( f = open( options.port, O_RDWR ) ) < 0 )
+        while ( ( !r->ending ) && ( r->f = open( r->options->port, O_RDWR ) ) < 0 )
 #endif
         {
             genericsReport( V_WARN, "Can't open fpga serial port" EOL );
@@ -894,219 +1008,67 @@ int fpgaFeeder( void )
 #ifdef OSX
         /* Remove the O_NONBLOCK flag now the port is open (OSX Only) */
 
-        if ( ( flags = fcntl( f, F_GETFL, NULL ) ) < 0 )
+        if ( ( flags = fcntl( r->f, F_GETFL, NULL ) ) < 0 )
         {
             genericsExit( -3, "F_GETFL failed" EOL );
         }
 
         flags &= ~O_NONBLOCK;
 
-        if ( ( flags = fcntl( f, F_SETFL, flags ) ) < 0 )
+        if ( ( flags = fcntl( r->f, F_SETFL, flags ) ) < 0 )
         {
             genericsExit( -3, "F_SETFL failed" EOL );
         }
 
 #endif
 
-        if ( ( ret = _setSerialConfig ( f, FPGA_SERIAL_INTERFACE_SPEED ) ) < 0 )
+        if ( ( ret = _setSerialConfig ( r->f, FPGA_SERIAL_INTERFACE_SPEED ) ) < 0 )
         {
             genericsExit( ret, "fpga setSerialConfig failed" EOL );
         }
 
-        if ( write ( f, wwString, sizeof( wwString ) ) < 0 )
+        if ( write ( r->f, wwString, sizeof( wwString ) ) < 0 )
         {
             genericsExit( ret, "Failed to set orbtrace width" EOL );
         }
 
-        while ( !_r.ending )
+        while ( !r->ending )
         {
-            t = read( f, cbw, FPGA_HS_TRANSFER_SIZE );
+            r->rawBlock.fillLevel = read( r->f, r->rawBlock.buffer, FPGA_HS_TRANSFER_SIZE );
 
-            if ( t < 0 )
+            if ( r->rawBlock.fillLevel < 0 )
             {
                 break;
             }
 
-            _processBlock( t, cbw );
+            _processBlock( r );
         }
 
-        if ( !_r.ending )
+        if ( !r->ending )
         {
             genericsReport( V_INFO, "fpga Read failed" EOL );
         }
 
-        close( f );
+        close( r->f );
     }
 
     return 0;
 }
 #endif
 // ====================================================================================================
-#ifdef FPGA_SPI_FEEDER
-
-int fpgaFeeder( void )
+int fileFeeder( struct RunTime *r )
 
 {
-    int f;
-    uint8_t cbw[FTDI_HS_TRANSFER_SIZE];
-    int t = 0;
-
-    /* Init sequence is <INIT> <0xA0|BITS> <TFR-H> <TFR-L> */
-    assert( ( options.orbtraceWidth == 1 ) || ( options.orbtraceWidth == 2 ) || ( options.orbtraceWidth == 4 ) );
-    uint8_t initSequence[] = { 0xA5, 0xA0 | ( ( options.orbtraceWidth == 4 ) ? 3 : options.orbtraceWidth ), 0, 0 };
-    uint32_t readableFrames = 0;
-
-    // FTDI Chip takes a little while to reset itself
-    usleep( 400000 );
-
-#ifdef OSX
-    int flags;
-
-    while ( ( !_r.ending ) && ( f = open( options.port, O_RDONLY | O_NONBLOCK ) ) < 0 )
-#else
-    while ( !( _r.ending ) && ( f = open( options.port, O_RDONLY ) ) < 0 )
-#endif
+    if ( ( r->f = open( r->options->file, O_RDONLY ) ) < 0 )
     {
-        genericsReport( V_WARN, "Can't open fpga supporting serial port" EOL );
-        usleep( 500000 );
+        genericsExit( -4, "Can't open file %s" EOL, r->options->file );
     }
 
-
-    while ( !_r.ending )
+    while ( ( r->rawBlock.fillLevel = read( r->f, r->rawBlock.buffer, TRANSFER_SIZE ) ) >= 0 )
     {
-        _r.ftdi = ftdi_new();
-        ftdi_set_interface( _r.ftdi, FTDI_INTERFACE );
-
-        do
+        if ( !r->rawBlock.fillLevel )
         {
-            f = ftdi_usb_open( _r.ftdi, FTDI_VID, FTDI_PID );
-
-            if ( f < 0 )
-            {
-                genericsReport( V_WARN, "Cannot open device (%s)" EOL, ftdi_get_error_string( _r.ftdi ) );
-                usleep( 50000 );
-            }
-        }
-        while ( ( f < 0 ) && ( !_r.ending ) );
-
-        genericsReport( V_INFO, "Port opened" EOL );
-        f = ftdispi_open( &_r.ftdifsc, _r.ftdi, FTDI_INTERFACE );
-
-        if ( f < 0 )
-        {
-            genericsReport( V_ERROR, "Cannot open spi %d (%s)" EOL, f, ftdi_get_error_string( _r.ftdi ) );
-            return -2;
-        }
-
-        ftdispi_setmode( &_r.ftdifsc, /*CSH=*/1, /*CPOL =*/0, /*CPHA=*/0, /*LSB=*/0, /*BITMODE=*/0, FPGA_ASLEEP );
-
-        ftdispi_setloopback( &_r.ftdifsc, 0 );
-
-        f = ftdispi_setclock( &_r.ftdifsc, FTDI_INTERFACE_SPEED );
-
-        if ( f < 0 )
-        {
-            genericsReport( V_ERROR, "Cannot set clockrate %d %d (%s)" EOL, f, FTDI_INTERFACE_SPEED, ftdi_get_error_string( _r.ftdi ) );
-            return -2;
-        }
-
-        genericsReport( V_INFO, "All parameters configured" EOL );
-
-        /* First time through, we need to read one frame. The way this protocol works is;    */
-        /* Each frame that comes from the FPGA is 16 bytes long. A frame sync is an explicit */
-        /* value that cannot appear in a frame (fffffff7) that is used to 'reset' the frame  */
-        /* counter inside the TPIU Decoder. We can 'hide' data in incomplete packets in the  */
-        /* flow...so we send a packet that goes;                                             */
-        /*           A6 HH LL .. .. .. .. .. .. .. .. .. FF FF FF F7                         */
-        /* at the end of a cluster of frames. That says (in HH LL) how many frames are *now* */
-        /* in the buffer. In the next round we then collect that many frames. This minimises */
-        /* the overhead of using the spi since we're only ever requesting frames that we     */
-        /* know contain valid data.  We also prepend that same footer to the start of a      */
-        /* cluster of frames - that way we know, independently of what has gone before, what */
-        /* is in this cluster.                                                               */
-        /* If you request too many frames (i.e. by overrunning the SPI) then you will just   */
-        /* see repeats of the footer, and those will be ignored by the protocol decoder.     */
-        /* If you _underrun_ then you might get the wrong number of frames next time around  */
-        /* again, but it'll correct.                                                         */
-        /* For the startup or reset case, we request zero frames, then we just get the header*/
-        /* and footer, and the contents of the footer allow us to get into sync.             */
-        /* (as a fringe benefit, we encode other data in the fake header too, but that is all*/
-        /* decoded in the TPIU decoder, not here.                                            */
-
-        /* SPI will wake up for duration of read, then back to sleep again */
-        while ( !_r.ending )
-        {
-            /* Try and read some data */
-            t = ftdispi_write_read( &_r.ftdifsc, initSequence, 4,
-                                    cbw,
-                                    ( readableFrames + 2 ) * FTDI_PACKET_SIZE,
-                                    FPGA_AWAKE );
-
-            if ( t < 0 )
-            {
-                break;
-            }
-
-            genericsReport( V_DEBUG, "RXED frame of %d packets" EOL, readableFrames );
-
-            /* We deliberately include the first element in the transfer so there's a frame sync (0xfffffff7) in the flow */
-            _processBlock( ( readableFrames + 1 )*FTDI_PACKET_SIZE, cbw );
-
-            /* Get pointer to after last valid frame */
-            uint8_t *s = &cbw[ ( readableFrames + 1 ) * FTDI_PACKET_SIZE ];
-
-            /* Final protocol frame should contain number of frames available in next run */
-            if ( ( *s != 0xA6 ) || ( *( s + 12 ) != 0xff ) || ( *( s + 13 ) != 0xff ) ||
-                    ( *( s + 14 ) != 0xff ) || ( *( s + 15 ) != 0x7f ) )
-            {
-                genericsReport( V_INFO, "Protocol error" EOL );
-
-                /* Resetting readable frames will allow us to restart the protocol */
-                readableFrames = 0;
-            }
-            else
-            {
-                readableFrames = ( *( s + 2 ) ) + 256 * ( *( s + 1 ) );
-
-                /* Max out the readable frames in case it exceeds our buffers */
-                readableFrames = ( readableFrames > FTDI_NUM_FRAMES ) ? FTDI_NUM_FRAMES : readableFrames;
-                initSequence[2] = readableFrames / 256;
-                initSequence[3] = readableFrames & 255;
-            }
-        }
-
-        if ( !_r.ending )
-        {
-            genericsReport( V_WARN, "Exit Requested (%d, %s)" EOL, t, ftdi_get_error_string( _r.ftdi ) );
-        }
-
-        ftdispi_close( &_r.ftdifsc, 1 );
-    }
-
-    return 0;
-}
-#endif
-
-#endif
-// ====================================================================================================
-int fileFeeder( void )
-
-{
-    int f;
-    unsigned char cbw[TRANSFER_SIZE];
-    ssize_t t;
-
-    if ( ( f = open( options.file, O_RDONLY ) ) < 0 )
-    {
-        genericsExit( -4, "Can't open file %s" EOL, options.file );
-    }
-
-    while ( ( t = read( f, cbw, TRANSFER_SIZE ) ) >= 0 )
-    {
-
-        if ( !t )
-        {
-            if ( options.fileTerminate )
+            if ( r->options->fileTerminate )
             {
                 break;
             }
@@ -1118,15 +1080,15 @@ int fileFeeder( void )
             }
         }
 
-        _processBlock( t, cbw );
+        _processBlock( r );
     }
 
-    if ( !options.fileTerminate )
+    if ( !r->options->fileTerminate )
     {
         genericsReport( V_INFO, "File read error" EOL );
     }
 
-    close( f );
+    close( r->f );
     return true;
 }
 // ====================================================================================================
@@ -1143,9 +1105,10 @@ static void _doExit( void )
 int main( int argc, char *argv[] )
 
 {
-    /* Setup fifos with forced ITM sync, no TPIU and TPIU on channel 1 if its engaged later */
+    /* Setup TPIU in case we call it into service later */
+    TPIUDecoderInit( &_r.t );
 
-    if ( !_processOptions( argc, argv ) )
+    if ( !_processOptions( argc, argv, &_r ) )
     {
         /* processOptions generates its own error messages */
         genericsExit( -1, "" EOL );
@@ -1166,40 +1129,84 @@ int main( int argc, char *argv[] )
         genericsExit( -1, "Failed to ignore SIGPIPEs" EOL );
     }
 
-    if ( !( _r.n = nwclientStart( options.listenPort ) ) )
+    if ( _r.options->useTPIU )
     {
-        genericsExit( -1, "Failed to make network server" EOL );
+        char *c = _r.options->channelList;
+        int x = 0;
+
+        while ( *c )
+        {
+            while ( *c == ',' )
+            {
+                c++;
+            }
+
+            while ( isdigit( *c ) )
+            {
+                x = x * 10 + ( *c++ -'0' );
+            }
+
+            if ( ( *c ) && ( *c != ',' ) )
+            {
+                genericsExit( -1, "Illegal character in channel list (%c)" EOL, *c );
+            }
+
+            if ( x )
+            {
+                /* This is a good number, so open */
+                if ( ( x < 0 ) || ( x >= NUM_TPIU_CHANNELS ) )
+                {
+                    genericsExit( -1, "Channel number out of range" EOL );
+                }
+
+                _r.handler = ( struct handlers * )realloc( _r.handler, sizeof( struct handlers ) * ( _r.numHandlers + 1 ) );
+
+                _r.handler[_r.numHandlers].channel = x;
+                _r.handler[_r.numHandlers].strippedBlock = ( struct dataBlock * )calloc( 1, sizeof( struct dataBlock ) );
+                _r.handler[_r.numHandlers].n = nwclientStart(  _r.options->listenPort + _r.numHandlers );
+                genericsReport( V_WARN, "Started Network interface for channel %d on port %d" EOL, x, _r.options->listenPort + _r.numHandlers );
+                _r.numHandlers++;
+                x = 0;
+            }
+        }
+    }
+    else
+    {
+        if ( !( _r.n = nwclientStart( _r.options->listenPort ) ) )
+        {
+            genericsExit( -1, "Failed to make network server" EOL );
+        }
     }
 
-    if ( options.intervalReportTime )
+    if ( _r.options->intervalReportTime )
     {
-        pthread_create( &_r.intervalThread, NULL, &_checkInterval, NULL );
+        pthread_create( &_r.intervalThread, NULL, &_checkInterval, &_r );
     }
 
-#ifdef INCLUDE_FPGA_SUPPORT
+#ifdef INCLUDE_SERIAL_FPGA_SUPPORT
 
-    if ( options.orbtrace )
+    if ( _r.options->orbtrace )
     {
-        exit( fpgaFeeder() );
+        exit( serialfpgaFeeder( &_r ) );
     }
 
 #endif
 
-    if ( options.seggerPort )
+    if ( _r.options->seggerPort )
     {
-        exit( seggerFeeder() );
+        exit( seggerFeeder( &_r ) );
     }
 
-    if ( options.port )
+    if ( _r.options->port )
     {
-        exit( serialFeeder() );
+        exit( serialFeeder( &_r ) );
     }
 
-    if ( options.file )
+    if ( _r.options->file )
     {
-        exit( fileFeeder() );
+        exit( fileFeeder( &_r ) );
     }
 
-    exit( usbFeeder() );
+    exit( usbFeeder( &_r ) );
 }
 // ====================================================================================================

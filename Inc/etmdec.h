@@ -1,8 +1,8 @@
 /*
- * Network Server support
- * ======================
+ * ETM Decoder Module
+ * ==================
  *
- * Copyright (C) 2017, 2019  Dave Marples  <dave@marples.net>
+ * Copyright (C) 2021  Dave Marples  <dave@marples.net>
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -31,33 +31,43 @@
  * SUCH DAMAGE.
  */
 
-#ifndef _NW_CLIENT_
-#define _NW_CLIENT_
+#ifndef _ETMDEC_
+#define _ETMDEC_
 
-#include "generics.h"
+#include <stdbool.h>
+#include <stdint.h>
+#include "itmDecoder.h"
+#include "tpiuDecoder.h"
+#include "etmDecoder.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#include <semaphore.h>
+/* Handle for ETM decoder */
+struct etmdecHandle
+
+{
+    /* The decoders and the packets from them */
+    struct TPIUDecoder t;
+    struct TPIUPacket p;
+    struct ETMDecoder i;
+
+    /* Configuration information */
+    int tpiuETMChannel;                           /* TPIU channel on which ETM appears */
+    bool useTPIU;                                 /* If we should use the TPIU at all */
+};
+
 
 // ====================================================================================================
 
-#define NWCLIENT_SERVER_PORT (3443)           /* Server port definition */
-#define TRANSFER_SIZE (1024*16)
+struct TPIUCommsStats *etmdecCommsStats( struct etmdecHandle *f );
+void etmdecProtocolPump( struct etmdecHandle *f, uint8_t c );
+void etmdecSetupTPIUChannel( struct etmdecHandle *f, int channel );
 
-struct nwclientsHandle;
-
+bool etmdecInit( struct etmdecHandle *f, bool useTPIU, int TPIUchannelSet );
 // ====================================================================================================
 
-void nwclientSend( struct nwclientsHandle *h, uint32_t len, uint8_t *buffer );
-
-void nwclientShutdown( struct nwclientsHandle *h );
-bool nwclientShutdownComplete( struct nwclientsHandle *h );
-struct nwclientsHandle *nwclientStart( int port );
-
-// ====================================================================================================
 #ifdef __cplusplus
 }
 #endif
