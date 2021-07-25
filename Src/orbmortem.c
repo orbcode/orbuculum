@@ -1,6 +1,6 @@
 /*
- * Trace Decoder for parallel trace
- * ================================
+ * Post mortem monitor for parallel trace
+ * ======================================
  *
  * Copyright (C) 2017, 2019, 2020, 2021  Dave Marples  <dave@marples.net>
  * All rights reserved.
@@ -52,46 +52,83 @@
 #include <signal.h>
 
 #include "git_version_info.h"
+#include "uthash.h"
 #include "generics.h"
 
 #include "tpiuDecoder.h"
 #include "etmdec.h"
+#include "symbols.h"
 
 #define TRANSFER_SIZE       (4096)
 #define REMOTE_ETM_PORT     (3443)            /* Server port definition */
 #define REMOTE_SERVER       "localhost"
 
 //#define DUMP_BLOCK
+#define DEFAULT_PM_BUFLEN_K (2)
+
+#define INTERVAL_TIME_MS    (100)              /* Intervaltime between packets */
+#define HANG_TIME_MS        (90)               /* Time without a packet after which we dump the buffer */
 
 /* Record for options, either defaults or from command line */
-struct
+struct Options
 {
     /* Config information */
 
     /* Source information */
     char *file;                         /* File host connection */
     bool fileTerminate;                 /* Terminate when file read isn't successful */
+    char *deleteMaterial;               /* Material to delete off front end of filenames */
 
+    char *elffile;                      /* File to use for symbols etc. */
 
+    uint32_t buflen;                    /* Length of post-mortem buffer, in bytes */
     bool useTPIU;                       /* Are we using TPIU, and stripping TPIU frames? */
     uint8_t channel;                    /* When TPIU is in use, which channel to decode? */
-    uint32_t intervalReportTime;        /* If we want interval reports about performance */
     int port;                           /* Source information */
     char *server;
 
-} options =
+} _options =
 {
     .port = REMOTE_ETM_PORT,
     .server = REMOTE_SERVER,
-    .channel = 2
+    .channel = 2,
+    .buflen = DEFAULT_PM_BUFLEN_K * 1024
 };
 
-struct
+struct visitedAddr                      /* Structure for Hashmap of visited/observed addresses */
 {
+    uint64_t visits;
+    struct nameEntry *n;
+
+    UT_hash_handle hh;
+};
+
+
+struct dataBlock
+{
+    ssize_t fillLevel;
+    uint8_t buffer[TRANSFER_SIZE];
+};
+
+struct RunTime
+{
+    struct SymbolSet *s;                /* Symbols read from elf */
     struct etmdecHandle f;              /* Link to the etmdecoder subsystem */
     bool      ending;                   /* Flag indicating app is terminating */
     uint64_t intervalBytes;             /* Number of bytes transferred in current interval */
-} _r;
+    uint8_t *pmBuffer;                  /* The post-mortem buffer */
+    uint32_t wp;                        /* Index pointers for ring buffer */
+    uint32_t rp;
+
+    struct visitedAddr *addresses;      /* Addresses we received in the SWV */
+
+    struct dataBlock rawBlock;          /* Datablock received from distribution */
+
+    struct Options *options;            /* Our runtime configuration */
+} _r =
+{
+    .options = &_options
+};
 
 // ====================================================================================================
 // ====================================================================================================
@@ -110,8 +147,11 @@ static void _intHandler( int sig )
 static void _printHelp( char *progName )
 
 {
-    genericsPrintf( "Usage: %s <ehntv> <b basedir> <f filename> <i channel>" EOL, progName );
-    genericsPrintf( "       -e: When reading from file, terminate at end of file rather than waiting for further input" EOL );
+    genericsPrintf( "Usage: %s [options]" EOL, progName );
+    genericsPrintf( "       -b: <Length> Length of post-mortem buffer, in KBytes (Default %d KBytes)" EOL, DEFAULT_PM_BUFLEN_K );
+    genericsPrintf( "       -d: <String> Material to delete off front of filenames" EOL );
+    genericsPrintf( "       -e: <ElfFile> to use for symbols and source" EOL );
+    genericsPrintf( "       -E: When reading from file, terminate at end of file rather than waiting for further input" EOL );
     genericsPrintf( "       -f <filename>: Take input from specified file" EOL );
     genericsPrintf( "       -h: This help" EOL );
     genericsPrintf( "       -s: <Server>:<Port> to use" EOL );
@@ -120,23 +160,39 @@ static void _printHelp( char *progName )
     genericsPrintf( EOL "(Will connect one port higher than that set in -s when TPIU is not used)" EOL );
 }
 // ====================================================================================================
-static int _processOptions( int argc, char *argv[] )
+static int _processOptions( int argc, char *argv[], struct RunTime *r )
 
 {
     int c;
 
-    while ( ( c = getopt ( argc, argv, "ef:hs:t:v:" ) ) != -1 )
+    while ( ( c = getopt ( argc, argv, "b:d:Ee:f:hs:t:v:" ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
-            case 'e':
-                options.fileTerminate = true;
+            case 'b':
+                r->options->buflen = atoi( optarg ) * 1024;
+                break;
+
+            // ------------------------------------
+            case 'd':
+                r->options->deleteMaterial = optarg;
+                break;
+
+            // ------------------------------------
+            case 'E':
+                r->options->fileTerminate = true;
                 break;
 
             // ------------------------------------
 
+            case 'e':
+                r->options->elffile = optarg;
+                break;
+
+                // ------------------------------------
+
             case 'f':
-                options.file = optarg;
+                r->options->file = optarg;
                 break;
 
             // ------------------------------------
@@ -148,7 +204,7 @@ static int _processOptions( int argc, char *argv[] )
             // ------------------------------------
 
             case 's':
-                options.server = optarg;
+                r->options->server = optarg;
 
                 // See if we have an optional port number too
                 char *a = optarg;
@@ -161,12 +217,12 @@ static int _processOptions( int argc, char *argv[] )
                 if ( *a == ':' )
                 {
                     *a = 0;
-                    options.port = atoi( ++a );
+                    r->options->port = atoi( ++a );
                 }
 
-                if ( !options.port )
+                if ( !r->options->port )
                 {
-                    options.port = REMOTE_ETM_PORT;
+                    r->options->port = REMOTE_ETM_PORT;
                 }
 
                 break;
@@ -174,8 +230,8 @@ static int _processOptions( int argc, char *argv[] )
             // ------------------------------------
 
             case 't':
-                options.useTPIU = true;
-                options.channel = atoi( optarg );
+                r->options->useTPIU = true;
+                r->options->channel = atoi( optarg );
                 break;
 
             // ------------------------------------
@@ -207,17 +263,25 @@ static int _processOptions( int argc, char *argv[] )
 
     /* ... and dump the config if we're being verbose */
     genericsReport( V_INFO, "%s V" VERSION " (Git %08X %s, Built " BUILD_DATE ")" EOL, argv[0], GIT_HASH, ( GIT_DIRTY ? "Dirty" : "Clean" ) );
-
-    if ( options.intervalReportTime )
+    if ( !r->options->elffile )
     {
-        genericsReport( V_INFO, "Report Intv : %d mS" EOL, options.intervalReportTime );
+        genericsExit( V_ERROR, "Elf File not specified" EOL );
     }
 
-    if ( options.file )
+    if ( !r->options->buflen )
     {
-        genericsReport( V_INFO, "Input File  : %s", options.file );
+        genericsExit( -1, "Illegal value for Post Mortem Buffer length" EOL );
+    }
 
-        if ( options.fileTerminate )
+
+    genericsReport( V_INFO, "PM Buflen     : %d KBytes" EOL, r->options->buflen / 1024 );
+    genericsReport( V_INFO, "Elf File      : %s" EOL, r->options->elffile );
+
+    if ( r->options->file )
+    {
+        genericsReport( V_INFO, "Input File  : %s", r->options->file );
+
+        if ( r->options->fileTerminate )
         {
             genericsReport( V_INFO, " (Terminate on exhaustion)" EOL );
         }
@@ -230,22 +294,22 @@ static int _processOptions( int argc, char *argv[] )
     return true;
 }
 // ====================================================================================================
-static void _processBlock( int s, unsigned char *cbw )
+static void _processBlock( struct RunTime *r )
 
 /* Generic block processor for received data */
 
 {
-    genericsReport( V_DEBUG, "RXED Packet of %d bytes" EOL, s );
+    uint8_t *c = r->rawBlock.buffer;
+    uint32_t y = r->rawBlock.fillLevel;
+
+    genericsReport( V_DEBUG, "RXED Packet of %d bytes" EOL, y );
 
     /* Account for this reception */
-    _r.intervalBytes += s;
+    r->intervalBytes += y;
 
-    if ( s )
+    if ( y )
     {
 #ifdef DUMP_BLOCK
-        uint8_t *c = cbw;
-        uint32_t y = s;
-
         fprintf( stderr, EOL );
 
         while ( y-- )
@@ -258,14 +322,81 @@ static void _processBlock( int s, unsigned char *cbw )
             }
         }
 
+        c = r->rawBlock.buffer;
+        y = r->rawBlock.fillLevel;
 #endif
 
-        while ( s-- )
+        while ( y-- )
         {
-            etmdecProtocolPump( &_r.f, *cbw++ );
+            r->pmBuffer[r->wp] = *c++;
+            r->wp = ( r->wp + 1 ) % r->options->buflen;
+
+            if ( r->wp == r->rp )
+            {
+                r->rp++;
+            }
+        }
+    }
+}
+// ====================================================================================================
+void _flushHash( struct RunTime *r )
+
+{
+    struct visitedAddr *a;
+    UT_hash_handle hh;
+
+    for ( a = r->addresses; a != NULL; a = hh.next )
+    {
+        hh = a->hh;
+        free( a );
+    }
+
+    r->addresses = NULL;
+}
+// ====================================================================================================
+static void _dumpBuffer( struct RunTime *r )
+
+{
+  struct nameEntry n;
+  uint32_t cachedLineNo=0;
+
+  printf("Dump buffer" EOL);
+
+  if ( !SymbolSetValid( &r->s, r->options->elffile ) )
+    {
+      /* Make sure old references are invalidated */
+      _flushHash(r);
+
+      if ( !SymbolSetLoad( &r->s, r->options->elffile ) )
+        {
+          genericsReport( V_ERROR, "Elf file or symbols in it not found" EOL );
+          return;
+        }
+      else
+        {
+          genericsReport( V_WARN, "Loaded %s" EOL, r->options->elffile );
         }
     }
 
+  for (uint32_t i=0x080004e4; i<0x080005ec; i+=2)
+    {
+      SymbolLookup( r->s, i, &n, r->options->deleteMaterial, true );
+      if (n.line!=cachedLineNo)
+        {
+          cachedLineNo=n.line;
+          if (n.l)
+            printf("%08x:%s:%5d: %s",i,n.function,n.line,n.l->text);
+        }
+    }
+
+  uint32_t p = r->rp;
+
+  while (p!=r->wp)
+    {
+      p++;
+    }
+
+  r->wp = r-> rp = 0;
 }
 // ====================================================================================================
 static void _doExit( void )
@@ -282,29 +413,26 @@ int main( int argc, char *argv[] )
     int sourcefd;
     struct sockaddr_in serv_addr;
     struct hostent *server;
-    uint8_t cbw[TRANSFER_SIZE];
     int flag = 1;
 
-    ssize_t t;
     int64_t lastTime;
-    int64_t snapInterval;
     int r;
     struct timeval tv;
     fd_set readfds;
     int32_t remainTime;
 
 
-    if ( !_processOptions( argc, argv ) )
+    if ( !_processOptions( argc, argv, &_r ) )
     {
         /* processOptions generates its own error messages */
-        //  genericsExit( -1, "" EOL );
+        genericsExit( -1, "" EOL );
     }
 
     /* Make sure the fifos get removed at the end */
     atexit( _doExit );
 
     /* Setup etmdecode with ETM on channel 2 */
-    etmdecInit( &_r.f, options.useTPIU, options.channel );
+    etmdecInit( &_r.f, _r.options->useTPIU, _r.options->channel );
 
     /* Fill in a time to start from */
     lastTime = genericsTimestampmS();
@@ -321,9 +449,12 @@ int main( int argc, char *argv[] )
         genericsExit( -1, "Failed to ignore SIGPIPEs" EOL );
     }
 
+    /* Create the buffer memory */
+    _r.pmBuffer = ( uint8_t * )calloc( 1, _r.options->buflen );
+
     while ( !_r.ending )
     {
-        if ( !options.file )
+        if ( !_r.options->file )
         {
             /* Get the socket open */
             sourcefd = socket( AF_INET, SOCK_STREAM, 0 );
@@ -346,7 +477,7 @@ int main( int argc, char *argv[] )
 
             /* Now open the network connection */
             bzero( ( char * ) &serv_addr, sizeof( serv_addr ) );
-            server = gethostbyname( options.server );
+            server = gethostbyname( _r.options->server );
 
             if ( !server )
             {
@@ -358,7 +489,7 @@ int main( int argc, char *argv[] )
             bcopy( ( char * )server->h_addr,
                    ( char * )&serv_addr.sin_addr.s_addr,
                    server->h_length );
-            serv_addr.sin_port = htons( options.port + ( options.useTPIU ? 0 : 1 ) );
+            serv_addr.sin_port = htons( _r.options->port + ( _r.options->useTPIU ? 0 : 1 ) );
 
             if ( connect( sourcefd, ( struct sockaddr * ) &serv_addr, sizeof( serv_addr ) ) < 0 )
             {
@@ -372,25 +503,17 @@ int main( int argc, char *argv[] )
         }
         else
         {
-            if ( ( sourcefd = open( options.file, O_RDONLY ) ) < 0 )
+            if ( ( sourcefd = open( _r.options->file, O_RDONLY ) ) < 0 )
             {
-                genericsExit( sourcefd, "Can't open file %s" EOL, options.file );
+                genericsExit( sourcefd, "Can't open file %s" EOL, _r.options->file );
             }
         }
 
         while ( !_r.ending )
         {
-            if ( options.intervalReportTime )
-            {
-                remainTime = ( ( lastTime + options.intervalReportTime - genericsTimestampmS() ) * 1000 ) - 500;
-            }
-            else
-            {
-                remainTime = ( ( lastTime + 1000 - genericsTimestampmS() ) * 1000 ) - 500;
-            }
+          remainTime = ( ( lastTime + INTERVAL_TIME_MS - genericsTimestampmS() ) * 1000 ) - 500;
 
-            r = t = 0;
-
+          r = 0;
             if ( remainTime > 0 )
             {
                 tv.tv_sec = remainTime / 1000000;
@@ -409,70 +532,29 @@ int main( int argc, char *argv[] )
 
             if ( r > 0 )
             {
-                t = read( sourcefd, cbw, TRANSFER_SIZE );
+                _r.rawBlock.fillLevel = read( sourcefd, _r.rawBlock.buffer, TRANSFER_SIZE );
 
-                if ( t <= 0 )
+                if ( _r.rawBlock.fillLevel <= 0 )
                 {
                     /* We are at EOF (Probably the descriptor closed) */
                     break;
                 }
 
                 /* Pump all of the data through the protocol handler */
-                _processBlock( t, cbw );
+                _processBlock( &_r );
             }
 
-            /* See if its time to report on the past seconds stats */
-            if ( r == 0 )
-            {
-                lastTime = genericsTimestampmS();
+            if (((genericsTimestampmS()-lastTime)>HANG_TIME_MS) && (_r.wp!=_r.rp))
+          {
+            _dumpBuffer( &_r );
+          }
+            lastTime = genericsTimestampmS();
 
-                if ( options.intervalReportTime )
-                {
-
-                    /* Grab the interval and scale to 1 second */
-                    snapInterval = _r.intervalBytes * 1000 / options.intervalReportTime;
-                    _r.intervalBytes = 0;
-
-                    snapInterval *= 8;
-                    genericsPrintf( C_PREV_LN C_CLR_LN C_DATA );
-
-                    if ( snapInterval / 1000000 )
-                    {
-                        genericsPrintf( "%4d.%d " C_RESET "MBits/sec ", snapInterval / 1000000, ( snapInterval * 1 / 100000 ) % 10 );
-                    }
-                    else if ( snapInterval / 1000 )
-                    {
-                        genericsPrintf( "%4d.%d " C_RESET "KBits/sec ", snapInterval / 1000, ( snapInterval / 100 ) % 10 );
-                    }
-                    else
-                    {
-                        genericsPrintf( "  %4d " C_RESET " Bits/sec ", snapInterval );
-                    }
-
-
-                    {
-                        struct TPIUCommsStats *c = etmdecCommsStats( &_r.f );
-
-                        genericsPrintf( C_RESET " LEDS: %s%s%s%s" C_RESET " Frames: "C_DATA "%u" C_RESET,
-                                        c->leds & 1 ? C_DATA_IND "d" : C_RESET "-",
-                                        c->leds & 2 ? C_TX_IND "t" : C_RESET "-",
-                                        c->leds & 0x20 ? C_OVF_IND "O" : C_RESET "-",
-                                        c->leds & 0x80 ? C_HB_IND "h" : C_RESET "-",
-                                        c->totalFrames );
-
-                        genericsReport( V_INFO, " Pending:%5d Lost:%5d",
-                                        c->pendingCount,
-                                        c->lostFrames );
-                    }
-
-                    genericsPrintf( C_RESET EOL );
-                }
-            }
         }
 
         close( sourcefd );
 
-        if ( options.fileTerminate )
+        if ( _r.options->fileTerminate )
         {
             _r.ending = true;
         }

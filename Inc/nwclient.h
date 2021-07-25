@@ -45,7 +45,7 @@ extern "C" {
 // ====================================================================================================
 
 #define NWCLIENT_SERVER_PORT (3443)           /* Server port definition */
-#define TRANSFER_SIZE (1024*16)
+#define TRANSFER_SIZE (1024*64)
 
 struct nwclientsHandle;
 

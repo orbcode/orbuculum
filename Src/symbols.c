@@ -43,6 +43,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdarg.h>
+#include <regex.h>
 
 #ifdef OSX
     #include "osxelf.h"
@@ -56,10 +57,12 @@
 #include "symbols.h"
 
 #define TEXT_SEGMENT ".text"
-
+#define MAX_LINE_LEN (4096)
 #define ELF_RELOAD_DELAY_TIME 1000000   /* Time before elf reload will be attempted when its been lost */
 #define ELF_CHECK_DELAY_TIME  100000    /* Time that elf file has to be stable before it's considered complete */
 
+#define OBJDUMP "arm-none-eabi-objdump"
+#define SOURCE_INDICATOR ",#$!}_: "
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
@@ -197,7 +200,178 @@ static bool _find_symbol( struct SymbolSet *s, uint32_t workingAddr, const char 
 }
 // ====================================================================================================
 // ====================================================================================================
-bool SymbolLookup( struct SymbolSet *s, uint32_t addr, struct nameEntry *n, char *deleteMaterial )
+static bool _getTargetProgramInfo( char *filename )
+
+{
+  FILE *f;
+  char line[MAX_LINE_LEN];
+  char commandLine[MAX_LINE_LEN];
+  char scratch[MAX_LINE_LEN];
+
+  char fnName[MAX_LINE_LEN];
+  char fileName[MAX_LINE_LEN];
+  char source[MAX_LINE_LEN];
+  char assembly[10*MAX_LINE_LEN];
+  uint32_t lineNo;
+  uint32_t startAddr;
+  uint32_t endAddr;
+
+
+
+  enum ProcessingState {PS_IDLE, PS_GET_FN, PS_GET_FILEANDLINE, PS_GET_SOURCE, PS_GET_ASSY} ps=PS_IDLE;
+
+  snprintf(commandLine,MAX_LINE_LEN,OBJDUMP" -Sl --source-comment=" SOURCE_INDICATOR " %s", filename );
+  f = popen(commandLine, "r");
+  if (!f)
+    {
+      return false;
+    }
+
+  while (!feof(f))
+    {
+      fgets(line, MAX_LINE_LEN,f);
+
+
+    repeat_process: // In case we need to process the state machine more than once
+
+      switch(ps)
+        {
+        case PS_IDLE: printf("IDLE"); break;
+        case PS_GET_FN: printf("GET_FN"); break;
+        case PS_GET_FILEANDLINE: printf("GET_FILEANDLINE"); break;
+        case PS_GET_SOURCE: printf("GET_SOURCE"); break;
+        case PS_GET_ASSY: printf("GET_ASSY"); break;
+        }
+      printf(":%s",line);
+
+      switch(ps)
+        {
+        case PS_IDLE: /* Waiting for name of function */
+          if (2==sscanf(line,"%x <%s>:",&startAddr,fnName))
+            {
+              fnName[strlen(fnName)-2]=0;
+              endAddr=startAddr;
+              source[0]=0;
+              assembly[0]=0;
+              ps=PS_GET_FN;
+            }
+          break;
+
+        case PS_GET_FN:
+          sscanf(line,"%s",scratch);
+          scratch[strlen(scratch)-3]=0;
+          if (strcmp(scratch,fnName))
+            {
+              printf("Scratch and fnName don't match [%s] [%s]" EOL,scratch,fnName);
+            }
+          ps=PS_GET_FILEANDLINE;
+          break;
+
+        case PS_GET_FILEANDLINE:
+          ps=PS_GET_SOURCE;
+          if (2!=sscanf(line,"%[^:]%d",fileName,&lineNo))
+            {
+              lineNo=0;
+              fileName[0]=0;
+              goto repeat_process;
+            }
+          break;
+
+
+        case PS_GET_SOURCE:
+          if (!strncmp(line,SOURCE_INDICATOR,strlen(SOURCE_INDICATOR)))
+            {
+              // Add this to source line repository
+              strcpy(&source[strlen(source)],line);
+              break;
+            }
+
+            // This can't be source, process as assembly
+            ps = PS_GET_ASSY;
+            goto repeat_process;
+
+        case PS_GET_ASSY:
+            // Heuristic here is that line starts with a space then an address
+            if ((line[0]==' ') && (isxdigit(line[1])))
+              {
+                sscanf(line," %x:",&endAddr);
+                strcpy(&assembly[strlen(assembly)],line);
+              }
+            else
+              {
+                ps=PS_IDLE;
+                goto repeat_process;
+              }
+            break;
+        }
+    }
+
+  pclose(f);
+  return true;
+}
+// ====================================================================================================
+void _getSourceText( struct SymbolSet *s, struct nameEntry *n )
+
+{
+  uint32_t i;
+  long offset;
+  char ipText[MAX_LINE_LEN];
+  FILE *ip;
+
+  n->l = NULL;
+  /* Filter for case that this text doesn't appear in a file */
+  if ((n->filename==NULL) || (!*n->filename))
+    {
+      return;
+    }
+
+  /* See if we already know about this file and have it loaded */
+  if (!((s->cachedFile) && (s->cachedFile->filename == n->filename)))
+    {
+      /* Nope, so need to find it */
+      for (i=0; i<s->fileCount; i++)
+        {
+          if (s->fileSet[i].filename == n->filename)
+            break;
+        }
+
+      if (i==s->fileCount)
+        {
+          /* We don't have this file at all, need to go get it */
+          s->fileSet = (struct fileMap *)realloc( s->fileSet, (s->fileCount+1)*sizeof(struct fileMap) );
+          s->fileSet[s->fileCount].filename = n->filename;
+          s->fileSet[s->fileCount].map = NULL;
+
+          /* Now read in the file and map it */
+          s->fileSet[s->fileCount].lines = 0;
+          ip = fopen( n->filename, "r" );
+          if (ip)
+            {
+              while (1)
+                {
+                  offset = ftell(ip);
+                  if (!fgets(ipText,MAX_LINE_LEN,ip))
+                    {
+                      break;
+                    }
+                  s->fileSet[s->fileCount].map = (struct lineMap *)realloc( s->fileSet[s->fileCount].map, sizeof(struct lineMap)*(s->fileSet[s->fileCount].lines+1) );
+                  s->fileSet[s->fileCount].map[s->fileSet[s->fileCount].lines].text = strdup(ipText);
+                  s->fileSet[s->fileCount].map[s->fileSet[s->fileCount].lines].offset = offset;
+                  s->fileSet[s->fileCount].lines++;
+                }
+              fclose(ip);
+            }
+          s->fileCount++;
+        }
+      s->cachedFile = &s->fileSet[i];
+    }
+
+  /* We have the file, so return the line text if it's available */
+  if ((s->cachedFile->map) && (n->line>0) && (n->line<=s->cachedFile->lines))
+    n->l = &s->cachedFile->map[n->line-1];
+}
+// ====================================================================================================
+bool SymbolLookup( struct SymbolSet *s, uint32_t addr, struct nameEntry *n, char *deleteMaterial, bool withSourceText )
 
 /* Lookup function for address to line, and hence to function */
 
@@ -206,6 +380,7 @@ bool SymbolLookup( struct SymbolSet *s, uint32_t addr, struct nameEntry *n, char
     const char *filename = NULL;
     uint32_t line;
 
+    memset( n, 0, sizeof(struct nameEntry));
     assert( s );
 
     if ( ( addr & EXC_RETURN_MASK ) == EXC_RETURN )
@@ -260,6 +435,12 @@ bool SymbolLookup( struct SymbolSet *s, uint32_t addr, struct nameEntry *n, char
         n->function = function ? function : "";
         n->addr = addr;
         n->line = line;
+
+        if (withSourceText)
+          {
+            _getSourceText( s, n );
+          }
+
         return true;
     }
 
@@ -335,6 +516,19 @@ void SymbolSetDelete( struct SymbolSet **s )
     {
         bfd_close( ( *s )->abfd );
         free( ( *s )->elfFile );
+        free( (*s )->syms );
+        if ( ( *s )->fileSet )
+          {
+            for (uint32_t i=0; i<( *s )->fileCount; i++ )
+              {
+                for (uint32_t j=0; j< (*s)->fileSet[i].lines; j++)
+                  {
+                    free((*s)->fileSet[i].map[j].text);
+                  }
+                free((*s)->fileSet[i].map);
+              }
+            free ( ( *s )->fileSet );
+          }
         free( *s );
         *s = NULL;
     }
@@ -379,7 +573,8 @@ bool SymbolSetLoad( struct SymbolSet **s, char *filename )
 {
     assert( *s == NULL );
 
-    *s = SymbolSetCreate( filename );
-    return ( ( *s ) != NULL );
+    return _getTargetProgramInfo( filename );
+    //    *s = SymbolSetCreate( filename );
+    //    return ( ( *s ) != NULL );
 }
 // ====================================================================================================

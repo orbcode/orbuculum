@@ -52,6 +52,23 @@
 #define INTERRUPT_UNKNOWN 0x9                /* umm...we don't really know */
 #define SLEEPING          0xB                /* Special address flag sleeping */
 
+
+/* Mapping of lines numbers to indicies */
+struct lineMap
+
+{
+  long offset;
+  char *text;
+};
+
+/* An entry in the files table */
+struct fileMap
+{
+  const char *filename;
+  struct lineMap *map;
+  uint32_t lines;
+};
+
 /* An entry in the names table */
 struct nameEntry
 {
@@ -60,6 +77,8 @@ struct nameEntry
     uint32_t index;
     uint32_t line;
     uint32_t addr;
+
+    struct lineMap *l;
 };
 
 struct SymbolSet
@@ -69,7 +88,11 @@ struct SymbolSet
     struct stat st;  /* Stat of the file that was accessed for the symbols */
     uint32_t symcount;
     bfd *abfd;                              /* BFD handle to file */
-    char *elfFile;                           /* File containing structure info */
+    char *elfFile;                          /* File containing structure info */
+
+    struct fileMap *cachedFile;             /* File we were last looking at (for speedup) */
+    uint32_t fileCount;                     /* Number of files we have in the filemap */
+    struct fileMap *fileSet;                /* Mapping of files and lines */
 };
 
 // ====================================================================================================
@@ -77,6 +100,7 @@ struct SymbolSet *SymbolSetCreate( char *filename );
 void SymbolSetDelete( struct SymbolSet **s );
 bool SymbolSetValid( struct SymbolSet **s, char *filename );
 bool SymbolSetLoad( struct SymbolSet **s, char *filename );
-bool SymbolLookup( struct SymbolSet *s, uint32_t addr, struct nameEntry *n, char *deleteMaterial ) ;
+bool SymbolLookup( struct SymbolSet *s, uint32_t addr, struct nameEntry *n, char *deleteMaterial, bool withSourceText );
+
 // ====================================================================================================
 #endif

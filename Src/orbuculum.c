@@ -116,6 +116,9 @@ static const struct deviceList
 
 //#define DUMP_BLOCK
 
+/* How many transfer buffers from the source to allocate */
+#define NUM_RAW_BLOCKS (10)
+
 /* Record for options, either defaults or from command line */
 struct Options
 {
@@ -175,12 +178,16 @@ struct RunTime
     uint64_t  intervalBytes;                                                 /* Number of bytes transferred in current interval */
 
     pthread_t intervalThread;                                                /* Thread reporting on intervals */
-    bool      ending;                                                        /* Flag indicating app is terminating */
+    pthread_t processThread;                                                 /* Thread distributing to clients */
+    pthread_mutex_t dataForClients;                                               /* Mutex to release data for clients */
+  bool      ending;                                                        /* Flag indicating app is terminating */
     int f;                                                                   /* File handle to data source */
 
     struct Options *options;                                                 /* Command line options (reference to above) */
 
-    struct dataBlock rawBlock;                                               /* Transfer buffer from the receiver */
+    uint8_t wp;                                                              /* Read and write pointers into transfer buffers */
+    uint8_t rp;
+    struct dataBlock rawBlock[NUM_RAW_BLOCKS];                               /* Transfer buffers from the receiver */
 
     uint8_t numHandlers;                                                     /* Number of TPIU channel handlers in use */
     struct handlers *handler;
@@ -290,7 +297,6 @@ static int _setSerialConfig ( int f, speed_t speed )
     return 0;
 }
 #endif
-
 // ====================================================================================================
 void _printHelp( char *progName )
 
@@ -612,8 +618,8 @@ static void _stripTPIU( struct RunTime *r )
 
 {
     struct TPIUPacket p;
-    uint8_t *c = ( uint8_t * )r->rawBlock.buffer;
-    ssize_t bytes = r->rawBlock.fillLevel;
+    uint8_t *c = ( uint8_t * )r->rawBlock[r->rp].buffer;
+    ssize_t bytes = r->rawBlock[r->rp].fillLevel;
 
     struct handlers *h = NULL;
     int cachedChannel;
@@ -677,48 +683,61 @@ static void _stripTPIU( struct RunTime *r )
     }
 }
 // ====================================================================================================
-static void _processBlock( struct RunTime *r )
-
+static void *_processBlocks( void *params )
 /* Generic block processor for received data */
 
 {
-    genericsReport( V_DEBUG, "RXED Packet of %d bytes" EOL, r->rawBlock.fillLevel );
+    struct RunTime *r = ( struct RunTime * )params;
 
-    if ( r->rawBlock.fillLevel )
+    while ( !r->ending )
     {
-        /* Account for this reception */
-        r->intervalBytes += r->rawBlock.fillLevel;
+        while ( r->wp == r->rp )
+          {
+          pthread_mutex_lock(&r->dataForClients);
+          }
+
+        genericsReport( V_DEBUG, "RXED Packet of %d bytes" EOL, r->rawBlock[r->rp].fillLevel );
+
+        if ( r->rawBlock[r->rp].fillLevel )
+        {
+            /* Account for this reception */
+            r->intervalBytes += r->rawBlock[r->rp].fillLevel;
 
 #ifdef DUMP_BLOCK
-        uint8_t *c = r->rawBlock.buffer;
-        uint32_t y = r->rawBlock.fillLevel;
+            uint8_t *c = r->rawBlock[r->rp].buffer;
+            uint32_t y = r->rawBlock[r->rp].fillLevel;
 
-        fprintf( stderr, EOL );
+            fprintf( stderr, EOL );
 
-        while ( y-- )
-        {
-            fprintf( stderr, "%02X ", *c++ );
-
-            if ( !( y % 16 ) )
+            while ( y-- )
             {
-                fprintf( stderr, EOL );
+                fprintf( stderr, "%02X ", *c++ );
+
+                if ( !( y % 16 ) )
+                {
+                    fprintf( stderr, EOL );
+                }
             }
-        }
 
 #endif
 
-        if ( r-> options->useTPIU )
-        {
-            /* Strip the TPIU framing from this input */
-            _stripTPIU( r );
-            _purgeBlock( r );
+            if ( r-> options->useTPIU )
+            {
+                /* Strip the TPIU framing from this input */
+                _stripTPIU( r );
+                _purgeBlock( r );
+            }
+            else
+            {
+                /* Do it the old fashioned way and send out the unfettered block */
+                nwclientSend( _r.n, r->rawBlock[r->rp].fillLevel, r->rawBlock[r->rp].buffer );
+            }
         }
-        else
-        {
-            /* Do it the old fashioned way and send out the unfettered block */
-            nwclientSend( _r.n, r->rawBlock.fillLevel, r->rawBlock.buffer );
-        }
+
+        r->rp = ( r->rp + 1 ) % NUM_RAW_BLOCKS;
     }
+
+    return NULL;
 }
 // ====================================================================================================
 int usbFeeder( struct RunTime *r )
@@ -841,7 +860,8 @@ int usbFeeder( struct RunTime *r )
 
         while ( !r->ending )
         {
-            int32_t ret = libusb_bulk_transfer( handle, ep, r->rawBlock.buffer, TRANSFER_SIZE, ( int * )&r->rawBlock.fillLevel, 10 );
+            struct dataBlock *rxBlock = &r->rawBlock[r->wp];
+            int32_t ret = libusb_bulk_transfer( handle, ep, rxBlock->buffer, TRANSFER_SIZE, ( int * )&rxBlock->fillLevel, 10 );
 
             if ( ( ret < 0 ) && ( ret != LIBUSB_ERROR_TIMEOUT ) )
             {
@@ -849,7 +869,8 @@ int usbFeeder( struct RunTime *r )
                 break;
             }
 
-            _processBlock( r );
+            r->wp = ( r->wp + 1 ) % NUM_RAW_BLOCKS;
+            pthread_mutex_unlock(&r->dataForClients);
         }
 
         libusb_close( handle );
@@ -862,10 +883,8 @@ int usbFeeder( struct RunTime *r )
 int seggerFeeder( struct RunTime *r )
 
 {
-    //int sockfd;
     struct sockaddr_in serv_addr;
     struct hostent *server;
-    //    uint8_t cbw[TRANSFER_SIZE];
 
     int flag = 1;
 
@@ -907,9 +926,18 @@ int seggerFeeder( struct RunTime *r )
 
         genericsReport( V_INFO, "Established Segger Link" EOL );
 
-        while ( !r->ending && ( ( r->rawBlock.fillLevel = read( r->f, r->rawBlock.buffer, TRANSFER_SIZE ) ) > 0 ) )
+        while ( !r->ending )
+
         {
-            _processBlock( r );
+            struct dataBlock *rxBlock = &r->rawBlock[r->wp];
+
+            if ( ( rxBlock->fillLevel = read( r->f, rxBlock->buffer, TRANSFER_SIZE ) ) <= 0 )
+            {
+                break;
+            }
+
+            r->wp = ( r->wp + 1 ) % NUM_RAW_BLOCKS;
+            pthread_mutex_unlock(&r->dataForClients);
         }
 
         close( r->f );
@@ -965,9 +993,17 @@ int serialFeeder( struct RunTime *r )
             genericsExit( ret, "setSerialConfig failed" EOL );
         }
 
-        while ( ( !r->ending ) && ( r->rawBlock.fillLevel = read( r->f, r->rawBlock.buffer, TRANSFER_SIZE ) ) > 0 )
+        while ( !r->ending )
         {
-            _processBlock( r );
+            struct dataBlock *rxBlock = &r->rawBlock[r->wp];
+
+            if ( ( rxBlock->fillLevel = read( r->f, rxBlock->buffer, TRANSFER_SIZE ) ) <= 0 )
+            {
+                break;
+            }
+
+            r->wp = ( r->wp + 1 ) % NUM_RAW_BLOCKS;
+            pthread_mutex_unlock(&r->dataForClients);
         }
 
         if ( ! r->ending )
@@ -1034,14 +1070,15 @@ int serialFpgaFeeder( struct RunTime *r )
 
         while ( !r->ending )
         {
-            r->rawBlock.fillLevel = read( r->f, r->rawBlock.buffer, FPGA_HS_TRANSFER_SIZE );
+            struct *dataBlock rxBlock = r->rawBlock[r->wp];
 
-            if ( r->rawBlock.fillLevel < 0 )
+            if ( ( rxBlock->fillLevel = read( r->f, rxBlock->buffer, TRANSFER_SIZE ) ) < 0 )
             {
                 break;
             }
 
-            _processBlock( r );
+            r->wp = ( r->wp + 1 ) % NUM_RAW_BLOCKS;
+            pthread_mutex_unlock(&r->dataForClients);
         }
 
         if ( !r->ending )
@@ -1064,9 +1101,12 @@ int fileFeeder( struct RunTime *r )
         genericsExit( -4, "Can't open file %s" EOL, r->options->file );
     }
 
-    while ( ( r->rawBlock.fillLevel = read( r->f, r->rawBlock.buffer, TRANSFER_SIZE ) ) >= 0 )
+    while ( !r->ending )
     {
-        if ( !r->rawBlock.fillLevel )
+        struct dataBlock *rxBlock = &r->rawBlock[r->wp];
+        rxBlock->fillLevel = read( r->f, rxBlock->buffer, TRANSFER_SIZE );
+
+        if ( !rxBlock->fillLevel )
         {
             if ( r->options->fileTerminate )
             {
@@ -1080,7 +1120,7 @@ int fileFeeder( struct RunTime *r )
             }
         }
 
-        _processBlock( r );
+        r->wp = ( r->wp + 1 ) % NUM_RAW_BLOCKS;
     }
 
     if ( !r->options->fileTerminate )
@@ -1182,6 +1222,9 @@ int main( int argc, char *argv[] )
     {
         pthread_create( &_r.intervalThread, NULL, &_checkInterval, &_r );
     }
+
+    /* Now start the distribution task */
+    pthread_create( &_r.processThread, NULL, &_processBlocks, &_r );
 
 #ifdef INCLUDE_SERIAL_FPGA_SUPPORT
 

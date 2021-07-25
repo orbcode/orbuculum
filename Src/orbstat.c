@@ -261,7 +261,7 @@ void _lookup( struct nameEntryHash **h, uint32_t addr )
         struct nameEntry ne;
 
         /* Find a matching name record if there is one */
-        SymbolLookup( _r.s, addr, &ne, options.deleteMaterial );
+        SymbolLookup( _r.s, addr, &ne, options.deleteMaterial, false );
 
         /* Was found, so create new hash entry for this */
         np = ( struct nameEntry * )malloc( sizeof( struct nameEntry ) );

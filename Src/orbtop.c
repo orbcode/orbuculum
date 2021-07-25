@@ -779,7 +779,7 @@ void _handlePCSample( struct pcSampleMsg *m, struct ITMDecoder *i )
             struct nameEntry n;
 
             /* Find a matching name record if there is one */
-            SymbolLookup( _r.s, m->pc, &n, options.deleteMaterial );
+            SymbolLookup( _r.s, m->pc, &n, options.deleteMaterial, false );
 
             /* This is a new entry - record it */
 

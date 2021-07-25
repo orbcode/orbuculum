@@ -21,7 +21,7 @@ ORBFIFO   = orbfifo
 ORBTOP    = orbtop
 ORBDUMP   = orbdump
 ORBSTAT   = orbstat
-ORBFLOW   = orbflow
+ORBMORTEM = orbmortem
 
 ##########################################################################
 # Check Host OS
@@ -108,7 +108,7 @@ ORBCAT_CFILES    = $(App_DIR)/$(ORBCAT).c
 ORBTOP_CFILES    = $(App_DIR)/$(ORBTOP).c $(App_DIR)/symbols.c $(EXT)/cJSON.c
 ORBDUMP_CFILES   = $(App_DIR)/$(ORBDUMP).c
 ORBSTAT_CFILES   = $(App_DIR)/$(ORBSTAT).c $(App_DIR)/symbols.c
-ORBFLOW_CFILES   = $(App_DIR)/$(ORBFLOW).c $(App_DIR)/etmdec.c
+ORBMORTEM_CFILES  = $(App_DIR)/$(ORBMORTEM).c $(App_DIR)/etmdec.c $(App_DIR)/symbols.c
 
 # FPGA Files
 # ==========
@@ -197,9 +197,9 @@ ORBSTAT_OBJS =  $(OBJS) $(patsubst %.c,%.o,$(ORBSTAT_CFILES))
 ORBSTAT_POBJS = $(POJBS) $(patsubst %,$(OLOC)/%,$(ORBSTAT_OBJS))
 PDEPS += $(ORBSTAT_POBJS:.o=.d)
 
-ORBFLOW_OBJS =  $(OBJS) $(patsubst %.c,%.o,$(ORBFLOW_CFILES))
-ORBFLOW_POBJS = $(POJBS) $(patsubst %,$(OLOC)/%,$(ORBFLOW_OBJS))
-PDEPS += $(ORBFLOW_POBJS:.o=.d)
+ORBMORTEM_OBJS =  $(OBJS) $(patsubst %.c,%.o,$(ORBMORTEM_CFILES))
+ORBMORTEM_POBJS = $(POJBS) $(patsubst %,$(OLOC)/%,$(ORBMORTEM_OBJS))
+PDEPS += $(ORBMORTEM_POBJS:.o=.d)
 
 CFILES += $(App_DIR)/generics.c
 
@@ -218,7 +218,7 @@ $(OLOC)/%.o : %.c
 	$(call cmd, \$(CC) -c $(CFLAGS) -MMD -o $@ $< ,\
 	Compiling $<)
 
-build: $(ORBUCULUM) $(ORBFIFO) $(ORBCAT) $(ORBTOP) $(ORBDUMP) $(ORBSTAT) $(ORBFLOW)
+build: $(ORBUCULUM) $(ORBFIFO) $(ORBCAT) $(ORBTOP) $(ORBDUMP) $(ORBSTAT) $(ORBMORTEM)
 
 $(ORBLIB) : get_version $(ORBLIB_POBJS)
 	$(Q)$(AR) rcs $(OLOC)/lib$(ORBLIB).a  $(ORBLIB_POBJS)
@@ -248,15 +248,15 @@ $(ORBSTAT) : $(ORBLIB) $(ORBSTAT_POBJS)
 	$(Q)$(LD) $(LDFLAGS) -o $(OLOC)/$(ORBSTAT) $(MAP) $(ORBSTAT_POBJS) $(LDLIBS)
 	-@echo "Completed build of" $(ORBSTAT)
 
-$(ORBFLOW) : $(ORBLIB) $(ORBFLOW_POBJS)
-	$(Q)$(LD) $(LDFLAGS) -o $(OLOC)/$(ORBFLOW) $(MAP) $(ORBFLOW_POBJS)  $(LDLIBS)
-	-@echo "Completed build of" $(ORBFLOW)
+$(ORBMORTEM) : $(ORBLIB) $(ORBMORTEM_POBJS)
+	$(Q)$(LD) $(LDFLAGS) -o $(OLOC)/$(ORBMORTEM) $(MAP) $(ORBMORTEM_POBJS)  $(LDLIBS)
+	-@echo "Completed build of" $(ORBMORTEM)
 
 tags:
 	-@etags $(CFILES) 2> /dev/null
 
 clean:
-	-$(call cmd, \rm -f $(POBJS) $(LD_TEMP) $(ORBUCULUM) $(ORBFIFO) $(ORBCAT) $(ORBDUMP) $(ORBSTAT) $(ORBFLOW) $(OUTFILE).map $(EXPORT) ,\
+	-$(call cmd, \rm -f $(POBJS) $(LD_TEMP) $(ORBUCULUM) $(ORBFIFO) $(ORBCAT) $(ORBDUMP) $(ORBSTAT) $(ORBMORTEM) $(OUTFILE).map $(EXPORT) ,\
 	Cleaning )
 	$(Q)-rm -rf SourceDoc/*
 	$(Q)-rm -rf *~ core
