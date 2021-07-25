@@ -189,7 +189,7 @@ static int _processOptions( int argc, char *argv[], struct RunTime *r )
                 r->options->elffile = optarg;
                 break;
 
-                // ------------------------------------
+            // ------------------------------------
 
             case 'f':
                 r->options->file = optarg;
@@ -263,6 +263,7 @@ static int _processOptions( int argc, char *argv[], struct RunTime *r )
 
     /* ... and dump the config if we're being verbose */
     genericsReport( V_INFO, "%s V" VERSION " (Git %08X %s, Built " BUILD_DATE ")" EOL, argv[0], GIT_HASH, ( GIT_DIRTY ? "Dirty" : "Clean" ) );
+
     if ( !r->options->elffile )
     {
         genericsExit( V_ERROR, "Elf File not specified" EOL );
@@ -357,46 +358,50 @@ void _flushHash( struct RunTime *r )
 static void _dumpBuffer( struct RunTime *r )
 
 {
-  struct nameEntry n;
-  uint32_t cachedLineNo=0;
+    struct nameEntry n;
+    uint32_t cachedLineNo = 0;
 
-  printf("Dump buffer" EOL);
+    printf( "Dump buffer" EOL );
 
-  if ( !SymbolSetValid( &r->s, r->options->elffile ) )
+    if ( !SymbolSetValid( &r->s, r->options->elffile ) )
     {
-      /* Make sure old references are invalidated */
-      _flushHash(r);
+        /* Make sure old references are invalidated */
+        _flushHash( r );
 
-      if ( !SymbolSetLoad( &r->s, r->options->elffile ) )
+        if ( !SymbolSetLoad( &r->s, r->options->elffile ) )
         {
-          genericsReport( V_ERROR, "Elf file or symbols in it not found" EOL );
-          return;
+            genericsReport( V_ERROR, "Elf file or symbols in it not found" EOL );
+            return;
         }
-      else
+        else
         {
-          genericsReport( V_WARN, "Loaded %s" EOL, r->options->elffile );
-        }
-    }
-
-  for (uint32_t i=0x080004e4; i<0x080005ec; i+=2)
-    {
-      SymbolLookup( r->s, i, &n, r->options->deleteMaterial, true );
-      if (n.line!=cachedLineNo)
-        {
-          cachedLineNo=n.line;
-          if (n.l)
-            printf("%08x:%s:%5d: %s",i,n.function,n.line,n.l->text);
+            genericsReport( V_WARN, "Loaded %s" EOL, r->options->elffile );
         }
     }
 
-  uint32_t p = r->rp;
-
-  while (p!=r->wp)
+    for ( uint32_t i = 0x080004e4; i < 0x080005ec; i += 2 )
     {
-      p++;
+        SymbolLookup( r->s, i, &n, r->options->deleteMaterial, true );
+
+        if ( n.line != cachedLineNo )
+        {
+            cachedLineNo = n.line;
+
+            if ( n.l )
+            {
+                printf( "%08x:%s:%5d: %s", i, n.function, n.line, n.l->text );
+            }
+        }
     }
 
-  r->wp = r-> rp = 0;
+    uint32_t p = r->rp;
+
+    while ( p != r->wp )
+    {
+        p++;
+    }
+
+    r->wp = r-> rp = 0;
 }
 // ====================================================================================================
 static void _doExit( void )
@@ -428,6 +433,7 @@ int main( int argc, char *argv[] )
         genericsExit( -1, "" EOL );
     }
 
+    _dumpBuffer( &_r );
     /* Make sure the fifos get removed at the end */
     atexit( _doExit );
 
@@ -511,9 +517,10 @@ int main( int argc, char *argv[] )
 
         while ( !_r.ending )
         {
-          remainTime = ( ( lastTime + INTERVAL_TIME_MS - genericsTimestampmS() ) * 1000 ) - 500;
+            remainTime = ( ( lastTime + INTERVAL_TIME_MS - genericsTimestampmS() ) * 1000 ) - 500;
 
-          r = 0;
+            r = 0;
+
             if ( remainTime > 0 )
             {
                 tv.tv_sec = remainTime / 1000000;
@@ -544,10 +551,11 @@ int main( int argc, char *argv[] )
                 _processBlock( &_r );
             }
 
-            if (((genericsTimestampmS()-lastTime)>HANG_TIME_MS) && (_r.wp!=_r.rp))
-          {
-            _dumpBuffer( &_r );
-          }
+            //            if (((genericsTimestampmS()-lastTime)>HANG_TIME_MS) && (_r.wp!=_r.rp))
+            {
+                _dumpBuffer( &_r );
+                exit( -1 );
+            }
             lastTime = genericsTimestampmS();
 
         }

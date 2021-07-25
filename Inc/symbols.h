@@ -54,20 +54,39 @@
 
 
 /* Mapping of lines numbers to indicies */
-struct lineMap
+struct assyLineEntry
 
 {
-  long offset;
-  char *text;
+  uint32_t addr;
+  char *lineText;
 };
 
-/* An entry in the files table */
-struct fileMap
+struct functionEntry
+
 {
-  const char *filename;
-  struct lineMap *map;
-  uint32_t lines;
+  uint32_t startAddr;
+  uint32_t endAddr;
+  struct fileEntry *f;
 };
+
+struct sourceLineEntry
+
+{
+  uint32_t startAddr;
+  uint32_t end_addr;
+  char *lineText;
+  struct assyLineEntry *assy;
+};
+
+
+
+
+
+
+
+
+
+
 
 /* An entry in the names table */
 struct nameEntry

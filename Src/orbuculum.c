@@ -180,7 +180,7 @@ struct RunTime
     pthread_t intervalThread;                                                /* Thread reporting on intervals */
     pthread_t processThread;                                                 /* Thread distributing to clients */
     pthread_mutex_t dataForClients;                                               /* Mutex to release data for clients */
-  bool      ending;                                                        /* Flag indicating app is terminating */
+    bool      ending;                                                        /* Flag indicating app is terminating */
     int f;                                                                   /* File handle to data source */
 
     struct Options *options;                                                 /* Command line options (reference to above) */
@@ -692,9 +692,9 @@ static void *_processBlocks( void *params )
     while ( !r->ending )
     {
         while ( r->wp == r->rp )
-          {
-          pthread_mutex_lock(&r->dataForClients);
-          }
+        {
+            pthread_mutex_lock( &r->dataForClients );
+        }
 
         genericsReport( V_DEBUG, "RXED Packet of %d bytes" EOL, r->rawBlock[r->rp].fillLevel );
 
@@ -870,7 +870,7 @@ int usbFeeder( struct RunTime *r )
             }
 
             r->wp = ( r->wp + 1 ) % NUM_RAW_BLOCKS;
-            pthread_mutex_unlock(&r->dataForClients);
+            pthread_mutex_unlock( &r->dataForClients );
         }
 
         libusb_close( handle );
@@ -937,7 +937,7 @@ int seggerFeeder( struct RunTime *r )
             }
 
             r->wp = ( r->wp + 1 ) % NUM_RAW_BLOCKS;
-            pthread_mutex_unlock(&r->dataForClients);
+            pthread_mutex_unlock( &r->dataForClients );
         }
 
         close( r->f );
@@ -1003,7 +1003,7 @@ int serialFeeder( struct RunTime *r )
             }
 
             r->wp = ( r->wp + 1 ) % NUM_RAW_BLOCKS;
-            pthread_mutex_unlock(&r->dataForClients);
+            pthread_mutex_unlock( &r->dataForClients );
         }
 
         if ( ! r->ending )
@@ -1078,7 +1078,7 @@ int serialFpgaFeeder( struct RunTime *r )
             }
 
             r->wp = ( r->wp + 1 ) % NUM_RAW_BLOCKS;
-            pthread_mutex_unlock(&r->dataForClients);
+            pthread_mutex_unlock( &r->dataForClients );
         }
 
         if ( !r->ending )
