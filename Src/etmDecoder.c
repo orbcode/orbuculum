@@ -118,19 +118,20 @@ enum ETMDecoderPumpEvent ETMDecoderPump( struct ETMDecoder *i, uint8_t c )
 /* Pump next byte into the protocol decoder */
 
 {
-    bool C;
-    uint8_t ofs;
-    uint8_t mask;
+    bool C;                               /* Is address packet continued? */
+    bool X = false;                       /* Is there exception information following address */
+    uint8_t ofs;                          /* Offset for bits in address calculation */
+    uint8_t mask;                         /* Mask for bits in address calculation */
+
     enum ETMprotoState newState = i->p;
     struct ETMCPUState *cpu = &i->cpu;
-
     enum ETMDecoderPumpEvent retVal = ETM_EV_NONE;
 
 
     /* Perform A-Sync accumulation check */
     if ( ( i->asyncCount >= 5 ) && ( c == 0x80 ) )
     {
-        retVal =   ETM_EV_SYNCED;
+        retVal = ETM_EV_SYNCED;
         /* If we're already idle then stay there, otherwise wait for an ISYNC */
         newState = ( i->p == ETM_IDLE ) ? ETM_IDLE : ETM_WAIT_ISYNC;
     }
@@ -171,6 +172,7 @@ enum ETMDecoderPumpEvent ETMDecoderPump( struct ETMDecoder *i, uint8_t c )
                 // *************************************************
                 if ( c == 0b00001000 ) /* Normal ISYNC */
                 {
+                    genericsReport( V_DEBUG, "Normal ISYNC" EOL );
                     /* Collect either the context or the Info Byte next */
                     i->byteCount = 0;
                     i->contextConstruct = 0;
@@ -180,6 +182,7 @@ enum ETMDecoderPumpEvent ETMDecoderPump( struct ETMDecoder *i, uint8_t c )
 
                 if ( c == 0b01110000 ) /* ISYNC with Cycle Count */
                 {
+                    genericsReport( V_DEBUG, "ISYNC+CYCCNT" EOL );
                     /* Collect the cycle count next */
                     i->byteCount = 0;
                     i->cycleConstruct = 0;
@@ -192,6 +195,7 @@ enum ETMDecoderPumpEvent ETMDecoderPump( struct ETMDecoder *i, uint8_t c )
                 // *************************************************
                 if ( c == 0b00000100 )
                 {
+                    genericsReport( V_DEBUG, "CYCCNT" EOL );
                     i->byteCount = 0;
                     i->cycleConstruct = 0;
                     newState = ETM_GET_CYCLECOUNT;
@@ -203,6 +207,8 @@ enum ETMDecoderPumpEvent ETMDecoderPump( struct ETMDecoder *i, uint8_t c )
                 // *************************************************
                 if ( c == 0b00001100 )
                 {
+                    genericsReport( V_DEBUG, "TRIGGER" EOL );
+                    cpu->changeRecord |= ( 1 << EV_CH_TRIGGER );
                     retVal = ETM_EV_MSG_RXED;
                     break;
                 }
@@ -212,7 +218,9 @@ enum ETMDecoderPumpEvent ETMDecoderPump( struct ETMDecoder *i, uint8_t c )
                 // *************************************************
                 if ( c == 0b01111110 )
                 {
-                    cpu->changeRecord |= ( 1 << ETM_CH_EX_ENTRY );
+                    /* Note this is only used on CPUs with data tracing */
+                    genericsReport( V_DEBUG, "EXCEPT-ENTRY" EOL );
+                    cpu->changeRecord |= ( 1 << EV_CH_EX_ENTRY );
                     retVal = ETM_EV_MSG_RXED;
                     break;
                 }
@@ -222,7 +230,8 @@ enum ETMDecoderPumpEvent ETMDecoderPump( struct ETMDecoder *i, uint8_t c )
                 // *************************************************
                 if ( c == 0b01110110 )
                 {
-                    cpu->changeRecord |= ( 1 << ETM_CH_EX_EXIT );
+                    genericsReport( V_DEBUG, "EXCEPT-EXIT" EOL );
+                    cpu->changeRecord |= ( 1 << EV_CH_EX_EXIT );
                     retVal = ETM_EV_MSG_RXED;
                     break;
                 }
@@ -232,6 +241,7 @@ enum ETMDecoderPumpEvent ETMDecoderPump( struct ETMDecoder *i, uint8_t c )
                 // *************************************************
                 if ( c == 0b00111100 )
                 {
+                    genericsReport( V_DEBUG, "VMID" EOL );
                     newState = ETM_GET_VMID;
                     break;
                 }
@@ -241,6 +251,7 @@ enum ETMDecoderPumpEvent ETMDecoderPump( struct ETMDecoder *i, uint8_t c )
                 // *************************************************
                 if ( c == 0b01101110 )
                 {
+                    genericsReport( V_DEBUG, "CONTEXTID" EOL );
                     newState = ETM_GET_CONTEXTID;
                     cpu->contextID = 0;
                     i->byteCount = 0;
@@ -250,13 +261,14 @@ enum ETMDecoderPumpEvent ETMDecoderPump( struct ETMDecoder *i, uint8_t c )
                 // *************************************************
                 // *********** TIMESTAMP PACKET ********************
                 // *************************************************
-                if ( ( c & 0b01111011 ) == 0b01000010 )
+                if ( ( c & 0b11111011 ) == 0b01000010 )
                 {
+                    genericsReport( V_DEBUG, "TS" EOL );
                     newState = ETM_GET_TSTAMP;
 
-                    if ( ( c & 4 ) != 0 )
+                    if ( ( c & ( 1 << 2 ) ) != 0 )
                     {
-                        cpu->changeRecord |= ( 1 << ETM_CH_CLOCKSPEED );
+                        cpu->changeRecord |= ( 1 << EV_CH_CLOCKSPEED );
                     }
 
                     i->byteCount = 0;
@@ -268,13 +280,15 @@ enum ETMDecoderPumpEvent ETMDecoderPump( struct ETMDecoder *i, uint8_t c )
                 // *************************************************
                 if ( ( c & 0b10000001 ) == 0b10000000 )
                 {
+                    genericsReport( V_DEBUG, "P" EOL );
+
                     if ( !i->cycleAccurate )
                     {
                         if ( ( c & 0b10000011 ) == 0b10000000 )
                         {
                             /* Format-1 P-header */
                             cpu->eatoms = ( c & 0x3C ) >> 2;
-                            cpu->natoms = ( c & ( 1 << 7 ) ) ? 1 : 0;
+                            cpu->natoms = ( c & ( 1 << 6 ) ) ? 1 : 0;
 
                             /* Put a 1 in each element of disposition if was executed */
                             cpu->disposition = ( 1 << cpu->eatoms ) - 1;
@@ -286,9 +300,9 @@ enum ETMDecoderPumpEvent ETMDecoderPump( struct ETMDecoder *i, uint8_t c )
                         if ( ( c & 0b11110011 ) == 0b10000010 )
                         {
                             /* Format-2 P-header */
-                            cpu->eatoms = ( ( c & ( 1 << 2 ) ) != 0 ) + ( ( c & ( 1 << 3 ) ) != 0 );
+                            cpu->eatoms = ( ( c & ( 1 << 2 ) ) == 0 ) + ( ( c & ( 1 << 3 ) ) == 0 );
                             cpu->natoms = 2 - cpu->eatoms;
-                            cpu->disposition = ( ( c & ( 1 << 3 ) ) != 0 ) | ( ( c & ( 1 << 2 ) ) != 0 );
+                            cpu->disposition = ( ( c & ( 1 << 3 ) ) == 0 ) | ( ( c & ( 1 << 2 ) ) == 0 );
                             cpu->changeRecord |= ( 1 << EV_CH_ENATOMS );
                             retVal = ETM_EV_MSG_RXED;
                             break;
@@ -375,6 +389,8 @@ enum ETMDecoderPumpEvent ETMDecoderPump( struct ETMDecoder *i, uint8_t c )
                 // *************************************************
                 if ( c & 0b1 )
                 {
+                    genericsReport( V_DEBUG, "BRANCH" );
+
                     /* The lowest order 6 bits of address info... */
                     switch ( cpu->addrMode )
                     {
@@ -383,7 +399,7 @@ enum ETMDecoderPumpEvent ETMDecoderPump( struct ETMDecoder *i, uint8_t c )
                             break;
 
                         case ETM_ADDRMODE_THUMB:
-                            i->addrConstruct = ( i->addrConstruct & ~( 0b01111110 ) ) | ( c & 0b01111110 );
+                            i->addrConstruct = ( i->addrConstruct & ~( 0b01111111 ) ) | ( c & 0b01111110 );
                             break;
 
                         case ETM_ADDRMODE_JAZELLE:
@@ -393,6 +409,7 @@ enum ETMDecoderPumpEvent ETMDecoderPump( struct ETMDecoder *i, uint8_t c )
 
                     i->byteCount = 1;
                     C = c & 0x80;
+                    X = false;
                     cpu->changeRecord |= ( 1 << EV_CH_ADDRESS );
 
                     newState = ( i->usingAltAddrEncode ) ? ETM_COLLECT_BA_ALT_FORMAT : ETM_COLLECT_BA_STD_FORMAT;
@@ -407,10 +424,14 @@ enum ETMDecoderPumpEvent ETMDecoderPump( struct ETMDecoder *i, uint8_t c )
 
             case ETM_COLLECT_BA_ALT_FORMAT: /* Collecting a branch address, alt format */
                 C = c & 0x80;
-                /* This is a proper mess. Mask and collect bits according to address mode in use and if it's the last byte of the sequence */
+                /* This is a proper mess. Mask and collect bits according to address mode in use and */
+                /* if it's the last byte of the sequence */
+
                 mask = C ? 0x7F : 0x3F;
                 ofs = ( cpu->addrMode == ETM_ADDRMODE_ARM ) ? 2 : ( cpu->addrMode == ETM_ADDRMODE_THUMB ) ? 1 : 0;
                 i->addrConstruct = ( i->addrConstruct &  ~( mask << ( ( 7 * i->byteCount ) + ofs ) ) ) | ( c & ( mask <<  ( ( 7 * i->byteCount ) + ofs ) ) );
+                /* There is exception information only if no continuation and bit 6 set */
+                X = ( ( !C ) && ( c & 0x40 ) );
                 i->byteCount++;
                 goto terminateAddrByte;
 
@@ -422,8 +443,8 @@ enum ETMDecoderPumpEvent ETMDecoderPump( struct ETMDecoder *i, uint8_t c )
                 i->addrConstruct = ( i->addrConstruct &  ~( 0x7F << ( ( 7 * i->byteCount ) + ofs ) ) ) | ( c & ( 0x7F <<  ( ( 7 * i->byteCount ) + ofs ) ) );
                 i->byteCount++;
                 C = ( i->byteCount < 5 ) ? c & 0x80 : c & 0x40;
+                X = ( i->byteCount == 5 ) && C;
                 goto terminateAddrByte;
-
 
             terminateAddrByte:
 
@@ -436,12 +457,14 @@ enum ETMDecoderPumpEvent ETMDecoderPump( struct ETMDecoder *i, uint8_t c )
                     {
                         /* There is (legacy) exception information in here */
                         cpu->exception = ( c >> 4 ) & 0x07;
-                        cpu->cancelled = ( c & 0x40 ) != 0;
-                        cpu->changeRecord |= ( 1 << EV_CH_EXCEPTION ) | ( 1 << EV_CH_CANCELLED );
-                        C = false;
+                        cpu->changeRecord |= ( 1 << EV_CH_EXCEPTION );
+                        cpu->changeRecord |= ( ( c & 0x40 ) != 0 ) ? ( 1 << EV_CH_CANCELLED ) : 0;
+                        newState = ETM_IDLE;
+                        retVal = ETM_EV_MSG_RXED;
+                        break;
                     }
 
-                    if ( !C )
+                    if ( ( !C ) & ( !X ) )
                     {
                         /* This packet is complete, so can return it */
                         newState = ETM_IDLE;
@@ -450,14 +473,82 @@ enum ETMDecoderPumpEvent ETMDecoderPump( struct ETMDecoder *i, uint8_t c )
                     else
                     {
                         /* This packet also contains exception information, so collect it */
+                        i->byteCount = 0; /* Used as a flag of which byte of exception we're collecting */
+                        cpu->resume = 0;
+                        cpu->changeRecord |= ( 1 << EV_CH_EX_ENTRY );
                         newState = ETM_COLLECT_EXCEPTION;
                     }
                 }
 
                 break;
 
+            // -----------------------------------------------------
+
             case ETM_COLLECT_EXCEPTION: /* Collecting exception information */
-                cpu->changeRecord |= ( 1 << EV_CH_EXCEPTION ) | ( 1 << EV_CH_CANCELLED );
+                if ( i->byteCount == 0 )
+                {
+                    if ( ( ( c & ( 1 << 0 ) ) != 0 ) != cpu->nonSecure )
+                    {
+                        cpu->nonSecure = ( ( c & ( 1 << 0 ) ) != 0 );
+                        cpu->changeRecord |= ( 1 << EV_CH_SECURE );
+                    }
+
+                    cpu->exception = ( c >> 1 ) & 0x0f;
+                    cpu->changeRecord |= ( ( c & ( 1 << 5 ) ) != 0 ) ? ( 1 << EV_CH_CANCELLED ) : 0;
+
+                    if ( cpu->altISA != ( ( c & ( 1 << 6 ) ) != 0 ) )
+                    {
+                        cpu->altISA = ( ( c & ( 1 << 6 ) ) != 0 );
+                        cpu->changeRecord |= ( 1 << EV_CH_ALTISA );
+                    }
+
+                    if ( c & 0x80 )
+                    {
+                        i->byteCount++;
+                    }
+                    else
+                    {
+                        newState = ETM_IDLE;
+                        retVal = ETM_EV_MSG_RXED;
+                    }
+                }
+                else
+                {
+                    if ( c & 0x80 )
+                    {
+                        /* This is exception byte 1 */
+                        cpu->exception |= ( c & 0x1f ) << 4;
+
+                        if ( cpu->hyp != ( ( c & ( 1 << 5 ) ) != 0 ) )
+                        {
+                            cpu->hyp = ( ( c & ( 1 << 5 ) ) != 0 );
+                            cpu->changeRecord |= ( 1 << EV_CH_HYP );
+                        }
+
+                        if ( !( c & 0x40 ) )
+                        {
+                            /* There will not be another one along, return idle */
+                            newState = ETM_IDLE;
+                            retVal = ETM_EV_MSG_RXED;
+                        }
+                    }
+                    else
+                    {
+                        /* This is exception byte 2 */
+                        cpu->resume = ( c & 0xf );
+
+                        if ( cpu->resume )
+                        {
+                            cpu->changeRecord |= ( 1 << EV_CH_RESUME );
+                        }
+
+                        /* Exception byte 2 is always the last one, return */
+
+                        newState = ETM_IDLE;
+                        retVal = ETM_EV_MSG_RXED;
+                    }
+                }
+
                 break;
 
 
@@ -465,8 +556,12 @@ enum ETMDecoderPumpEvent ETMDecoderPump( struct ETMDecoder *i, uint8_t c )
             // VMID RELATED ACTIVITIES
             // -----------------------------------------------------
             case ETM_GET_VMID: /* Collecting virtual machine ID */
-                cpu->vmid = c;
-                cpu->changeRecord |= ( 1 << EV_CH_VMID );
+                if ( cpu->vmid != c )
+                {
+                    cpu->vmid = c;
+                    cpu->changeRecord |= ( 1 << EV_CH_VMID );
+                }
+
                 newState = ETM_IDLE;
                 retVal = ETM_EV_MSG_RXED;
                 break;
@@ -526,9 +621,13 @@ enum ETMDecoderPumpEvent ETMDecoderPump( struct ETMDecoder *i, uint8_t c )
 
                 if ( i->byteCount == i->contextBytes )
                 {
-                    cpu->contextID = i->contextConstruct;
+                    if ( cpu->contextID != i->contextConstruct )
+                    {
+                        cpu->contextID = i->contextConstruct;
+                        cpu->changeRecord |= ( 1 << EV_CH_CONTEXTID );
+                    }
+
                     retVal = ETM_EV_MSG_RXED;
-                    cpu->changeRecord |= EV_CH_CONTEXTID;
                     newState = ETM_IDLE;
                 }
 
@@ -557,8 +656,12 @@ enum ETMDecoderPumpEvent ETMDecoderPump( struct ETMDecoder *i, uint8_t c )
 
                 if ( i->byteCount == i->contextBytes )
                 {
-                    cpu->contextID = i->contextConstruct;
-                    cpu->changeRecord |= EV_CH_CONTEXTID;
+                    if ( cpu->contextID != i->contextConstruct )
+                    {
+                        cpu->contextID = i->contextConstruct;
+                        cpu->changeRecord |= ( 1 << EV_CH_CONTEXTID );
+                    }
+
                     newState = ETM_GET_INFOBYTE;
                 }
 
@@ -567,14 +670,48 @@ enum ETMDecoderPumpEvent ETMDecoderPump( struct ETMDecoder *i, uint8_t c )
             // -----------------------------------------------------
 
             case ETM_GET_INFOBYTE: /* Collecting I-Sync Information byte */
-                cpu->changeRecord |= EV_CH_INFOBYTE;
-                cpu->isLSiP    = ( c & 0x10000000 ) != 0;
-                cpu->reason    = ( c & 0x01100000 ) >> 5;
-                cpu->jazelle   = ( c & 0x00010000 ) != 0;
-                cpu->nonSecure = ( c & 0x00001000 ) != 0;
-                cpu->altISA    = ( c & 0x00000100 ) != 0;
-                cpu->hyp       = ( c & 0x00000010 ) != 0;
-                cpu->thumb     = ( c & 0x00000001 ) != 0;
+                if ( ( ( c & 0x10000000 ) != 0 ) != cpu->isLSiP )
+                {
+                    cpu->isLSiP = ( c & 0x10000000 ) != 0;
+                    cpu->changeRecord |= ( 1 << EV_CH_ISLSIP );
+                }
+
+                if ( cpu->reason != ( ( c & 0x01100000 ) >> 5 ) )
+                {
+                    cpu->reason    = ( c & 0x01100000 ) >> 5;
+                    cpu->changeRecord |= ( 1 << EV_CH_REASON );
+                }
+
+                if ( cpu->jazelle   != ( ( c & 0x00010000 ) != 0 ) )
+                {
+                    cpu->jazelle   = ( c & 0x00010000 ) != 0;
+                    cpu->changeRecord |= ( 1 << EV_CH_JAZELLE );
+                }
+
+                if ( cpu->nonSecure != ( ( c & 0x00001000 ) != 0 ) )
+                {
+                    cpu->nonSecure = ( c & 0x00001000 ) != 0;
+                    cpu->changeRecord |= ( 1 << EV_CH_SECURE );
+                }
+
+                if ( cpu->altISA != ( ( c & 0x00000100 ) != 0 ) )
+                {
+                    cpu->altISA    = ( c & 0x00000100 ) != 0;
+                    cpu->changeRecord |= ( 1 << EV_CH_ALTISA );
+                }
+
+                if ( cpu->hyp != ( ( c & 0x00000010 ) != 0 ) )
+                {
+                    cpu->hyp       = ( c & 0x00000010 ) != 0;
+                    cpu->changeRecord |= ( 1 << EV_CH_HYP );
+                }
+
+                if ( cpu->thumb != ( ( c & 0x00000001 ) != 0 ) )
+                {
+                    cpu->thumb     = ( c & 0x00000001 ) != 0;
+                    cpu->changeRecord |= ( 1 << EV_CH_THUMB );
+                }
+
                 i->byteCount = 0;
 
                 if ( i->dataOnlyMode )
@@ -663,8 +800,8 @@ enum ETMDecoderPumpEvent ETMDecoderPump( struct ETMDecoder *i, uint8_t c )
 
     if ( i->p != ETM_UNSYNCED )
     {
-        genericsReport( V_INFO, "%02x %s --> %s %s", c, ( i->p == ETM_IDLE ) ? _protoNames[i->p] : "", _protoNames[newState],
-                        ( ( newState == ETM_IDLE ) ? ( ( retVal == ETM_EV_NONE ) ? "!!!" EOL : "OK" EOL ) : " : " ) );
+        genericsReport( V_INFO, "%02x %s --> %s %s(%d)", c, ( i->p == ETM_IDLE ) ? _protoNames[i->p] : "", _protoNames[newState],
+                        ( ( newState == ETM_IDLE ) ? ( ( retVal == ETM_EV_NONE ) ? "!!!" EOL : "OK" EOL ) : " : " ), retVal );
     }
 
     i->p = newState;

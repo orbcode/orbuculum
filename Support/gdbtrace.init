@@ -58,6 +58,7 @@ ITMTPR            : Enable block 8*bit access from unprivledged code
 
 Configure ETM
 -------------
+describeETM       : Provide information about the ETM implementation on this target
 
 end
 # ====================================================================
@@ -152,6 +153,55 @@ define startETM
 end
 document startETM
 startETM
+end
+
+# ====================================================================
+define describeETM
+set $etmval = *($ETMBASE+0x1e4)
+output ((($etmval>>8)&0x0f)+1)
+echo .
+output (($etmval>>4)&0x0f)
+echo Rev
+output (($etmval)&0x0f)
+echo \n
+if (((($etmval)>>24)&0xff)==0x41)
+   echo Implementer is ARM\n
+end
+if (((($etmval)>>24)&0xff)==0x44)
+echo Implementer is DEC\n
+end
+if (((($etmval)>>24)&0xff)==0x4D)
+echo Implementer is Motorola/Freescale/NXP\n
+end
+if (((($etmval)>>24)&0xff)==0x51)
+echo Implementer is Qualcomm\n
+end
+if (((($etmval)>>24)&0xff)==0x56)
+echo Implementer is Marvell\n
+end
+if (((($etmval)>>24)&0xff)==0x69)
+echo Implementer is Intel\n
+end
+
+if ($etmval&(1<<18))
+   echo 32-bit Thumb instruction is traced as single instruction\n
+   else
+      echo 32-bit Thumb instruction is traced as two instructions\n
+end
+if ($etmval&(1<<19))
+   echo Implements ARM architecture security extensions\n
+   else
+   echo No ARM architecture security extensions\n
+end
+if ($etmval&(1<<20))
+   echo Uses alternative Branch Packet Encoding\n
+   else
+      echo Uses original Branch Packet Encoding\n
+end
+end
+
+document describeETM
+Provide information about the ETM implementation on this target.
 end
 
 # ====================================================================

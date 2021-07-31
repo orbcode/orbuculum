@@ -82,31 +82,11 @@ enum ETMprotoState
     "COLLECT_EXCEPTION",  "WAIT_CONTEXTBYTE", "WAIT_INFOBYTE", "WAIT_IADDRESS", \
     "WAIT_ICYCLECOUNT", "WAIT_CYCLECOUNT", "GET_VMID", "GET_TSTAMP", "GET_CONTEXTID"
 
-enum ETMexception
-{
-    ETM_EX_NONE,
-    ETM_EX_HALTING_DEBUG,
-    ETM_EX_SMC,
-    ETM_EX_INTO_HYP,
-    ETM_EX_ASYNC_DATA_ABORT,
-    ETM_EX_JAZELLE_OR_THUMB_CHECK,
-    ETM_EX_RES1,
-    ETM_EX_RES2,
-    ETM_EX_PROCESSOR_RESET,
-    ETM_EX_UNDEF_INST,
-    ETM_EX_SVC,
-    ETM_EX_SW_BKPT,
-    ETM_EX_SYNC_DATA_ABORT_OR_WATCHPOINT,
-    ETM_EX_GENERIC,
-    ETM_EX_IRQ,
-    ETM_EX_FIQ
-};
-
 enum ETMchanges
 {
-    ETM_CH_EX_ENTRY,
-    ETM_CH_EX_EXIT,
-    ETM_CH_CLOCKSPEED,
+    EV_CH_EX_ENTRY,
+    EV_CH_EX_EXIT,
+    EV_CH_CLOCKSPEED,
     EV_CH_ENATOMS,
     EV_CH_WATOMS,
     EV_CH_ADDRESS,
@@ -116,8 +96,15 @@ enum ETMchanges
     EV_CH_TSTAMP,
     EV_CH_CYCLECOUNT,
     EV_CH_CONTEXTID,
-    EV_CH_INFOBYTE,
-
+    EV_CH_TRIGGER,
+    EV_CH_SECURE,
+    EV_CH_ALTISA,
+    EV_CH_HYP,
+    EV_CH_RESUME,
+    EV_CH_REASON,
+    EV_CH_JAZELLE,
+    EV_CH_THUMB,
+    EV_CH_ISLSIP,
     EV_CH_NUM_CHANGES
 };
 
@@ -149,7 +136,8 @@ struct ETMCPUState
     uint32_t contextID;                  /* Currently executing context */
     uint8_t vmid;                        /* Current virtual machine ID */
     uint32_t cycleCount;                 /* Cycle Count for exact mode */
-    enum ETMexception exception;         /* Exception type being executed */
+    uint16_t exception;                  /* Exception type being executed */
+    uint16_t resume;                     /* Interrupt resume code */
 
     // I-Sync related
     enum Reason reason;                  /* Why this i-sync was generated */
@@ -159,7 +147,6 @@ struct ETMCPUState
     uint8_t eatoms;                      /* Number of E (executed) atoms in this step */
     uint8_t natoms;                      /* Number of N (non-executed) atoms in this step */
     uint32_t disposition;                /* What happened to condition codes for each instruction? */
-    bool cancelled;                      /* Boolean indicating instruction was cancelled */
 
     // State flags
     bool jazelle;                        /* Executing jazelle mode instructions */
@@ -212,7 +199,9 @@ inline struct ETMCPUState *ETMCPUState( struct ETMDecoder *i )
 }
 inline bool ETMStateChanged( struct ETMDecoder *i, enum ETMchanges c )
 {
-    return ( i->cpu.changeRecord & ( 1 << c ) ) != 0;
+    bool r = ( i->cpu.changeRecord & ( 1 << c ) ) != 0;
+    i->cpu.changeRecord &= ~( 1 << c );
+    return r;
 }
 struct ETMDecoderStats *ETMDecoderGetStats( struct ETMDecoder *i );
 

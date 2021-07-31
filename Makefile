@@ -108,7 +108,7 @@ ORBCAT_CFILES    = $(App_DIR)/$(ORBCAT).c
 ORBTOP_CFILES    = $(App_DIR)/$(ORBTOP).c $(App_DIR)/symbols.c $(EXT)/cJSON.c
 ORBDUMP_CFILES   = $(App_DIR)/$(ORBDUMP).c
 ORBSTAT_CFILES   = $(App_DIR)/$(ORBSTAT).c $(App_DIR)/symbols.c
-ORBMORTEM_CFILES  = $(App_DIR)/$(ORBMORTEM).c $(App_DIR)/etmdec.c $(App_DIR)/symbols.c
+ORBMORTEM_CFILES  = $(App_DIR)/$(ORBMORTEM).c $(App_DIR)/symbols.c
 
 # FPGA Files
 # ==========

@@ -2,7 +2,7 @@
  * Symbol Management
  * =================
  *
- * Copyright (C) 2017, 2019  Dave Marples  <dave@marples.net>
+ * Copyright (C) 2017, 2019, 2021  Dave Marples  <dave@marples.net>
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -35,91 +35,104 @@
 #define _SYMBOLS_H_
 
 #include <stdbool.h>
-#include "bfd_wrapper.h"
 #include "uthash.h"
 
-#define EXC_RETURN      0xF0000000           /* interrupt origin */
+#define EXC_RETURN      0xF0000000        /* interrupt origin */
 #define EXC_RETURN_MASK 0xF0000000
 #define INT_ORIGIN_MASK 0x0000000F
 #define INT_ORIGIN_HANDLER     0x1
 #define INT_ORIGIN_MAIN_STACK  0x9
 #define INT_ORIGIN_PROC_STACK  0xD
 
-#define NOT_FOUND         0x1                /* Special address flag - not found */
-#define INTERRUPT_HANDLER 0x3                /* Call from interrupt handler */
-#define INTERRUPT_MAIN    0x5                /* Called from main stack */
-#define INTERRUPT_PROC    0x7                /* Called from process stack */
-#define INTERRUPT_UNKNOWN 0x9                /* umm...we don't really know */
-#define SLEEPING          0xB                /* Special address flag sleeping */
+#define NOT_FOUND         0x1             /* Special address flag - not found */
+#define INTERRUPT_HANDLER 0x3             /* Call from interrupt handler */
+#define INTERRUPT_MAIN    0x5             /* Called from main stack */
+#define INTERRUPT_PROC    0x7             /* Called from process stack */
+#define INTERRUPT_UNKNOWN 0x9             /* umm...we don't really know */
+#define SLEEPING          0xB             /* Special address flag sleeping */
 
+#define ASSY_NOT_FOUND    0xffffffff      /* Assembly line not found */
 
 /* Mapping of lines numbers to indicies */
 struct assyLineEntry
 
 {
-  uint32_t addr;
-  char *lineText;
+    uint32_t addr;                          /* Address of this assembly */
+    char *label;                            /* Any associated label */
+    char *lineText;                         /* Text of the line */
+    uint32_t codes;                         /* Binary code for the line */
+    bool is4Byte;                           /* Indicate if this is a 4 byte entry */
+};
+
+
+struct fileEntry
+
+{
+    char *name;                             /* Path to file */
 };
 
 struct functionEntry
 
 {
-  uint32_t startAddr;
-  uint32_t endAddr;
-  struct fileEntry *f;
+    char *name;                             /* Name of function */
+    uint32_t startAddr;                     /* Start address */
+    uint32_t endAddr;                       /* End address */
+    uint32_t fileEntryIdx;                  /* Link back to containing file */
 };
 
 struct sourceLineEntry
 
 {
-  uint32_t startAddr;
-  uint32_t end_addr;
-  char *lineText;
-  struct assyLineEntry *assy;
+    uint32_t startAddr;                     /* Start of this line in memory */
+    uint32_t endAddr;                       /* End of this line in memory */
+    uint32_t lineNo;                        /* Line number in source file */
+    char *lineText;                         /* All source text relating to this memory range */
+    uint32_t assyLines;                     /* Number of lines of assembly for this memory range */
+    struct assyLineEntry *assy;             /* Assembly entries for this memory range */
+
+    uint32_t functionIdx;                   /* Index back to function this line is part of */
+    uint32_t fileIdx;                       /* Index back to file this line is part of */
+
 };
 
-
-
-
-
-
-
-
-
-
-
-/* An entry in the names table */
-struct nameEntry
-{
-    const char *filename;
-    const char *function;
-    uint32_t index;
-    uint32_t line;
-    uint32_t addr;
-
-    struct lineMap *l;
-};
 
 struct SymbolSet
 {
-    /* Symbol table related info */
-    asymbol **syms;                         /* Symbol table */
-    struct stat st;  /* Stat of the file that was accessed for the symbols */
-    uint32_t symcount;
-    bfd *abfd;                              /* BFD handle to file */
-    char *elfFile;                          /* File containing structure info */
+    char *elfFile;                         /* File containing structure info */
+    struct stat st;
+    char *objdump;                         /* Objdump to use */
 
-    struct fileMap *cachedFile;             /* File we were last looking at (for speedup) */
-    uint32_t fileCount;                     /* Number of files we have in the filemap */
-    struct fileMap *fileSet;                /* Mapping of files and lines */
+    /* For memory saving and speedup... */
+    bool recordSource;                     /* Keep a record of source code */
+    bool recordAssy;                       /* Keep a record of assembly code */
+
+    /* For file mapping... */
+    uint32_t fileCount;                    /* Number of files we have loaded */
+    uint32_t sourceCount;                  /* Number of source lines we have loaded */
+    uint32_t functionCount;                /* Number of functions we have loaded */
+
+    struct fileEntry *files;               /* Table of files */
+    struct functionEntry *functions;       /* Table of functions */
+    struct sourceLineEntry *sources;       /* Table of sources */
+};
+
+/* An entry in the names table ... what we return to our caller */
+struct nameEntry
+{
+    const char *filename;                /* Filename containing the address */
+    const char *function;                /* Function containing the address */
+    uint32_t line;                       /* Source line containing the address */
+    const char *source;                  /* Corresponding source text */
+    const struct assyLineEntry *assy;    /* Corresponding assembly text */
+    uint32_t assyLine;                   /* Line of assembly text */
+    uint32_t addr;                       /* Matched address */
+    uint32_t index;
 };
 
 // ====================================================================================================
-struct SymbolSet *SymbolSetCreate( char *filename );
+struct SymbolSet *SymbolSetCreate( char *filename, char *newObjdump, bool recordSource, bool recordAssy );
 void SymbolSetDelete( struct SymbolSet **s );
 bool SymbolSetValid( struct SymbolSet **s, char *filename );
-bool SymbolSetLoad( struct SymbolSet **s, char *filename );
-bool SymbolLookup( struct SymbolSet *s, uint32_t addr, struct nameEntry *n, char *deleteMaterial, bool withSourceText );
-
+bool SymbolLookup( struct SymbolSet *s, uint32_t addr, struct nameEntry *n, char *deleteMaterial );
 // ====================================================================================================
 #endif

@@ -125,6 +125,7 @@ struct                                       /* Record for options, either defau
     char *deleteMaterial;                    /* Material to strip off front of filenames for target */
 
     char *elffile;                           /* Target program config */
+    char *objdump;                           /* Non-standard objdump binary */
 
     char *dotfile;                           /* File to output dot information */
     char *profile;                           /* File to output profile information */
@@ -261,7 +262,7 @@ void _lookup( struct nameEntryHash **h, uint32_t addr )
         struct nameEntry ne;
 
         /* Find a matching name record if there is one */
-        SymbolLookup( _r.s, addr, &ne, options.deleteMaterial, false );
+        SymbolLookup( _r.s, addr, &ne, options.deleteMaterial );
 
         /* Was found, so create new hash entry for this */
         np = ( struct nameEntry * )malloc( sizeof( struct nameEntry ) );
@@ -812,6 +813,7 @@ void _printHelp( char *progName )
     fprintf( stdout, "      -h: This help" EOL );
     fprintf( stdout, "      -l: Aggregate per line rather than per function" EOL );
     fprintf( stdout, "      -n: Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
+    fprintf( stdout, "      -O: <program> Use non-standard obbdump binary" EOL );
     fprintf( stdout, "      -s: <Server>:<Port> to use" EOL );
     fprintf( stdout, "      -t: <channel> Use TPIU decoder on specified channel" EOL );
     fprintf( stdout, "      -v: <level> Verbose mode 0(errors)..3(debug)" EOL );
@@ -824,7 +826,7 @@ int _processOptions( int argc, char *argv[] )
 {
     int c;
 
-    while ( ( c = getopt ( argc, argv, "d:e:f:g:hlnp:s:t:vy:z:" ) ) != -1 )
+    while ( ( c = getopt ( argc, argv, "d:e:f:g:hlnO:p:s:t:vy:z:" ) ) != -1 )
 
         switch ( c )
         {
@@ -856,6 +858,11 @@ int _processOptions( int argc, char *argv[] )
             // ------------------------------------
             case 'n':
                 options.forceITMSync = false;
+                break;
+
+            // ------------------------------------
+            case 'O':
+                options.objdump = optarg;
                 break;
 
             // ------------------------------------
@@ -973,14 +980,6 @@ int main( int argc, char *argv[] )
         exit( -1 );
     }
 
-    /* Get the symbols from file */
-    _r.s = SymbolSetCreate( options.elffile );
-
-    if ( !_r.s )
-    {
-        exit( -3 );
-    }
-
     /* Reset the TPIU handler before we start */
     TPIUDecoderInit( &_r.t );
     ITMDecoderInit( &_r.i, options.forceITMSync );
@@ -1052,7 +1051,7 @@ int main( int argc, char *argv[] )
             {
                 _flushHash();
 
-                if ( !SymbolSetLoad( &_r.s, options.elffile ) )
+                if ( !( _r.s = SymbolSetCreate( options.elffile, options.objdump, false, false ) ) )
                 {
                     genericsReport( V_ERROR, "Elf file was lost" EOL );
                     return -1;

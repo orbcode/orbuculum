@@ -206,10 +206,11 @@ Building on Linux
 Dependencies
 ------------
 * libusb-1.0
-* libbfd (binutils-dev)
 * libelf (libelf-dev)
 * libftdi (For FPGA support only)
-* libiberty (libiberty-dev)
+
+Note that `objdump` is also required. By default the suite will run `arm-none-eabi-objdump` but another binary or pathname can be
+subsituted via the `-O` option.
 
 Build
 -----
@@ -236,9 +237,6 @@ Recipie instructions courtesy of FrankTheTank;
 
 * `brew install libelf`
 * `brew install libusb`
-* `brew edit binutils`
-* add `--enable-install-libiberty`, to the configure options of binutils.
-* `brew install -s binutils` or if already installed, `brew reinstall -s binutils`
 
 and finally;
 

@@ -116,11 +116,12 @@ struct exceptionRecord                       /* Record of exception activity */
 struct                                       /* Record for options, either defaults or from command line */
 {
     bool useTPIU;                            /* Are we decoding via the TPIU? */
-    bool reportFilenames;                    /* Report filenames for each routine? -- not presented via UI, intended for debug */
+    bool reportFilenames;                    /* Report filenames for each routine? */
     bool outputExceptions;                   /* Set to include exceptions in output flow */
     uint32_t tpiuITMChannel;                 /* What channel? */
     bool forceITMSync;                       /* Must ITM start synced? */
     char *file;                              /* File host connection */
+    char *objdump;                           /* Novel Objdump file */
 
     uint32_t hwOutputs;                      /* What hardware outputs are enabled */
 
@@ -227,13 +228,16 @@ int _routines_sort_fn( void *a, void *b )
 {
     int r;
 
-    if ( ( ( ( struct visitedAddr * )a )->n->filename ) &&   ( ( ( struct visitedAddr * )b )->n->filename ) )
+    if ( options.reportFilenames )
     {
-        r = strcmp( ( ( struct visitedAddr * )a )->n->filename, ( ( struct visitedAddr * )b )->n->filename );
-
-        if ( r )
+        if ( ( ( ( struct visitedAddr * )a )->n->filename ) &&   ( ( ( struct visitedAddr * )b )->n->filename ) )
         {
-            return r;
+            r = strcmp( ( ( struct visitedAddr * )a )->n->filename, ( ( struct visitedAddr * )b )->n->filename );
+
+            if ( r )
+            {
+                return r;
+            }
         }
     }
 
@@ -406,7 +410,7 @@ uint32_t _consolodateReport( struct reportLine **returnReport, uint32_t *returnR
         }
 
         if ( ( reportLines == 0 ) ||
-                ( strcmp( report[reportLines - 1].n->filename, a->n->filename ) ) ||
+                ( ( options.reportFilenames ) &&  ( strcmp( report[reportLines - 1].n->filename, a->n->filename ) ) ) ||
                 ( strcmp( report[reportLines - 1].n->function, a->n->function ) ) ||
                 ( ( report[reportLines - 1].n->line != a->n->line ) && ( options.lineDisaggregation ) ) )
         {
@@ -779,7 +783,7 @@ void _handlePCSample( struct pcSampleMsg *m, struct ITMDecoder *i )
             struct nameEntry n;
 
             /* Find a matching name record if there is one */
-            SymbolLookup( _r.s, m->pc, &n, options.deleteMaterial, false );
+            SymbolLookup( _r.s, m->pc, &n, options.deleteMaterial );
 
             /* This is a new entry - record it */
 
@@ -948,7 +952,9 @@ void _printHelp( char *progName )
     fprintf( stdout, "       -l: Aggregate per line rather than per function" EOL );
     fprintf( stdout, "       -n: Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
     fprintf( stdout, "       -o: <filename> to be used for output live file" EOL );
+    fprintf( stdout, "       -O: <program> Use non-standard obbdump binary" EOL );
     fprintf( stdout, "       -r: <routines> to record in live file (default %d routines)" EOL, options.maxRoutines );
+    fprintf( stdout, "       -R: Report filenames as part of function discriminator" EOL );
     fprintf( stdout, "       -s: <Server>:<Port> to use" EOL );
     fprintf( stdout, "       -t: <channel> Use TPIU decoder on specified channel" EOL );
     fprintf( stdout, "       -v: <level> Verbose mode 0(errors)..3(debug)" EOL );
@@ -959,7 +965,7 @@ int _processOptions( int argc, char *argv[] )
 {
     int c;
 
-    while ( ( c = getopt ( argc, argv, "c:d:DEe:f:g:hI:j:lm:no:r:s:t:v:" ) ) != -1 )
+    while ( ( c = getopt ( argc, argv, "c:d:DEe:f:g:hI:j:lm:no:O:r:Rs:t:v:" ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -1029,6 +1035,11 @@ int _processOptions( int argc, char *argv[] )
                 break;
 
             // ------------------------------------
+            case 'O':
+                options.objdump = optarg;
+                break;
+
+            // ------------------------------------
             case 'v':
                 genericsSetReportLevel( atoi( optarg ) );
                 break;
@@ -1037,6 +1048,11 @@ int _processOptions( int argc, char *argv[] )
             case 't':
                 options.useTPIU = true;
                 options.tpiuITMChannel = atoi( optarg );
+                break;
+
+            // ------------------------------------
+            case 'R':
+                options.reportFilenames = true;
                 break;
 
             // ------------------------------------
@@ -1298,9 +1314,9 @@ int main( int argc, char *argv[] )
                 /* Make sure old references are invalidated */
                 _flushHash();
 
-                if ( !SymbolSetLoad( &_r.s, options.elffile ) )
+                if ( !( _r.s = SymbolSetCreate( options.elffile, options.objdump, false, false ) ) )
                 {
-                    genericsReport( V_ERROR, "Elf file or symbols in it not found" EOL );
+                    genericsReport( V_ERROR, "Could not read symbols" EOL );
                     usleep( 1000000 );
                     break;
                 }

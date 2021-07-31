@@ -2,7 +2,7 @@
  * Symbol recovery from elf file
  * =============================
  *
- * Copyright (C) 2017, 2019  Dave Marples  <dave@marples.net>
+ * Copyright (C) 2017, 2019, 2021  Dave Marples  <dave@marples.net>
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -43,7 +43,6 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdarg.h>
-#include <regex.h>
 
 #ifdef OSX
     #include "osxelf.h"
@@ -62,7 +61,21 @@
 #define ELF_CHECK_DELAY_TIME  100000    /* Time that elf file has to be stable before it's considered complete */
 
 #define OBJDUMP "arm-none-eabi-objdump"
+
 #define SOURCE_INDICATOR "sRc##"
+#define SYM_NOT_FOUND (0xffffffff)
+
+// #define GPTI_DEBUG 1                 /* Define this for objdump data collection state machine trace */
+
+#ifdef GPTI_DEBUG
+    #define GTPIP(...) { fprintf(stderr, __VA_ARGS__); }
+#else
+    #define GTPIP(...) {}
+#endif
+
+enum LineType { LT_NOISE, LT_PROC_LABEL, LT_LABEL, LT_SOURCE, LT_ASSEMBLY, LT_FILEANDLINE, LT_NEWLINE, LT_ERROR };
+enum ProcessingState {PS_IDLE, PS_GET_SOURCE, PS_GET_ASSY} ps = PS_IDLE;
+
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
@@ -70,167 +83,257 @@
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
-bool _symbolsLoad( struct SymbolSet *s )
+static uint32_t _getFileEntryIdx( struct SymbolSet *s, char *filename )
 
-/* Load symbols from bfd library compatible file */
+/* Get index to file entry in the files table, or SYM_NOT_FOUND */
 
 {
-    uint32_t storage;
-    bool dynamic = false;
-    char **matching;
+    uint32_t i = 0;
 
-    bfd_init();
-
-    /* Get information about the file being used */
-    stat ( s->elfFile, &( s->st ) );
-    s->abfd = bfd_openr( s->elfFile, NULL );
-
-    if ( !s->abfd )
+    while ( ( i < s->fileCount ) && ( strcmp( s->files[i].name, filename ) ) )
     {
-        genericsReport( V_ERROR, "Couldn't open ELF file" EOL );
+        i++;
+    }
+
+    return ( i < s->fileCount ) ? i : SYM_NOT_FOUND;
+}
+// ====================================================================================================
+static uint32_t _getOrAddFileEntryIdx( struct SymbolSet *s, char *filename )
+
+/* Return index to file entry in the files table, or create an entry and return that */
+
+{
+    uint32_t f = _getFileEntryIdx( s, filename );
+
+    if ( SYM_NOT_FOUND == f )
+    {
+        /* Doesn't exist, so create it */
+        s->files = ( struct fileEntry * )realloc( s->files, sizeof( struct fileEntry ) * ( s->fileCount + 1 ) );
+        f = s->fileCount;
+        memset( &( s->files[f] ), 0, sizeof( struct fileEntry ) );
+        s->files[f].name = strdup( filename );
+        s->fileCount++;
+    }
+
+    return f;
+}
+// ====================================================================================================
+static uint32_t _getFunctionEntryIdx( struct SymbolSet *s, char *function )
+
+/* Get index to file entry in the functions table, or SYM_NOT_FOUND */
+
+{
+    uint32_t i = 0;
+
+    while ( ( i < s->functionCount ) && ( strcmp( s->functions[i].name, function ) ) )
+    {
+        i++;
+    }
+
+    return ( i < s->functionCount ) ? i : SYM_NOT_FOUND;
+}
+// ====================================================================================================
+static uint32_t _getOrAddFunctionEntryIdx( struct SymbolSet *s, char *function )
+
+/* Return index to file entry in the functions table, or create an entry and return that */
+
+{
+    uint32_t f = _getFunctionEntryIdx( s, function );
+
+    if ( SYM_NOT_FOUND == f )
+    {
+        /* Doesn't exist, so create it */
+        s->functions = ( struct functionEntry * )realloc( s->functions, sizeof( struct functionEntry ) * ( s->functionCount + 1 ) );
+        f = s->functionCount;
+        memset( &( s->functions[f] ), 0, sizeof( struct functionEntry ) );
+        s->functions[f].name = strdup( function );
+        s->functionCount++;
+    }
+
+    return f;
+}
+// ====================================================================================================
+static struct sourceLineEntry *_AddSourceLineEntry( struct SymbolSet *s )
+
+/* Add an entry to the sources table, and return a pointer to created entry */
+
+{
+    struct sourceLineEntry *src;
+    s->sources = ( struct sourceLineEntry * )realloc( s->sources, sizeof( struct sourceLineEntry ) * ( s->sourceCount + 1 ) );
+    src = &s->sources[s->sourceCount];
+    memset( src, 0, sizeof( struct sourceLineEntry ) );
+    s->sourceCount++;
+    return src;
+}
+
+// ====================================================================================================
+static int _compareLines( const void *a, const void *b )
+
+/* Compare two lines for ordinal value (used for bsort/bsearch) */
+
+{
+    struct sourceLineEntry *sa = ( struct sourceLineEntry * )a;
+    struct sourceLineEntry *sb = ( struct sourceLineEntry * )b;
+
+    /* Is it before the start of this line? */
+    if ( sa->startAddr < sb->startAddr )
+    {
+        return -1;
+    }
+
+    /* Is it after the end of this line? */
+    if ( sa->startAddr > sb->endAddr )
+    {
+        return 1;
+    }
+
+    /* Hmm...match must be on this line then */
+    return 0;
+}
+
+// ====================================================================================================
+static void _sortLines( struct SymbolSet *s )
+
+/* Sort lines into ordinal value as defined by _compareLines */
+
+{
+    qsort( s->sources, s->sourceCount, sizeof( struct sourceLineEntry ), _compareLines );
+}
+
+// ====================================================================================================
+static bool _find_symbol( struct SymbolSet *s, uint32_t workingAddr, const char **pfilename, const char **pfunction, uint32_t *pline, const char **psource, const struct assyLineEntry **assy,
+                          uint32_t *assyLine )
+
+/* Find symbol and return pointers to contents */
+
+{
+    struct sourceLineEntry needle = { .startAddr = workingAddr };
+    struct sourceLineEntry *found = bsearch( &needle, s->sources, s->sourceCount, sizeof( struct sourceLineEntry ), _compareLines );
+
+
+    if ( found )
+    {
+        *pfunction = s->functions[found->functionIdx].name;
+        *pline = found->lineNo;
+        *pfilename = s->files[found->fileIdx].name;
+        *psource = found->lineText;
+        *assy    = found->assy;
+
+        /* If there is assembly then match the line too */
+        for ( *assyLine = 0; *assyLine < found->assyLines; ( *assyLine )++ )
+        {
+            if ( ( *assy )[*assyLine].addr == workingAddr )
+            {
+                break;
+            }
+        }
+
+        /* If the assembly line wasn't found then indicate that */
+        if ( *assyLine == found->assyLines )
+        {
+            *assyLine = ASSY_NOT_FOUND;
+        }
+
+        return true;
+    }
+
+    return false;
+}
+// ====================================================================================================
+static enum LineType _getLineType( char *sourceLine, char *p1, char *p2, char *p3, char *p4 )
+
+/* Analyse line returned by objdump and categorise it. If objdump output is misinterpreted, this is the first place to check */
+
+{
+    /* If it starts with a source tag, it's unambigious */
+    if ( !strncmp( sourceLine, SOURCE_INDICATOR, strlen( SOURCE_INDICATOR ) ) )
+    {
+        return LT_SOURCE;
+    }
+
+    /* If it has something with <xxx> in it, it's a proc label (function) */
+    if ( 2 == sscanf( sourceLine, "%[0-9a-fA-F] <%[^>]>", p1, p2 ) )
+    {
+        return LT_PROC_LABEL;
+    }
+
+    /* If it has (): on the end it's a label */
+    if ( 2 == sscanf( sourceLine, "%[^(]()%c", p1, p2 ) )
+    {
+        if ( *p2 == ':' )
+        {
+            return LT_LABEL;
+        }
+    }
+
+    /* If it starts with a space and has specific fields, it's a 16 or 32 bit assembly line */
+    if ( 4 == sscanf( sourceLine, " %[0-9a-fA-F]:\t%[0-9a-fA-F]%*1[ ]%[0-9a-fA-F]\t %[^\n]", p1, p2, p3, p4 ) )
+    {
+        return LT_ASSEMBLY;
+    }
+
+    *p2 = 0;
+
+    if ( 3 == sscanf( sourceLine, " %[0-9a-fA-F]:\t%[0-9a-fA-F]\t %[^\n]", p1, p3, p4 ) )
+    {
+        return LT_ASSEMBLY;
+    }
+
+    /* If it contains text:num then it's a file and line */
+    if ( 2 == sscanf( sourceLine, "%[^:]:%[0-9]", p1, p2 ) )
+    {
+        return LT_FILEANDLINE;
+    }
+
+    /* If it contains nothing other than newline then its a newline */
+    if ( ( *sourceLine == '\n' ) || ( *sourceLine == '\r' ) )
+    {
+        return LT_NEWLINE;
+    }
+
+    /* ...otherwise we consider it junk */
+    return LT_NOISE;
+}
+// ====================================================================================================
+static bool _getTargetProgramInfo( struct SymbolSet *s )
+
+/* Analyse line returned by objdump and categorise it, putting results into correct structures. */
+/* If objdump output is misinterpreted, this is the second place to check */
+
+{
+    FILE *f;                                  /* Connection to objdum process */
+    char line[MAX_LINE_LEN];                  /* Line read from objdump process */
+    char commandLine[MAX_LINE_LEN];           /* Command line used to run objdump */
+    uint32_t existingTextLen;                 /* Line under construction */
+
+    char label[MAX_LINE_LEN];                 /* Any cached label */
+    uint32_t lineNo = 0;                      /* Any cached line number */
+    bool startAddrSet = false;                /* If to attach start address to function */
+
+    char p1[MAX_LINE_LEN];
+    char p2[MAX_LINE_LEN];
+    char p3[MAX_LINE_LEN];
+    char p4[MAX_LINE_LEN];                    /* Elements returned by line analysis */
+    enum LineType lt;                         /* Line type returned from anaylsis */
+
+    uint32_t fileEntryIdx = SYM_NOT_FOUND;    /* Index into file entry table */
+    uint32_t functionEntryIdx = SYM_NOT_FOUND; /* Index into function entry table */
+    struct sourceLineEntry *sourceEntry = NULL; /* pointer to current source entry */
+
+    if ( stat( s->elfFile, &s->st ) != 0 )
+    {
         return false;
     }
 
-    s->abfd->flags |= BFD_DECOMPRESS;
-
-    if ( bfd_check_format( s->abfd, bfd_archive ) )
+    if ( s->objdump )
     {
-        genericsReport( V_ERROR, "Cannot get addresses from archive %s" EOL, s->elfFile );
-        return false;
-    }
-
-    if ( ! bfd_check_format_matches ( s->abfd, bfd_object, &matching ) )
-    {
-        genericsReport( V_ERROR, "Ambigious format for file" EOL );
-        return false;
-    }
-
-    if ( ( bfd_get_file_flags ( s->abfd ) & HAS_SYMS ) == 0 )
-    {
-        genericsReport( V_ERROR, "No symbols found" EOL );
-        return false;
-    }
-
-    storage = bfd_get_symtab_upper_bound ( s->abfd ); /* This is returned in bytes */
-
-    if ( storage == 0 )
-    {
-        storage = bfd_get_dynamic_symtab_upper_bound ( s->abfd );
-        dynamic = true;
-    }
-
-    s->syms = ( asymbol ** )malloc( storage );
-
-    if ( dynamic )
-    {
-        s->symcount = bfd_canonicalize_dynamic_symtab ( s->abfd, s->syms );
+        snprintf( commandLine, MAX_LINE_LEN, "%s -Sl --source-comment=" SOURCE_INDICATOR " %s", s->objdump,  s->elfFile );
     }
     else
     {
-        s->symcount = bfd_canonicalize_symtab ( s->abfd, s->syms );
+        snprintf( commandLine, MAX_LINE_LEN, OBJDUMP " -Sl --source-comment=" SOURCE_INDICATOR " %s",  s->elfFile );
     }
 
-    return true;
-}
-// ====================================================================================================
-// ====================================================================================================
-// I'm not a fan of globals used for this kind of thing, but this is a library so we don't get a
-// say in the matter. Lets at least hide what is going on in one place...access via _find_symbol.
-
-static bool _found;
-static uint32_t _searchaddr;
-static const char **_function;
-static const char **_filename;
-static uint32_t *_line;
-static asymbol **_syms;
-
-static void _find_in_section( bfd *abfd, asection *section, void *data )
-
-{
-    /* If we already found it then return */
-    if ( _found )
-    {
-        return;
-    }
-
-    /* If this section isn't memory-resident, then don't look further, otherwise get section base and size */
-    /* (Ifdef is a work around for changes in binutils 2.34.                                               */
-#ifdef bfd_get_section_vma
-
-    if ( !( ( bfd_get_section_flags( abfd, section ) & SEC_ALLOC ) ) )
-    {
-        return;
-    }
-
-    bfd_vma vma = bfd_get_section_vma( abfd, section );
-    bfd_size_type size = bfd_section_size( abfd, section );
-#else
-
-    if ( !( ( bfd_section_flags( section ) & SEC_ALLOC ) ) )
-    {
-        return;
-    }
-
-    bfd_vma vma = bfd_section_vma( section );
-    bfd_size_type size = bfd_section_size( section );
-#endif
-
-
-    /* If address falls outside this section then don't look further */
-    if ( ( _searchaddr < vma ) || ( _searchaddr > vma + size ) )
-    {
-        return;
-    }
-
-    _found = bfd_find_nearest_line( abfd, section, _syms, _searchaddr - vma, _filename, _function, _line );
-}
-
-static bool _find_symbol( struct SymbolSet *s, uint32_t workingAddr, const char **pfilename, const char **pfunction, uint32_t *pline )
-
-{
-    _syms = s->syms;
-    _searchaddr = workingAddr;
-    _filename = pfilename;
-    _function = pfunction;
-    _line = pline;
-    _found = false;
-
-    bfd_map_over_sections( s->abfd, _find_in_section, NULL );
-    return _found;
-}
-// ====================================================================================================
-// ====================================================================================================
-static bool _getTargetProgramInfo( char *filename )
-
-{
-#define GPTI_DEBUG 1
-
-#ifdef GPTI_DEBUG
-#define GTPIP(...) { printf("GTPI: " __VA_ARGS__); }
-#else
-#define GTPIP(...) {}
-#endif
-
-    FILE *f;
-    char line[MAX_LINE_LEN];
-    char commandLine[MAX_LINE_LEN];
-
-    char fnName[MAX_LINE_LEN];
-    char fileName[MAX_LINE_LEN] = {0};
-    char label[MAX_LINE_LEN];
-    char source[MAX_LINE_LEN];
-    char assembly[10 * MAX_LINE_LEN];
-    uint32_t lineNo = 0;
-    uint32_t startAddr;
-    uint32_t endAddr;
-
-    uint32_t assyAddress;
-    uint32_t assyOpcodes;
-
-    enum ProcessingState {PS_IDLE, PS_GET_LABEL, PS_GET_FILEANDLINE, PS_GET_SOURCE, PS_GET_ASSY} ps = PS_IDLE;
-
-    //    snprintf( commandLine, MAX_LINE_LEN, OBJDUMP" -Sl --start-address=0x08000e0c --stop-address=0x08000e28  --source-comment=" SOURCE_INDICATOR " %s", filename );
-    snprintf( commandLine, MAX_LINE_LEN, OBJDUMP" -Sl --source-comment=" SOURCE_INDICATOR " %s", filename );    
     f = popen( commandLine, "r" );
 
     if ( !f )
@@ -241,123 +344,255 @@ static bool _getTargetProgramInfo( char *filename )
     while ( !feof( f ) )
     {
         fgets( line, MAX_LINE_LEN, f );
-	//        GTPIP( "%s", line );
+
+        lt = _getLineType( line, p1, p2, p3, p4 );
+
+        if ( lt == LT_ERROR )
+        {
+            pclose( f );
+            return false;
+        }
+
+        GTPIP( "**************** %s", line );
 
     repeat_process: // In case we need to process the state machine more than once
 
-#ifdef GTPI_DEBUG
+#ifdef GPTI_DEBUG
 
         switch ( ps )
         {
             case PS_IDLE:
-                GTPIP( "IDLE" );
-                break;
-
-            case PS_GET_LABEL:
-                GTPIP( "GET_LABEL" );
-                break;
-
-            case PS_GET_FILEANDLINE:
-                GTPIP( "GET_FILEANDLINE" );
+                GTPIP( "IDLE(" );
                 break;
 
             case PS_GET_SOURCE:
-                GTPIP( "GET_SOURCE" );
+                GTPIP( "GET_SOURCE(" );
                 break;
 
             case PS_GET_ASSY:
-                GTPIP( "GET_ASSY" );
+                GTPIP( "GET_ASSY(" );
                 break;
         }
 
-        GTPIP( EOL );
+        switch ( lt )
+        {
+            case LT_NOISE:
+                GTPIP( "NOISE" );
+                break;
+
+            case LT_PROC_LABEL:
+                GTPIP( "PROC_LABEL" );
+                break;
+
+            case LT_LABEL:
+                GTPIP( "LABEL" );
+                break;
+
+            case LT_SOURCE:
+                GTPIP( "SOURCE" );
+                break;
+
+            case LT_ASSEMBLY:
+                GTPIP( "ASSEMBLY" );
+                break;
+
+            case LT_FILEANDLINE:
+                GTPIP( "FILEANDLINE" );
+                break;
+
+            case LT_NEWLINE:
+                GTPIP( "NEWLINE" );
+                break;
+
+            case LT_ERROR:
+                GTPIP( "ERROR" );
+                break;
+        }
+
+        GTPIP( ")" EOL );
 #endif
 
         switch ( ps )
         {
-            case PS_IDLE: /* Waiting for name of function */
-                if ( !line[0] )
+            case PS_IDLE: /* Waiting for name of function ================================== */
+                switch ( lt )
                 {
-                    break;
-                }
+                    case LT_NOISE: /* ------------------------------------------------------ */
+                        break;
 
-                if ( !strncmp( line, SOURCE_INDICATOR, strlen( SOURCE_INDICATOR ) ) )
-                {
-                    ps = PS_GET_SOURCE;
-                    goto repeat_process;
-                }
+                    case LT_SOURCE: /* ----------------------------------------------------- */
+                        ps = PS_GET_SOURCE;
+                        sourceEntry = _AddSourceLineEntry( s );
+                        sourceEntry->lineNo = lineNo;
+                        sourceEntry->functionIdx = functionEntryIdx;
+                        sourceEntry->fileIdx = fileEntryIdx;
+                        startAddrSet = false;
+                        GTPIP( "Switching to get source" EOL );
+                        goto repeat_process;
+                        break;
 
-                if ( 2 == sscanf( line, "%x <%s>:", &startAddr, fnName ) )
-                {
-                    fnName[strlen( fnName ) - 2] = 0;
-                    endAddr = startAddr;
-                    source[0] = 0;
-                    assembly[0] = 0;
-                    ps = PS_GET_LABEL;
-                    GTPIP( "Got function name [%08x %s]" EOL, startAddr, fnName );
+                    case LT_ASSEMBLY: /* --------------------------------------------------- */
+                        /* This happens when there is no corresponding source code */
+                        sourceEntry = _AddSourceLineEntry( s );
+                        sourceEntry->functionIdx = functionEntryIdx;
+                        sourceEntry->fileIdx = fileEntryIdx;
+                        startAddrSet = false;
+                        GTPIP( "Straight to Assembly" EOL );
+                        ps = PS_GET_ASSY;
+                        goto repeat_process;
+                        break;
+
+                    case LT_PROC_LABEL: /* ------------------------------------------------- */
+                        functionEntryIdx = _getOrAddFunctionEntryIdx( s, p2 );
+                        s->functions[functionEntryIdx].startAddr = strtoul( p1, NULL, 16 );
+                        GTPIP( "Got function name [%08x %s]" EOL, s->functions[functionEntryIdx].startAddr, s->functions[functionEntryIdx].name );
+                        break;
+
+                    case LT_FILEANDLINE: /* ------------------------------------------------ */
+                        fileEntryIdx = _getOrAddFileEntryIdx( s, p1 );
+                        s->functions[functionEntryIdx].fileEntryIdx = fileEntryIdx;
+                        lineNo = strtoul( p2, NULL, 10 );
+                        GTPIP( "Got filename and line [%d %s]" EOL, lineNo, p1 );
+                        break;
+
+                    case LT_LABEL: /* -----------------------------------------------------  */
+                        strcpy( label, p1 );
+                        GTPIP( "Got label [%s]" EOL, label );
+                        break;
+
+                    case LT_ERROR: /* ------------------------------------------------------ */
+                    case LT_NEWLINE:
+                    default:
+                        GTPIP( "Unhandled" EOL );
+                        break;
                 }
 
                 break;
 
-            case PS_GET_LABEL:
-                sscanf( line, "%s", label );
-                label[strlen( label ) - 3] = 0;
-                GTPIP( "Got label [%s]" EOL, label );
-                ps = PS_GET_FILEANDLINE;
+            case PS_GET_SOURCE: /* Collecting source ========================================== */
+                switch ( lt )
+                {
+                    case LT_NOISE: /* ------------------------------------------------------ */
+                        break;
+
+                    case LT_SOURCE: /* ----------------------------------------------------- */
+                        existingTextLen = sourceEntry->lineText ? strlen( sourceEntry->lineText ) : 0;
+                        sourceEntry->functionIdx = functionEntryIdx;
+                        sourceEntry->lineNo = lineNo;
+
+                        // Add this to source line repository
+                        if ( s->recordSource )
+                        {
+                            sourceEntry->lineText = ( char * )realloc( sourceEntry->lineText, strlen( line ) - strlen( SOURCE_INDICATOR ) + existingTextLen + 1 );
+                            strcpy( &sourceEntry->lineText[existingTextLen], &line[strlen( SOURCE_INDICATOR )] );
+                            GTPIP( "Got Source [%s]", &line[strlen( SOURCE_INDICATOR )] );
+                        }
+
+                        break;
+
+                    case LT_ASSEMBLY: /* --------------------------------------------------- */
+                        ps = PS_GET_ASSY;
+                        goto repeat_process;
+                        break;
+
+                    case LT_PROC_LABEL: /* ------------------------------------------------- */
+                    case LT_ERROR:
+                    case LT_LABEL:
+                    case LT_NEWLINE:
+                    case LT_FILEANDLINE:
+                    default:
+                        GTPIP( "Unhandled" EOL );
+                        break;
+                }
+
                 break;
 
-            case PS_GET_FILEANDLINE:
-                ps = PS_GET_SOURCE;
-
-                if ( 2 != sscanf( line, "%[^:]:%d", fileName, &lineNo ) )
+            case PS_GET_ASSY: /* Waiting for assembly ========================================= */
+                switch ( lt )
                 {
-                    goto repeat_process;
-                }
+                    case LT_NOISE: /* ------------------------------------------------------ */
+                        break;
 
-                GTPIP( "Got filename and line [%d %s]" EOL, lineNo, fileName );
-                break;
+                    case LT_PROC_LABEL: /* ------------------------------------------------- */
+                    case LT_FILEANDLINE: /* ------------------------------------------------ */
+                    case LT_NEWLINE: /* ---------------------------------------------------- */
+                        ps = PS_IDLE;
+                        goto repeat_process;
+                        break;
 
-            case PS_GET_SOURCE:
-	      if ( !strncmp( line, SOURCE_INDICATOR, strlen( SOURCE_INDICATOR ) ) )
-                {
-                    // Add this to source line repository
-                    strcpy( &source[strlen( source )], line );
-                    GTPIP( "Got Source [%s]", &line[strlen( SOURCE_INDICATOR )] );
-                    break;
-                }
+                    case LT_ASSEMBLY: /* --------------------------------------------------- */
+                        sourceEntry->endAddr = strtoul( p1, NULL, 16 );
+                        s->functions[functionEntryIdx].endAddr = sourceEntry->endAddr;
 
-                // This can't be source, process as assembly
-                GTPIP( "Giving up on source" EOL );
-                ps = PS_GET_ASSY;
-                goto repeat_process;
+                        if ( s->recordAssy )
+                        {
+                            sourceEntry->assy = ( struct assyLineEntry * )realloc( sourceEntry->assy, sizeof( struct assyLineEntry ) * ( sourceEntry->assyLines + 1 ) );
+                            sourceEntry->assy[sourceEntry->assyLines].addr = sourceEntry->endAddr;
+                            sourceEntry->assy[sourceEntry->assyLines].is4Byte = ( ( *p2 ) != 0 );
 
-            case PS_GET_ASSY:
-	      if ( 3 == sscanf( line, "%x:\t%x\t%[^\n]", &assyAddress, &assyOpcodes, assembly ) )
+                            sourceEntry->assy[sourceEntry->assyLines].codes = strtoul( p3, NULL, 16 );
 
-                {
-                    GTPIP( "%08x %x [%s]" EOL, assyAddress, assyOpcodes, assembly );
-                }
-                else
-                {
-                    ps = PS_IDLE;
-                    goto repeat_process;
+                            if ( *p2 )
+                            {
+                                sourceEntry->assy[sourceEntry->assyLines].codes |= ( strtoul( p2, NULL, 16 ) << 16 );
+                            }
+
+                            sourceEntry->assy[sourceEntry->assyLines].lineText = strdup( p4 );
+
+                            /* Record the label is there was one */
+                            sourceEntry->assy[sourceEntry->assyLines].label = *label ? strdup( label ) : NULL;
+                            GTPIP( "%08x %x [%s]" EOL, sourceEntry->assy[sourceEntry->assyLines].addr, sourceEntry->assy[sourceEntry->assyLines].codes, sourceEntry->assy[sourceEntry->assyLines].lineText );
+                            sourceEntry->assyLines++;
+                        }
+
+
+                        *label = 0;
+
+                        if ( !startAddrSet )
+                        {
+                            startAddrSet = true;
+                            sourceEntry->startAddr = sourceEntry->endAddr;
+                        }
+
+                        break;
+
+                    case LT_LABEL: /* ------------------------------------------------------ */
+                        strcpy( label, p1 );
+                        GTPIP( "Got label [%s]" EOL, label );
+                        break;
+
+                    case LT_SOURCE:  /* ---------------------------------------------------- */
+                    case LT_ERROR:
+                    default:
+                        GTPIP( "Unhandled" EOL );
+                        break;
                 }
 
                 break;
         }
     }
 
-    pclose( f );
+    if ( 0 != pclose( f ) )
+    {
+        /* Something went wrong in the close process */
+        return false;
+    }
+
+    _sortLines( s );
     return true;
 }
 // ====================================================================================================
-bool SymbolLookup( struct SymbolSet *s, uint32_t addr, struct nameEntry *n, char *deleteMaterial, bool withSourceText )
+bool SymbolLookup( struct SymbolSet *s, uint32_t addr, struct nameEntry *n, char *deleteMaterial )
 
 /* Lookup function for address to line, and hence to function */
 
 {
     const char *function = NULL;
     const char *filename = NULL;
+    const char *source   = NULL;
+    const struct assyLineEntry *assy = NULL;
+    uint32_t assyLine;
+
     uint32_t line;
 
     memset( n, 0, sizeof( struct nameEntry ) );
@@ -396,7 +631,7 @@ bool SymbolLookup( struct SymbolSet *s, uint32_t addr, struct nameEntry *n, char
         return false;
     }
 
-    if ( _find_symbol( s, addr, &filename, &function, &line ) )
+    if ( _find_symbol( s, addr, &filename, &function, &line, &source, &assy, &assyLine ) )
     {
 
         /* Remove any frontmatter off filename string that matches */
@@ -413,104 +648,92 @@ bool SymbolLookup( struct SymbolSet *s, uint32_t addr, struct nameEntry *n, char
 
         n->filename = filename ? filename : "";
         n->function = function ? function : "";
+        n->source   = source ? source : "";
+        n->assy     = assy;
+        n->assyLine = assyLine;
         n->addr = addr;
         n->line = line;
-
-        if ( withSourceText )
-        {
-            _getSourceText( s, n );
-        }
-
         return true;
     }
 
 
     n->filename = "Unknown";
     n->function = "Unknown";
-    n->addr = NOT_FOUND;
+    n->source   = "";
+    n->assy     = NULL;
+    n->addr = SYM_NOT_FOUND;
     n->line = 0;
     return false;
 }
 // ====================================================================================================
-struct SymbolSet *SymbolSetCreate( char *filename )
-
-{
-    struct stat statbuf, newstatbuf;
-    struct SymbolSet *s = ( struct SymbolSet * )calloc( sizeof( struct SymbolSet ), 1 );
-    s->elfFile = strdup( filename );
-
-    /* Make sure this file is stable before trying to load it */
-    if ( stat( filename, &statbuf ) == 0 )
-    {
-        /* There is at least a file here */
-        while ( 1 )
-        {
-            usleep( ELF_CHECK_DELAY_TIME );
-
-            if ( stat( filename, &newstatbuf ) != 0 )
-            {
-                printf( "NO FILE!!!\n" );
-                break;
-            }
-
-            /* We check filesize, modification time and status change time for any differences */
-            if (
-                        ( memcmp( &statbuf.st_size, &newstatbuf.st_size, sizeof( off_t ) ) ) ||
-#ifdef OSX
-                        ( memcmp( &statbuf.st_mtimespec, &newstatbuf.st_mtimespec, sizeof( struct timespec ) ) ) ||
-                        ( memcmp( &statbuf.st_ctimespec, &newstatbuf.st_ctimespec, sizeof( struct timespec ) ) )
-#else
-                        ( memcmp( &statbuf.st_mtim, &newstatbuf.st_mtim, sizeof( struct timespec ) ) ) ||
-                        ( memcmp( &statbuf.st_ctim, &newstatbuf.st_ctim, sizeof( struct timespec ) ) )
-#endif
-            )
-            {
-                /* Make this the version we check next time around */
-                memcpy( &statbuf, &newstatbuf, sizeof( struct stat ) );
-                continue;
-            }
-
-            if ( _symbolsLoad( s ) )
-            {
-                return s;
-            }
-            else
-            {
-                break;
-            }
-        }
-    }
-
-    /* If we reach here we weren't successful, so delete the allocated memory */
-    free( s->elfFile );
-    free( s );
-    s = NULL;
-
-    return s;
-}
-// ====================================================================================================
 void SymbolSetDelete( struct SymbolSet **s )
 
-{
-    if ( ( *s ) && ( ( *s )->abfd ) )
-    {
-        bfd_close( ( *s )->abfd );
-        free( ( *s )->elfFile );
-        free( ( *s )->syms );
+/* Delete existing symbol set, by means of deleting all memory-allocated components of it first */
 
-        if ( ( *s )->fileSet )
+{
+    if ( *s )
+    {
+        free( ( *s )->elfFile );
+
+        /* Free off any files dynamic memory we allocated */
+        if ( ( *s )->files )
         {
             for ( uint32_t i = 0; i < ( *s )->fileCount; i++ )
             {
-                for ( uint32_t j = 0; j < ( *s )->fileSet[i].lines; j++ )
+                if ( ( *s )->files[i].name )
                 {
-                    free( ( *s )->fileSet[i].map[j].text );
+                    free( ( *s )->files[i].name );
                 }
-
-                free( ( *s )->fileSet[i].map );
             }
 
-            free ( ( *s )->fileSet );
+            free( ( *s )->files );
+        }
+
+        /* Free off any functions dynamic memory we allocated */
+        if ( ( *s )->functions )
+        {
+            for ( uint32_t i = 0; i < ( *s )->functionCount; i++ )
+            {
+                if ( ( *s )->functions[i].name )
+                {
+                    free( ( *s )->functions[i].name );
+                }
+            }
+
+            free( ( *s )->functions );
+        }
+
+        /* Free off any sources dynamic memory we allocated */
+        if ( ( *s )->sources )
+        {
+            for ( uint32_t i = 0; i < ( *s )->sourceCount; i++ )
+            {
+                if ( ( *s )->sources[i].lineText )
+                {
+                    free( ( *s )->sources[i].lineText );
+                }
+
+                /* For any source line, free off it's assembly if there is some */
+                if ( ( *s )->sources[i].assy )
+                {
+                    if ( ( *s )->sources[i].assy->label )
+                    {
+                        free( ( *s )->sources[i].assy->label );
+                    }
+
+                    for ( uint32_t j = 0; j < ( *s )->sources[i].assyLines; j++ )
+                    {
+                        if ( ( *s )->sources[i].assy[j].lineText )
+                        {
+                            free( ( *s )->sources[i].assy[j].lineText );
+                        }
+                    }
+
+                    free( ( *s )->sources[i].assy );
+                }
+            }
+
+            free( ( *s )->sources );
         }
 
         free( *s );
@@ -519,6 +742,8 @@ void SymbolSetDelete( struct SymbolSet **s )
 }
 // ====================================================================================================
 bool SymbolSetValid( struct SymbolSet **s, char *filename )
+
+/* Check if current symbol set remains valid */
 
 {
     struct stat n;
@@ -552,13 +777,61 @@ bool SymbolSetValid( struct SymbolSet **s, char *filename )
     }
 }
 // ====================================================================================================
-bool SymbolSetLoad( struct SymbolSet **s, char *filename )
+struct SymbolSet *SymbolSetCreate( char *filename, char *newObjdump, bool recordSource, bool recordAssy )
+
+/* Create new symbol set by reading from elf file, if it's there and stable */
 
 {
-    assert( *s == NULL );
+    struct stat statbuf, newstatbuf;
+    struct SymbolSet *s = ( struct SymbolSet * )calloc( sizeof( struct SymbolSet ), 1 );
+    s->elfFile = strdup( filename );
+    s->objdump = newObjdump;
+    s->recordSource = recordSource;
+    s->recordAssy = recordAssy;
 
-    return _getTargetProgramInfo( filename );
-    //    *s = SymbolSetCreate( filename );
-    //    return ( ( *s ) != NULL );
+    /* Make sure this file is stable before trying to load it */
+    if ( stat( filename, &statbuf ) == 0 )
+    {
+        /* There is at least a file here */
+        while ( 1 )
+        {
+            usleep( ELF_CHECK_DELAY_TIME );
+
+            if ( stat( filename, &newstatbuf ) != 0 )
+            {
+                break;
+            }
+
+            /* We check filesize, modification time and status change time for any differences */
+            if (
+                        ( memcmp( &statbuf.st_size, &newstatbuf.st_size, sizeof( off_t ) ) ) ||
+#ifdef OSX
+                        ( memcmp( &statbuf.st_mtimespec, &newstatbuf.st_mtimespec, sizeof( struct timespec ) ) ) ||
+                        ( memcmp( &statbuf.st_ctimespec, &newstatbuf.st_ctimespec, sizeof( struct timespec ) ) )
+#else
+                        ( memcmp( &statbuf.st_mtim, &newstatbuf.st_mtim, sizeof( struct timespec ) ) ) ||
+                        ( memcmp( &statbuf.st_ctim, &newstatbuf.st_ctim, sizeof( struct timespec ) ) )
+#endif
+            )
+            {
+                /* Make this the version we check next time around */
+                memcpy( &statbuf, &newstatbuf, sizeof( struct stat ) );
+                continue;
+            }
+
+            if ( _getTargetProgramInfo( s ) )
+            {
+                return s;
+            }
+            else
+            {
+                break;
+            }
+        }
+    }
+
+    /* If we reach here we weren't successful, so delete the allocated memory */
+    SymbolSetDelete( &s );
+    return NULL;
 }
 // ====================================================================================================
