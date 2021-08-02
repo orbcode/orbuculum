@@ -35,6 +35,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <string.h>
 #include <limits.h>
 #include <sys/time.h>
 #include "generics.h"
@@ -216,6 +217,41 @@ void genericsPrintf( const char *fmt, ... )
     vsnprintf( op, MAX_STRLEN, fmt, va );
     va_end( va );
     fputs( op, stdout );
+}
+// ====================================================================================================
+const char *genericsBasename( const char *n )
+
+/* Find basename of given path...returns empty string if path ends with / */
+
+{
+    const char *p = n + strlen( n );
+
+    while ( ( p != n ) && ( *( p - 1 ) != '/' ) )
+    {
+        p--;
+    }
+
+    return p;
+}
+// ====================================================================================================
+const char *genericsBasenameN( const char *n, int c )
+
+/* Find basename + c path elements of given path...returns path if path ends with / */
+
+{
+    const char *p = n + strlen( n );
+
+    while ( ( p != n ) && ( c ) && ( *( p - 1 ) != '/' ) )
+    {
+        p--;
+
+        if ( *p == '/' )
+        {
+            c--;
+        }
+    }
+
+    return p;
 }
 // ====================================================================================================
 void genericsReport( enum verbLevel l, const char *fmt, ... )

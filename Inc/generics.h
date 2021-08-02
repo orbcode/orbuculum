@@ -47,9 +47,14 @@
 extern "C" {
 #endif
 
-/* Error return codes */
+/* Error return codes .. may already be defined by ncurses */
+#ifndef OK
 #define OK         0
+#endif
+
+#ifndef ERR
 #define ERR       -1
+#endif
 
 #ifdef SCREEN_HANDLING
 #define CLEAR_SCREEN  "\033[2J\033[;H"
@@ -88,6 +93,8 @@ uint64_t genericsTimestampuS( void );
 uint32_t genericsTimestampmS( void );
 void genericsSetReportLevel( enum verbLevel lset );
 void genericsPrintf( const char *fmt, ... );
+const char *genericsBasename( const char *n );
+const char *genericsBasenameN( const char *n, int c );
 void genericsReport( enum verbLevel l, const char *fmt, ... );
 void genericsExit( int status, const char *fmt, ... );
 // ====================================================================================================

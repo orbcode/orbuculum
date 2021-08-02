@@ -49,7 +49,6 @@
     #include <elf.h>
 #endif
 
-#include <demangle.h>
 #include <assert.h>
 #include <inttypes.h>
 #include <stdint.h>
@@ -520,11 +519,6 @@ static void _outputJson( FILE *f, uint32_t total, uint32_t reportLines, struct r
         {
             char *d = NULL;
 
-            if ( ( options.demangle ) && ( !options.reportFilenames ) )
-            {
-                d = cplus_demangle( report[n].n->function, DMGL_AUTO );
-            }
-
             /* Output in JSON Format */
             jsonTableEntry = cJSON_CreateObject();
             assert( jsonTableEntry );
@@ -631,11 +625,6 @@ static void _outputTop( uint32_t total, uint32_t reportLines, struct reportLine 
             if ( report[n].count )
             {
                 char *d = NULL;
-
-                if ( ( options.demangle ) && ( !options.reportFilenames ) )
-                {
-                    d = cplus_demangle( report[n].n->function, DMGL_AUTO );
-                }
 
                 if ( ( percentage >= CUTOFF ) && ( ( !options.cutscreen ) || ( n < options.cutscreen ) ) )
                 {
@@ -1314,7 +1303,7 @@ int main( int argc, char *argv[] )
                 /* Make sure old references are invalidated */
                 _flushHash();
 
-                if ( !( _r.s = SymbolSetCreate( options.elffile, options.objdump, false, false ) ) )
+                if ( !( _r.s = SymbolSetCreate( options.elffile, options.objdump, options.demangle, false, false ) ) )
                 {
                     genericsReport( V_ERROR, "Could not read symbols" EOL );
                     usleep( 1000000 );

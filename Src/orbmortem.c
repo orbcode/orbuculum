@@ -50,6 +50,7 @@
 #include <inttypes.h>
 #include <limits.h>
 #include <signal.h>
+#include <ncurses.h>
 
 #include "git_version_info.h"
 #include "generics.h"
@@ -61,11 +62,17 @@
 #define REMOTE_ETM_PORT     (3443)            /* Server port definition */
 #define REMOTE_SERVER       "localhost"
 
+#define SCRATCH_STRING_LEN  (65535)            /* Max length for a string under construction */
 //#define DUMP_BLOCK
 #define DEFAULT_PM_BUFLEN_K (32)
 
-#define INTERVAL_TIME_MS    (100)              /* Intervaltime between packets */
-#define HANG_TIME_MS        (90)               /* Time without a packet after which we dump the buffer */
+#define INTERVAL_TIME_MS    (1000)             /* Intervaltime between acculumator resets */
+#define HANG_TIME_MS        (490)              /* Time without a packet after which we dump the buffer */
+#define TICK_TIME_MS        (100)              /* Time intervals for screen updates and keypress check */
+#define HB_GRAPHIC          ".oO0Oo"           /* An affectation, keep-alive indication */
+#define HB_GRAPHIC_LEN      strlen(HB_GRAPHIC) /* Length of KA indication */
+
+enum CP { CP_EVENT, CP_NORMAL, CP_FILEFUNCTION, CP_LINENO, CP_EXECASSY, CP_NEXECASSY, CP_BASELINE, CP_BASELINETEXT };
 
 /* Record for options, either defaults or from command line */
 struct Options
@@ -76,6 +83,7 @@ struct Options
     char *file;                         /* File host connection */
     bool fileTerminate;                 /* Terminate when file read isn't successful */
     char *deleteMaterial;               /* Material to delete off front end of filenames */
+    bool demangle;                      /* Indicator that C++ should be demangled */
 
     char *elffile;                      /* File to use for symbols etc. */
     char *objdump;                      /* Novel Objdump file */
@@ -90,6 +98,7 @@ struct Options
 {
     .port = REMOTE_ETM_PORT,
     .server = REMOTE_SERVER,
+    .demangle = true,
     .channel = 2,
     .buflen = DEFAULT_PM_BUFLEN_K * 1024
 };
@@ -116,9 +125,20 @@ struct RunTime
     struct SymbolSet *s;                /* Symbols read from elf */
     bool      ending;                   /* Flag indicating app is terminating */
     uint64_t intervalBytes;             /* Number of bytes transferred in current interval */
+    uint64_t oldintervalBytes;          /* Number of bytes transferred previously */
     uint8_t *pmBuffer;                  /* The post-mortem buffer */
     uint32_t wp;                        /* Index pointers for ring buffer */
     uint32_t rp;
+
+    int hb;
+    const char *progName;
+    WINDOW *outputWindow;
+    WINDOW *statusWindow;
+
+    char **opText;
+    uint32_t opTextWline;
+    uint32_t opTextRline;
+    uint32_t oldopTextRline;
 
     struct visitedAddr *addresses;      /* Addresses we received in the SWV */
 
@@ -129,6 +149,21 @@ struct RunTime
 {
     .options = &_options
 };
+
+/* In string markers for information types (for colouring) */
+#define CE_CLR       '\377'     /* Flag indicating color change */
+#define CE_EV        "\377\001" /* Event color */
+#define CE_FILE      "\377\002" /* File/line color */
+#define CE_SRCLINENO "\377\003" /* Source lineno color */
+#define CE_SRC       "\377\004" /* Source color */
+#define CE_ASSY      "\377\005" /* Executed assembly color */
+#define CE_NASSY     "\377\006" /* Non-executed assembly color */
+
+/* Window sizes/positions */
+#define OUTPUT_WINDOW_L (LINES-2)
+#define OUTPUT_WINDOW_W (COLS)
+#define STATUS_WINDOW_L (2)
+#define STATUS_WINDOW_W  (COLS)
 
 // ====================================================================================================
 // ====================================================================================================
@@ -144,12 +179,13 @@ static void _intHandler( int sig )
     exit( 0 );
 }
 // ====================================================================================================
-static void _printHelp( char *progName )
+static void _printHelp( struct RunTime *r )
 
 {
-    genericsPrintf( "Usage: %s [options]" EOL, progName );
+    genericsPrintf( "Usage: %s [options]" EOL, r->progName );
     genericsPrintf( "       -a: Use alternate address encoding" EOL );
     genericsPrintf( "       -b: <Length> Length of post-mortem buffer, in KBytes (Default %d KBytes)" EOL, DEFAULT_PM_BUFLEN_K );
+    genericsPrintf( "       -D: Switch off C++ symbol demangling" EOL );
     genericsPrintf( "       -d: <String> Material to delete off front of filenames" EOL );
     genericsPrintf( "       -e: <ElfFile> to use for symbols and source" EOL );
     genericsPrintf( "       -E: When reading from file, terminate at end of file rather than waiting for further input" EOL );
@@ -181,6 +217,11 @@ static int _processOptions( int argc, char *argv[], struct RunTime *r )
                 break;
 
             // ------------------------------------
+            case 'D':
+                r->options->demangle = false;
+                break;
+
+            // ------------------------------------
             case 'd':
                 r->options->deleteMaterial = optarg;
                 break;
@@ -205,7 +246,7 @@ static int _processOptions( int argc, char *argv[], struct RunTime *r )
             // ------------------------------------
 
             case 'h':
-                _printHelp( argv[0] );
+                _printHelp( r );
                 return false;
 
             // ------------------------------------
@@ -352,6 +393,35 @@ static void _processBlock( struct RunTime *r )
     }
 }
 // ====================================================================================================
+static void _flushBuffer( struct RunTime *r )
+
+{
+    while ( r->opTextWline )
+    {
+        free( r->opText[r->opTextWline - 1] );
+        r->opTextWline--;
+    }
+
+    free( r->opText );
+    r->opText = NULL;
+    r->opTextWline = r->opTextRline = 0; //r->oldopTextRline = 0;
+}
+// ====================================================================================================
+static void _appendToOPBuffer( struct RunTime *r, const char *fmt, ... )
+
+{
+    char construct[SCRATCH_STRING_LEN];
+    va_list va;
+
+    va_start( va, fmt );
+    vsnprintf( construct, SCRATCH_STRING_LEN, fmt, va );
+    va_end( va );
+
+    r->opText = ( char ** )realloc( r->opText, ( sizeof( char * ) ) * ( r->opTextWline + 1 ) );
+    r->opText[r->opTextWline] = strdup( construct );
+    r->opTextWline++;
+}
+// ====================================================================================================
 static void _dumpBuffer( struct RunTime *r )
 
 {
@@ -362,19 +432,20 @@ static void _dumpBuffer( struct RunTime *r )
     uint32_t workingAddr = 0, incAddr = 0, p;
     struct nameEntry n;
     uint32_t disposition;
+    char construct[SCRATCH_STRING_LEN];
 
-    printf( CLEAR_SCREEN );
+    _flushBuffer( r );
 
     if ( !SymbolSetValid( &r->s, r->options->elffile ) )
     {
-        if ( !( r->s = SymbolSetCreate( r->options->elffile, r->options->objdump, true, true ) ) )
+        if ( !( r->s = SymbolSetCreate( r->options->elffile, r->options->objdump, r->options->demangle, true, true ) ) )
         {
             genericsReport( V_ERROR, "Elf file or symbols in it not found" EOL );
             return;
         }
         else
         {
-            genericsReport( V_WARN, "Loaded %s" EOL, r->options->elffile );
+            genericsReport( V_DEBUG, "Loaded %s" EOL, r->options->elffile );
         }
     }
 
@@ -384,7 +455,6 @@ static void _dumpBuffer( struct RunTime *r )
     {
         if ( ETMDecoderPump( &r->i, r->pmBuffer[p] ) == ETM_EV_MSG_RXED )
         {
-
             incAddr = 0;
 
             /* Deal with changes introduced by this event ========================= */
@@ -401,91 +471,90 @@ static void _dumpBuffer( struct RunTime *r )
 
             if ( ETMStateChanged( &r->i, EV_CH_VMID ) )
             {
-                printf( C_YELLOW "*** VMID Set to %d" EOL, cpu->vmid );
+                _appendToOPBuffer( r, CE_EV "*** VMID Set to %d" EOL, cpu->vmid );
             }
 
             if ( ETMStateChanged( &r->i, EV_CH_EX_ENTRY ) )
             {
-                printf( C_YELLOW "========== Exception Entry (%3d%s) ==========" EOL, cpu->exception,
-                        ETMStateChanged( &r->i, EV_CH_CANCELLED ) ? ", Last Instruction Cancelled" : "" );
+                _appendToOPBuffer( r, CE_EV "========== Exception Entry (%3d%s) ==========" EOL, cpu->exception,
+                                   ETMStateChanged( &r->i, EV_CH_CANCELLED ) ? ", Last Instruction Cancelled" : "" );
             }
 
             if ( ETMStateChanged( &r->i, EV_CH_EX_EXIT ) )
             {
-                printf( C_YELLOW "========== Exception Exit ==========" EOL );
+                _appendToOPBuffer( r, CE_EV "========== Exception Exit ==========" EOL );
             }
 
             if ( ETMStateChanged( &r->i, EV_CH_TSTAMP ) )
             {
-                printf( C_YELLOW "*** Timestamp %ld" EOL, cpu->ts );
+                _appendToOPBuffer( r, CE_EV "*** Timestamp %ld" EOL, cpu->ts );
             }
 
             if ( ETMStateChanged( &r->i, EV_CH_TRIGGER ) )
             {
-                printf( C_YELLOW "*** Trigger" EOL );
+                _appendToOPBuffer( r, CE_EV "*** Trigger" EOL );
             }
 
             if ( ETMStateChanged( &r->i, EV_CH_CLOCKSPEED ) )
             {
-                printf( C_YELLOW "*** Change Clockspeed" EOL );
+                _appendToOPBuffer( r, CE_EV "*** Change Clockspeed" EOL );
             }
 
             if ( ETMStateChanged( &r->i, EV_CH_ISLSIP ) )
             {
-                printf( C_YELLOW "*** ISLSIP Triggered" EOL );
+                _appendToOPBuffer( r, "*** ISLSIP Triggered" EOL );
             }
-
 
             if ( ETMStateChanged( &r->i, EV_CH_CYCLECOUNT ) )
             {
-                printf( C_YELLOW "(Cycle Count %d)" EOL, cpu->cycleCount );
+                _appendToOPBuffer( r, CE_EV "(Cycle Count %d)" EOL, cpu->cycleCount );
             }
 
             if ( ETMStateChanged( &r->i, EV_CH_VMID ) )
             {
-                printf( C_YELLOW "(VMID is now %d)" EOL, cpu->vmid );
+                _appendToOPBuffer( r, CE_EV "(VMID is now %d)" EOL, cpu->vmid );
             }
 
             if ( ETMStateChanged( &r->i, EV_CH_CONTEXTID ) )
             {
-                printf( C_YELLOW "(Context ID is now %d)" EOL, cpu->contextID );
+                _appendToOPBuffer( r, CE_EV "(Context ID is now %d)" EOL, cpu->contextID );
             }
 
             if ( ETMStateChanged( &r->i, EV_CH_SECURE ) )
             {
-                printf( C_YELLOW "(Non-Secure State is now %s)" EOL, cpu->nonSecure ? "True" : "False" );
+
+                _appendToOPBuffer( r, CE_EV "(Non-Secure State is now %s)" EOL, cpu->nonSecure ? "True" : "False" );
             }
 
             if ( ETMStateChanged( &r->i, EV_CH_ALTISA ) )
             {
-                printf( C_YELLOW "(Using AltISA  is now %s)" EOL, cpu->altISA ? "True" : "False" );
+                _appendToOPBuffer( r, CE_EV "(Using AltISA  is now %s)" EOL, cpu->altISA ? "True" : "False" );
             }
 
             if ( ETMStateChanged( &r->i, EV_CH_HYP ) )
             {
-                printf( C_YELLOW "(Using Hypervisor is now %s)" EOL, cpu->hyp ? "True" : "False" );
+                _appendToOPBuffer( r, CE_EV "(Using Hypervisor is now %s)" EOL, cpu->hyp ? "True" : "False" );
             }
 
             if ( ETMStateChanged( &r->i, EV_CH_JAZELLE ) )
             {
-                printf( C_YELLOW "(Using Jazelle is now %s)" EOL, cpu->jazelle ? "True" : "False" );
+                _appendToOPBuffer( r, CE_EV "(Using Jazelle is now %s)" EOL, cpu->jazelle ? "True" : "False" );
             }
 
             if ( ETMStateChanged( &r->i, EV_CH_THUMB ) )
             {
-                printf( C_YELLOW "(Using Thumb is now %s)" EOL, cpu->thumb ? "True" : "False" );
+                _appendToOPBuffer( r, CE_EV "(Using Thumb is now %s)" EOL, cpu->thumb ? "True" : "False" );
             }
 
             /* End of dealing with changes introduced by this event =============== */
 
-            /* Now reflect these changes in the UI .... */
             while ( incAddr-- )
             {
                 if ( SymbolLookup( r->s, workingAddr, &n, r->options->deleteMaterial ) )
                 {
                     if ( ( n.filename != currentFilename ) || ( n.function != currentFunction ) )
                     {
-                        printf( C_LRED "%s::%s" EOL, n.filename, n.function );
+                        _appendToOPBuffer( r, CE_FILE "%s::%s" EOL, n.filename, n.function );
                         currentFilename = n.filename;
                         currentFunction = n.function;
                     }
@@ -494,21 +563,26 @@ static void _dumpBuffer( struct RunTime *r )
                     {
                         const char *v = n.source;
                         currentLine = n.line;
+                        *construct = 0;
+                        uint32_t lp;
                         uint32_t sline = 0;
 
                         while ( *v )
                         {
-                            printf( C_BROWN "%5d\t" C_RES, currentLine + sline );
+                            lp = snprintf( construct, SCRATCH_STRING_LEN, CE_SRCLINENO "%5d\t" CE_SRC, currentLine + sline );
 
                             while ( *v )
                             {
                                 if ( ( *v != '\r' ) && ( *v != '\n' ) )
                                 {
-                                    putchar( *v++ );
+                                    construct[lp++] = *v++;
                                 }
                                 else
                                 {
-                                    printf( EOL );
+                                    construct[lp++] = 0;
+                                    _appendToOPBuffer( r, construct );
+                                    *construct = 0;
+                                    lp = 0;
 
                                     while ( ( *v == '\r' ) || ( *v == '\n' ) )
                                     {
@@ -526,37 +600,39 @@ static void _dumpBuffer( struct RunTime *r )
                     {
                         if ( n.assy[n.assyLine].label )
                         {
-                            printf( "\t" C_CYAN " %s:" EOL, n.assy[n.assyLine].label );
+                            _appendToOPBuffer( r, CE_ASSY "\t%s:" EOL, n.assy[n.assyLine].label );
                         }
 
-                        printf( "%s", ( disposition & 1 ) ? C_CYAN : C_LBLUE );
-                        disposition >>= 1;
+
 
                         if ( n.assy[n.assyLine].is4Byte )
                         {
-                            printf( "\t\t%08x:\t%04x %04x\t%s"  EOL,
-                                    n.assy[n.assyLine].addr,
-                                    ( n.assy[n.assyLine].codes >> 16 ) & 0xffff,
-                                    n.assy[n.assyLine].codes & 0xffff,
-                                    n.assy[n.assyLine].lineText );
+                            _appendToOPBuffer( r, "%s\t\t%08x:\t%04x %04x\t%s"  EOL,
+                                               ( disposition & 1 ) ? CE_ASSY : CE_NASSY,
+                                               n.assy[n.assyLine].addr,
+                                               ( n.assy[n.assyLine].codes >> 16 ) & 0xffff,
+                                               n.assy[n.assyLine].codes & 0xffff,
+                                               n.assy[n.assyLine].lineText );
                             workingAddr += 4;
                         }
                         else
                         {
-                            printf( "\t\t%08x:\t%04x     \t %s" EOL,
-                                    n.assy[n.assyLine].addr,
-                                    n.assy[n.assyLine].codes & 0xffff,
-                                    n.assy[n.assyLine].lineText );
+                            _appendToOPBuffer( r, "%s\t\t%08x:\t%04x     \t%s" EOL,
+                                               ( disposition & 1 ) ? CE_ASSY : CE_NASSY,
+                                               n.assy[n.assyLine].addr,
+                                               n.assy[n.assyLine].codes & 0xffff,
+                                               n.assy[n.assyLine].lineText );
                             workingAddr += 2;
                         }
+
                     }
                     else
                     {
-                        printf( "\t\tASSEMBLY NOT FOUND" EOL );
+                        _appendToOPBuffer( r, CE_ASSY "\t\tASSEMBLY NOT FOUND" EOL );
                         workingAddr += 2;
                     }
 
-                    printf( C_RES );
+                    disposition >>= 1;
                 }
             }
         }
@@ -565,8 +641,247 @@ static void _dumpBuffer( struct RunTime *r )
     }
 
     r->wp = r-> rp = 0;
+
+    /* Force a re-draw, focussed on the end of the buffer */
+    r->oldopTextRline = 0;
+    r->opTextRline = r->opTextWline;
 }
 
+// ====================================================================================================
+static void _setupWindows( void )
+
+{
+    initscr();
+
+    if ( OK == start_color() )
+    {
+        init_pair( CP_EVENT, COLOR_YELLOW, COLOR_BLACK );
+        init_pair( CP_NORMAL, COLOR_WHITE,  COLOR_BLACK );
+        init_pair( CP_FILEFUNCTION, COLOR_RED, COLOR_BLACK );
+        init_pair( CP_LINENO, COLOR_YELLOW, COLOR_BLACK );
+        init_pair( CP_EXECASSY, COLOR_CYAN, COLOR_BLACK );
+        init_pair( CP_NEXECASSY, COLOR_BLUE, COLOR_BLACK );
+        init_pair( CP_BASELINE, COLOR_BLUE, COLOR_BLACK );
+        init_pair( CP_BASELINETEXT, COLOR_YELLOW, COLOR_BLACK );
+    }
+
+    _r.outputWindow = newwin( OUTPUT_WINDOW_L, OUTPUT_WINDOW_W, 0, 0 );
+    _r.statusWindow = newwin( STATUS_WINDOW_L, STATUS_WINDOW_W, OUTPUT_WINDOW_L, 0 );
+    timeout( 0 );
+    cbreak();
+    keypad( stdscr, true );
+    noecho();
+    curs_set( 0 );
+    scrollok( _r.outputWindow, true );
+    idlok( _r.outputWindow, true );
+}
+// ====================================================================================================
+static void _terminateWindows( void )
+
+{
+    endwin();
+}
+// ====================================================================================================
+static char _updateWindowsAndGetKey( struct RunTime *r )
+
+{
+    int k;
+
+
+    while ( ( k = getch() ) != ERR )
+    {
+        switch ( k )
+        {
+            case KEY_RESIZE: /* ------------------------------------------------------------------ */
+            case 12:  /* CTRL-L, refresh */
+                r->oldopTextRline = 0;
+                break;
+
+            case KEY_UP:
+                if ( r->opTextRline > OUTPUT_WINDOW_L )
+                {
+                    r->opTextRline--;
+                }
+
+                break;
+
+            case 398: /* This is shift-PPAGE ----------------------------------------------------- */
+                if ( r->opTextRline > 11 * OUTPUT_WINDOW_L )
+                {
+                    r->opTextRline -= 10 * OUTPUT_WINDOW_L;
+                }
+                else
+                {
+                    r->opTextRline = r->opTextWline < OUTPUT_WINDOW_L ? r->opTextWline : OUTPUT_WINDOW_L;
+                }
+
+                break;
+
+            case KEY_PPAGE: /* ------------------------------------------------------------------- */
+                if ( r->opTextRline > 2 * OUTPUT_WINDOW_L )
+                {
+                    r->opTextRline -= OUTPUT_WINDOW_L;
+                }
+                else
+                {
+                    r->opTextRline = r->opTextWline < OUTPUT_WINDOW_L ? r->opTextWline : OUTPUT_WINDOW_L;
+                }
+
+                break;
+
+            case KEY_HOME: /* -------------------------------------------------------------------- */
+                r->opTextRline = r->opTextWline < OUTPUT_WINDOW_L ? r->opTextWline : OUTPUT_WINDOW_L;
+                break;
+
+            case KEY_END: /* --------------------------------------------------------------------- */
+                r->opTextRline = r->opTextWline;
+                break;
+
+            case 396: /* This is Shift-NPage ----------------------------------------------------- */
+                if ( r->opTextRline + 10 * OUTPUT_WINDOW_L < r->opTextWline )
+                {
+                    r->opTextRline += 10 * OUTPUT_WINDOW_L;
+                }
+                else
+                {
+                    r->opTextRline = r->opTextWline;
+                }
+
+                break;
+
+            case KEY_NPAGE: /* ------------------------------------------------------------------- */
+                if ( r->opTextRline + OUTPUT_WINDOW_L < r->opTextWline )
+                {
+                    r->opTextRline += OUTPUT_WINDOW_L;
+                }
+                else
+                {
+                    r->opTextRline = r->opTextWline;
+                }
+
+                break;
+
+            case KEY_DOWN: /* -------------------------------------------------------------------- */
+                if ( r->opTextRline < r->opTextWline )
+                {
+                    r->opTextRline++;
+                }
+
+                break;
+
+            default: /* -------------------------------------------------------------------------- */
+                /* Not dealt with here, better check if anything upstairs wants it */
+                return k;
+        }
+    }
+
+    if ( r->oldopTextRline != r->opTextRline )
+    {
+        wclear( r->outputWindow );
+
+        if ( r->opTextRline )
+        {
+            for ( uint32_t sline = 0; sline < OUTPUT_WINDOW_L; sline++ )
+            {
+
+                char *u = r->opText[sline + r->opTextRline - OUTPUT_WINDOW_L];
+                wmove( r->outputWindow, sline, 0 );
+
+                while ( *u )
+                {
+                    switch ( *u )
+                    {
+                        case '\r':
+                        case '\n':
+                            u++;
+                            break;
+
+                        case CE_CLR:
+                            ++u;
+                            switch ( *u )
+                            {
+                                case 1: /* Event color */
+                                    wattrset( r->outputWindow, COLOR_PAIR( CP_EVENT ) );
+                                    break;
+
+                                case 2: /* File/line color */
+                                    wattrset( r->outputWindow, A_BOLD | COLOR_PAIR( CP_FILEFUNCTION ) );
+                                    break;
+
+                                case 3: /* Source lineno color */
+                                    wattrset( r->outputWindow, COLOR_PAIR( CP_LINENO ) );
+                                    break;
+
+                                case 4: /* Source color */
+                                    wattrset( r->outputWindow, A_BOLD | COLOR_PAIR( CP_NORMAL ) );
+                                    break;
+
+                                case 5: /* Executed assembly color */
+                                    wattrset( r->outputWindow, COLOR_PAIR( CP_EXECASSY ) );
+                                    break;
+
+                                case 6: /* Non-executed assembly color */
+                                    wattrset( r->outputWindow, COLOR_PAIR( CP_NEXECASSY ) );
+                                    break;
+
+                                default:
+                                    wattrset( r->outputWindow, COLOR_PAIR( CP_NORMAL ) );
+                                    break;
+                            }
+                            u++;
+                            break;
+
+                        default:
+                            waddch( r->outputWindow, *u++ );
+                            break;
+                    }
+                }
+            }
+        }
+
+        r->oldopTextRline = r->opTextRline;
+        wrefresh( r->outputWindow );
+    }
+
+    /* Now update the status */
+    wattrset( r->statusWindow, A_BOLD | COLOR_PAIR( CP_BASELINE ) );
+    mvwhline( r->statusWindow, 0, 0, ACS_HLINE, COLS );
+    mvwprintw( r->statusWindow, 0, 1, " %c ", HB_GRAPHIC[r->hb] );
+    mvwprintw( r->statusWindow, 0, COLS - 4 - ( strlen( r->progName ) + strlen( genericsBasename( r->options->elffile ) ) ),
+               " %s:%s ", r->progName, genericsBasename( r->options->elffile ) );
+
+    if ( r->opTextWline )
+    {
+        mvwprintw( r->statusWindow, 0, 5, " %d%% (%d/%d) ", ( r->opTextRline * 100 ) / r->opTextWline, r->opTextRline, r->opTextWline );
+    }
+
+    r->hb = ( r->hb + 1 ) % HB_GRAPHIC_LEN;
+
+    wattrset( r->statusWindow, A_BOLD | COLOR_PAIR( CP_BASELINETEXT ) );
+
+    if ( r->intervalBytes )
+    {
+        if ( r->oldintervalBytes < 9999 )
+        {
+            mvwprintw( r->statusWindow, 1, COLS - 36, " Capturing %ld Bps    ", r->oldintervalBytes );
+        }
+        else if ( r->oldintervalBytes < 9999999 )
+        {
+            mvwprintw( r->statusWindow, 1, COLS - 36, " Capturing %ld KBps (~%ld KIps)   ", r->oldintervalBytes / 1000, r->oldintervalBytes * 11 / 10000 );
+        }
+        else
+        {
+            mvwprintw( r->statusWindow, 1, COLS - 36, " Capturing %ld MBps (~%ld MIps)   ", r->oldintervalBytes / 1000000, ( r->oldintervalBytes * 11 ) / 10000000 );
+        }
+    }
+    else
+    {
+        mvwprintw( r->statusWindow, 1, COLS - 24, "             Waiting " );
+    }
+
+    wrefresh( r->statusWindow );
+    return k;
+}
 // ====================================================================================================
 static void _doExit( void )
 
@@ -574,6 +889,7 @@ static void _doExit( void )
     _r.ending = true;
     /* Give them a bit of time, then we're leaving anyway */
     usleep( 200 );
+    _terminateWindows();
 }
 // ====================================================================================================
 int main( int argc, char *argv[] )
@@ -584,12 +900,15 @@ int main( int argc, char *argv[] )
     struct hostent *server;
     int flag = 1;
 
-    int64_t lastTime;
+    int64_t lastTime, lastTTime, lastTSTime;
+    char k;
     int r;
     struct timeval tv;
     fd_set readfds;
     int32_t remainTime;
 
+
+    _r.progName = genericsBasename( argv[0] );
 
     if ( !_processOptions( argc, argv, &_r ) )
     {
@@ -600,8 +919,10 @@ int main( int argc, char *argv[] )
     /* Make sure the fifos get removed at the end */
     atexit( _doExit );
 
+    _setupWindows();
+
     /* Fill in a time to start from */
-    lastTime = genericsTimestampmS();
+    lastTime = lastTTime = lastTSTime = genericsTimestampmS();
 
     /* This ensures the atexit gets called */
     if ( SIG_ERR == signal( SIGINT, _intHandler ) )
@@ -661,7 +982,7 @@ int main( int argc, char *argv[] )
 
             if ( connect( sourcefd, ( struct sockaddr * ) &serv_addr, sizeof( serv_addr ) ) < 0 )
             {
-                genericsPrintf( CLEAR_SCREEN EOL );
+                wclear( _r.statusWindow );
 
                 perror( "Could not connect" );
                 close( sourcefd );
@@ -679,7 +1000,7 @@ int main( int argc, char *argv[] )
 
         while ( !_r.ending )
         {
-            remainTime = ( ( lastTime + INTERVAL_TIME_MS - genericsTimestampmS() ) * 1000 ) - 500;
+            remainTime = ( ( lastTime + 10 - genericsTimestampmS() ) * 1000 ) - 500;
 
             r = 0;
 
@@ -713,13 +1034,48 @@ int main( int argc, char *argv[] )
                 _processBlock( &_r );
             }
 
+            if ( ( genericsTimestampmS() - lastTTime ) > TICK_TIME_MS )
+            {
+
+                while ( ( k = _updateWindowsAndGetKey( &_r ) ) != ERR )
+                {
+                    switch ( toupper( k ) )
+                    {
+                        case 'D':
+                            _dumpBuffer( &_r );
+                            break;
+
+                        case 'C':
+                            _flushBuffer( &_r );
+                            break;
+
+                        case 'Q':
+                            _r.ending = true;
+                            break;
+
+                        default:
+                            break;
+                    }
+                }
+
+                lastTTime = genericsTimestampmS();
+            }
+
+
+            /* Deal with possible timeout sample */
             if ( ( ( genericsTimestampmS() - lastTime ) > HANG_TIME_MS ) && ( _r.wp != _r.rp ) )
             {
                 _dumpBuffer( &_r );
             }
 
-            lastTime = genericsTimestampmS();
+            if ( ( genericsTimestampmS() - lastTSTime ) > INTERVAL_TIME_MS )
+            {
+                _r.oldintervalBytes = _r.intervalBytes;
+                _r.intervalBytes = 0;
+                lastTSTime = genericsTimestampmS();
+            }
 
+            lastTime = genericsTimestampmS();
         }
 
         close( sourcefd );

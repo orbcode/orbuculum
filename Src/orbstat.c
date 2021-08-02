@@ -121,6 +121,7 @@ struct                                       /* Record for options, either defau
     bool useTPIU;                            /* Are we decoding via the TPIU? */
     uint32_t tpiuITMChannel;                 /* What channel? */
     bool forceITMSync;                       /* Do we assume ITM starts synced? */
+    bool demangle;                           /* Demangle C++ names */
 
     char *deleteMaterial;                    /* Material to strip off front of filenames for target */
 
@@ -139,6 +140,7 @@ struct                                       /* Record for options, either defau
 {
     .forceITMSync = true,
     .tpiuITMChannel = 1,
+    .demangle = true,
     .port = SERVER_PORT,
     .server = "localhost",
     .traceChannel = DEFAULT_TRACE_CHANNEL,
@@ -806,6 +808,7 @@ void _printHelp( char *progName )
 
 {
     fprintf( stdout, "Usage: %s [options]" EOL, progName );
+    fprintf( stdout, "      -D: Switch off C++ symbol demangling" EOL );
     fprintf( stdout, "      -d: <DeleteMaterial> to take off front of filenames" EOL );
     fprintf( stdout, "      -e: <ElfFile> to use for symbols" EOL );
     fprintf( stdout, "      -f: <FileChannel> for file writing (default %d)" EOL, options.fileChannel );
@@ -826,13 +829,18 @@ int _processOptions( int argc, char *argv[] )
 {
     int c;
 
-    while ( ( c = getopt ( argc, argv, "d:e:f:g:hlnO:p:s:t:vy:z:" ) ) != -1 )
+    while ( ( c = getopt ( argc, argv, "Dd:e:f:g:hlnO:p:s:t:vy:z:" ) ) != -1 )
 
         switch ( c )
         {
             // ------------------------------------
             case 'd':
                 options.deleteMaterial = optarg;
+                break;
+
+            // ------------------------------------
+            case 'D':
+                options.demangle = false;
                 break;
 
             // ------------------------------------
@@ -1051,7 +1059,7 @@ int main( int argc, char *argv[] )
             {
                 _flushHash();
 
-                if ( !( _r.s = SymbolSetCreate( options.elffile, options.objdump, false, false ) ) )
+                if ( !( _r.s = SymbolSetCreate( options.elffile, options.objdump, options.demangle, false, false ) ) )
                 {
                     genericsReport( V_ERROR, "Elf file was lost" EOL );
                     return -1;

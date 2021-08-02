@@ -267,14 +267,14 @@ static enum LineType _getLineType( char *sourceLine, char *p1, char *p2, char *p
     }
 
     /* If it starts with a space and has specific fields, it's a 16 or 32 bit assembly line */
-    if ( 4 == sscanf( sourceLine, " %[0-9a-fA-F]:\t%[0-9a-fA-F]%*1[ ]%[0-9a-fA-F]\t %[^\n]", p1, p2, p3, p4 ) )
+    if ( 4 == sscanf( sourceLine, " %[0-9a-fA-F]: %[0-9a-fA-F]%*1[ ]%[0-9a-fA-F] %[^\n]", p1, p2, p3, p4 ) )
     {
         return LT_ASSEMBLY;
     }
 
     *p2 = 0;
 
-    if ( 3 == sscanf( sourceLine, " %[0-9a-fA-F]:\t%[0-9a-fA-F]\t %[^\n]", p1, p3, p4 ) )
+    if ( 3 == sscanf( sourceLine, " %[0-9a-fA-F]: %[0-9a-fA-F] %[^\n]", p1, p3, p4 ) )
     {
         return LT_ASSEMBLY;
     }
@@ -327,11 +327,11 @@ static bool _getTargetProgramInfo( struct SymbolSet *s )
 
     if ( s->objdump )
     {
-        snprintf( commandLine, MAX_LINE_LEN, "%s -Sl --source-comment=" SOURCE_INDICATOR " %s", s->objdump,  s->elfFile );
+        snprintf( commandLine, MAX_LINE_LEN, "%s -Sl%s --source-comment=" SOURCE_INDICATOR " %s", s->objdump,  s->demanglecpp ? " -C" : "", s->elfFile );
     }
     else
     {
-        snprintf( commandLine, MAX_LINE_LEN, OBJDUMP " -Sl --source-comment=" SOURCE_INDICATOR " %s",  s->elfFile );
+        snprintf( commandLine, MAX_LINE_LEN, OBJDUMP " -Sl%s --source-comment=" SOURCE_INDICATOR " %s",  s->demanglecpp ? " -C" : "", s->elfFile );
     }
 
     f = popen( commandLine, "r" );
@@ -777,7 +777,7 @@ bool SymbolSetValid( struct SymbolSet **s, char *filename )
     }
 }
 // ====================================================================================================
-struct SymbolSet *SymbolSetCreate( char *filename, char *newObjdump, bool recordSource, bool recordAssy )
+struct SymbolSet *SymbolSetCreate( char *filename, char *newObjdump, bool demanglecpp, bool recordSource, bool recordAssy )
 
 /* Create new symbol set by reading from elf file, if it's there and stable */
 
@@ -787,6 +787,7 @@ struct SymbolSet *SymbolSetCreate( char *filename, char *newObjdump, bool record
     s->elfFile = strdup( filename );
     s->objdump = newObjdump;
     s->recordSource = recordSource;
+    s->demanglecpp = demanglecpp;
     s->recordAssy = recordAssy;
 
     /* Make sure this file is stable before trying to load it */

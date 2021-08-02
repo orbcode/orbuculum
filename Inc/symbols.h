@@ -105,6 +105,7 @@ struct SymbolSet
     /* For memory saving and speedup... */
     bool recordSource;                     /* Keep a record of source code */
     bool recordAssy;                       /* Keep a record of assembly code */
+    bool demanglecpp;                      /* If we want C++ names demangling */
 
     /* For file mapping... */
     uint32_t fileCount;                    /* Number of files we have loaded */
@@ -130,7 +131,7 @@ struct nameEntry
 };
 
 // ====================================================================================================
-struct SymbolSet *SymbolSetCreate( char *filename, char *newObjdump, bool recordSource, bool recordAssy );
+struct SymbolSet *SymbolSetCreate( char *filename, char *newObjdump, bool demanglecpp, bool recordSource, bool recordAssy );
 void SymbolSetDelete( struct SymbolSet **s );
 bool SymbolSetValid( struct SymbolSet **s, char *filename );
 bool SymbolLookup( struct SymbolSet *s, uint32_t addr, struct nameEntry *n, char *deleteMaterial );
