@@ -863,15 +863,15 @@ static char _updateWindowsAndGetKey( struct RunTime *r )
     {
         if ( r->oldintervalBytes < 9999 )
         {
-            mvwprintw( r->statusWindow, 1, COLS - 36, " Capturing %ld Bps    ", r->oldintervalBytes );
+          mvwprintw( r->statusWindow, 1, COLS - 36, " Capturing %ld Bps (~%ld Ips)   ", r->oldintervalBytes,(r->oldintervalBytes*8)/11 );
         }
         else if ( r->oldintervalBytes < 9999999 )
         {
-            mvwprintw( r->statusWindow, 1, COLS - 36, " Capturing %ld KBps (~%ld KIps)   ", r->oldintervalBytes / 1000, r->oldintervalBytes * 11 / 10000 );
+            mvwprintw( r->statusWindow, 1, COLS - 36, " Capturing %ld KBps (~%ld KIps)   ", r->oldintervalBytes / 1000, r->oldintervalBytes * 8 / 1120 );
         }
         else
         {
-            mvwprintw( r->statusWindow, 1, COLS - 36, " Capturing %ld MBps (~%ld MIps)   ", r->oldintervalBytes / 1000000, ( r->oldintervalBytes * 11 ) / 10000000 );
+            mvwprintw( r->statusWindow, 1, COLS - 36, " Capturing %ld MBps (~%ld MIps)   ", r->oldintervalBytes / 1000000, ( r->oldintervalBytes * 8 ) / 1120000 );
         }
     }
     else
