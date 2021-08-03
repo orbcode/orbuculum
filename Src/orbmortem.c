@@ -672,8 +672,6 @@ static void _setupWindows( void )
     keypad( stdscr, true );
     noecho();
     curs_set( 0 );
-    scrollok( _r.outputWindow, true );
-    idlok( _r.outputWindow, true );
 }
 // ====================================================================================================
 static void _terminateWindows( void )
@@ -682,99 +680,97 @@ static void _terminateWindows( void )
     endwin();
 }
 // ====================================================================================================
-static char _updateWindowsAndGetKey( struct RunTime *r )
+static char _updateWindowsAndGetKey( struct RunTime *r, bool isTick )
 
 {
     int k;
 
-
-    while ( ( k = getch() ) != ERR )
+    /* Start off by processing keypresses */
+    switch ( ( k = getch() ) )
     {
-        switch ( k )
-        {
-            case KEY_RESIZE: /* ------------------------------------------------------------------ */
-            case 12:  /* CTRL-L, refresh */
-                r->oldopTextRline = 0;
-                break;
+        case KEY_RESIZE: /* ------------------------------------------------------------------ */
+        case 12:  /* CTRL-L, refresh */
+            r->oldopTextRline = 0;
+            break;
 
-            case KEY_UP:
-                if ( r->opTextRline > OUTPUT_WINDOW_L )
-                {
-                    r->opTextRline--;
-                }
+        case KEY_UP: /* ---------------------------------------------------------------------- */
+            if ( r->opTextRline > OUTPUT_WINDOW_L )
+            {
+                r->opTextRline--;
+            }
 
-                break;
+            break;
 
-            case 398: /* This is shift-PPAGE ----------------------------------------------------- */
-                if ( r->opTextRline > 11 * OUTPUT_WINDOW_L )
-                {
-                    r->opTextRline -= 10 * OUTPUT_WINDOW_L;
-                }
-                else
-                {
-                    r->opTextRline = r->opTextWline < OUTPUT_WINDOW_L ? r->opTextWline : OUTPUT_WINDOW_L;
-                }
-
-                break;
-
-            case KEY_PPAGE: /* ------------------------------------------------------------------- */
-                if ( r->opTextRline > 2 * OUTPUT_WINDOW_L )
-                {
-                    r->opTextRline -= OUTPUT_WINDOW_L;
-                }
-                else
-                {
-                    r->opTextRline = r->opTextWline < OUTPUT_WINDOW_L ? r->opTextWline : OUTPUT_WINDOW_L;
-                }
-
-                break;
-
-            case KEY_HOME: /* -------------------------------------------------------------------- */
+        case 398: /* This is shift-PPAGE ----------------------------------------------------- */
+            if ( r->opTextRline > 11 * OUTPUT_WINDOW_L )
+            {
+                r->opTextRline -= 10 * OUTPUT_WINDOW_L;
+            }
+            else
+            {
                 r->opTextRline = r->opTextWline < OUTPUT_WINDOW_L ? r->opTextWline : OUTPUT_WINDOW_L;
-                break;
+            }
 
-            case KEY_END: /* --------------------------------------------------------------------- */
+            break;
+
+        case KEY_PPAGE: /* ------------------------------------------------------------------- */
+            if ( r->opTextRline > 2 * OUTPUT_WINDOW_L )
+            {
+                r->opTextRline -= OUTPUT_WINDOW_L;
+            }
+            else
+            {
+                r->opTextRline = r->opTextWline < OUTPUT_WINDOW_L ? r->opTextWline : OUTPUT_WINDOW_L;
+            }
+
+            break;
+
+        case KEY_HOME: /* -------------------------------------------------------------------- */
+            r->opTextRline = r->opTextWline < OUTPUT_WINDOW_L ? r->opTextWline : OUTPUT_WINDOW_L;
+            break;
+
+        case KEY_END: /* --------------------------------------------------------------------- */
+            r->opTextRline = r->opTextWline;
+            break;
+
+        case 396: /* This is Shift-NPage ----------------------------------------------------- */
+            if ( r->opTextRline + 10 * OUTPUT_WINDOW_L < r->opTextWline )
+            {
+                r->opTextRline += 10 * OUTPUT_WINDOW_L;
+            }
+            else
+            {
                 r->opTextRline = r->opTextWline;
-                break;
+            }
 
-            case 396: /* This is Shift-NPage ----------------------------------------------------- */
-                if ( r->opTextRline + 10 * OUTPUT_WINDOW_L < r->opTextWline )
-                {
-                    r->opTextRline += 10 * OUTPUT_WINDOW_L;
-                }
-                else
-                {
-                    r->opTextRline = r->opTextWline;
-                }
+            break;
 
-                break;
+        case KEY_NPAGE: /* ------------------------------------------------------------------- */
+            if ( r->opTextRline + OUTPUT_WINDOW_L < r->opTextWline )
+            {
+                r->opTextRline += OUTPUT_WINDOW_L;
+            }
+            else
+            {
+                r->opTextRline = r->opTextWline;
+            }
 
-            case KEY_NPAGE: /* ------------------------------------------------------------------- */
-                if ( r->opTextRline + OUTPUT_WINDOW_L < r->opTextWline )
-                {
-                    r->opTextRline += OUTPUT_WINDOW_L;
-                }
-                else
-                {
-                    r->opTextRline = r->opTextWline;
-                }
+            break;
 
-                break;
+        case KEY_DOWN: /* -------------------------------------------------------------------- */
+            if ( r->opTextRline < r->opTextWline )
+            {
+                r->opTextRline++;
+            }
 
-            case KEY_DOWN: /* -------------------------------------------------------------------- */
-                if ( r->opTextRline < r->opTextWline )
-                {
-                    r->opTextRline++;
-                }
+            break;
 
-                break;
-
-            default: /* -------------------------------------------------------------------------- */
-                /* Not dealt with here, better check if anything upstairs wants it */
-                return k;
-        }
+        default: /* -------------------------------------------------------------------------- */
+            /* Not dealt with here, better check if anything upstairs wants it */
+            break;
     }
 
+    /* Now deal with the output window */
     if ( r->oldopTextRline != r->opTextRline )
     {
         wclear( r->outputWindow );
@@ -783,6 +779,11 @@ static char _updateWindowsAndGetKey( struct RunTime *r )
         {
             for ( uint32_t sline = 0; sline < OUTPUT_WINDOW_L; sline++ )
             {
+                if ( ( sline + r->opTextRline - OUTPUT_WINDOW_L < 0 ) ||
+                        ( sline + r->opTextRline - OUTPUT_WINDOW_L > r->opTextWline ) )
+                {
+                    continue;
+                }
 
                 char *u = r->opText[sline + r->opTextRline - OUTPUT_WINDOW_L];
                 wmove( r->outputWindow, sline, 0 );
@@ -798,6 +799,7 @@ static char _updateWindowsAndGetKey( struct RunTime *r )
 
                         case CE_CLR:
                             ++u;
+
                             switch ( *u )
                             {
                                 case 1: /* Event color */
@@ -828,6 +830,7 @@ static char _updateWindowsAndGetKey( struct RunTime *r )
                                     wattrset( r->outputWindow, COLOR_PAIR( CP_NORMAL ) );
                                     break;
                             }
+
                             u++;
                             break;
 
@@ -844,42 +847,45 @@ static char _updateWindowsAndGetKey( struct RunTime *r )
     }
 
     /* Now update the status */
-    wattrset( r->statusWindow, A_BOLD | COLOR_PAIR( CP_BASELINE ) );
-    mvwhline( r->statusWindow, 0, 0, ACS_HLINE, COLS );
-    mvwprintw( r->statusWindow, 0, 1, " %c ", HB_GRAPHIC[r->hb] );
-    mvwprintw( r->statusWindow, 0, COLS - 4 - ( strlen( r->progName ) + strlen( genericsBasename( r->options->elffile ) ) ),
-               " %s:%s ", r->progName, genericsBasename( r->options->elffile ) );
-
-    if ( r->opTextWline )
+    if ( isTick )
     {
-        mvwprintw( r->statusWindow, 0, 5, " %d%% (%d/%d) ", ( r->opTextRline * 100 ) / r->opTextWline, r->opTextRline, r->opTextWline );
+        wclear( r->statusWindow );
+        wattrset( r->statusWindow, A_BOLD | COLOR_PAIR( CP_BASELINE ) );
+        mvwhline( r->statusWindow, 0, 0, ACS_HLINE, COLS );
+        mvwprintw( r->statusWindow, 0, 1, " %c ", HB_GRAPHIC[r->hb] );
+        mvwprintw( r->statusWindow, 0, COLS - 4 - ( strlen( r->progName ) + strlen( genericsBasename( r->options->elffile ) ) ),
+                   " %s:%s ", r->progName, genericsBasename( r->options->elffile ) );
+
+        if ( r->opTextWline )
+        {
+            mvwprintw( r->statusWindow, 0, 5, " %d%% (%d/%d) ", ( r->opTextRline * 100 ) / r->opTextWline, r->opTextRline, r->opTextWline );
+        }
+
+        r->hb = ( r->hb + 1 ) % HB_GRAPHIC_LEN;
+
+        wattrset( r->statusWindow, A_BOLD | COLOR_PAIR( CP_BASELINETEXT ) );
+
+        if ( r->oldintervalBytes )
+        {
+            if ( r->oldintervalBytes < 9999 )
+            {
+                mvwprintw( r->statusWindow, 1, COLS - 38, "%ld Bps (~%ld Ips)", r->oldintervalBytes, ( r->oldintervalBytes * 8 ) / 11 );
+            }
+            else if ( r->oldintervalBytes < 9999999 )
+            {
+                mvwprintw( r->statusWindow, 1, COLS - 38, "%ld KBps (~%ld KIps)", r->oldintervalBytes / 1000, r->oldintervalBytes * 8 / 1120 );
+            }
+            else
+            {
+                mvwprintw( r->statusWindow, 1, COLS - 38, "%ld MBps (~%ld MIps)", r->oldintervalBytes / 1000000, ( r->oldintervalBytes * 8 ) / 1120000 );
+            }
+        }
+
+        mvwprintw( r->statusWindow, 1, COLS - 11, r->intervalBytes ? "Capturing" : "  Waiting" );
+
+        wrefresh( r->statusWindow );
     }
 
-    r->hb = ( r->hb + 1 ) % HB_GRAPHIC_LEN;
-
-    wattrset( r->statusWindow, A_BOLD | COLOR_PAIR( CP_BASELINETEXT ) );
-
-    if ( r->intervalBytes )
-    {
-        if ( r->oldintervalBytes < 9999 )
-        {
-          mvwprintw( r->statusWindow, 1, COLS - 36, " Capturing %ld Bps (~%ld Ips)   ", r->oldintervalBytes,(r->oldintervalBytes*8)/11 );
-        }
-        else if ( r->oldintervalBytes < 9999999 )
-        {
-            mvwprintw( r->statusWindow, 1, COLS - 36, " Capturing %ld KBps (~%ld KIps)   ", r->oldintervalBytes / 1000, r->oldintervalBytes * 8 / 1120 );
-        }
-        else
-        {
-            mvwprintw( r->statusWindow, 1, COLS - 36, " Capturing %ld MBps (~%ld MIps)   ", r->oldintervalBytes / 1000000, ( r->oldintervalBytes * 8 ) / 1120000 );
-        }
-    }
-    else
-    {
-        mvwprintw( r->statusWindow, 1, COLS - 24, "             Waiting " );
-    }
-
-    wrefresh( r->statusWindow );
     return k;
 }
 // ====================================================================================================
@@ -900,12 +906,10 @@ int main( int argc, char *argv[] )
     struct hostent *server;
     int flag = 1;
 
-    int64_t lastTime, lastTTime, lastTSTime;
-    char k;
+    int32_t lastTime, lastTTime, lastTSTime;
     int r;
     struct timeval tv;
     fd_set readfds;
-    int32_t remainTime;
 
 
     _r.progName = genericsBasename( argv[0] );
@@ -998,21 +1002,17 @@ int main( int argc, char *argv[] )
             }
         }
 
+        /* This is the main active loop...only break out of this when ending or on error */
         while ( !_r.ending )
         {
-            remainTime = ( ( lastTime + 10 - genericsTimestampmS() ) * 1000 ) - 500;
+            /* Each time segment is restricted to 10mS */
+            tv.tv_sec = 0;
+            tv.tv_usec  = 10000;
 
-            r = 0;
-
-            if ( remainTime > 0 )
-            {
-                tv.tv_sec = remainTime / 1000000;
-                tv.tv_usec  = remainTime % 1000000;
-
-                FD_ZERO( &readfds );
-                FD_SET( sourcefd, &readfds );
-                r = select( sourcefd + 1, &readfds, NULL, NULL, &tv );
-            }
+            FD_ZERO( &readfds );
+            FD_SET( sourcefd, &readfds );
+            FD_SET( STDIN_FILENO, &readfds );
+            r = select( sourcefd + 1, &readfds, NULL, NULL, &tv );
 
             if ( r < 0 )
             {
@@ -1020,7 +1020,7 @@ int main( int argc, char *argv[] )
                 break;
             }
 
-            if ( r > 0 )
+            if ( FD_ISSET( sourcefd, &readfds ) )
             {
                 _r.rawBlock.fillLevel = read( sourcefd, _r.rawBlock.buffer, TRANSFER_SIZE );
 
@@ -1032,35 +1032,34 @@ int main( int argc, char *argv[] )
 
                 /* Pump all of the data through the protocol handler */
                 _processBlock( &_r );
+                lastTime = genericsTimestampmS();
             }
 
-            if ( ( genericsTimestampmS() - lastTTime ) > TICK_TIME_MS )
+            if ( ( FD_ISSET( STDIN_FILENO, &readfds ) ) || ( genericsTimestampmS() - lastTTime ) > TICK_TIME_MS )
             {
-
-                while ( ( k = _updateWindowsAndGetKey( &_r ) ) != ERR )
+                switch ( toupper( _updateWindowsAndGetKey( &_r, ( ( genericsTimestampmS() - lastTTime ) > TICK_TIME_MS ) ) ) )
                 {
-                    switch ( toupper( k ) )
-                    {
-                        case 'D':
-                            _dumpBuffer( &_r );
-                            break;
+                    case 'D':
+                        _dumpBuffer( &_r );
+                        break;
 
-                        case 'C':
-                            _flushBuffer( &_r );
-                            break;
+                    case 'C':
+                        _flushBuffer( &_r );
+                        break;
 
-                        case 'Q':
-                            _r.ending = true;
-                            break;
+                    case 'Q':
+                        _r.ending = true;
+                        break;
 
-                        default:
-                            break;
-                    }
+                    default:
+                        break;
                 }
 
-                lastTTime = genericsTimestampmS();
+                if ( ( genericsTimestampmS() - lastTTime ) > TICK_TIME_MS )
+                {
+                    lastTTime = genericsTimestampmS();
+                }
             }
-
 
             /* Deal with possible timeout sample */
             if ( ( ( genericsTimestampmS() - lastTime ) > HANG_TIME_MS ) && ( _r.wp != _r.rp ) )
@@ -1068,14 +1067,13 @@ int main( int argc, char *argv[] )
                 _dumpBuffer( &_r );
             }
 
+            /* Update the intervals */
             if ( ( genericsTimestampmS() - lastTSTime ) > INTERVAL_TIME_MS )
             {
                 _r.oldintervalBytes = _r.intervalBytes;
                 _r.intervalBytes = 0;
                 lastTSTime = genericsTimestampmS();
             }
-
-            lastTime = genericsTimestampmS();
         }
 
         close( sourcefd );
@@ -1086,6 +1084,7 @@ int main( int argc, char *argv[] )
         }
     }
 
-    return -ESRCH;
+    return OK;
 }
+
 // ====================================================================================================
