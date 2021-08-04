@@ -51,6 +51,7 @@
 #include <limits.h>
 #include <signal.h>
 #include <ncurses.h>
+#include <sys/ioctl.h>
 
 #include "git_version_info.h"
 #include "generics.h"
@@ -122,6 +123,7 @@ struct RunTime
 {
     struct ETMDecoder i;
 
+    const char *progName;               /* Name by which this program was called */
     struct SymbolSet *s;                /* Symbols read from elf */
     bool      ending;                   /* Flag indicating app is terminating */
     uint64_t intervalBytes;             /* Number of bytes transferred in current interval */
@@ -130,8 +132,8 @@ struct RunTime
     uint32_t wp;                        /* Index pointers for ring buffer */
     uint32_t rp;
 
+    /* Materials for window handling */
     int hb;
-    const char *progName;
     WINDOW *outputWindow;
     WINDOW *statusWindow;
 
@@ -139,6 +141,8 @@ struct RunTime
     uint32_t opTextWline;
     uint32_t opTextRline;
     uint32_t oldopTextRline;
+    uint32_t lines;
+    uint32_t cols;
 
     struct visitedAddr *addresses;      /* Addresses we received in the SWV */
 
@@ -160,10 +164,10 @@ struct RunTime
 #define CE_NASSY     "\377\006" /* Non-executed assembly color */
 
 /* Window sizes/positions */
-#define OUTPUT_WINDOW_L (LINES-2)
-#define OUTPUT_WINDOW_W (COLS)
+#define OUTPUT_WINDOW_L (r->lines-2)
+#define OUTPUT_WINDOW_W (r->cols)
 #define STATUS_WINDOW_L (2)
-#define STATUS_WINDOW_W  (COLS)
+#define STATUS_WINDOW_W (r->cols)
 
 // ====================================================================================================
 // ====================================================================================================
@@ -648,10 +652,12 @@ static void _dumpBuffer( struct RunTime *r )
 }
 
 // ====================================================================================================
-static void _setupWindows( void )
+static void _setupWindows( struct RunTime *r )
 
 {
     initscr();
+    r->lines = LINES;
+    r->cols = COLS;
 
     if ( OK == start_color() )
     {
@@ -665,11 +671,12 @@ static void _setupWindows( void )
         init_pair( CP_BASELINETEXT, COLOR_YELLOW, COLOR_BLACK );
     }
 
-    _r.outputWindow = newwin( OUTPUT_WINDOW_L, OUTPUT_WINDOW_W, 0, 0 );
-    _r.statusWindow = newwin( STATUS_WINDOW_L, STATUS_WINDOW_W, OUTPUT_WINDOW_L, 0 );
-    timeout( 0 );
+    r->outputWindow = newwin( OUTPUT_WINDOW_L, OUTPUT_WINDOW_W, 0, 0 );
+    r->statusWindow = newwin( STATUS_WINDOW_L, STATUS_WINDOW_W, OUTPUT_WINDOW_L, 0 );
+    wtimeout( r->statusWindow, 0 );
+    scrollok( r->outputWindow, false );
     cbreak();
-    keypad( stdscr, true );
+    keypad( r->statusWindow, true );
     noecho();
     curs_set( 0 );
 }
@@ -684,13 +691,25 @@ static char _updateWindowsAndGetKey( struct RunTime *r, bool isTick )
 
 {
     int k;
+    struct winsize sz;
+
 
     /* Start off by processing keypresses */
-    switch ( ( k = getch() ) )
+    switch ( ( k = wgetch( r->statusWindow ) ) )
     {
         case KEY_RESIZE: /* ------------------------------------------------------------------ */
         case 12:  /* CTRL-L, refresh */
+
+            ioctl( 0, TIOCGWINSZ, &sz );
+            r->lines = sz.ws_row;
+            r->cols = sz.ws_col;
             r->oldopTextRline = 0;
+            clearok( r->statusWindow, true );
+            clearok( r->outputWindow, true );
+            wresize( r->statusWindow, STATUS_WINDOW_L, STATUS_WINDOW_W );
+            wresize( r->outputWindow, OUTPUT_WINDOW_L, OUTPUT_WINDOW_W );
+            mvwin( r->statusWindow, OUTPUT_WINDOW_L, 0 );
+            isTick = true;
             break;
 
         case KEY_UP: /* ---------------------------------------------------------------------- */
@@ -766,14 +785,52 @@ static char _updateWindowsAndGetKey( struct RunTime *r, bool isTick )
             break;
 
         default: /* -------------------------------------------------------------------------- */
-            /* Not dealt with here, better check if anything upstairs wants it */
             break;
+    }
+
+    /* Now update the status */
+    if ( isTick )
+    {
+        werase( r->statusWindow );
+        wattrset( r->statusWindow, A_BOLD | COLOR_PAIR( CP_BASELINE ) );
+        mvwhline( r->statusWindow, 0, 0, ACS_HLINE, COLS );
+        mvwprintw( r->statusWindow, 0, 1, " %c ", HB_GRAPHIC[r->hb] );
+        mvwprintw( r->statusWindow, 0, COLS - 4 - ( strlen( r->progName ) + strlen( genericsBasename( r->options->elffile ) ) ),
+                   " %s:%s ", r->progName, genericsBasename( r->options->elffile ) );
+
+        if ( r->opTextWline )
+        {
+            mvwprintw( r->statusWindow, 0, 5, " %d%% (%d/%d) ", ( r->opTextRline * 100 ) / r->opTextWline, r->opTextRline, r->opTextWline );
+        }
+
+        r->hb = ( r->hb + 1 ) % HB_GRAPHIC_LEN;
+
+        wattrset( r->statusWindow, A_BOLD | COLOR_PAIR( CP_BASELINETEXT ) );
+
+        if ( r->oldintervalBytes )
+        {
+            if ( r->oldintervalBytes < 9999 )
+            {
+                mvwprintw( r->statusWindow, 1, COLS - 38, "%ld Bps (~%ld Ips)", r->oldintervalBytes, ( r->oldintervalBytes * 8 ) / 11 );
+            }
+            else if ( r->oldintervalBytes < 9999999 )
+            {
+                mvwprintw( r->statusWindow, 1, COLS - 38, "%ld KBps (~%ld KIps)", r->oldintervalBytes / 1000, r->oldintervalBytes * 8 / 1120 );
+            }
+            else
+            {
+                mvwprintw( r->statusWindow, 1, COLS - 38, "%ld MBps (~%ld MIps)", r->oldintervalBytes / 1000000, ( r->oldintervalBytes * 8 ) / 1120000 );
+            }
+        }
+
+        mvwprintw( r->statusWindow, 1, COLS - 11, r->intervalBytes ? "Capturing" : "  Waiting" );
+        /* The window refresh will be done by the wgetch below */
     }
 
     /* Now deal with the output window */
     if ( r->oldopTextRline != r->opTextRline )
     {
-        wclear( r->outputWindow );
+        werase( r->outputWindow );
 
         if ( r->opTextRline )
         {
@@ -846,46 +903,6 @@ static char _updateWindowsAndGetKey( struct RunTime *r, bool isTick )
         wrefresh( r->outputWindow );
     }
 
-    /* Now update the status */
-    if ( isTick )
-    {
-        wclear( r->statusWindow );
-        wattrset( r->statusWindow, A_BOLD | COLOR_PAIR( CP_BASELINE ) );
-        mvwhline( r->statusWindow, 0, 0, ACS_HLINE, COLS );
-        mvwprintw( r->statusWindow, 0, 1, " %c ", HB_GRAPHIC[r->hb] );
-        mvwprintw( r->statusWindow, 0, COLS - 4 - ( strlen( r->progName ) + strlen( genericsBasename( r->options->elffile ) ) ),
-                   " %s:%s ", r->progName, genericsBasename( r->options->elffile ) );
-
-        if ( r->opTextWline )
-        {
-            mvwprintw( r->statusWindow, 0, 5, " %d%% (%d/%d) ", ( r->opTextRline * 100 ) / r->opTextWline, r->opTextRline, r->opTextWline );
-        }
-
-        r->hb = ( r->hb + 1 ) % HB_GRAPHIC_LEN;
-
-        wattrset( r->statusWindow, A_BOLD | COLOR_PAIR( CP_BASELINETEXT ) );
-
-        if ( r->oldintervalBytes )
-        {
-            if ( r->oldintervalBytes < 9999 )
-            {
-                mvwprintw( r->statusWindow, 1, COLS - 38, "%ld Bps (~%ld Ips)", r->oldintervalBytes, ( r->oldintervalBytes * 8 ) / 11 );
-            }
-            else if ( r->oldintervalBytes < 9999999 )
-            {
-                mvwprintw( r->statusWindow, 1, COLS - 38, "%ld KBps (~%ld KIps)", r->oldintervalBytes / 1000, r->oldintervalBytes * 8 / 1120 );
-            }
-            else
-            {
-                mvwprintw( r->statusWindow, 1, COLS - 38, "%ld MBps (~%ld MIps)", r->oldintervalBytes / 1000000, ( r->oldintervalBytes * 8 ) / 1120000 );
-            }
-        }
-
-        mvwprintw( r->statusWindow, 1, COLS - 11, r->intervalBytes ? "Capturing" : "  Waiting" );
-
-        wrefresh( r->statusWindow );
-    }
-
     return k;
 }
 // ====================================================================================================
@@ -923,7 +940,7 @@ int main( int argc, char *argv[] )
     /* Make sure the fifos get removed at the end */
     atexit( _doExit );
 
-    _setupWindows();
+    _setupWindows( &_r );
 
     /* Fill in a time to start from */
     lastTime = lastTTime = lastTSTime = genericsTimestampmS();
@@ -1002,6 +1019,8 @@ int main( int argc, char *argv[] )
             }
         }
 
+        FD_ZERO( &readfds );
+
         /* This is the main active loop...only break out of this when ending or on error */
         while ( !_r.ending )
         {
@@ -1009,7 +1028,6 @@ int main( int argc, char *argv[] )
             tv.tv_sec = 0;
             tv.tv_usec  = 10000;
 
-            FD_ZERO( &readfds );
             FD_SET( sourcefd, &readfds );
             FD_SET( STDIN_FILENO, &readfds );
             r = select( sourcefd + 1, &readfds, NULL, NULL, &tv );
@@ -1035,30 +1053,28 @@ int main( int argc, char *argv[] )
                 lastTime = genericsTimestampmS();
             }
 
-            if ( ( FD_ISSET( STDIN_FILENO, &readfds ) ) || ( genericsTimestampmS() - lastTTime ) > TICK_TIME_MS )
+
+            switch ( toupper( _updateWindowsAndGetKey( &_r, ( genericsTimestampmS() - lastTTime ) > TICK_TIME_MS ) ) )
             {
-                switch ( toupper( _updateWindowsAndGetKey( &_r, ( ( genericsTimestampmS() - lastTTime ) > TICK_TIME_MS ) ) ) )
-                {
-                    case 'D':
-                        _dumpBuffer( &_r );
-                        break;
+                case 'D':
+                    _dumpBuffer( &_r );
+                    break;
 
-                    case 'C':
-                        _flushBuffer( &_r );
-                        break;
+                case 'C':
+                    _flushBuffer( &_r );
+                    break;
 
-                    case 'Q':
-                        _r.ending = true;
-                        break;
+                case 'Q':
+                    _r.ending = true;
+                    break;
 
-                    default:
-                        break;
-                }
+                default:
+                    break;
+            }
 
-                if ( ( genericsTimestampmS() - lastTTime ) > TICK_TIME_MS )
-                {
-                    lastTTime = genericsTimestampmS();
-                }
+            if ( ( genericsTimestampmS() - lastTTime ) > TICK_TIME_MS )
+            {
+                lastTTime = genericsTimestampmS();
             }
 
             /* Deal with possible timeout sample */
