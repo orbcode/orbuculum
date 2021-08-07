@@ -59,27 +59,28 @@
 #include "etmDecoder.h"
 #include "symbols.h"
 
-#define TRANSFER_SIZE       (4096)
+#define TRANSFER_SIZE       (65536)
 #define REMOTE_ETM_PORT     (3443)            /* Server port definition */
 #define REMOTE_SERVER       "localhost"
 
 #define SCRATCH_STRING_LEN  (65535)            /* Max length for a string under construction */
 //#define DUMP_BLOCK
-#define DEFAULT_PM_BUFLEN_K (32)
+#define DEFAULT_PM_BUFLEN_K (32)               /* Default size of the Postmortem buffer */
+#define MAX_TAGS            (10)               /* How many tags we will allow */
 
 #define INTERVAL_TIME_MS    (1000)             /* Intervaltime between acculumator resets */
 #define HANG_TIME_MS        (490)              /* Time without a packet after which we dump the buffer */
 #define TICK_TIME_MS        (100)              /* Time intervals for screen updates and keypress check */
-#define HB_GRAPHIC          ".oO0Oo"           /* An affectation, keep-alive indication */
-#define HB_GRAPHIC_LEN      strlen(HB_GRAPHIC) /* Length of KA indication */
 
-enum CP { CP_EVENT, CP_NORMAL, CP_FILEFUNCTION, CP_LINENO, CP_EXECASSY, CP_NEXECASSY, CP_BASELINE, CP_BASELINETEXT };
+/* Colours for output */
+enum CP { CP_NONE, CP_EVENT, CP_NORMAL, CP_FILEFUNCTION, CP_LINENO, CP_EXECASSY, CP_NEXECASSY, CP_BASELINE, CP_BASELINETEXT, CP_SEARCH };
+
+/* Search types */
+enum SRCH { SRCH_OFF, SRCH_FORWARDS, SRCH_BACKWARDS };
 
 /* Record for options, either defaults or from command line */
 struct Options
 {
-    /* Config information */
-
     /* Source information */
     char *file;                         /* File host connection */
     bool fileTerminate;                 /* Terminate when file read isn't successful */
@@ -104,15 +105,6 @@ struct Options
     .buflen = DEFAULT_PM_BUFLEN_K * 1024
 };
 
-struct visitedAddr                      /* Structure for Hashmap of visited/observed addresses */
-{
-    uint64_t visits;
-    struct nameEntry *n;
-
-    UT_hash_handle hh;
-};
-
-
 struct dataBlock
 {
     ssize_t fillLevel;
@@ -133,18 +125,29 @@ struct RunTime
     uint32_t rp;
 
     /* Materials for window handling */
-    int hb;
-    WINDOW *outputWindow;
-    WINDOW *statusWindow;
+    WINDOW *outputWindow;               /* Output window (main one) */
+    WINDOW *statusWindow;               /* Status window (interaction one) */
+    uint32_t tag[MAX_TAGS];             /* Buffer location tags */
+    char **opText;                      /* Text of the output buffer */
+    uint32_t opTextWline;               /* Next line number to be written */
+    uint32_t opTextRline;               /* Current read position in op buffer */
+    uint32_t oldopTextRline;            /* Old read position in op buffer (for redraw) */
+    int32_t lines;                      /* Number of lines on current window config */
+    int32_t cols;                       /* Number of columns on current window config */
 
-    char **opText;
-    uint32_t opTextWline;
-    uint32_t opTextRline;
-    uint32_t oldopTextRline;
-    uint32_t lines;
-    uint32_t cols;
+    /* Search stuff */
+    enum SRCH searchMode;               /* What kind of search is being conducted */
+    char *searchString;                 /* The current searching string */
+    char storedFirstSearch;             /* Storage for first char of search string to allow repeats */
+    int32_t searchStartPos;             /* Location the search started from (for aborts) */
+    bool searchOK;                      /* Is the search currently sucessful? */
 
-    struct visitedAddr *addresses;      /* Addresses we received in the SWV */
+    int Key;                            /* Latest keypress */
+
+    bool forceRefresh;                  /* Force a refresh of everything */
+    bool outputtingHelp;                /* Output help window */
+    bool enteringMark;                  /* Set if we are in the process of marking a location */
+    bool held;                          /* If we are actively collecting data */
 
     struct dataBlock rawBlock;          /* Datablock received from distribution */
 
@@ -155,13 +158,13 @@ struct RunTime
 };
 
 /* In string markers for information types (for colouring) */
-#define CE_CLR       '\377'     /* Flag indicating color change */
-#define CE_EV        "\377\001" /* Event color */
-#define CE_FILE      "\377\002" /* File/line color */
-#define CE_SRCLINENO "\377\003" /* Source lineno color */
-#define CE_SRC       "\377\004" /* Source color */
-#define CE_ASSY      "\377\005" /* Executed assembly color */
-#define CE_NASSY     "\377\006" /* Non-executed assembly color */
+#define CE_CLR       '\377'            /* Flag indicating color change */
+#define CE_EV        "\377\001"        /* Event color */
+#define CE_FILE      "\377\002"        /* File/line color */
+#define CE_SRCLINENO "\377\003"        /* Source lineno color */
+#define CE_SRC       "\377\004"        /* Source color */
+#define CE_ASSY      "\377\005"        /* Executed assembly color */
+#define CE_NASSY     "\377\006"        /* Non-executed assembly color */
 
 /* Window sizes/positions */
 #define OUTPUT_WINDOW_L (r->lines-2)
@@ -176,8 +179,11 @@ struct RunTime
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
+static void _doExit( void ); /* Forward definition needed */
+// ====================================================================================================
 static void _intHandler( int sig )
 
+/* Catch CTRL-C so things can be cleaned up properly via atexit functions */
 {
     /* CTRL-C exit is not an error... */
     exit( 0 );
@@ -207,7 +213,7 @@ static int _processOptions( int argc, char *argv[], struct RunTime *r )
 {
     int c;
 
-    while ( ( c = getopt ( argc, argv, "ab:d:Ee:f:hO:s:v:" ) ) != -1 )
+    while ( ( c = getopt ( argc, argv, "ab:Dd:Ee:f:hO:s:v:" ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -331,24 +337,6 @@ static int _processOptions( int argc, char *argv[], struct RunTime *r )
         genericsExit( -1, "Illegal value for Post Mortem Buffer length" EOL );
     }
 
-
-    genericsReport( V_INFO, "PM Buflen     : %d KBytes" EOL, r->options->buflen / 1024 );
-    genericsReport( V_INFO, "Elf File      : %s" EOL, r->options->elffile );
-
-    if ( r->options->file )
-    {
-        genericsReport( V_INFO, "Input File  : %s", r->options->file );
-
-        if ( r->options->fileTerminate )
-        {
-            genericsReport( V_INFO, " (Terminate on exhaustion)" EOL );
-        }
-        else
-        {
-            genericsReport( V_INFO, " (Ongoing read)" EOL );
-        }
-    }
-
     return true;
 }
 // ====================================================================================================
@@ -397,21 +385,42 @@ static void _processBlock( struct RunTime *r )
     }
 }
 // ====================================================================================================
-static void _flushBuffer( struct RunTime *r )
+static void _requestRefresh( struct RunTime *r )
+
+/* Flag that output windows should be updated */
 
 {
+    r->forceRefresh = true;
+}
+// ====================================================================================================
+static void _flushBuffer( struct RunTime *r )
+
+/* Empty the output buffer, and de-allocate its memory */
+
+{
+  /* Remove all of the recorded lines */
     while ( r->opTextWline )
     {
         free( r->opText[r->opTextWline - 1] );
         r->opTextWline--;
     }
 
+    /* ...and reset the tag records */
+    for ( uint32_t t = 0; t < MAX_TAGS; t++ )
+    {
+        r->tag[t] = 0;
+    }
+
+    /* and the opText buffer */
     free( r->opText );
     r->opText = NULL;
-    r->opTextWline = r->opTextRline = 0; //r->oldopTextRline = 0;
+    r->opTextWline = r->opTextRline = 0;
+    _requestRefresh( r );
 }
 // ====================================================================================================
 static void _appendToOPBuffer( struct RunTime *r, const char *fmt, ... )
+
+/* Add line to output buffer, in a printf stylee */
 
 {
     char construct[SCRATCH_STRING_LEN];
@@ -427,6 +436,8 @@ static void _appendToOPBuffer( struct RunTime *r, const char *fmt, ... )
 }
 // ====================================================================================================
 static void _dumpBuffer( struct RunTime *r )
+
+/* Dump received data buffer into text buffer */
 
 {
     struct ETMCPUState *cpu = ETMCPUState( &r->i );
@@ -647,8 +658,8 @@ static void _dumpBuffer( struct RunTime *r )
     r->wp = r-> rp = 0;
 
     /* Force a re-draw, focussed on the end of the buffer */
-    r->oldopTextRline = 0;
-    r->opTextRline = r->opTextWline;
+    r->opTextRline = r->opTextWline - 1;
+    _requestRefresh( r );
 }
 
 // ====================================================================================================
@@ -669,14 +680,15 @@ static void _setupWindows( struct RunTime *r )
         init_pair( CP_NEXECASSY, COLOR_BLUE, COLOR_BLACK );
         init_pair( CP_BASELINE, COLOR_BLUE, COLOR_BLACK );
         init_pair( CP_BASELINETEXT, COLOR_YELLOW, COLOR_BLACK );
+        init_pair( CP_SEARCH, COLOR_GREEN, COLOR_BLACK );
     }
 
     r->outputWindow = newwin( OUTPUT_WINDOW_L, OUTPUT_WINDOW_W, 0, 0 );
     r->statusWindow = newwin( STATUS_WINDOW_L, STATUS_WINDOW_W, OUTPUT_WINDOW_L, 0 );
     wtimeout( r->statusWindow, 0 );
     scrollok( r->outputWindow, false );
-    cbreak();
     keypad( r->statusWindow, true );
+    raw();
     noecho();
     curs_set( 0 );
 }
@@ -684,229 +696,556 @@ static void _setupWindows( struct RunTime *r )
 static void _terminateWindows( void )
 
 {
+    noraw();
     endwin();
 }
 // ====================================================================================================
-static char _updateWindowsAndGetKey( struct RunTime *r, bool isTick )
+static bool _processRegularKeys( struct RunTime *r )
+
+/* Handle keys in regular mode */
 
 {
-    int k;
-    struct winsize sz;
+    bool retcode = false;
 
-
-    /* Start off by processing keypresses */
-    switch ( ( k = wgetch( r->statusWindow ) ) )
+    switch ( r->Key )
     {
-        case KEY_RESIZE: /* ------------------------------------------------------------------ */
-        case 12:  /* CTRL-L, refresh */
-
-            ioctl( 0, TIOCGWINSZ, &sz );
-            r->lines = sz.ws_row;
-            r->cols = sz.ws_col;
-            r->oldopTextRline = 0;
-            clearok( r->statusWindow, true );
-            clearok( r->outputWindow, true );
-            wresize( r->statusWindow, STATUS_WINDOW_L, STATUS_WINDOW_W );
-            wresize( r->outputWindow, OUTPUT_WINDOW_L, OUTPUT_WINDOW_W );
-            mvwin( r->statusWindow, OUTPUT_WINDOW_L, 0 );
-            isTick = true;
+        case ERR:
+            retcode = true;
             break;
 
-        case KEY_UP: /* ---------------------------------------------------------------------- */
-            if ( r->opTextRline > OUTPUT_WINDOW_L )
-            {
-                r->opTextRline--;
-            }
-
+        case 19: /* ----------------------------- CTRL-S Search Forwards ------------------------- */
+            r->searchMode = SRCH_FORWARDS;
+            *r->searchString = 0;
+            r->searchOK = true;
+            r->searchStartPos = r->opTextRline;
+            curs_set( 1 );
+            retcode = true;
             break;
 
-        case 398: /* This is shift-PPAGE ----------------------------------------------------- */
-            if ( r->opTextRline > 11 * OUTPUT_WINDOW_L )
+        case 18: /* ----------------------------- CTRL-R Search Reverse -------------------------- */
+            r->searchMode = SRCH_BACKWARDS;
+            *r->searchString = 0;
+            r->searchOK = true;
+            r->searchStartPos = r->opTextRline;
+            curs_set( 1 );
+            retcode = true;
+            break;
+
+        case 3: /* ------------------------------ CTRL-C Exit ------------------------------------ */
+            _doExit();
+            break;
+
+        case '?': /* ---------------------------- Help ------------------------------------------- */
+            r->outputtingHelp = !r->outputtingHelp;
+            _requestRefresh( r );
+            break;
+
+        case 'm':
+        case 'M': /* ---------------------------- Enter Mark ------------------------------------- */
+            r->enteringMark = !r->enteringMark;
+            break;
+
+        case '0' ... '0'+MAX_TAGS: /* ----------- Tagged Location -------------------------------- */
+            if ( r->enteringMark )
             {
-                r->opTextRline -= 10 * OUTPUT_WINDOW_L;
+                r->tag[r->Key - '0'] = r->opTextRline + 1;
+                r->enteringMark = false;
             }
             else
             {
-                r->opTextRline = r->opTextWline < OUTPUT_WINDOW_L ? r->opTextWline : OUTPUT_WINDOW_L;
+                if ( ( r->tag[r->Key - '0'] ) && ( r->tag[r->Key - '0'] < r->opTextWline ) )
+                {
+                    r->opTextRline = r->tag[r->Key - '0'] - 1;
+                }
+                else
+                {
+                    beep();
+                }
             }
 
             break;
 
-        case KEY_PPAGE: /* ------------------------------------------------------------------- */
-            if ( r->opTextRline > 2 * OUTPUT_WINDOW_L )
-            {
-                r->opTextRline -= OUTPUT_WINDOW_L;
-            }
-            else
-            {
-                r->opTextRline = r->opTextWline < OUTPUT_WINDOW_L ? r->opTextWline : OUTPUT_WINDOW_L;
-            }
+        case 259: /* ---------------------------- UP --------------------------------------------- */
 
+            r->opTextRline = ( r->opTextRline > 0 ) ? r->opTextRline - 1 : 0;
+            retcode = true;
             break;
 
-        case KEY_HOME: /* -------------------------------------------------------------------- */
-            r->opTextRline = r->opTextWline < OUTPUT_WINDOW_L ? r->opTextWline : OUTPUT_WINDOW_L;
+
+        case 398: /* ---------------------------- Shift PgUp ------------------------------------- */
+            r->opTextRline = ( r->opTextRline > 10 * OUTPUT_WINDOW_L ) ? r->opTextRline - 10 * OUTPUT_WINDOW_L : 0;
+            retcode = true;
             break;
 
-        case KEY_END: /* --------------------------------------------------------------------- */
-            r->opTextRline = r->opTextWline;
+        case 339: /* ---------------------------- PREV PAGE -------------------------------------- */
+            r->opTextRline = ( r->opTextRline > OUTPUT_WINDOW_L ) ? r->opTextRline - OUTPUT_WINDOW_L : 0;
+            retcode = true;
             break;
 
-        case 396: /* This is Shift-NPage ----------------------------------------------------- */
-            if ( r->opTextRline + 10 * OUTPUT_WINDOW_L < r->opTextWline )
-            {
-                r->opTextRline += 10 * OUTPUT_WINDOW_L;
-            }
-            else
-            {
-                r->opTextRline = r->opTextWline;
-            }
-
+        case 338: /* ---------------------------- NEXT PAGE -------------------------------------- */
+            r->opTextRline = ( r->opTextRline + OUTPUT_WINDOW_L < r->opTextWline ) ? r->opTextRline + OUTPUT_WINDOW_L : r->opTextWline - 1;
+            retcode = true;
             break;
 
-        case KEY_NPAGE: /* ------------------------------------------------------------------- */
-            if ( r->opTextRline + OUTPUT_WINDOW_L < r->opTextWline )
-            {
-                r->opTextRline += OUTPUT_WINDOW_L;
-            }
-            else
-            {
-                r->opTextRline = r->opTextWline;
-            }
-
+        case 262: /* ---------------------------- HOME ------------------------------------------- */
+            r->opTextRline = r->opTextWline < OUTPUT_WINDOW_L ? r->opTextWline : 0;
+            retcode = true;
             break;
 
-        case KEY_DOWN: /* -------------------------------------------------------------------- */
-            if ( r->opTextRline < r->opTextWline )
+        case 360: /* ---------------------------- END -------------------------------------------- */
+            r->opTextRline = r->opTextWline - 1;
+            retcode = true;
+            break;
+
+        case 258: /* ---------------------------- DOWN ------------------------------------------- */
+            r->opTextRline = ( r->opTextRline < ( r->opTextWline - 1 ) ) ? r->opTextRline + 1 :
+                             r->opTextRline;
+            retcode = true;
+            break;
+
+        case 396: /* ---------------------------- With shift for added speeeeeed ----------------- */
+            r->opTextRline = ( r->opTextRline + 10 * OUTPUT_WINDOW_L < r->opTextWline ) ? r->opTextRline + 10 * OUTPUT_WINDOW_L : r->opTextWline - 1;
+            retcode = true;
+            break;
+
+        default: /* ------------------------------------------------------------------------------ */
+            break;
+    }
+
+    return retcode;
+}
+// ====================================================================================================
+static bool _updateSearch( struct RunTime *r )
+
+/* Progress search to next element, or ping and return false if we can't */
+
+{
+    for ( int32_t l = r->opTextRline;
+            ( r->searchMode == SRCH_FORWARDS ) ? ( l < r->opTextWline - 1 ) : ( l > 0 );
+            ( r->searchMode == SRCH_FORWARDS ) ? l++ : l-- )
+    {
+        if ( strstr( r->opText[l], r->searchString ) )
+        {
+            /* This is a match */
+            r->opTextRline = l;
+            r->searchOK = true;
+            return true;
+        }
+    }
+
+    /* If we get here then we had no match */
+    beep();
+    r->searchOK = false;
+    return false;
+}
+// ====================================================================================================
+static bool _processSearchKeys( struct RunTime *r )
+
+/* Handle keys in search mode */
+
+{
+    bool retcode = false;
+
+    switch ( r->Key )
+    {
+        case ERR:
+            retcode = true;
+            break;
+
+        case 10: /* ----------------------------- Newline Commit Search -------------------------- */
+            /* Commit the search */
+            r->searchMode = SRCH_OFF;
+            curs_set( 0 );
+            r->storedFirstSearch = *r->searchString;
+            *r->searchString = 0;
+            _requestRefresh( r );
+            retcode = true;
+            break;
+
+        case 3: /* ------------------------------ CTRL-C Abort Search ---------------------------- */
+            /* Abort the search */
+            r->searchMode = SRCH_OFF;
+            r->opTextRline = r->searchStartPos;
+            r->storedFirstSearch = *r->searchString;
+            *r->searchString = 0;
+            _requestRefresh( r );
+            curs_set( 0 );
+            retcode = true;
+            break;
+
+        case 19: /* ----------------------------- CTRL-S Search Forwards ------------------------- */
+            if ( !*r->searchString )
+            {
+                /* Try to re-instate old search */
+                *r->searchString = r->storedFirstSearch;
+            }
+
+            r->searchMode = SRCH_FORWARDS;
+
+            /* Find next match */
+            if ( ( r->searchOK ) && ( r->opTextRline < r->opTextWline - 1 ) )
             {
                 r->opTextRline++;
             }
 
+            _updateSearch( r );
+            _requestRefresh( r );
+            retcode = true;
             break;
 
-        default: /* -------------------------------------------------------------------------- */
+        case 18: /* ---------------------------- CTRL-R Search Backwards ------------------------- */
+            if ( !*r->searchString )
+            {
+                /* Try to re-instate old search */
+                *r->searchString = r->storedFirstSearch;
+            }
+
+            /* Find prev match */
+            r->searchMode = SRCH_BACKWARDS;
+
+            if ( ( r->searchOK ) && ( r->opTextRline > 0 ) )
+            {
+                r->opTextRline--;
+            }
+
+            _updateSearch( r );
+            _requestRefresh( r );
+            retcode = true;
+            break;
+
+        case 263: /* --------------------------- Del Remove char from search string -------------- */
+
+            /* Delete last character in search string */
+            if ( strlen( r->searchString ) )
+            {
+                r->searchString[strlen( r->searchString ) - 1] = 0;
+            }
+
+            _updateSearch( r );
+            _requestRefresh( r );
+            retcode = true;
+            break;
+
+        default: /* ---------------------------- Add valid chars to search string ---------------- */
+            if ( ( r->Key > 31 ) && ( r->Key < 255 ) )
+            {
+                r->searchString = ( char * )realloc( r->searchString, strlen( r->searchString ) + 1 );
+                r->searchString[strlen( r->searchString ) + 1] = 0;
+                r->searchString[strlen( r->searchString )] = r->Key;
+                _updateSearch( r );
+                _requestRefresh( r );
+                retcode = true;
+            }
+
             break;
     }
 
-    /* Now update the status */
-    if ( isTick )
+    return retcode;
+}
+// ====================================================================================================
+static void _outputHelp( struct RunTime *r )
+
+/* ...as the name suggests. Just replace the output window with help text */
+
+{
+    werase( r->outputWindow );
+    wattrset( r->outputWindow, A_BOLD | COLOR_PAIR( CP_NORMAL ) );
+    wprintw( r->outputWindow, EOL "  Important Keys..." EOL EOL );
+    wprintw( r->outputWindow, "       H: Hold or resume sampling" EOL );
+    wprintw( r->outputWindow, "       M: Mark a location in the sample buffer, followed by 0..%d" EOL, MAX_TAGS - 1 );
+    wprintw( r->outputWindow, "       Q: Quit the application" EOL );
+    wprintw( r->outputWindow, "       ?: This help" EOL );
+    wprintw( r->outputWindow, "    0..%d: Move to mark in sample buffer, if its defined" EOL EOL, MAX_TAGS - 1 );
+    wprintw( r->outputWindow, "  CTRL-C: Quit the current task or the application" EOL );
+    wprintw( r->outputWindow, "  CTRL-L: Refresh the screen" EOL );
+    wprintw( r->outputWindow, "  CTRL-R: Search backwards, CTRL-R again for next match" EOL );
+    wprintw( r->outputWindow, "  CTRL-S: Search forwards, CTRL-S again for next match" EOL );
+    wprintw( r->outputWindow, EOL "  Use PgUp/PgDown/Home/End and the arrow keys to move around the sample buffer" EOL );
+    wprintw( r->outputWindow, "  Shift-PgUp and Shift-PgDown move more quickly" EOL );
+    wprintw( r->outputWindow, EOL "       <?> again to leave this help screeh." EOL );
+}
+
+// ====================================================================================================
+static void _updateWindows( struct RunTime *r, bool isTick, bool isKey )
+
+/* Update all the visible outputs onscreen */
+
+{
+    int y, x;                   /* Current size of output window */
+    attr_t attr;                /* On-screen attributes */
+    short pair;
+    char *ssp;                  /* Position in search match string */
+    bool refreshOutput = false; /* Flag indicating that output window needs updating */
+    bool refreshStatus = false; /* Flag indicating that status window needs updating */
+
+    /* First, work with the output window */
+    if ( r->outputtingHelp )
     {
-        werase( r->statusWindow );
-        wattrset( r->statusWindow, A_BOLD | COLOR_PAIR( CP_BASELINE ) );
-        mvwhline( r->statusWindow, 0, 0, ACS_HLINE, COLS );
-        mvwprintw( r->statusWindow, 0, 1, " %c ", HB_GRAPHIC[r->hb] );
-        mvwprintw( r->statusWindow, 0, COLS - 4 - ( strlen( r->progName ) + strlen( genericsBasename( r->options->elffile ) ) ),
-                   " %s:%s ", r->progName, genericsBasename( r->options->elffile ) );
-
-        if ( r->opTextWline )
-        {
-            mvwprintw( r->statusWindow, 0, 5, " %d%% (%d/%d) ", ( r->opTextRline * 100 ) / r->opTextWline, r->opTextRline, r->opTextWline );
-        }
-
-        r->hb = ( r->hb + 1 ) % HB_GRAPHIC_LEN;
-
-        wattrset( r->statusWindow, A_BOLD | COLOR_PAIR( CP_BASELINETEXT ) );
-
-        if ( r->oldintervalBytes )
-        {
-            if ( r->oldintervalBytes < 9999 )
-            {
-                mvwprintw( r->statusWindow, 1, COLS - 38, "%ld Bps (~%ld Ips)", r->oldintervalBytes, ( r->oldintervalBytes * 8 ) / 11 );
-            }
-            else if ( r->oldintervalBytes < 9999999 )
-            {
-                mvwprintw( r->statusWindow, 1, COLS - 38, "%ld KBps (~%ld KIps)", r->oldintervalBytes / 1000, r->oldintervalBytes * 8 / 1120 );
-            }
-            else
-            {
-                mvwprintw( r->statusWindow, 1, COLS - 38, "%ld MBps (~%ld MIps)", r->oldintervalBytes / 1000000, ( r->oldintervalBytes * 8 ) / 1120000 );
-            }
-        }
-
-        mvwprintw( r->statusWindow, 1, COLS - 11, r->intervalBytes ? "Capturing" : "  Waiting" );
-        /* The window refresh will be done by the wgetch below */
+        _outputHelp( r );
+        refreshOutput = true;
     }
-
-    /* Now deal with the output window */
-    if ( r->oldopTextRline != r->opTextRline )
+    else
     {
-        werase( r->outputWindow );
-
-        if ( r->opTextRline )
+        if ( ( r->oldopTextRline != r->opTextRline ) || ( r->forceRefresh ) )
         {
-            for ( uint32_t sline = 0; sline < OUTPUT_WINDOW_L; sline++ )
+            werase( r->outputWindow );
+
+            for ( int32_t sline = -OUTPUT_WINDOW_L / 2; sline < ( OUTPUT_WINDOW_L + 1 ) / 2; sline++ )
             {
-                if ( ( sline + r->opTextRline - OUTPUT_WINDOW_L < 0 ) ||
-                        ( sline + r->opTextRline - OUTPUT_WINDOW_L > r->opTextWline ) )
+                /* Make sure we've not fallen off one end of the list or the other */
+                if ( ( sline + r->opTextRline < 0 ) ||
+                        ( sline + r->opTextRline >= r->opTextWline ) )
                 {
                     continue;
                 }
 
-                char *u = r->opText[sline + r->opTextRline - OUTPUT_WINDOW_L];
-                wmove( r->outputWindow, sline, 0 );
+                char *u = r->opText[sline + r->opTextRline];
+                ssp = r->searchString;
+
+                wmove( r->outputWindow, ( OUTPUT_WINDOW_L / 2 ) + sline, 0 );
 
                 while ( *u )
                 {
                     switch ( *u )
                     {
-                        case '\r':
+                        case '\r': /* ----------- NL/CR are ignored in the sourced data ---------- */
                         case '\n':
                             u++;
                             break;
 
-                        case CE_CLR:
+                        case CE_CLR: /* --------- This is a command character -------------------- */
                             ++u;
 
                             switch ( *u )
                             {
                                 case 1: /* Event color */
-                                    wattrset( r->outputWindow, COLOR_PAIR( CP_EVENT ) );
+                                    wattrset( r->outputWindow, ( ( sline == 0 ) ? A_STANDOUT : 0 ) | A_BOLD | COLOR_PAIR( CP_EVENT ) );
                                     break;
 
                                 case 2: /* File/line color */
-                                    wattrset( r->outputWindow, A_BOLD | COLOR_PAIR( CP_FILEFUNCTION ) );
+                                    wattrset( r->outputWindow, ( ( sline == 0 ) ? A_STANDOUT : 0 ) | A_BOLD | COLOR_PAIR( CP_FILEFUNCTION ) );
                                     break;
 
                                 case 3: /* Source lineno color */
-                                    wattrset( r->outputWindow, COLOR_PAIR( CP_LINENO ) );
+                                    wattrset( r->outputWindow, ( ( sline == 0 ) ? A_STANDOUT : 0 ) | COLOR_PAIR( CP_LINENO ) );
                                     break;
 
                                 case 4: /* Source color */
-                                    wattrset( r->outputWindow, A_BOLD | COLOR_PAIR( CP_NORMAL ) );
+                                    wattrset( r->outputWindow, ( ( sline == 0 ) ? A_STANDOUT : 0 ) | A_BOLD | COLOR_PAIR( CP_NORMAL ) );
                                     break;
 
                                 case 5: /* Executed assembly color */
-                                    wattrset( r->outputWindow, COLOR_PAIR( CP_EXECASSY ) );
+                                    wattrset( r->outputWindow, ( ( sline == 0 ) ? A_STANDOUT : 0 ) | COLOR_PAIR( CP_EXECASSY ) );
                                     break;
 
                                 case 6: /* Non-executed assembly color */
-                                    wattrset( r->outputWindow, COLOR_PAIR( CP_NEXECASSY ) );
+                                    wattrset( r->outputWindow, ( ( sline == 0 ) ? A_STANDOUT : 0 ) | COLOR_PAIR( CP_NEXECASSY ) );
                                     break;
 
                                 default:
-                                    wattrset( r->outputWindow, COLOR_PAIR( CP_NORMAL ) );
+                                    wattrset( r->outputWindow, ( ( sline == 0 ) ? A_STANDOUT : 0 ) | COLOR_PAIR( CP_NORMAL ) );
                                     break;
                             }
 
+                            /* Store the attributes in case we need them later (e.g. as a result of search changing things) */
+                            wattr_get( r->outputWindow, &attr, &pair, NULL );
                             u++;
                             break;
 
-                        default:
+                    default: /* ------------------------------------------------------------- */
+
+                            /* Colour matches if we're in search mode, but whatever is happening, output the characters */
+                            if ( ( r->searchMode != SRCH_OFF ) && ( *r->searchString ) && ( !strncmp( u, ssp, strlen( ssp ) ) ) )
+                            {
+                                wattrset( r->outputWindow, A_BOLD | COLOR_PAIR( CP_SEARCH ) );
+                                ssp++;
+
+                                if ( !*ssp )
+                                {
+                                    ssp = r->searchString;
+                                }
+                            }
+                            else
+                            {
+                                wattr_set( r->outputWindow, attr, pair, NULL );
+                            }
+
                             waddch( r->outputWindow, *u++ );
                             break;
                     }
                 }
+
+                /* Pad out this line with spaces */
+                while ( true )
+                {
+                    getyx( r->outputWindow, y, x );
+                    ( void )y;
+                    waddch( r->outputWindow, ' ' );
+
+                    if ( x == OUTPUT_WINDOW_W - 1 )
+                    {
+                        break;
+                    }
+                }
             }
+
+            r->oldopTextRline = r->opTextRline;
+            refreshOutput = true;
+        }
+    }
+
+
+    /* Now update the status */
+    if ( ( isTick ) || ( isKey ) || ( r->forceRefresh ) )
+    {
+        werase( r->statusWindow );
+        wattrset( r->statusWindow, A_BOLD | COLOR_PAIR( CP_BASELINE ) );
+        mvwhline( r->statusWindow, 0, 0, ACS_HLINE, COLS );
+        mvwprintw( r->statusWindow, 0, COLS - 4 - ( strlen( r->progName ) + strlen( genericsBasename( r->options->elffile ) ) ),
+                   " %s:%s ", r->progName, genericsBasename( r->options->elffile ) );
+
+        if ( r->opTextWline )
+        {
+            /* We have some opData stored, indicate where we are in it */
+            mvwprintw( r->statusWindow, 0, 2, " %d%% (%d/%d) ", ( r->opTextRline * 100 ) / ( r->opTextWline - 1 ), r->opTextRline, r->opTextWline );
         }
 
-        r->oldopTextRline = r->opTextRline;
+        wattrset( r->statusWindow, A_BOLD | COLOR_PAIR( CP_BASELINETEXT ) );
+
+        if ( !r->held )
+        {
+            if ( r->oldintervalBytes )
+            {
+                if ( r->oldintervalBytes < 9999 )
+                {
+                    mvwprintw( r->statusWindow, 1, COLS - 38, "%ld Bps (~%ld Ips)", r->oldintervalBytes, ( r->oldintervalBytes * 8 ) / 11 );
+                }
+                else if ( r->oldintervalBytes < 9999999 )
+                {
+                    mvwprintw( r->statusWindow, 1, COLS - 38, "%ld KBps (~%ld KIps)", r->oldintervalBytes / 1000, r->oldintervalBytes * 8 / 1120 );
+                }
+                else
+                {
+                    mvwprintw( r->statusWindow, 1, COLS - 38, "%ld MBps (~%ld MIps)", r->oldintervalBytes / 1000000, ( r->oldintervalBytes * 8 ) / 1120000 );
+                }
+            }
+
+            mvwprintw( r->statusWindow, 1, COLS - 11, r->intervalBytes ? "Capturing" : "  Waiting" );
+        }
+        else
+        {
+            mvwprintw( r->statusWindow, 1, COLS - 6, "Hold" );
+        }
+
+        mvwprintw( r->statusWindow, 0, 30, " " );
+
+        for ( uint32_t t = 0; t < MAX_TAGS; t++ )
+        {
+            if ( r->tag[t] )
+            {
+                wattrset( r->statusWindow, A_BOLD | COLOR_PAIR( CP_BASELINETEXT ) );
+
+                if ( ( r->tag[t] >= ( r->opTextRline - OUTPUT_WINDOW_L / 2 ) ) &&
+                        ( r->tag[t] <= ( r->opTextRline + ( OUTPUT_WINDOW_L + 1 ) / 2 ) ) )
+                {
+                    /* This tag is on the visible page */
+                    wattrset( r->outputWindow, A_BOLD | COLOR_PAIR( CP_BASELINETEXT ) );
+                    mvwprintw( r->outputWindow, ( OUTPUT_WINDOW_L + 1 ) / 2 + r->tag[t] - r->opTextRline - 1, OUTPUT_WINDOW_W - 1, "%d", t );
+                    refreshOutput = true;
+                }
+            }
+            else
+            {
+                wattrset( r->statusWindow, A_BOLD | COLOR_PAIR( CP_BASELINE ) );
+            }
+
+            wprintw( r->statusWindow, "%d", t );
+        }
+
+        wprintw( r->statusWindow, " " );
+
+        if ( r->searchMode )
+        {
+            wattrset( r->statusWindow, A_BOLD | COLOR_PAIR( CP_SEARCH ) );
+            mvwprintw( r->statusWindow, 1, 2, "%sSearch %s :%s", r->searchOK ? "" : "(Failing) ", ( r->searchMode == SRCH_FORWARDS ) ? "Forwards" : "Backwards", r->searchString );
+        }
+
+        if ( r->enteringMark )
+        {
+            wattrset( r->statusWindow, A_BOLD | COLOR_PAIR( CP_SEARCH ) );
+            mvwprintw( r->statusWindow, 1, 2, "Mark Number?" );
+        }
+
+        // Uncomment this line to get a track of latest key values
+        // mvwprintw( r->statusWindow, 1, 40, "Key %d", r->Key );
+    }
+
+    if ( refreshOutput )
+    {
         wrefresh( r->outputWindow );
     }
 
-    return k;
+    if ( refreshStatus )
+    {
+        wrefresh( r->statusWindow );
+    }
+
+    r->forceRefresh = false;
 }
 // ====================================================================================================
+static bool _updateWindowsAndGetKey( struct RunTime *r, bool isTick )
+
+/* Top level to deal with all UI aspects */
+
+{
+    struct winsize sz;
+    bool keyhandled = false;
+
+    r->Key = wgetch( r->statusWindow );
+
+    if ( r->Key != ERR )
+    {
+        keyhandled = ( r->searchMode ) ? _processSearchKeys( r ) : _processRegularKeys( r );
+
+        if ( !keyhandled )
+        {
+            switch ( r->Key )
+            {
+                case KEY_RESIZE:
+                case 12:  /* CTRL-L, refresh ----------------------------------------------------- */
+                    ioctl( 0, TIOCGWINSZ, &sz );
+                    r->lines = sz.ws_row;
+                    r->cols = sz.ws_col;
+                    clearok( r->statusWindow, true );
+                    clearok( r->outputWindow, true );
+                    wresize( r->statusWindow, STATUS_WINDOW_L, STATUS_WINDOW_W );
+                    wresize( r->outputWindow, OUTPUT_WINDOW_L, OUTPUT_WINDOW_W );
+                    mvwin( r->statusWindow, OUTPUT_WINDOW_L, 0 );
+                    keyhandled = true;
+                    isTick = true;
+                    _requestRefresh( r );
+                    break;
+
+                default: /* ---------------------------------------------------------------------- */
+                    break;
+            }
+        }
+    }
+    else
+    {
+        keyhandled = true;
+    }
+
+    /* Now deal with the output windows */
+    _updateWindows( r, isTick, r->Key != ERR );
+
+    return keyhandled;
+}
+
+// ====================================================================================================
 static void _doExit( void )
+
+/* Perform any explicit exit functions */
 
 {
     _r.ending = true;
@@ -928,8 +1267,9 @@ int main( int argc, char *argv[] )
     struct timeval tv;
     fd_set readfds;
 
-
+    /* Have a basic name and search string set up */
     _r.progName = genericsBasename( argv[0] );
+    _r.searchString = ( char * )calloc( 2, sizeof( char ) );
 
     if ( !_processOptions( argc, argv, &_r ) )
     {
@@ -1021,7 +1361,9 @@ int main( int argc, char *argv[] )
 
         FD_ZERO( &readfds );
 
+        /* ----------------------------------------------------------------------------- */
         /* This is the main active loop...only break out of this when ending or on error */
+        /* ----------------------------------------------------------------------------- */
         while ( !_r.ending )
         {
             /* Each time segment is restricted to 10mS */
@@ -1040,6 +1382,7 @@ int main( int argc, char *argv[] )
 
             if ( FD_ISSET( sourcefd, &readfds ) )
             {
+                /* We always read the data, even if we're held, to keep the socket alive */
                 _r.rawBlock.fillLevel = read( sourcefd, _r.rawBlock.buffer, TRANSFER_SIZE );
 
                 if ( _r.rawBlock.fillLevel <= 0 )
@@ -1048,39 +1391,49 @@ int main( int argc, char *argv[] )
                     break;
                 }
 
-                /* Pump all of the data through the protocol handler */
-                _processBlock( &_r );
-                lastTime = genericsTimestampmS();
+                if ( !_r.held )
+                {
+                    /* Pump all of the data through the protocol handler */
+                    _processBlock( &_r );
+                    lastTime = genericsTimestampmS();
+                }
             }
 
-
-            switch ( toupper( _updateWindowsAndGetKey( &_r, ( genericsTimestampmS() - lastTTime ) > TICK_TIME_MS ) ) )
+            /* Update the outputs and deal with any keys that made it up this high */
+            if ( !_updateWindowsAndGetKey( &_r, ( genericsTimestampmS() - lastTTime ) > TICK_TIME_MS ) )
             {
-                case 'D':
-                    _dumpBuffer( &_r );
-                    break;
+                switch ( toupper( _r.Key ) )
+                {
+                    case 'H':
+                        if ( _r.held )
+                        {
+                            _flushBuffer( &_r );
+                        }
 
-                case 'C':
-                    _flushBuffer( &_r );
-                    break;
+                        _r.held = !_r.held;
+                        break;
 
-                case 'Q':
-                    _r.ending = true;
-                    break;
+                    case 'Q':
+                        _r.ending = true;
+                        break;
 
-                default:
-                    break;
+                    default:
+                        break;
+                }
             }
 
+            /* Update the various timers that are running */
             if ( ( genericsTimestampmS() - lastTTime ) > TICK_TIME_MS )
             {
                 lastTTime = genericsTimestampmS();
             }
 
-            /* Deal with possible timeout sample */
+            /* Deal with possible timeout on sampling */
             if ( ( ( genericsTimestampmS() - lastTime ) > HANG_TIME_MS ) && ( _r.wp != _r.rp ) )
             {
                 _dumpBuffer( &_r );
+                /* After we've got a dump we don't want to lose it again!! */
+                _r.held = true;
             }
 
             /* Update the intervals */
@@ -1092,6 +1445,10 @@ int main( int argc, char *argv[] )
             }
         }
 
+        /* ----------------------------------------------------------------------------- */
+        /* End of main loop ... we get here because something forced us out              */
+        /* ----------------------------------------------------------------------------- */
+
         close( sourcefd );
 
         if ( _r.options->fileTerminate )
@@ -1102,5 +1459,4 @@ int main( int argc, char *argv[] )
 
     return OK;
 }
-
 // ====================================================================================================
