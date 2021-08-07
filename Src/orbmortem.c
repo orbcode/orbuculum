@@ -142,6 +142,10 @@ struct RunTime
     int32_t searchStartPos;             /* Location the search started from (for aborts) */
     bool searchOK;                      /* Is the search currently sucessful? */
 
+    /* Save stuff */
+    bool enteringSaveFilename;          /* State indicator that we're entering filename */
+    char *saveFilename;                 /* Filename under construction */
+
     int Key;                            /* Latest keypress */
 
     bool forceRefresh;                  /* Force a refresh of everything */
@@ -398,7 +402,7 @@ static void _flushBuffer( struct RunTime *r )
 /* Empty the output buffer, and de-allocate its memory */
 
 {
-  /* Remove all of the recorded lines */
+    /* Remove all of the recorded lines */
     while ( r->opTextWline )
     {
         free( r->opText[r->opTextWline - 1] );
@@ -491,8 +495,8 @@ static void _dumpBuffer( struct RunTime *r )
 
             if ( ETMStateChanged( &r->i, EV_CH_EX_ENTRY ) )
             {
-                _appendToOPBuffer( r, CE_EV "========== Exception Entry (%3d%s) ==========" EOL, cpu->exception,
-                                   ETMStateChanged( &r->i, EV_CH_CANCELLED ) ? ", Last Instruction Cancelled" : "" );
+                _appendToOPBuffer( r, CE_EV "========== Exception Entry%s (%d at %08x) ==========" EOL,
+                                   ETMStateChanged( &r->i, EV_CH_CANCELLED ) ? ", Last Instruction Cancelled" : "", cpu->exception, cpu->addr );
             }
 
             if ( ETMStateChanged( &r->i, EV_CH_EX_EXIT ) )
@@ -700,6 +704,65 @@ static void _terminateWindows( void )
     endwin();
 }
 // ====================================================================================================
+static void _doSave( struct RunTime *r )
+
+{
+
+}
+// ====================================================================================================
+static bool _processSaveFilename( struct RunTime *r )
+
+{
+    bool retcode = false;
+
+    switch ( r->Key )
+    {
+        case ERR:
+            retcode = true;
+            break;
+
+        case 3: /* ------------------------------ CTRL-C Exit ------------------------------------ */
+            r->enteringSaveFilename = false;
+            curs_set( 0 );
+            retcode = true;
+            break;
+
+        case 263: /* --------------------------- Del Remove char from save string ----------------- */
+
+            /* Delete last character in save string */
+            if ( strlen( r->saveFilename ) )
+            {
+                r->saveFilename[strlen( r->saveFilename ) - 1] = 0;
+            }
+
+            retcode = true;
+            break;
+
+        case 10: /* ----------------------------- Newline Commit Save ---------------------------- */
+            /* Commit the save */
+            _doSave( r );
+            free( r->saveFilename );
+            curs_set( 0 );
+            r->saveFilename = NULL;
+            r->enteringSaveFilename = false;
+            retcode = true;
+            break;
+
+        default: /* ---------------------------- Add valid chars to save string ------------------ */
+            if ( ( r->Key > 31 ) && ( r->Key < 255 ) )
+            {
+              r->saveFilename = ( char * )realloc( r->saveFilename, strlen( r->saveFilename ) + 2 );
+              r->saveFilename[strlen( r->saveFilename ) + 1] = 0;
+              r->saveFilename[strlen( r->saveFilename )] = r->Key;
+              retcode = true;
+            }
+            break;
+    }
+
+    return retcode;
+}
+
+// ====================================================================================================
 static bool _processRegularKeys( struct RunTime *r )
 
 /* Handle keys in regular mode */
@@ -743,6 +806,22 @@ static bool _processRegularKeys( struct RunTime *r )
         case 'm':
         case 'M': /* ---------------------------- Enter Mark ------------------------------------- */
             r->enteringMark = !r->enteringMark;
+            break;
+
+        case 's':
+        case 'S': /* ---------------------------- Enter save filename ---------------------------- */
+            if ( r->opTextWline )
+            {
+                r->saveFilename = ( char * )realloc( r->saveFilename, 1 );
+                *r->saveFilename = 0;
+                curs_set( 1 );
+                r->enteringSaveFilename = true;
+            }
+            else
+            {
+                beep();
+            }
+
             break;
 
         case '0' ... '0'+MAX_TAGS: /* ----------- Tagged Location -------------------------------- */
@@ -953,6 +1032,7 @@ static void _outputHelp( struct RunTime *r )
     wprintw( r->outputWindow, EOL "  Important Keys..." EOL EOL );
     wprintw( r->outputWindow, "       H: Hold or resume sampling" EOL );
     wprintw( r->outputWindow, "       M: Mark a location in the sample buffer, followed by 0..%d" EOL, MAX_TAGS - 1 );
+    wprintw( r->outputWindow, "       S: Save current buffer to file" EOL );
     wprintw( r->outputWindow, "       Q: Quit the application" EOL );
     wprintw( r->outputWindow, "       ?: This help" EOL );
     wprintw( r->outputWindow, "    0..%d: Move to mark in sample buffer, if its defined" EOL EOL, MAX_TAGS - 1 );
@@ -1052,7 +1132,7 @@ static void _updateWindows( struct RunTime *r, bool isTick, bool isKey )
                             u++;
                             break;
 
-                    default: /* ------------------------------------------------------------- */
+                        default: /* ------------------------------------------------------------- */
 
                             /* Colour matches if we're in search mode, but whatever is happening, output the characters */
                             if ( ( r->searchMode != SRCH_OFF ) && ( *r->searchString ) && ( !strncmp( u, ssp, strlen( ssp ) ) ) )
@@ -1164,6 +1244,12 @@ static void _updateWindows( struct RunTime *r, bool isTick, bool isKey )
 
         wprintw( r->statusWindow, " " );
 
+        if ( r->enteringSaveFilename )
+        {
+            wattrset( r->statusWindow, A_BOLD | COLOR_PAIR( CP_SEARCH ) );
+            mvwprintw( r->statusWindow, 1, 2, "Save Filename :%s", r->saveFilename );
+        }
+
         if ( r->searchMode )
         {
             wattrset( r->statusWindow, A_BOLD | COLOR_PAIR( CP_SEARCH ) );
@@ -1205,7 +1291,14 @@ static bool _updateWindowsAndGetKey( struct RunTime *r, bool isTick )
 
     if ( r->Key != ERR )
     {
-        keyhandled = ( r->searchMode ) ? _processSearchKeys( r ) : _processRegularKeys( r );
+        if ( r->enteringSaveFilename )
+        {
+            keyhandled =  _processSaveFilename( r );
+        }
+        else
+        {
+            keyhandled = ( r->searchMode ) ? _processSearchKeys( r ) : _processRegularKeys( r );
+        }
 
         if ( !keyhandled )
         {

@@ -120,7 +120,7 @@ enum ETMDecoderPumpEvent ETMDecoderPump( struct ETMDecoder *i, uint8_t c )
 {
     bool C;                               /* Is address packet continued? */
     bool X = false;                       /* Is there exception information following address */
-    uint8_t ofs;                          /* Offset for bits in address calculation */
+    int8_t ofs;                           /* Offset for bits in address calculation */
     uint8_t mask;                         /* Mask for bits in address calculation */
 
     enum ETMprotoState newState = i->p;
@@ -427,9 +427,11 @@ enum ETMDecoderPumpEvent ETMDecoderPump( struct ETMDecoder *i, uint8_t c )
                 /* This is a proper mess. Mask and collect bits according to address mode in use and */
                 /* if it's the last byte of the sequence */
 
-                mask = C ? 0x7F : 0x3F;
-                ofs = ( cpu->addrMode == ETM_ADDRMODE_ARM ) ? 2 : ( cpu->addrMode == ETM_ADDRMODE_THUMB ) ? 1 : 0;
-                i->addrConstruct = ( i->addrConstruct &  ~( mask << ( ( 7 * i->byteCount ) + ofs ) ) ) | ( c & ( mask <<  ( ( 7 * i->byteCount ) + ofs ) ) );
+                mask = C ? 0x7f : 0x3f;
+                ofs = ( cpu->addrMode == ETM_ADDRMODE_ARM ) ? 1 : ( cpu->addrMode == ETM_ADDRMODE_THUMB ) ? 0 : -1;
+
+                i->addrConstruct = ( i->addrConstruct &  ( ~( mask << ( 7 * i->byteCount + ofs ) ) ) )
+                                   | ( ( c & mask ) << ( 7 * i->byteCount + ofs ) );
                 /* There is exception information only if no continuation and bit 6 set */
                 X = ( ( !C ) && ( c & 0x40 ) );
                 i->byteCount++;
@@ -439,7 +441,7 @@ enum ETMDecoderPumpEvent ETMDecoderPump( struct ETMDecoder *i, uint8_t c )
 
             case ETM_COLLECT_BA_STD_FORMAT: /* Collecting a branch address, standard format */
                 /* This will potentially connect too many bits, but that is OK */
-                ofs = ( cpu->addrMode == ETM_ADDRMODE_ARM ) ? 2 : ( cpu->addrMode == ETM_ADDRMODE_THUMB ) ? 1 : 0;
+                ofs = ( cpu->addrMode == ETM_ADDRMODE_ARM ) ? 1 : ( cpu->addrMode == ETM_ADDRMODE_THUMB ) ? 0 : -1;
                 i->addrConstruct = ( i->addrConstruct &  ~( 0x7F << ( ( 7 * i->byteCount ) + ofs ) ) ) | ( c & ( 0x7F <<  ( ( 7 * i->byteCount ) + ofs ) ) );
                 i->byteCount++;
                 C = ( i->byteCount < 5 ) ? c & 0x80 : c & 0x40;
