@@ -62,6 +62,9 @@ enum CP { CP_NONE, CP_EVENT, CP_NORMAL, CP_FILEFUNCTION, CP_LINENO, CP_EXECASSY,
 /* Search types */
 enum SRCH { SRCH_OFF, SRCH_FORWARDS, SRCH_BACKWARDS };
 
+/* Display modes */
+enum DISP { DISP_BOTH, DISP_SRC, DISP_ASSY, DISP_MAX_OPTIONS };
+
 struct SIOInstance
 {
     /* Materials for window handling */
@@ -92,6 +95,7 @@ struct SIOInstance
     int32_t opTextWline;                /* Next line number to be written */
     int32_t opTextRline;                /* Current read position in op buffer */
     int32_t oldopTextRline;             /* Old read position in op buffer (for redraw) */
+    enum DISP displayMode;              /* How we want the file displaying */
 
     int Key;                            /* Latest keypress */
 
@@ -202,6 +206,33 @@ static void _outputHelp( struct SIOInstance *sio )
     wprintw( sio->outputWindow, EOL "       <?> again to leave this help screeh." EOL );
 }
 // ====================================================================================================
+static bool _onDisplay( struct SIOInstance *sio, int32_t lineNum )
+
+{
+    return !(
+                       ( ( sio->displayMode == DISP_SRC )  && ( ( ( *sio->opText )[lineNum].lt == LT_LABEL ) || ( ( *sio->opText )[lineNum].lt == LT_ASSEMBLY ) || ( ( *sio->opText )[lineNum].lt == LT_NASSEMBLY ) ) ) ||
+                       ( ( sio->displayMode == DISP_ASSY ) &&  ( ( *sio->opText )[lineNum].lt == LT_SOURCE ) )
+           );
+}
+// ====================================================================================================
+static void _moveCursor( struct SIOInstance *sio, int lines )
+
+/* Move cursor by specified number of lines, in light of current display mode */
+
+{
+    int dir = ( lines < 0 ) ? -1 : 1;
+
+    while ( lines && ( ( ( dir == -1 ) && ( sio->opTextRline ) ) || ( ( dir == 1 ) && ( sio->opTextRline < sio->opTextWline - 1 ) ) ) )
+    {
+        sio->opTextRline += dir;
+
+        if ( _onDisplay( sio, sio->opTextRline ) )
+        {
+            lines -= dir;
+        }
+    }
+}
+// ====================================================================================================
 static enum SIOEvent _processRegularKeys( struct SIOInstance *sio )
 
 /* Handle keys in regular mode */
@@ -241,6 +272,12 @@ static enum SIOEvent _processRegularKeys( struct SIOInstance *sio )
             sio->outputtingHelp = !sio->outputtingHelp;
             SIOrequestRefresh( sio );
             op = SIO_EV_CONSUMED;
+            break;
+
+        case 'd': /* ---------------------------- Display Mode ----------------------------------- */
+            sio->displayMode = ( sio->displayMode + 1 ) % DISP_MAX_OPTIONS;
+            op = SIO_EV_CONSUMED;
+            SIOrequestRefresh( sio );
             break;
 
         case 'm':
@@ -288,44 +325,53 @@ static enum SIOEvent _processRegularKeys( struct SIOInstance *sio )
             break;
 
         case 259: /* ---------------------------- UP --------------------------------------------- */
-
-            sio->opTextRline = ( sio->opTextRline > 0 ) ? sio->opTextRline - 1 : 0;
+            _moveCursor( sio, -1 );
+            //            sio->opTextRline = ( sio->opTextRline > 0 ) ? sio->opTextRline - 1 : 0;
             op = SIO_EV_CONSUMED;
             break;
 
         case 398: /* ---------------------------- Shift PgUp ------------------------------------- */
-            sio->opTextRline = ( sio->opTextRline > 10 * OUTPUT_WINDOW_L ) ? ( sio->opTextRline - 10 * OUTPUT_WINDOW_L ) : 0;
+            _moveCursor( sio, -( 10 * OUTPUT_WINDOW_L ) );
+            //sio->opTextRline = ( sio->opTextRline > 10 * OUTPUT_WINDOW_L ) ? ( sio->opTextRline - 10 * OUTPUT_WINDOW_L ) : 0;
             op = SIO_EV_CONSUMED;
             break;
 
         case 339: /* ---------------------------- PREV PAGE -------------------------------------- */
-            sio->opTextRline = ( sio->opTextRline > OUTPUT_WINDOW_L ) ? ( sio->opTextRline - OUTPUT_WINDOW_L ) : 0;
+            _moveCursor( sio, -OUTPUT_WINDOW_L );
+            //sio->opTextRline = ( sio->opTextRline > OUTPUT_WINDOW_L ) ? ( sio->opTextRline - OUTPUT_WINDOW_L ) : 0;
             op = SIO_EV_CONSUMED;
             break;
 
         case 338: /* ---------------------------- NEXT PAGE -------------------------------------- */
-            sio->opTextRline = ( ( sio->opTextRline + OUTPUT_WINDOW_L ) < sio->opTextWline ) ? ( sio->opTextRline + OUTPUT_WINDOW_L ) : sio->opTextWline - 1;
+            _moveCursor( sio, OUTPUT_WINDOW_L );
+            //            sio->opTextRline = ( ( sio->opTextRline + OUTPUT_WINDOW_L ) < sio->opTextWline ) ? ( sio->opTextRline + OUTPUT_WINDOW_L ) : sio->opTextWline - 1;
             op = SIO_EV_CONSUMED;
             break;
 
         case 262: /* ---------------------------- HOME ------------------------------------------- */
             sio->opTextRline = 0;
+            _moveCursor( sio, 1 );
+            _moveCursor( sio, -1 );
             op = SIO_EV_CONSUMED;
             break;
 
         case 360: /* ---------------------------- END -------------------------------------------- */
             sio->opTextRline = sio->opTextWline - 1;
+            _moveCursor( sio, -1 );
+            _moveCursor( sio, 1 );
             op = SIO_EV_CONSUMED;
             break;
 
         case 258: /* ---------------------------- DOWN ------------------------------------------- */
-            sio->opTextRline = ( sio->opTextRline < ( sio->opTextWline - 1 ) ) ? sio->opTextRline + 1 :
-                               sio->opTextRline;
+            _moveCursor( sio, 1 );
+            //            sio->opTextRline = ( sio->opTextRline < ( sio->opTextWline - 1 ) ) ? sio->opTextRline + 1 :
+            //                 sio->opTextRline;
             op = SIO_EV_CONSUMED;
             break;
 
         case 396: /* ---------------------------- With shift for added speeeeeed ----------------- */
-            sio->opTextRline = ( sio->opTextRline + 10 * OUTPUT_WINDOW_L < sio->opTextWline ) ? ( sio->opTextRline + 10 * OUTPUT_WINDOW_L ) : sio->opTextWline - 1;
+            _moveCursor( sio, 10 * OUTPUT_WINDOW_L );
+            //            sio->opTextRline = ( sio->opTextRline + 10 * OUTPUT_WINDOW_L < sio->opTextWline ) ? ( sio->opTextRline + 10 * OUTPUT_WINDOW_L ) : sio->opTextWline - 1;
             op = SIO_EV_CONSUMED;
             break;
 
@@ -464,7 +510,7 @@ static enum SIOEvent _processSearchKeys( struct SIOInstance *sio )
     return op;
 }
 // ====================================================================================================
-static void _outputOutput( struct SIOInstance *sio )
+static bool _displayLine( struct SIOInstance *sio, int32_t lineNum, int32_t screenline, bool highlight )
 
 {
     int y, x;                   /* Current size of output window */
@@ -473,86 +519,122 @@ static void _outputOutput( struct SIOInstance *sio )
     char *ssp;                  /* Position in search match string */
     char *u;
 
-    werase( sio->outputWindow );
-
-    for ( int32_t sline = -( OUTPUT_WINDOW_L / 2 ); sline < ( ( OUTPUT_WINDOW_L + 1 ) / 2 ); sline++ )
+    /* Make sure this line is valid */
+    if ( ( lineNum < 0 ) || ( lineNum >= sio->opTextWline ) )
     {
-        /* Make sure we've not fallen off one end of the list or the other */
-        if ( ( ( sline + sio->opTextRline ) < 0 ) ||
-                ( ( sline + sio->opTextRline ) >= sio->opTextWline ) )
+        return true;
+    }
+
+    /* ...and only display it if it fits the current mode */
+    if ( !_onDisplay( sio, lineNum ) )
+    {
+        return false;
+    }
+
+    u = ( *sio->opText )[lineNum].buffer;
+    ssp = sio->searchString;
+
+    wmove( sio->outputWindow, screenline, 0 );
+
+    switch ( ( *sio->opText )[lineNum].lt )
+    {
+        case LT_EVENT:
+            wattrset( sio->outputWindow, ( highlight ? A_STANDOUT : 0 ) | A_BOLD | COLOR_PAIR( CP_EVENT ) );
+            break;
+
+        case LT_FILE:
+            wattrset( sio->outputWindow, ( highlight ? A_STANDOUT : 0 ) | A_BOLD | COLOR_PAIR( CP_FILEFUNCTION ) );
+            break;
+
+        case LT_SOURCE:
+            wattrset( sio->outputWindow, ( highlight ? A_STANDOUT : 0 ) | COLOR_PAIR( CP_LINENO ) );
+            wprintw( sio->outputWindow, "%5d ", ( *sio->opText )[lineNum].line );
+            wattrset( sio->outputWindow, ( highlight ? A_STANDOUT : 0 ) | A_BOLD | COLOR_PAIR( CP_NORMAL ) );
+            break;
+
+        case LT_ASSEMBLY:
+            wattrset( sio->outputWindow, ( highlight ? A_STANDOUT : 0 ) | COLOR_PAIR( CP_EXECASSY ) );
+            break;
+
+        case LT_NASSEMBLY:
+            wattrset( sio->outputWindow, ( highlight ? A_STANDOUT : 0 ) | COLOR_PAIR( CP_NEXECASSY ) );
+            break;
+
+        default:
+            wattrset( sio->outputWindow, ( highlight ? A_STANDOUT : 0 ) | COLOR_PAIR( CP_NORMAL ) );
+            break;
+    }
+
+    /* Store the attributes in case we need them later (e.g. as a result of search changing things) */
+    wattr_get( sio->outputWindow, &attr, &pair, NULL );
+
+    /* Now output the text of the line */
+    while ( *u )
+    {
+        /* Colour matches if we're in search mode, but whatever is happening, output the characters */
+        if ( ( sio->searchMode != SRCH_OFF ) && ( *sio->searchString ) && ( !strncmp( u, ssp, strlen( ssp ) ) ) )
         {
-            continue;
+            wattrset( sio->outputWindow, A_BOLD | COLOR_PAIR( CP_SEARCH ) );
+            ssp++;
+
+            if ( !*ssp )
+            {
+                ssp = sio->searchString;
+            }
+        }
+        else
+        {
+            wattr_set( sio->outputWindow, attr, pair, NULL );
         }
 
-        u = ( *sio->opText )[sio->opTextRline + sline].buffer;
-        ssp = sio->searchString;
+        waddch( sio->outputWindow, *u++ );
+    }
 
-        wmove( sio->outputWindow, ( OUTPUT_WINDOW_L / 2 ) + sline, 0 );
+    /* Now pad out the rest of this line with spaces */
+    while ( true )
+    {
+        getyx( sio->outputWindow, y, x );
+        ( void )y;
+        waddch( sio->outputWindow, ' ' );
 
-        switch ( ( *sio->opText )[sio->opTextRline + sline].lt )
+        if ( x == OUTPUT_WINDOW_W - 1 )
         {
-            case LT_EVENT:
-                wattrset( sio->outputWindow, ( ( sline == 0 ) ? A_STANDOUT : 0 ) | A_BOLD | COLOR_PAIR( CP_EVENT ) );
-                break;
-
-            case LT_FILE:
-                wattrset( sio->outputWindow, ( ( sline == 0 ) ? A_STANDOUT : 0 ) | A_BOLD | COLOR_PAIR( CP_FILEFUNCTION ) );
-                break;
-
-            case LT_SOURCE:
-                wattrset( sio->outputWindow, ( ( sline == 0 ) ? A_STANDOUT : 0 ) | COLOR_PAIR( CP_LINENO ) );
-                wprintw( sio->outputWindow, "%5d ", ( *sio->opText )[sio->opTextRline + sline].line );
-                wattrset( sio->outputWindow, ( ( sline == 0 ) ? A_STANDOUT : 0 ) | A_BOLD | COLOR_PAIR( CP_NORMAL ) );
-                break;
-
-            case LT_ASSEMBLY:
-                wattrset( sio->outputWindow, ( ( sline == 0 ) ? A_STANDOUT : 0 ) | COLOR_PAIR( CP_EXECASSY ) );
-                break;
-
-            case LT_NASSEMBLY:
-                wattrset( sio->outputWindow, ( ( sline == 0 ) ? A_STANDOUT : 0 ) | COLOR_PAIR( CP_NEXECASSY ) );
-                break;
-
-            default:
-                wattrset( sio->outputWindow, ( ( sline == 0 ) ? A_STANDOUT : 0 ) | COLOR_PAIR( CP_NORMAL ) );
-                break;
+            break;
         }
+    }
 
-        /* Store the attributes in case we need them later (e.g. as a result of search changing things) */
-        wattr_get( sio->outputWindow, &attr, &pair, NULL );
+    return true;
+}
+// ====================================================================================================
+static void _outputOutput( struct SIOInstance *sio )
 
-        while ( *u )
+{
+    werase( sio->outputWindow );
+    int32_t cp, cl;
+
+
+    /* First, output lines _forward_ from current position */
+    cp = sio->opTextRline;
+    cl = ( OUTPUT_WINDOW_L / 2 );
+
+    /* Firstly go forwards filling in each line of the screen */
+    while ( ( cl < OUTPUT_WINDOW_L ) && ( cp < sio->opTextWline ) )
+    {
+        if ( _displayLine( sio, cp++, cl, ( cl == ( OUTPUT_WINDOW_L / 2 ) ) ) )
         {
-            /* Colour matches if we're in search mode, but whatever is happening, output the characters */
-            if ( ( sio->searchMode != SRCH_OFF ) && ( *sio->searchString ) && ( !strncmp( u, ssp, strlen( ssp ) ) ) )
-            {
-                wattrset( sio->outputWindow, A_BOLD | COLOR_PAIR( CP_SEARCH ) );
-                ssp++;
-
-                if ( !*ssp )
-                {
-                    ssp = sio->searchString;
-                }
-            }
-            else
-            {
-                wattr_set( sio->outputWindow, attr, pair, NULL );
-            }
-
-            waddch( sio->outputWindow, *u++ );
+            cl++;
         }
+    }
 
-        /* Pad out this line with spaces */
-        while ( true )
+    /* Now go backwards doing likewise */
+    cp = sio->opTextRline - 1;
+    cl = ( OUTPUT_WINDOW_L / 2 ) - 1;
+
+    while ( ( cl >= 0 ) && ( cp >= 0 ) )
+    {
+        if ( _displayLine( sio, cp--, cl, false ) )
         {
-            getyx( sio->outputWindow, y, x );
-            ( void )y;
-            waddch( sio->outputWindow, ' ' );
-
-            if ( x == OUTPUT_WINDOW_W - 1 )
-            {
-                break;
-            }
+            cl--;
         }
     }
 }
@@ -584,6 +666,10 @@ static void _outputStatus( struct SIOInstance *sio, uint64_t oldintervalBytes )
         /* We have some opData stored, indicate where we are in it */
         mvwprintw( sio->statusWindow, 0, 2, " %d%% (%d/%d) ", ( sio->opTextRline * 100 ) / ( sio->opTextWline - 1 ), sio->opTextRline, sio->opTextWline );
     }
+
+    mvwprintw( sio->statusWindow, 0, 44, " %s ", ( char *[] )
+    {"Mixed", "Source", "Assembly"
+    }[sio->displayMode] );
 
     wattrset( sio->statusWindow, A_BOLD | COLOR_PAIR( CP_BASELINETEXT ) );
 
