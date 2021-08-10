@@ -3,7 +3,7 @@ WITH_FPGA=1
 
 # Build configuration
 VERBOSE?=0
-DEBUG=1
+#DEBUG=1
 SCREEN_HANDLING=1
 
 # Set your preferred screen colours here, or create a new palette by copying the file to a new one
@@ -109,7 +109,7 @@ ORBCAT_CFILES    = $(App_DIR)/$(ORBCAT).c
 ORBTOP_CFILES    = $(App_DIR)/$(ORBTOP).c $(App_DIR)/symbols.c $(EXT)/cJSON.c
 ORBDUMP_CFILES   = $(App_DIR)/$(ORBDUMP).c
 ORBSTAT_CFILES   = $(App_DIR)/$(ORBSTAT).c $(App_DIR)/symbols.c
-ORBMORTEM_CFILES  = $(App_DIR)/$(ORBMORTEM).c $(App_DIR)/symbols.c
+ORBMORTEM_CFILES  = $(App_DIR)/$(ORBMORTEM).c $(App_DIR)/symbols.c $(App_DIR)/sio.c
 
 # FPGA Files
 # ==========

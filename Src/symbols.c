@@ -65,7 +65,7 @@
 #define SOURCE_INDICATOR "sRc##"
 #define SYM_NOT_FOUND (0xffffffff)
 
-// #define GPTI_DEBUG 1                 /* Define this for objdump data collection state machine trace */
+//#define GPTI_DEBUG 1                 /* Define this for objdump data collection state machine trace */
 
 #ifdef GPTI_DEBUG
     #define GTPIP(...) { fprintf(stderr, __VA_ARGS__); }

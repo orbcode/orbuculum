@@ -1,0 +1,887 @@
+/*
+ * Post mortem monitor for parallel trace : Screen I/O Routines
+ * ============================================================
+ *
+ * Copyright (C) 2017, 2019, 2020, 2021  Dave Marples  <dave@marples.net>
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *
+ * * Redistributions of source code must retain the above copyright
+ *   notice, this list of conditions and the following disclaimer.
+ * * Redistributions in binary form must reproduce the above copyright
+ *   notice, this list of conditions and the following disclaimer in the
+ *   documentation and/or other materials provided with the distribution.
+ * * Neither the names Orbtrace, Orbuculum nor the names of its
+ *   contributors may be used to endorse or promote products derived from
+ *   this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+ * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+ * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+ * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ * SUCH DAMAGE.
+ */
+
+#include <stdlib.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <stdbool.h>
+#include <ctype.h>
+#include <sys/socket.h>
+#include <netdb.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <stdio.h>
+#include <string.h>
+#include <pthread.h>
+#include <assert.h>
+#include <stdint.h>
+#include <inttypes.h>
+#include <limits.h>
+#include <signal.h>
+#include <ncurses.h>
+#include <sys/ioctl.h>
+
+#include "generics.h"
+#include "sio.h"
+
+/* Colours for output */
+enum CP { CP_NONE, CP_EVENT, CP_NORMAL, CP_FILEFUNCTION, CP_LINENO, CP_EXECASSY, CP_NEXECASSY, CP_BASELINE, CP_BASELINETEXT, CP_SEARCH };
+
+/* Search types */
+enum SRCH { SRCH_OFF, SRCH_FORWARDS, SRCH_BACKWARDS };
+
+struct SIOInstance
+{
+    /* Materials for window handling */
+    WINDOW *outputWindow;               /* Output window (main one) */
+    WINDOW *statusWindow;               /* Status window (interaction one) */
+    int32_t tag[MAX_TAGS];              /* Buffer location tags */
+
+    int32_t lines;                      /* Number of lines on current window config */
+    int32_t cols;                       /* Number of columns on current window config */
+
+    /* Search stuff */
+    enum SRCH searchMode;               /* What kind of search is being conducted */
+    char *searchString;                 /* The current searching string */
+    char storedFirstSearch;             /* Storage for first char of search string to allow repeats */
+    int32_t searchStartPos;             /* Location the search started from (for aborts) */
+    bool searchOK;                      /* Is the search currently sucessful? */
+
+    /* Save stuff */
+    bool enteringSaveFilename;          /* State indicator that we're entering filename */
+    char *saveFilename;                 /* Filename under construction */
+
+    /* Warning and info messages */
+    char *warnText;                     /* Text of the warning message */
+    uint32_t warnTimeout;               /* Time at which it should be removed, or 0 if it's not active */
+
+    /* Current position in buffer */
+    struct line **opText;               /* Pointer to lines of Text of the output buffer */
+    int32_t opTextWline;                /* Next line number to be written */
+    int32_t opTextRline;                /* Current read position in op buffer */
+    int32_t oldopTextRline;             /* Old read position in op buffer (for redraw) */
+
+    int Key;                            /* Latest keypress */
+
+    bool held;
+    bool forceRefresh;                  /* Force a refresh of everything */
+    bool outputtingHelp;                /* Output help window */
+    bool enteringMark;                  /* Set if we are in the process of marking a location */
+
+    const char *progName;
+    const char *elffile;
+};
+
+/* Window sizes/positions */
+#define OUTPUT_WINDOW_L (sio->lines-2)
+#define OUTPUT_WINDOW_W (sio->cols)
+#define STATUS_WINDOW_L (2)
+#define STATUS_WINDOW_W (sio->cols)
+
+// ====================================================================================================
+// ====================================================================================================
+// ====================================================================================================
+// Internal routines
+// ====================================================================================================
+// ====================================================================================================
+// ====================================================================================================
+static void _deleteTags( struct SIOInstance *sio )
+
+/* reset the tag records */
+
+{
+    for ( uint32_t t = 0; t < MAX_TAGS; t++ )
+    {
+        sio->tag[t] = 0;
+    }
+}
+// ====================================================================================================
+static bool _processSaveFilename( struct SIOInstance *sio )
+
+{
+    enum SIOEvent op = SIO_EV_NONE;
+
+    switch ( sio->Key )
+    {
+        case ERR:
+            op = SIO_EV_CONSUMED;
+            break;
+
+        case 3: /* ------------------------------ CTRL-C Exit ------------------------------------ */
+            sio->enteringSaveFilename = false;
+            curs_set( 0 );
+            op = SIO_EV_CONSUMED;
+            break;
+
+        case 263: /* --------------------------- Del Remove char from save string ----------------- */
+
+            /* Delete last character in save string */
+            if ( strlen( sio->saveFilename ) )
+            {
+                sio->saveFilename[strlen( sio->saveFilename ) - 1] = 0;
+            }
+
+            op = SIO_EV_CONSUMED;
+            break;
+
+        case 10: /* ----------------------------- Newline Commit Save ---------------------------- */
+            /* Commit the save */
+            curs_set( 0 );
+            sio->saveFilename = NULL;
+            sio->enteringSaveFilename = false;
+            op = SIO_EV_SAVE;
+            break;
+
+        default: /* ---------------------------- Add valid chars to save string ------------------ */
+            if ( ( sio->Key > 31 ) && ( sio->Key < 255 ) )
+            {
+                sio->saveFilename = ( char * )realloc( sio->saveFilename, strlen( sio->saveFilename ) + 2 );
+                sio->saveFilename[strlen( sio->saveFilename ) + 1] = 0;
+                sio->saveFilename[strlen( sio->saveFilename )] = sio->Key;
+                op = SIO_EV_CONSUMED;
+            }
+
+            break;
+    }
+
+    return op;
+}
+// ====================================================================================================
+static void _outputHelp( struct SIOInstance *sio )
+
+/* ...as the name suggests. Just replace the output window with help text */
+
+{
+    werase( sio->outputWindow );
+    wattrset( sio->outputWindow, A_BOLD | COLOR_PAIR( CP_NORMAL ) );
+    wprintw( sio->outputWindow, EOL "  Important Keys..." EOL EOL );
+    wprintw( sio->outputWindow, "       H: Hold or resume sampling" EOL );
+    wprintw( sio->outputWindow, "       M: Mark a location in the sample buffer, followed by 0..%d" EOL, MAX_TAGS - 1 );
+    wprintw( sio->outputWindow, "       S: Save current buffer to file" EOL );
+    wprintw( sio->outputWindow, "       Q: Quit the application" EOL );
+    wprintw( sio->outputWindow, "       ?: This help" EOL );
+    wprintw( sio->outputWindow, "    0..%d: Move to mark in sample buffer, if its defined" EOL EOL, MAX_TAGS - 1 );
+    wprintw( sio->outputWindow, "  CTRL-C: Quit the current task or the application" EOL );
+    wprintw( sio->outputWindow, "  CTRL-L: Refresh the screen" EOL );
+    wprintw( sio->outputWindow, "  CTRL-R: Search backwards, CTRL-R again for next match" EOL );
+    wprintw( sio->outputWindow, "  CTRL-S: Search forwards, CTRL-S again for next match" EOL );
+    wprintw( sio->outputWindow, EOL "  Use PgUp/PgDown/Home/End and the arrow keys to move around the sample buffer" EOL );
+    wprintw( sio->outputWindow, "  Shift-PgUp and Shift-PgDown move more quickly" EOL );
+    wprintw( sio->outputWindow, EOL "       <?> again to leave this help screeh." EOL );
+}
+// ====================================================================================================
+static enum SIOEvent _processRegularKeys( struct SIOInstance *sio )
+
+/* Handle keys in regular mode */
+
+{
+    enum SIOEvent op = SIO_EV_NONE;
+
+    switch ( sio->Key )
+    {
+        case ERR:
+            op = SIO_EV_CONSUMED;
+            break;
+
+        case 19: /* ----------------------------- CTRL-S Search Forwards ------------------------- */
+            sio->searchMode = SRCH_FORWARDS;
+            *sio->searchString = 0;
+            sio->searchOK = true;
+            sio->searchStartPos = sio->opTextRline;
+            curs_set( 1 );
+            op = SIO_EV_CONSUMED;
+            break;
+
+        case 18: /* ----------------------------- CTRL-R Search Reverse -------------------------- */
+            sio->searchMode = SRCH_BACKWARDS;
+            *sio->searchString = 0;
+            sio->searchOK = true;
+            sio->searchStartPos = sio->opTextRline;
+            curs_set( 1 );
+            op = SIO_EV_CONSUMED;
+            break;
+
+        case 3: /* ------------------------------ CTRL-C Exit ------------------------------------ */
+            op = SIO_EV_QUIT;
+            break;
+
+        case '?': /* ---------------------------- Help ------------------------------------------- */
+            sio->outputtingHelp = !sio->outputtingHelp;
+            SIOrequestRefresh( sio );
+            op = SIO_EV_CONSUMED;
+            break;
+
+        case 'm':
+        case 'M': /* ---------------------------- Enter Mark ------------------------------------- */
+            sio->enteringMark = !sio->enteringMark;
+            op = SIO_EV_CONSUMED;
+            break;
+
+        case 's':
+        case 'S': /* ---------------------------- Enter save filename ---------------------------- */
+            if ( sio->opTextWline )
+            {
+                sio->saveFilename = ( char * )realloc( sio->saveFilename, 1 );
+                *sio->saveFilename = 0;
+                curs_set( 1 );
+                sio->enteringSaveFilename = true;
+            }
+            else
+            {
+                beep();
+            }
+
+            op = SIO_EV_CONSUMED;
+            break;
+
+        case '0' ... '0'+MAX_TAGS: /* ----------- Tagged Location -------------------------------- */
+            if ( sio->enteringMark )
+            {
+                sio->tag[sio->Key - '0'] = sio->opTextRline + 1;
+                sio->enteringMark = false;
+            }
+            else
+            {
+                if ( ( sio->tag[sio->Key - '0'] ) && ( sio->tag[sio->Key - '0'] < sio->opTextWline ) )
+                {
+                    sio->opTextRline = sio->tag[sio->Key - '0'] - 1;
+                }
+                else
+                {
+                    beep();
+                }
+            }
+
+            op = SIO_EV_CONSUMED;
+            break;
+
+        case 259: /* ---------------------------- UP --------------------------------------------- */
+
+            sio->opTextRline = ( sio->opTextRline > 0 ) ? sio->opTextRline - 1 : 0;
+            op = SIO_EV_CONSUMED;
+            break;
+
+        case 398: /* ---------------------------- Shift PgUp ------------------------------------- */
+            sio->opTextRline = ( sio->opTextRline > 10 * OUTPUT_WINDOW_L ) ? ( sio->opTextRline - 10 * OUTPUT_WINDOW_L ) : 0;
+            op = SIO_EV_CONSUMED;
+            break;
+
+        case 339: /* ---------------------------- PREV PAGE -------------------------------------- */
+            sio->opTextRline = ( sio->opTextRline > OUTPUT_WINDOW_L ) ? ( sio->opTextRline - OUTPUT_WINDOW_L ) : 0;
+            op = SIO_EV_CONSUMED;
+            break;
+
+        case 338: /* ---------------------------- NEXT PAGE -------------------------------------- */
+            sio->opTextRline = ( ( sio->opTextRline + OUTPUT_WINDOW_L ) < sio->opTextWline ) ? ( sio->opTextRline + OUTPUT_WINDOW_L ) : sio->opTextWline - 1;
+            op = SIO_EV_CONSUMED;
+            break;
+
+        case 262: /* ---------------------------- HOME ------------------------------------------- */
+            sio->opTextRline = 0;
+            op = SIO_EV_CONSUMED;
+            break;
+
+        case 360: /* ---------------------------- END -------------------------------------------- */
+            sio->opTextRline = sio->opTextWline - 1;
+            op = SIO_EV_CONSUMED;
+            break;
+
+        case 258: /* ---------------------------- DOWN ------------------------------------------- */
+            sio->opTextRline = ( sio->opTextRline < ( sio->opTextWline - 1 ) ) ? sio->opTextRline + 1 :
+                               sio->opTextRline;
+            op = SIO_EV_CONSUMED;
+            break;
+
+        case 396: /* ---------------------------- With shift for added speeeeeed ----------------- */
+            sio->opTextRline = ( sio->opTextRline + 10 * OUTPUT_WINDOW_L < sio->opTextWline ) ? ( sio->opTextRline + 10 * OUTPUT_WINDOW_L ) : sio->opTextWline - 1;
+            op = SIO_EV_CONSUMED;
+            break;
+
+        default: /* ------------------------------------------------------------------------------ */
+            break;
+    }
+
+    return op;
+}
+// ====================================================================================================
+static bool _updateSearch( struct SIOInstance *sio )
+
+/* Progress search to next element, or ping and return false if we can't */
+
+{
+    for ( int32_t l = sio->opTextRline;
+            ( sio->searchMode == SRCH_FORWARDS ) ? ( l < sio->opTextWline - 1 ) : ( l > 0 );
+            ( sio->searchMode == SRCH_FORWARDS ) ? l++ : l-- )
+    {
+        if ( strstr( ( *sio->opText )[l].buffer, sio->searchString ) )
+        {
+            /* This is a match */
+            sio->opTextRline = l;
+            sio->searchOK = true;
+            return true;
+        }
+    }
+
+    /* If we get here then we had no match */
+    beep();
+    sio->searchOK = false;
+    return false;
+}
+// ====================================================================================================
+static enum SIOEvent _processSearchKeys( struct SIOInstance *sio )
+
+/* Handle keys in search mode */
+
+{
+    enum SIOEvent op = SIO_EV_NONE;
+
+    switch ( sio->Key )
+    {
+        case ERR:
+            op = SIO_EV_CONSUMED;
+            break;
+
+        case 10: /* ----------------------------- Newline Commit Search -------------------------- */
+            /* Commit the search */
+            sio->searchMode = SRCH_OFF;
+            curs_set( 0 );
+            sio->storedFirstSearch = *sio->searchString;
+            *sio->searchString = 0;
+            SIOrequestRefresh( sio );
+            op = SIO_EV_CONSUMED;
+            break;
+
+        case 3: /* ------------------------------ CTRL-C Abort Search ---------------------------- */
+            /* Abort the search */
+            sio->searchMode = SRCH_OFF;
+            sio->opTextRline = sio->searchStartPos;
+            sio->storedFirstSearch = *sio->searchString;
+            *sio->searchString = 0;
+            SIOrequestRefresh( sio );
+            curs_set( 0 );
+            op = SIO_EV_CONSUMED;
+            break;
+
+        case 19: /* ----------------------------- CTRL-S Search Forwards ------------------------- */
+            if ( !*sio->searchString )
+            {
+                /* Try to re-instate old search */
+                *sio->searchString = sio->storedFirstSearch;
+            }
+
+            sio->searchMode = SRCH_FORWARDS;
+
+            /* Find next match */
+            if ( ( sio->searchOK ) && ( sio->opTextRline < sio->opTextWline - 1 ) )
+            {
+                sio->opTextRline++;
+            }
+
+            _updateSearch( sio );
+            SIOrequestRefresh( sio );
+            op = SIO_EV_CONSUMED;
+            break;
+
+        case 18: /* ---------------------------- CTRL-R Search Backwards ------------------------- */
+            if ( !*sio->searchString )
+            {
+                /* Try to re-instate old search */
+                *sio->searchString = sio->storedFirstSearch;
+            }
+
+            /* Find prev match */
+            sio->searchMode = SRCH_BACKWARDS;
+
+            if ( ( sio->searchOK ) && ( sio->opTextRline > 0 ) )
+            {
+                sio->opTextRline--;
+            }
+
+            _updateSearch( sio );
+            SIOrequestRefresh( sio );
+            op = SIO_EV_CONSUMED;
+            break;
+
+        case 263: /* --------------------------- Del Remove char from search string -------------- */
+
+            /* Delete last character in search string */
+            if ( strlen( sio->searchString ) )
+            {
+                sio->searchString[strlen( sio->searchString ) - 1] = 0;
+            }
+
+            _updateSearch( sio );
+            SIOrequestRefresh( sio );
+            op = SIO_EV_CONSUMED;
+            break;
+
+        default: /* ---------------------------- Add valid chars to search string ---------------- */
+            if ( ( sio->Key > 31 ) && ( sio->Key < 255 ) )
+            {
+                sio->searchString = ( char * )realloc( sio->searchString, strlen( sio->searchString ) + 1 );
+                sio->searchString[strlen( sio->searchString ) + 1] = 0;
+                sio->searchString[strlen( sio->searchString )] = sio->Key;
+                _updateSearch( sio );
+                SIOrequestRefresh( sio );
+                op = SIO_EV_CONSUMED;
+            }
+
+            break;
+    }
+
+    return op;
+}
+// ====================================================================================================
+static void _outputOutput( struct SIOInstance *sio )
+
+{
+    int y, x;                   /* Current size of output window */
+    attr_t attr;                /* On-screen attributes */
+    short pair;
+    char *ssp;                  /* Position in search match string */
+    char *u;
+
+    werase( sio->outputWindow );
+
+    for ( int32_t sline = -( OUTPUT_WINDOW_L / 2 ); sline < ( ( OUTPUT_WINDOW_L + 1 ) / 2 ); sline++ )
+    {
+        /* Make sure we've not fallen off one end of the list or the other */
+        if ( ( ( sline + sio->opTextRline ) < 0 ) ||
+                ( ( sline + sio->opTextRline ) >= sio->opTextWline ) )
+        {
+            continue;
+        }
+
+        u = ( *sio->opText )[sio->opTextRline + sline].buffer;
+        ssp = sio->searchString;
+
+        wmove( sio->outputWindow, ( OUTPUT_WINDOW_L / 2 ) + sline, 0 );
+
+        switch ( ( *sio->opText )[sio->opTextRline + sline].lt )
+        {
+            case LT_EVENT:
+                wattrset( sio->outputWindow, ( ( sline == 0 ) ? A_STANDOUT : 0 ) | A_BOLD | COLOR_PAIR( CP_EVENT ) );
+                break;
+
+            case LT_FILE:
+                wattrset( sio->outputWindow, ( ( sline == 0 ) ? A_STANDOUT : 0 ) | A_BOLD | COLOR_PAIR( CP_FILEFUNCTION ) );
+                break;
+
+            case LT_SOURCE:
+                wattrset( sio->outputWindow, ( ( sline == 0 ) ? A_STANDOUT : 0 ) | COLOR_PAIR( CP_LINENO ) );
+                wprintw( sio->outputWindow, "%5d ", ( *sio->opText )[sio->opTextRline + sline].line );
+                wattrset( sio->outputWindow, ( ( sline == 0 ) ? A_STANDOUT : 0 ) | A_BOLD | COLOR_PAIR( CP_NORMAL ) );
+                break;
+
+            case LT_ASSEMBLY:
+                wattrset( sio->outputWindow, ( ( sline == 0 ) ? A_STANDOUT : 0 ) | COLOR_PAIR( CP_EXECASSY ) );
+                break;
+
+            case LT_NASSEMBLY:
+                wattrset( sio->outputWindow, ( ( sline == 0 ) ? A_STANDOUT : 0 ) | COLOR_PAIR( CP_NEXECASSY ) );
+                break;
+
+            default:
+                wattrset( sio->outputWindow, ( ( sline == 0 ) ? A_STANDOUT : 0 ) | COLOR_PAIR( CP_NORMAL ) );
+                break;
+        }
+
+        /* Store the attributes in case we need them later (e.g. as a result of search changing things) */
+        wattr_get( sio->outputWindow, &attr, &pair, NULL );
+
+        while ( *u )
+        {
+            /* Colour matches if we're in search mode, but whatever is happening, output the characters */
+            if ( ( sio->searchMode != SRCH_OFF ) && ( *sio->searchString ) && ( !strncmp( u, ssp, strlen( ssp ) ) ) )
+            {
+                wattrset( sio->outputWindow, A_BOLD | COLOR_PAIR( CP_SEARCH ) );
+                ssp++;
+
+                if ( !*ssp )
+                {
+                    ssp = sio->searchString;
+                }
+            }
+            else
+            {
+                wattr_set( sio->outputWindow, attr, pair, NULL );
+            }
+
+            waddch( sio->outputWindow, *u++ );
+        }
+
+        /* Pad out this line with spaces */
+        while ( true )
+        {
+            getyx( sio->outputWindow, y, x );
+            ( void )y;
+            waddch( sio->outputWindow, ' ' );
+
+            if ( x == OUTPUT_WINDOW_W - 1 )
+            {
+                break;
+            }
+        }
+    }
+}
+// ====================================================================================================
+static void _outputStatus( struct SIOInstance *sio, uint64_t oldintervalBytes )
+
+{
+    werase( sio->statusWindow );
+    wattrset( sio->statusWindow, A_BOLD | COLOR_PAIR( CP_BASELINE ) );
+    mvwhline( sio->statusWindow, 0, 0, ACS_HLINE, COLS );
+    mvwprintw( sio->statusWindow, 0, COLS - 4 - ( strlen( sio->progName ) + strlen( genericsBasename( sio->elffile ) ) ),
+               " %s:%s ", sio->progName, genericsBasename( sio->elffile ) );
+
+    if ( sio->warnTimeout )
+    {
+        if ( sio->warnTimeout > genericsTimestampmS() )
+        {
+
+            mvwprintw( sio->statusWindow, 0, 30, " %s ", sio->warnText );
+        }
+        else
+        {
+            sio->warnTimeout = 0;
+        }
+    }
+
+    if ( sio->opTextWline )
+    {
+        /* We have some opData stored, indicate where we are in it */
+        mvwprintw( sio->statusWindow, 0, 2, " %d%% (%d/%d) ", ( sio->opTextRline * 100 ) / ( sio->opTextWline - 1 ), sio->opTextRline, sio->opTextWline );
+    }
+
+    wattrset( sio->statusWindow, A_BOLD | COLOR_PAIR( CP_BASELINETEXT ) );
+
+    if ( !sio->held )
+    {
+        if ( oldintervalBytes )
+        {
+            if ( oldintervalBytes < 9999 )
+            {
+                mvwprintw( sio->statusWindow, 1, COLS - 38, "%ld Bps (~%ld Ips)", oldintervalBytes, ( oldintervalBytes * 8 ) / 11 );
+            }
+            else if ( oldintervalBytes < 9999999 )
+            {
+                mvwprintw( sio->statusWindow, 1, COLS - 38, "%ld KBps (~%ld KIps)", oldintervalBytes / 1000, oldintervalBytes * 8 / 1120 );
+            }
+            else
+            {
+                mvwprintw( sio->statusWindow, 1, COLS - 38, "%ld MBps (~%ld MIps)", oldintervalBytes / 1000000, ( oldintervalBytes * 8 ) / 1120000 );
+            }
+        }
+
+        mvwprintw( sio->statusWindow, 1, COLS - 11, oldintervalBytes ? "Capturing" : "  Waiting" );
+    }
+    else
+    {
+        mvwprintw( sio->statusWindow, 1, COLS - 6, "Hold" );
+    }
+
+    if ( !sio->warnTimeout )
+    {
+        mvwprintw( sio->statusWindow, 0, 30, " " );
+    }
+
+    for ( uint32_t t = 0; t < MAX_TAGS; t++ )
+    {
+        if ( sio->tag[t] )
+        {
+            wattrset( sio->statusWindow, A_BOLD | COLOR_PAIR( CP_BASELINETEXT ) );
+
+            if ( ( sio->tag[t] >= ( sio->opTextRline - OUTPUT_WINDOW_L / 2 ) ) &&
+                    ( sio->tag[t] <= ( sio->opTextRline + ( OUTPUT_WINDOW_L + 1 ) / 2 ) ) )
+            {
+                /* This tag is on the visible page */
+                wattrset( sio->outputWindow, A_BOLD | COLOR_PAIR( CP_BASELINETEXT ) );
+                mvwprintw( sio->outputWindow, ( OUTPUT_WINDOW_L ) / 2 + sio->tag[t] - sio->opTextRline - 1, OUTPUT_WINDOW_W - 1, "%d", t );
+            }
+        }
+        else
+        {
+            wattrset( sio->statusWindow, A_BOLD | COLOR_PAIR( CP_BASELINE ) );
+        }
+
+        if ( !sio->warnTimeout )
+        {
+            /* We only print this if we're not outputting a warning message */
+            wprintw( sio->statusWindow, "%d", t );
+        }
+    }
+
+    if ( !sio->warnTimeout )
+    {
+        wprintw( sio->statusWindow, " " );
+    }
+
+    if ( sio->enteringSaveFilename )
+    {
+        wattrset( sio->statusWindow, A_BOLD | COLOR_PAIR( CP_SEARCH ) );
+        mvwprintw( sio->statusWindow, 1, 2, "Save Filename :%s", sio->saveFilename );
+    }
+
+    if ( sio->searchMode )
+    {
+        wattrset( sio->statusWindow, A_BOLD | COLOR_PAIR( CP_SEARCH ) );
+        mvwprintw( sio->statusWindow, 1, 2, "%sSearch %s :%s", sio->searchOK ? "" : "(Failing) ", ( sio->searchMode == SRCH_FORWARDS ) ? "Forwards" : "Backwards", sio->searchString );
+    }
+
+    if ( sio->enteringMark )
+    {
+        wattrset( sio->statusWindow, A_BOLD | COLOR_PAIR( CP_SEARCH ) );
+        mvwprintw( sio->statusWindow, 1, 2, "Mark Number?" );
+    }
+
+    // Uncomment this line to get a track of latest key values
+    // mvwprintw( sio->statusWindow, 1, 40, "Key %d", sio->Key );
+}
+// ====================================================================================================
+static void _updateWindows( struct SIOInstance *sio, bool isTick, bool isKey, uint64_t oldintervalBytes )
+
+/* Update all the visible outputs onscreen */
+
+{
+    bool refreshOutput = false; /* Flag indicating that output window needs updating */
+    bool refreshStatus = false; /* Flag indicating that status window needs updating */
+
+    /* First, work with the output window */
+    if ( sio->outputtingHelp )
+    {
+        _outputHelp( sio );
+        refreshOutput = true;
+    }
+    else
+    {
+        if ( ( sio->oldopTextRline != sio->opTextRline ) || ( sio->forceRefresh ) )
+        {
+            _outputOutput( sio );
+            sio->oldopTextRline = sio->opTextRline;
+            refreshOutput = true;
+        }
+    }
+
+    /* Now update the status */
+    if ( ( isTick ) || ( isKey ) || ( sio->forceRefresh ) || ( sio->warnTimeout ) )
+    {
+        _outputStatus( sio, oldintervalBytes );
+        refreshOutput = refreshStatus = true;
+    }
+
+    sio->forceRefresh = false;
+
+    /* Now do any refreshes that are needed */
+    if ( refreshOutput )
+    {
+        wrefresh( sio->outputWindow );
+    }
+
+    if ( refreshStatus )
+    {
+        wrefresh( sio->statusWindow );
+    }
+}
+// ====================================================================================================
+// ====================================================================================================
+// ====================================================================================================
+// Publically accessible routines
+// ====================================================================================================
+// ====================================================================================================
+// ====================================================================================================
+struct SIOInstance *SIOsetup( const char *progname, const char *elffile )
+
+{
+    struct SIOInstance *sio;
+
+    sio = ( struct SIOInstance * )calloc( sizeof( struct SIOInstance ), 1 );
+
+    sio->searchString = ( char * )calloc( 2, sizeof( char ) );
+    sio->progName = progname;
+    sio->elffile = elffile;
+
+    initscr();
+    sio->lines = LINES;
+    sio->cols = COLS;
+
+    if ( OK == start_color() )
+    {
+        init_pair( CP_EVENT, COLOR_YELLOW, COLOR_BLACK );
+        init_pair( CP_NORMAL, COLOR_WHITE,  COLOR_BLACK );
+        init_pair( CP_FILEFUNCTION, COLOR_RED, COLOR_BLACK );
+        init_pair( CP_LINENO, COLOR_YELLOW, COLOR_BLACK );
+        init_pair( CP_EXECASSY, COLOR_CYAN, COLOR_BLACK );
+        init_pair( CP_NEXECASSY, COLOR_BLUE, COLOR_BLACK );
+        init_pair( CP_BASELINE, COLOR_BLUE, COLOR_BLACK );
+        init_pair( CP_BASELINETEXT, COLOR_YELLOW, COLOR_BLACK );
+        init_pair( CP_SEARCH, COLOR_GREEN, COLOR_BLACK );
+    }
+
+    sio->outputWindow = newwin( OUTPUT_WINDOW_L, OUTPUT_WINDOW_W, 0, 0 );
+    sio->statusWindow = newwin( STATUS_WINDOW_L, STATUS_WINDOW_W, OUTPUT_WINDOW_L, 0 );
+    wtimeout( sio->statusWindow, 0 );
+    scrollok( sio->outputWindow, false );
+    keypad( sio->statusWindow, true );
+
+    /* This allows CTRL-C and CTRL-S to be used in-program */
+#ifndef DEBUG
+    raw();
+#endif
+
+    noecho();
+    curs_set( 0 );
+
+    return sio;
+}
+// ====================================================================================================
+const char *SIOgetSaveFilename( struct SIOInstance *sio )
+
+{
+    return sio->saveFilename;
+}
+// ====================================================================================================
+void SIOalert( struct SIOInstance *sio, const char *msg )
+
+{
+    sio->warnText = ( char * )realloc( sio->warnText, strlen( msg ) + 1 );
+    strcpy( sio->warnText, msg );
+    sio->warnTimeout = genericsTimestampmS() + WARN_TIMEOUT;
+    SIOrequestRefresh( sio );
+}
+// ====================================================================================================
+
+void SIOterminate( struct SIOInstance *sio )
+
+{
+    ( void )sio;
+    noraw();
+    endwin();
+}
+// ====================================================================================================
+void SIOheld( struct SIOInstance *sio, bool isHeld )
+
+{
+    sio->held = isHeld;
+}
+// ====================================================================================================
+void SIOrequestRefresh( struct SIOInstance *sio  )
+
+/* Flag that output windows should be updated */
+
+{
+    sio->forceRefresh = true;
+}
+// ====================================================================================================
+void SIOsetOutputBuffer( struct SIOInstance *sio, int32_t numLines, int32_t currentLine, struct line **opTextSet )
+
+{
+    sio->opText      = opTextSet;
+
+    if ( opTextSet )
+    {
+        sio->opTextWline = numLines;
+        sio->opTextRline = currentLine;
+    }
+    else
+    {
+        sio->opTextWline = sio->opTextRline = 0;
+    }
+
+    _deleteTags( sio );
+    SIOrequestRefresh( sio );
+}
+// ====================================================================================================
+enum SIOEvent SIOHandler( struct SIOInstance *sio, bool isTick, uint64_t oldintervalBytes )
+
+/* Top level to deal with all UI aspects */
+
+{
+    struct winsize sz;
+    enum SIOEvent op = SIO_EV_NONE;
+
+    sio->Key = wgetch( sio->statusWindow );
+
+    if ( sio->Key != ERR )
+    {
+        if ( sio->enteringSaveFilename )
+        {
+            op =  _processSaveFilename( sio );
+        }
+        else
+        {
+            op = ( sio->searchMode ) ? _processSearchKeys( sio ) : _processRegularKeys( sio );
+        }
+
+        if ( op != SIO_EV_CONSUMED )
+        {
+            switch ( sio->Key )
+            {
+                case KEY_RESIZE:
+                case 12:  /* CTRL-L, refresh ----------------------------------------------------- */
+                    ioctl( STDIN_FILENO, TIOCGWINSZ, &sz );
+                    sio->lines = ( uint32_t )sz.ws_row;
+                    sio->cols = ( uint32_t )sz.ws_col;
+                    clearok( sio->statusWindow, true );
+                    clearok( sio->outputWindow, true );
+                    wresize( sio->statusWindow, STATUS_WINDOW_L, STATUS_WINDOW_W );
+                    wresize( sio->outputWindow, OUTPUT_WINDOW_L, OUTPUT_WINDOW_W );
+                    mvwin( sio->statusWindow, OUTPUT_WINDOW_L, 0 );
+                    op = SIO_EV_CONSUMED;
+                    isTick = true;
+                    SIOrequestRefresh( sio );
+                    break;
+
+                case 'h':
+                case 'H':
+                    op = SIO_EV_HOLD;
+                    break;
+
+                case 'q':
+                case 'Q':
+                    op = SIO_EV_QUIT;
+                    break;
+
+                default: /* ---------------------------------------------------------------------- */
+                    break;
+            }
+        }
+    }
+
+    /* Now deal with the output windows */
+    _updateWindows( sio, isTick, sio->Key != ERR, oldintervalBytes );
+
+    return op;
+}
+// ====================================================================================================

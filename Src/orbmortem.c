@@ -32,6 +32,7 @@
  */
 
 #include <stdlib.h>
+#include <stdarg.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <stdbool.h>
@@ -50,7 +51,6 @@
 #include <inttypes.h>
 #include <limits.h>
 #include <signal.h>
-#include <ncurses.h>
 #include <sys/ioctl.h>
 
 #include "git_version_info.h"
@@ -58,6 +58,7 @@
 
 #include "etmDecoder.h"
 #include "symbols.h"
+#include "sio.h"
 
 #define TRANSFER_SIZE       (65536)
 #define REMOTE_ETM_PORT     (3443)            /* Server port definition */
@@ -71,12 +72,6 @@
 #define INTERVAL_TIME_MS    (1000)             /* Intervaltime between acculumator resets */
 #define HANG_TIME_MS        (490)              /* Time without a packet after which we dump the buffer */
 #define TICK_TIME_MS        (100)              /* Time intervals for screen updates and keypress check */
-
-/* Colours for output */
-enum CP { CP_NONE, CP_EVENT, CP_NORMAL, CP_FILEFUNCTION, CP_LINENO, CP_EXECASSY, CP_NEXECASSY, CP_BASELINE, CP_BASELINETEXT, CP_SEARCH };
-
-/* Search types */
-enum SRCH { SRCH_OFF, SRCH_FORWARDS, SRCH_BACKWARDS };
 
 /* Record for options, either defaults or from command line */
 struct Options
@@ -124,34 +119,12 @@ struct RunTime
     uint32_t wp;                        /* Index pointers for ring buffer */
     uint32_t rp;
 
-    /* Materials for window handling */
-    WINDOW *outputWindow;               /* Output window (main one) */
-    WINDOW *statusWindow;               /* Status window (interaction one) */
-    uint32_t tag[MAX_TAGS];             /* Buffer location tags */
-    char **opText;                      /* Text of the output buffer */
-    uint32_t opTextWline;               /* Next line number to be written */
-    uint32_t opTextRline;               /* Current read position in op buffer */
-    uint32_t oldopTextRline;            /* Old read position in op buffer (for redraw) */
-    int32_t lines;                      /* Number of lines on current window config */
-    int32_t cols;                       /* Number of columns on current window config */
+    struct line *opText;                /* Text of the output buffer */
+    int32_t numLines;                   /* Number of lines in the output buffer */
 
-    /* Search stuff */
-    enum SRCH searchMode;               /* What kind of search is being conducted */
-    char *searchString;                 /* The current searching string */
-    char storedFirstSearch;             /* Storage for first char of search string to allow repeats */
-    int32_t searchStartPos;             /* Location the search started from (for aborts) */
-    bool searchOK;                      /* Is the search currently sucessful? */
-
-    /* Save stuff */
-    bool enteringSaveFilename;          /* State indicator that we're entering filename */
-    char *saveFilename;                 /* Filename under construction */
-
-    int Key;                            /* Latest keypress */
-
-    bool forceRefresh;                  /* Force a refresh of everything */
-    bool outputtingHelp;                /* Output help window */
-    bool enteringMark;                  /* Set if we are in the process of marking a location */
     bool held;                          /* If we are actively collecting data */
+
+    struct SIOInstance *sio;            /* Our screen IO instance for managed I/O */
 
     struct dataBlock rawBlock;          /* Datablock received from distribution */
 
@@ -160,21 +133,6 @@ struct RunTime
 {
     .options = &_options
 };
-
-/* In string markers for information types (for colouring) */
-#define CE_CLR       '\377'            /* Flag indicating color change */
-#define CE_EV        "\377\001"        /* Event color */
-#define CE_FILE      "\377\002"        /* File/line color */
-#define CE_SRCLINENO "\377\003"        /* Source lineno color */
-#define CE_SRC       "\377\004"        /* Source color */
-#define CE_ASSY      "\377\005"        /* Executed assembly color */
-#define CE_NASSY     "\377\006"        /* Non-executed assembly color */
-
-/* Window sizes/positions */
-#define OUTPUT_WINDOW_L (r->lines-2)
-#define OUTPUT_WINDOW_W (r->cols)
-#define STATUS_WINDOW_L (2)
-#define STATUS_WINDOW_W (r->cols)
 
 // ====================================================================================================
 // ====================================================================================================
@@ -389,54 +347,50 @@ static void _processBlock( struct RunTime *r )
     }
 }
 // ====================================================================================================
-static void _requestRefresh( struct RunTime *r )
-
-/* Flag that output windows should be updated */
-
-{
-    r->forceRefresh = true;
-}
-// ====================================================================================================
 static void _flushBuffer( struct RunTime *r )
 
 /* Empty the output buffer, and de-allocate its memory */
 
 {
-    /* Remove all of the recorded lines */
-    while ( r->opTextWline )
-    {
-        free( r->opText[r->opTextWline - 1] );
-        r->opTextWline--;
-    }
+    /* Tell the UI there's nothing more to show */
+    SIOsetOutputBuffer( r->sio, 0, 0, NULL );
 
-    /* ...and reset the tag records */
-    for ( uint32_t t = 0; t < MAX_TAGS; t++ )
+    /* Remove all of the recorded lines */
+    while ( r->numLines )
     {
-        r->tag[t] = 0;
+        free( r->opText[r->numLines - 1].buffer );
+        r->numLines--;
     }
 
     /* and the opText buffer */
     free( r->opText );
     r->opText = NULL;
-    r->opTextWline = r->opTextRline = 0;
-    _requestRefresh( r );
+    r->numLines = 0;
 }
 // ====================================================================================================
-static void _appendToOPBuffer( struct RunTime *r, const char *fmt, ... )
+static void _appendToOPBuffer( struct RunTime *r, int32_t lineno, enum LineType lt, const char *fmt, ... )
 
 /* Add line to output buffer, in a printf stylee */
 
 {
     char construct[SCRATCH_STRING_LEN];
     va_list va;
+    char *p;
 
     va_start( va, fmt );
     vsnprintf( construct, SCRATCH_STRING_LEN, fmt, va );
     va_end( va );
 
-    r->opText = ( char ** )realloc( r->opText, ( sizeof( char * ) ) * ( r->opTextWline + 1 ) );
-    r->opText[r->opTextWline] = strdup( construct );
-    r->opTextWline++;
+    /* Make sure we didn't accidentially admit a CR or LF */
+    for ( p = construct; ( ( *p ) && ( *p != '\n' ) && ( *p != '\r' ) ); p++ );
+
+    *p = 0;
+
+    r->opText = ( struct line * )realloc( r->opText, ( sizeof( struct line ) ) * ( r->numLines + 1 ) );
+    r->opText[r->numLines].buffer = strdup( construct );
+    r->opText[r->numLines].lt     = lt;
+    r->opText[r->numLines].line   = lineno;
+    r->numLines++;
 }
 // ====================================================================================================
 static void _dumpBuffer( struct RunTime *r )
@@ -490,79 +444,79 @@ static void _dumpBuffer( struct RunTime *r )
 
             if ( ETMStateChanged( &r->i, EV_CH_VMID ) )
             {
-                _appendToOPBuffer( r, CE_EV "*** VMID Set to %d" EOL, cpu->vmid );
+                _appendToOPBuffer( r, currentLine, LT_EVENT, "*** VMID Set to %d" EOL, cpu->vmid );
             }
 
             if ( ETMStateChanged( &r->i, EV_CH_EX_ENTRY ) )
             {
-                _appendToOPBuffer( r, CE_EV "========== Exception Entry%s (%d at %08x) ==========" EOL,
+                _appendToOPBuffer( r, currentLine, LT_EVENT, "========== Exception Entry%s (%d at %08x) ==========" EOL,
                                    ETMStateChanged( &r->i, EV_CH_CANCELLED ) ? ", Last Instruction Cancelled" : "", cpu->exception, cpu->addr );
             }
 
             if ( ETMStateChanged( &r->i, EV_CH_EX_EXIT ) )
             {
-                _appendToOPBuffer( r, CE_EV "========== Exception Exit ==========" EOL );
+                _appendToOPBuffer( r, currentLine, LT_EVENT, "========== Exception Exit ==========" EOL );
             }
 
             if ( ETMStateChanged( &r->i, EV_CH_TSTAMP ) )
             {
-                _appendToOPBuffer( r, CE_EV "*** Timestamp %ld" EOL, cpu->ts );
+                _appendToOPBuffer( r, currentLine, LT_EVENT, "*** Timestamp %ld" EOL, cpu->ts );
             }
 
             if ( ETMStateChanged( &r->i, EV_CH_TRIGGER ) )
             {
-                _appendToOPBuffer( r, CE_EV "*** Trigger" EOL );
+                _appendToOPBuffer( r, currentLine, LT_EVENT, "*** Trigger" EOL );
             }
 
             if ( ETMStateChanged( &r->i, EV_CH_CLOCKSPEED ) )
             {
-                _appendToOPBuffer( r, CE_EV "*** Change Clockspeed" EOL );
+                _appendToOPBuffer( r, currentLine, LT_EVENT, "*** Change Clockspeed" EOL );
             }
 
             if ( ETMStateChanged( &r->i, EV_CH_ISLSIP ) )
             {
-                _appendToOPBuffer( r, "*** ISLSIP Triggered" EOL );
+                _appendToOPBuffer( r, currentLine, LT_EVENT, "*** ISLSIP Triggered" EOL );
             }
 
             if ( ETMStateChanged( &r->i, EV_CH_CYCLECOUNT ) )
             {
-                _appendToOPBuffer( r, CE_EV "(Cycle Count %d)" EOL, cpu->cycleCount );
+                _appendToOPBuffer( r, currentLine, LT_EVENT, "(Cycle Count %d)" EOL, cpu->cycleCount );
             }
 
             if ( ETMStateChanged( &r->i, EV_CH_VMID ) )
             {
-                _appendToOPBuffer( r, CE_EV "(VMID is now %d)" EOL, cpu->vmid );
+                _appendToOPBuffer( r, currentLine, LT_EVENT, "(VMID is now %d)" EOL, cpu->vmid );
             }
 
             if ( ETMStateChanged( &r->i, EV_CH_CONTEXTID ) )
             {
-                _appendToOPBuffer( r, CE_EV "(Context ID is now %d)" EOL, cpu->contextID );
+                _appendToOPBuffer( r, currentLine, LT_EVENT, "(Context ID is now %d)" EOL, cpu->contextID );
             }
 
             if ( ETMStateChanged( &r->i, EV_CH_SECURE ) )
             {
 
-                _appendToOPBuffer( r, CE_EV "(Non-Secure State is now %s)" EOL, cpu->nonSecure ? "True" : "False" );
+                _appendToOPBuffer( r, currentLine, LT_EVENT, "(Non-Secure State is now %s)" EOL, cpu->nonSecure ? "True" : "False" );
             }
 
             if ( ETMStateChanged( &r->i, EV_CH_ALTISA ) )
             {
-                _appendToOPBuffer( r, CE_EV "(Using AltISA  is now %s)" EOL, cpu->altISA ? "True" : "False" );
+                _appendToOPBuffer( r, currentLine, LT_EVENT, "(Using AltISA  is now %s)" EOL, cpu->altISA ? "True" : "False" );
             }
 
             if ( ETMStateChanged( &r->i, EV_CH_HYP ) )
             {
-                _appendToOPBuffer( r, CE_EV "(Using Hypervisor is now %s)" EOL, cpu->hyp ? "True" : "False" );
+                _appendToOPBuffer( r, currentLine,  LT_EVENT, "(Using Hypervisor is now %s)" EOL, cpu->hyp ? "True" : "False" );
             }
 
             if ( ETMStateChanged( &r->i, EV_CH_JAZELLE ) )
             {
-                _appendToOPBuffer( r, CE_EV "(Using Jazelle is now %s)" EOL, cpu->jazelle ? "True" : "False" );
+                _appendToOPBuffer( r, currentLine, LT_EVENT, "(Using Jazelle is now %s)" EOL, cpu->jazelle ? "True" : "False" );
             }
 
             if ( ETMStateChanged( &r->i, EV_CH_THUMB ) )
             {
-                _appendToOPBuffer( r, CE_EV "(Using Thumb is now %s)" EOL, cpu->thumb ? "True" : "False" );
+                _appendToOPBuffer( r, currentLine, LT_EVENT, "(Using Thumb is now %s)" EOL, cpu->thumb ? "True" : "False" );
             }
 
             /* End of dealing with changes introduced by this event =============== */
@@ -573,7 +527,7 @@ static void _dumpBuffer( struct RunTime *r )
                 {
                     if ( ( n.filename != currentFilename ) || ( n.function != currentFunction ) )
                     {
-                        _appendToOPBuffer( r, CE_FILE "%s::%s" EOL, n.filename, n.function );
+                        _appendToOPBuffer( r, currentLine, LT_FILE, "%s::%s" EOL, n.filename, n.function );
                         currentFilename = n.filename;
                         currentFunction = n.function;
                     }
@@ -583,15 +537,14 @@ static void _dumpBuffer( struct RunTime *r )
                         const char *v = n.source;
                         currentLine = n.line;
                         *construct = 0;
-                        uint32_t lp;
+                        uint32_t lp = 0;
                         uint32_t sline = 0;
 
                         while ( *v )
                         {
-                            lp = snprintf( construct, SCRATCH_STRING_LEN, CE_SRCLINENO "%5d\t" CE_SRC, currentLine + sline );
-
                             while ( *v )
                             {
+                                /* Source can cover multiple lines, split into separate ones */
                                 if ( ( *v != '\r' ) && ( *v != '\n' ) )
                                 {
                                     construct[lp++] = *v++;
@@ -599,10 +552,12 @@ static void _dumpBuffer( struct RunTime *r )
                                 else
                                 {
                                     construct[lp++] = 0;
-                                    _appendToOPBuffer( r, construct );
+                                    _appendToOPBuffer( r, currentLine + sline, LT_SOURCE, construct );
+
                                     *construct = 0;
                                     lp = 0;
 
+                                    /* Move past the CR/LF */
                                     while ( ( *v == '\r' ) || ( *v == '\n' ) )
                                     {
                                         v++;
@@ -619,15 +574,14 @@ static void _dumpBuffer( struct RunTime *r )
                     {
                         if ( n.assy[n.assyLine].label )
                         {
-                            _appendToOPBuffer( r, CE_ASSY "\t%s:" EOL, n.assy[n.assyLine].label );
+                            _appendToOPBuffer( r, currentLine, LT_LABEL, "\t%s:" EOL, n.assy[n.assyLine].label );
                         }
 
 
 
                         if ( n.assy[n.assyLine].is4Byte )
                         {
-                            _appendToOPBuffer( r, "%s\t\t%08x:\t%04x %04x\t%s"  EOL,
-                                               ( disposition & 1 ) ? CE_ASSY : CE_NASSY,
+                            _appendToOPBuffer( r, currentLine, ( disposition & 1 ) ? LT_ASSEMBLY : LT_NASSEMBLY, "\t\t%08x:\t%04x %04x\t%s"  EOL,
                                                n.assy[n.assyLine].addr,
                                                ( n.assy[n.assyLine].codes >> 16 ) & 0xffff,
                                                n.assy[n.assyLine].codes & 0xffff,
@@ -636,8 +590,7 @@ static void _dumpBuffer( struct RunTime *r )
                         }
                         else
                         {
-                            _appendToOPBuffer( r, "%s\t\t%08x:\t%04x     \t%s" EOL,
-                                               ( disposition & 1 ) ? CE_ASSY : CE_NASSY,
+                            _appendToOPBuffer( r, currentLine, ( disposition & 1 ) ? LT_ASSEMBLY : LT_NASSEMBLY, "\t\t%08x:\t%04x     \t%s" EOL,
                                                n.assy[n.assyLine].addr,
                                                n.assy[n.assyLine].codes & 0xffff,
                                                n.assy[n.assyLine].lineText );
@@ -647,7 +600,7 @@ static void _dumpBuffer( struct RunTime *r )
                     }
                     else
                     {
-                        _appendToOPBuffer( r, CE_ASSY "\t\tASSEMBLY NOT FOUND" EOL );
+                        _appendToOPBuffer( r, currentLine, LT_ASSEMBLY, "\t\tASSEMBLY NOT FOUND" EOL );
                         workingAddr += 2;
                     }
 
@@ -659,682 +612,59 @@ static void _dumpBuffer( struct RunTime *r )
         p = ( p + 1 ) % r->options->buflen;
     }
 
-    r->wp = r-> rp = 0;
-
-    /* Force a re-draw, focussed on the end of the buffer */
-    r->opTextRline = r->opTextWline - 1;
-    _requestRefresh( r );
-}
-
-// ====================================================================================================
-static void _setupWindows( struct RunTime *r )
-
-{
-    initscr();
-    r->lines = LINES;
-    r->cols = COLS;
-
-    if ( OK == start_color() )
-    {
-        init_pair( CP_EVENT, COLOR_YELLOW, COLOR_BLACK );
-        init_pair( CP_NORMAL, COLOR_WHITE,  COLOR_BLACK );
-        init_pair( CP_FILEFUNCTION, COLOR_RED, COLOR_BLACK );
-        init_pair( CP_LINENO, COLOR_YELLOW, COLOR_BLACK );
-        init_pair( CP_EXECASSY, COLOR_CYAN, COLOR_BLACK );
-        init_pair( CP_NEXECASSY, COLOR_BLUE, COLOR_BLACK );
-        init_pair( CP_BASELINE, COLOR_BLUE, COLOR_BLACK );
-        init_pair( CP_BASELINETEXT, COLOR_YELLOW, COLOR_BLACK );
-        init_pair( CP_SEARCH, COLOR_GREEN, COLOR_BLACK );
-    }
-
-    r->outputWindow = newwin( OUTPUT_WINDOW_L, OUTPUT_WINDOW_W, 0, 0 );
-    r->statusWindow = newwin( STATUS_WINDOW_L, STATUS_WINDOW_W, OUTPUT_WINDOW_L, 0 );
-    wtimeout( r->statusWindow, 0 );
-    scrollok( r->outputWindow, false );
-    keypad( r->statusWindow, true );
-    raw();
-    noecho();
-    curs_set( 0 );
-}
-// ====================================================================================================
-static void _terminateWindows( void )
-
-{
-    noraw();
-    endwin();
+    /* Submit this constructed buffer for display */
+    SIOsetOutputBuffer( r->sio, r->numLines, r->numLines - 1, &r->opText );
 }
 // ====================================================================================================
 static void _doSave( struct RunTime *r )
 
 {
+    FILE *f;
+    char fn[SCRATCH_STRING_LEN];
+    uint32_t w;
 
+    snprintf( fn, SCRATCH_STRING_LEN, "%s.trace", SIOgetSaveFilename( r->sio ) );
+    f = fopen( fn, "wb" );
+
+    if ( !f )
+    {
+        SIOalert( r->sio, "Save Trace Failed" );
+        return;
+    }
+
+    w = r->rp;
+
+    while ( w != r->wp )
+    {
+        fwrite( &r->pmBuffer[w], 1, 1, f );
+        w = ( w + 1 ) % r->options->buflen;
+    }
+
+    fclose( f );
+
+    snprintf( fn, SCRATCH_STRING_LEN, "%s.report", SIOgetSaveFilename( r->sio ) );
+    f = fopen( fn, "wb" );
+
+    if ( !f )
+    {
+        SIOalert( r->sio, "Save Report Failed" );
+        return;
+    }
+
+    w = 0;
+
+    while ( w != r->numLines )
+    {
+        for ( char *u = r->opText[w++].buffer; *u; u++ )
+        {
+            fwrite( u, strlen( u ), 1, f );
+        }
+    }
+
+    fclose( f );
+
+    SIOalert( r->sio, "Save Complete" );
 }
-// ====================================================================================================
-static bool _processSaveFilename( struct RunTime *r )
-
-{
-    bool retcode = false;
-
-    switch ( r->Key )
-    {
-        case ERR:
-            retcode = true;
-            break;
-
-        case 3: /* ------------------------------ CTRL-C Exit ------------------------------------ */
-            r->enteringSaveFilename = false;
-            curs_set( 0 );
-            retcode = true;
-            break;
-
-        case 263: /* --------------------------- Del Remove char from save string ----------------- */
-
-            /* Delete last character in save string */
-            if ( strlen( r->saveFilename ) )
-            {
-                r->saveFilename[strlen( r->saveFilename ) - 1] = 0;
-            }
-
-            retcode = true;
-            break;
-
-        case 10: /* ----------------------------- Newline Commit Save ---------------------------- */
-            /* Commit the save */
-            _doSave( r );
-            free( r->saveFilename );
-            curs_set( 0 );
-            r->saveFilename = NULL;
-            r->enteringSaveFilename = false;
-            retcode = true;
-            break;
-
-        default: /* ---------------------------- Add valid chars to save string ------------------ */
-            if ( ( r->Key > 31 ) && ( r->Key < 255 ) )
-            {
-              r->saveFilename = ( char * )realloc( r->saveFilename, strlen( r->saveFilename ) + 2 );
-              r->saveFilename[strlen( r->saveFilename ) + 1] = 0;
-              r->saveFilename[strlen( r->saveFilename )] = r->Key;
-              retcode = true;
-            }
-            break;
-    }
-
-    return retcode;
-}
-
-// ====================================================================================================
-static bool _processRegularKeys( struct RunTime *r )
-
-/* Handle keys in regular mode */
-
-{
-    bool retcode = false;
-
-    switch ( r->Key )
-    {
-        case ERR:
-            retcode = true;
-            break;
-
-        case 19: /* ----------------------------- CTRL-S Search Forwards ------------------------- */
-            r->searchMode = SRCH_FORWARDS;
-            *r->searchString = 0;
-            r->searchOK = true;
-            r->searchStartPos = r->opTextRline;
-            curs_set( 1 );
-            retcode = true;
-            break;
-
-        case 18: /* ----------------------------- CTRL-R Search Reverse -------------------------- */
-            r->searchMode = SRCH_BACKWARDS;
-            *r->searchString = 0;
-            r->searchOK = true;
-            r->searchStartPos = r->opTextRline;
-            curs_set( 1 );
-            retcode = true;
-            break;
-
-        case 3: /* ------------------------------ CTRL-C Exit ------------------------------------ */
-            _doExit();
-            break;
-
-        case '?': /* ---------------------------- Help ------------------------------------------- */
-            r->outputtingHelp = !r->outputtingHelp;
-            _requestRefresh( r );
-            break;
-
-        case 'm':
-        case 'M': /* ---------------------------- Enter Mark ------------------------------------- */
-            r->enteringMark = !r->enteringMark;
-            break;
-
-        case 's':
-        case 'S': /* ---------------------------- Enter save filename ---------------------------- */
-            if ( r->opTextWline )
-            {
-                r->saveFilename = ( char * )realloc( r->saveFilename, 1 );
-                *r->saveFilename = 0;
-                curs_set( 1 );
-                r->enteringSaveFilename = true;
-            }
-            else
-            {
-                beep();
-            }
-
-            break;
-
-        case '0' ... '0'+MAX_TAGS: /* ----------- Tagged Location -------------------------------- */
-            if ( r->enteringMark )
-            {
-                r->tag[r->Key - '0'] = r->opTextRline + 1;
-                r->enteringMark = false;
-            }
-            else
-            {
-                if ( ( r->tag[r->Key - '0'] ) && ( r->tag[r->Key - '0'] < r->opTextWline ) )
-                {
-                    r->opTextRline = r->tag[r->Key - '0'] - 1;
-                }
-                else
-                {
-                    beep();
-                }
-            }
-
-            break;
-
-        case 259: /* ---------------------------- UP --------------------------------------------- */
-
-            r->opTextRline = ( r->opTextRline > 0 ) ? r->opTextRline - 1 : 0;
-            retcode = true;
-            break;
-
-
-        case 398: /* ---------------------------- Shift PgUp ------------------------------------- */
-            r->opTextRline = ( r->opTextRline > 10 * OUTPUT_WINDOW_L ) ? r->opTextRline - 10 * OUTPUT_WINDOW_L : 0;
-            retcode = true;
-            break;
-
-        case 339: /* ---------------------------- PREV PAGE -------------------------------------- */
-            r->opTextRline = ( r->opTextRline > OUTPUT_WINDOW_L ) ? r->opTextRline - OUTPUT_WINDOW_L : 0;
-            retcode = true;
-            break;
-
-        case 338: /* ---------------------------- NEXT PAGE -------------------------------------- */
-            r->opTextRline = ( r->opTextRline + OUTPUT_WINDOW_L < r->opTextWline ) ? r->opTextRline + OUTPUT_WINDOW_L : r->opTextWline - 1;
-            retcode = true;
-            break;
-
-        case 262: /* ---------------------------- HOME ------------------------------------------- */
-            r->opTextRline = r->opTextWline < OUTPUT_WINDOW_L ? r->opTextWline : 0;
-            retcode = true;
-            break;
-
-        case 360: /* ---------------------------- END -------------------------------------------- */
-            r->opTextRline = r->opTextWline - 1;
-            retcode = true;
-            break;
-
-        case 258: /* ---------------------------- DOWN ------------------------------------------- */
-            r->opTextRline = ( r->opTextRline < ( r->opTextWline - 1 ) ) ? r->opTextRline + 1 :
-                             r->opTextRline;
-            retcode = true;
-            break;
-
-        case 396: /* ---------------------------- With shift for added speeeeeed ----------------- */
-            r->opTextRline = ( r->opTextRline + 10 * OUTPUT_WINDOW_L < r->opTextWline ) ? r->opTextRline + 10 * OUTPUT_WINDOW_L : r->opTextWline - 1;
-            retcode = true;
-            break;
-
-        default: /* ------------------------------------------------------------------------------ */
-            break;
-    }
-
-    return retcode;
-}
-// ====================================================================================================
-static bool _updateSearch( struct RunTime *r )
-
-/* Progress search to next element, or ping and return false if we can't */
-
-{
-    for ( int32_t l = r->opTextRline;
-            ( r->searchMode == SRCH_FORWARDS ) ? ( l < r->opTextWline - 1 ) : ( l > 0 );
-            ( r->searchMode == SRCH_FORWARDS ) ? l++ : l-- )
-    {
-        if ( strstr( r->opText[l], r->searchString ) )
-        {
-            /* This is a match */
-            r->opTextRline = l;
-            r->searchOK = true;
-            return true;
-        }
-    }
-
-    /* If we get here then we had no match */
-    beep();
-    r->searchOK = false;
-    return false;
-}
-// ====================================================================================================
-static bool _processSearchKeys( struct RunTime *r )
-
-/* Handle keys in search mode */
-
-{
-    bool retcode = false;
-
-    switch ( r->Key )
-    {
-        case ERR:
-            retcode = true;
-            break;
-
-        case 10: /* ----------------------------- Newline Commit Search -------------------------- */
-            /* Commit the search */
-            r->searchMode = SRCH_OFF;
-            curs_set( 0 );
-            r->storedFirstSearch = *r->searchString;
-            *r->searchString = 0;
-            _requestRefresh( r );
-            retcode = true;
-            break;
-
-        case 3: /* ------------------------------ CTRL-C Abort Search ---------------------------- */
-            /* Abort the search */
-            r->searchMode = SRCH_OFF;
-            r->opTextRline = r->searchStartPos;
-            r->storedFirstSearch = *r->searchString;
-            *r->searchString = 0;
-            _requestRefresh( r );
-            curs_set( 0 );
-            retcode = true;
-            break;
-
-        case 19: /* ----------------------------- CTRL-S Search Forwards ------------------------- */
-            if ( !*r->searchString )
-            {
-                /* Try to re-instate old search */
-                *r->searchString = r->storedFirstSearch;
-            }
-
-            r->searchMode = SRCH_FORWARDS;
-
-            /* Find next match */
-            if ( ( r->searchOK ) && ( r->opTextRline < r->opTextWline - 1 ) )
-            {
-                r->opTextRline++;
-            }
-
-            _updateSearch( r );
-            _requestRefresh( r );
-            retcode = true;
-            break;
-
-        case 18: /* ---------------------------- CTRL-R Search Backwards ------------------------- */
-            if ( !*r->searchString )
-            {
-                /* Try to re-instate old search */
-                *r->searchString = r->storedFirstSearch;
-            }
-
-            /* Find prev match */
-            r->searchMode = SRCH_BACKWARDS;
-
-            if ( ( r->searchOK ) && ( r->opTextRline > 0 ) )
-            {
-                r->opTextRline--;
-            }
-
-            _updateSearch( r );
-            _requestRefresh( r );
-            retcode = true;
-            break;
-
-        case 263: /* --------------------------- Del Remove char from search string -------------- */
-
-            /* Delete last character in search string */
-            if ( strlen( r->searchString ) )
-            {
-                r->searchString[strlen( r->searchString ) - 1] = 0;
-            }
-
-            _updateSearch( r );
-            _requestRefresh( r );
-            retcode = true;
-            break;
-
-        default: /* ---------------------------- Add valid chars to search string ---------------- */
-            if ( ( r->Key > 31 ) && ( r->Key < 255 ) )
-            {
-                r->searchString = ( char * )realloc( r->searchString, strlen( r->searchString ) + 1 );
-                r->searchString[strlen( r->searchString ) + 1] = 0;
-                r->searchString[strlen( r->searchString )] = r->Key;
-                _updateSearch( r );
-                _requestRefresh( r );
-                retcode = true;
-            }
-
-            break;
-    }
-
-    return retcode;
-}
-// ====================================================================================================
-static void _outputHelp( struct RunTime *r )
-
-/* ...as the name suggests. Just replace the output window with help text */
-
-{
-    werase( r->outputWindow );
-    wattrset( r->outputWindow, A_BOLD | COLOR_PAIR( CP_NORMAL ) );
-    wprintw( r->outputWindow, EOL "  Important Keys..." EOL EOL );
-    wprintw( r->outputWindow, "       H: Hold or resume sampling" EOL );
-    wprintw( r->outputWindow, "       M: Mark a location in the sample buffer, followed by 0..%d" EOL, MAX_TAGS - 1 );
-    wprintw( r->outputWindow, "       S: Save current buffer to file" EOL );
-    wprintw( r->outputWindow, "       Q: Quit the application" EOL );
-    wprintw( r->outputWindow, "       ?: This help" EOL );
-    wprintw( r->outputWindow, "    0..%d: Move to mark in sample buffer, if its defined" EOL EOL, MAX_TAGS - 1 );
-    wprintw( r->outputWindow, "  CTRL-C: Quit the current task or the application" EOL );
-    wprintw( r->outputWindow, "  CTRL-L: Refresh the screen" EOL );
-    wprintw( r->outputWindow, "  CTRL-R: Search backwards, CTRL-R again for next match" EOL );
-    wprintw( r->outputWindow, "  CTRL-S: Search forwards, CTRL-S again for next match" EOL );
-    wprintw( r->outputWindow, EOL "  Use PgUp/PgDown/Home/End and the arrow keys to move around the sample buffer" EOL );
-    wprintw( r->outputWindow, "  Shift-PgUp and Shift-PgDown move more quickly" EOL );
-    wprintw( r->outputWindow, EOL "       <?> again to leave this help screeh." EOL );
-}
-
-// ====================================================================================================
-static void _updateWindows( struct RunTime *r, bool isTick, bool isKey )
-
-/* Update all the visible outputs onscreen */
-
-{
-    int y, x;                   /* Current size of output window */
-    attr_t attr;                /* On-screen attributes */
-    short pair;
-    char *ssp;                  /* Position in search match string */
-    bool refreshOutput = false; /* Flag indicating that output window needs updating */
-    bool refreshStatus = false; /* Flag indicating that status window needs updating */
-
-    /* First, work with the output window */
-    if ( r->outputtingHelp )
-    {
-        _outputHelp( r );
-        refreshOutput = true;
-    }
-    else
-    {
-        if ( ( r->oldopTextRline != r->opTextRline ) || ( r->forceRefresh ) )
-        {
-            werase( r->outputWindow );
-
-            for ( int32_t sline = -OUTPUT_WINDOW_L / 2; sline < ( OUTPUT_WINDOW_L + 1 ) / 2; sline++ )
-            {
-                /* Make sure we've not fallen off one end of the list or the other */
-                if ( ( sline + r->opTextRline < 0 ) ||
-                        ( sline + r->opTextRline >= r->opTextWline ) )
-                {
-                    continue;
-                }
-
-                char *u = r->opText[sline + r->opTextRline];
-                ssp = r->searchString;
-
-                wmove( r->outputWindow, ( OUTPUT_WINDOW_L / 2 ) + sline, 0 );
-
-                while ( *u )
-                {
-                    switch ( *u )
-                    {
-                        case '\r': /* ----------- NL/CR are ignored in the sourced data ---------- */
-                        case '\n':
-                            u++;
-                            break;
-
-                        case CE_CLR: /* --------- This is a command character -------------------- */
-                            ++u;
-
-                            switch ( *u )
-                            {
-                                case 1: /* Event color */
-                                    wattrset( r->outputWindow, ( ( sline == 0 ) ? A_STANDOUT : 0 ) | A_BOLD | COLOR_PAIR( CP_EVENT ) );
-                                    break;
-
-                                case 2: /* File/line color */
-                                    wattrset( r->outputWindow, ( ( sline == 0 ) ? A_STANDOUT : 0 ) | A_BOLD | COLOR_PAIR( CP_FILEFUNCTION ) );
-                                    break;
-
-                                case 3: /* Source lineno color */
-                                    wattrset( r->outputWindow, ( ( sline == 0 ) ? A_STANDOUT : 0 ) | COLOR_PAIR( CP_LINENO ) );
-                                    break;
-
-                                case 4: /* Source color */
-                                    wattrset( r->outputWindow, ( ( sline == 0 ) ? A_STANDOUT : 0 ) | A_BOLD | COLOR_PAIR( CP_NORMAL ) );
-                                    break;
-
-                                case 5: /* Executed assembly color */
-                                    wattrset( r->outputWindow, ( ( sline == 0 ) ? A_STANDOUT : 0 ) | COLOR_PAIR( CP_EXECASSY ) );
-                                    break;
-
-                                case 6: /* Non-executed assembly color */
-                                    wattrset( r->outputWindow, ( ( sline == 0 ) ? A_STANDOUT : 0 ) | COLOR_PAIR( CP_NEXECASSY ) );
-                                    break;
-
-                                default:
-                                    wattrset( r->outputWindow, ( ( sline == 0 ) ? A_STANDOUT : 0 ) | COLOR_PAIR( CP_NORMAL ) );
-                                    break;
-                            }
-
-                            /* Store the attributes in case we need them later (e.g. as a result of search changing things) */
-                            wattr_get( r->outputWindow, &attr, &pair, NULL );
-                            u++;
-                            break;
-
-                        default: /* ------------------------------------------------------------- */
-
-                            /* Colour matches if we're in search mode, but whatever is happening, output the characters */
-                            if ( ( r->searchMode != SRCH_OFF ) && ( *r->searchString ) && ( !strncmp( u, ssp, strlen( ssp ) ) ) )
-                            {
-                                wattrset( r->outputWindow, A_BOLD | COLOR_PAIR( CP_SEARCH ) );
-                                ssp++;
-
-                                if ( !*ssp )
-                                {
-                                    ssp = r->searchString;
-                                }
-                            }
-                            else
-                            {
-                                wattr_set( r->outputWindow, attr, pair, NULL );
-                            }
-
-                            waddch( r->outputWindow, *u++ );
-                            break;
-                    }
-                }
-
-                /* Pad out this line with spaces */
-                while ( true )
-                {
-                    getyx( r->outputWindow, y, x );
-                    ( void )y;
-                    waddch( r->outputWindow, ' ' );
-
-                    if ( x == OUTPUT_WINDOW_W - 1 )
-                    {
-                        break;
-                    }
-                }
-            }
-
-            r->oldopTextRline = r->opTextRline;
-            refreshOutput = true;
-        }
-    }
-
-
-    /* Now update the status */
-    if ( ( isTick ) || ( isKey ) || ( r->forceRefresh ) )
-    {
-        werase( r->statusWindow );
-        wattrset( r->statusWindow, A_BOLD | COLOR_PAIR( CP_BASELINE ) );
-        mvwhline( r->statusWindow, 0, 0, ACS_HLINE, COLS );
-        mvwprintw( r->statusWindow, 0, COLS - 4 - ( strlen( r->progName ) + strlen( genericsBasename( r->options->elffile ) ) ),
-                   " %s:%s ", r->progName, genericsBasename( r->options->elffile ) );
-
-        if ( r->opTextWline )
-        {
-            /* We have some opData stored, indicate where we are in it */
-            mvwprintw( r->statusWindow, 0, 2, " %d%% (%d/%d) ", ( r->opTextRline * 100 ) / ( r->opTextWline - 1 ), r->opTextRline, r->opTextWline );
-        }
-
-        wattrset( r->statusWindow, A_BOLD | COLOR_PAIR( CP_BASELINETEXT ) );
-
-        if ( !r->held )
-        {
-            if ( r->oldintervalBytes )
-            {
-                if ( r->oldintervalBytes < 9999 )
-                {
-                    mvwprintw( r->statusWindow, 1, COLS - 38, "%ld Bps (~%ld Ips)", r->oldintervalBytes, ( r->oldintervalBytes * 8 ) / 11 );
-                }
-                else if ( r->oldintervalBytes < 9999999 )
-                {
-                    mvwprintw( r->statusWindow, 1, COLS - 38, "%ld KBps (~%ld KIps)", r->oldintervalBytes / 1000, r->oldintervalBytes * 8 / 1120 );
-                }
-                else
-                {
-                    mvwprintw( r->statusWindow, 1, COLS - 38, "%ld MBps (~%ld MIps)", r->oldintervalBytes / 1000000, ( r->oldintervalBytes * 8 ) / 1120000 );
-                }
-            }
-
-            mvwprintw( r->statusWindow, 1, COLS - 11, r->intervalBytes ? "Capturing" : "  Waiting" );
-        }
-        else
-        {
-            mvwprintw( r->statusWindow, 1, COLS - 6, "Hold" );
-        }
-
-        mvwprintw( r->statusWindow, 0, 30, " " );
-
-        for ( uint32_t t = 0; t < MAX_TAGS; t++ )
-        {
-            if ( r->tag[t] )
-            {
-                wattrset( r->statusWindow, A_BOLD | COLOR_PAIR( CP_BASELINETEXT ) );
-
-                if ( ( r->tag[t] >= ( r->opTextRline - OUTPUT_WINDOW_L / 2 ) ) &&
-                        ( r->tag[t] <= ( r->opTextRline + ( OUTPUT_WINDOW_L + 1 ) / 2 ) ) )
-                {
-                    /* This tag is on the visible page */
-                    wattrset( r->outputWindow, A_BOLD | COLOR_PAIR( CP_BASELINETEXT ) );
-                    mvwprintw( r->outputWindow, ( OUTPUT_WINDOW_L + 1 ) / 2 + r->tag[t] - r->opTextRline - 1, OUTPUT_WINDOW_W - 1, "%d", t );
-                    refreshOutput = true;
-                }
-            }
-            else
-            {
-                wattrset( r->statusWindow, A_BOLD | COLOR_PAIR( CP_BASELINE ) );
-            }
-
-            wprintw( r->statusWindow, "%d", t );
-        }
-
-        wprintw( r->statusWindow, " " );
-
-        if ( r->enteringSaveFilename )
-        {
-            wattrset( r->statusWindow, A_BOLD | COLOR_PAIR( CP_SEARCH ) );
-            mvwprintw( r->statusWindow, 1, 2, "Save Filename :%s", r->saveFilename );
-        }
-
-        if ( r->searchMode )
-        {
-            wattrset( r->statusWindow, A_BOLD | COLOR_PAIR( CP_SEARCH ) );
-            mvwprintw( r->statusWindow, 1, 2, "%sSearch %s :%s", r->searchOK ? "" : "(Failing) ", ( r->searchMode == SRCH_FORWARDS ) ? "Forwards" : "Backwards", r->searchString );
-        }
-
-        if ( r->enteringMark )
-        {
-            wattrset( r->statusWindow, A_BOLD | COLOR_PAIR( CP_SEARCH ) );
-            mvwprintw( r->statusWindow, 1, 2, "Mark Number?" );
-        }
-
-        // Uncomment this line to get a track of latest key values
-        // mvwprintw( r->statusWindow, 1, 40, "Key %d", r->Key );
-    }
-
-    if ( refreshOutput )
-    {
-        wrefresh( r->outputWindow );
-    }
-
-    if ( refreshStatus )
-    {
-        wrefresh( r->statusWindow );
-    }
-
-    r->forceRefresh = false;
-}
-// ====================================================================================================
-static bool _updateWindowsAndGetKey( struct RunTime *r, bool isTick )
-
-/* Top level to deal with all UI aspects */
-
-{
-    struct winsize sz;
-    bool keyhandled = false;
-
-    r->Key = wgetch( r->statusWindow );
-
-    if ( r->Key != ERR )
-    {
-        if ( r->enteringSaveFilename )
-        {
-            keyhandled =  _processSaveFilename( r );
-        }
-        else
-        {
-            keyhandled = ( r->searchMode ) ? _processSearchKeys( r ) : _processRegularKeys( r );
-        }
-
-        if ( !keyhandled )
-        {
-            switch ( r->Key )
-            {
-                case KEY_RESIZE:
-                case 12:  /* CTRL-L, refresh ----------------------------------------------------- */
-                    ioctl( 0, TIOCGWINSZ, &sz );
-                    r->lines = sz.ws_row;
-                    r->cols = sz.ws_col;
-                    clearok( r->statusWindow, true );
-                    clearok( r->outputWindow, true );
-                    wresize( r->statusWindow, STATUS_WINDOW_L, STATUS_WINDOW_W );
-                    wresize( r->outputWindow, OUTPUT_WINDOW_L, OUTPUT_WINDOW_W );
-                    mvwin( r->statusWindow, OUTPUT_WINDOW_L, 0 );
-                    keyhandled = true;
-                    isTick = true;
-                    _requestRefresh( r );
-                    break;
-
-                default: /* ---------------------------------------------------------------------- */
-                    break;
-            }
-        }
-    }
-    else
-    {
-        keyhandled = true;
-    }
-
-    /* Now deal with the output windows */
-    _updateWindows( r, isTick, r->Key != ERR );
-
-    return keyhandled;
-}
-
 // ====================================================================================================
 static void _doExit( void )
 
@@ -1344,7 +674,7 @@ static void _doExit( void )
     _r.ending = true;
     /* Give them a bit of time, then we're leaving anyway */
     usleep( 200 );
-    _terminateWindows();
+    SIOterminate( _r.sio );
 }
 // ====================================================================================================
 int main( int argc, char *argv[] )
@@ -1362,7 +692,6 @@ int main( int argc, char *argv[] )
 
     /* Have a basic name and search string set up */
     _r.progName = genericsBasename( argv[0] );
-    _r.searchString = ( char * )calloc( 2, sizeof( char ) );
 
     if ( !_processOptions( argc, argv, &_r ) )
     {
@@ -1373,7 +702,8 @@ int main( int argc, char *argv[] )
     /* Make sure the fifos get removed at the end */
     atexit( _doExit );
 
-    _setupWindows( &_r );
+    /* Create a screen and interaction handler */
+    _r.sio = SIOsetup( _r.progName, _r.options->elffile );
 
     /* Fill in a time to start from */
     lastTime = lastTTime = lastTSTime = genericsTimestampmS();
@@ -1436,8 +766,6 @@ int main( int argc, char *argv[] )
 
             if ( connect( sourcefd, ( struct sockaddr * ) &serv_addr, sizeof( serv_addr ) ) < 0 )
             {
-                wclear( _r.statusWindow );
-
                 perror( "Could not connect" );
                 close( sourcefd );
                 usleep( 1000000 );
@@ -1493,26 +821,31 @@ int main( int argc, char *argv[] )
             }
 
             /* Update the outputs and deal with any keys that made it up this high */
-            if ( !_updateWindowsAndGetKey( &_r, ( genericsTimestampmS() - lastTTime ) > TICK_TIME_MS ) )
+            switch ( SIOHandler( _r.sio, ( genericsTimestampmS() - lastTTime ) > TICK_TIME_MS, _r.oldintervalBytes ) )
             {
-                switch ( toupper( _r.Key ) )
-                {
-                    case 'H':
-                        if ( _r.held )
-                        {
-                            _flushBuffer( &_r );
-                        }
+                case SIO_EV_HOLD:
+                    _r.held = !_r.held;
 
-                        _r.held = !_r.held;
-                        break;
+                    if ( !_r.held )
+                    {
+                        _r.wp = _r.rp = 0;
+                        _flushBuffer( &_r );
+                    }
 
-                    case 'Q':
-                        _r.ending = true;
-                        break;
+                    /* Flag held status to the UI */
+                    SIOheld( _r.sio, _r.held );
+                    break;
 
-                    default:
-                        break;
-                }
+                case SIO_EV_SAVE:
+                    _doSave( &_r );
+                    break;
+
+                case SIO_EV_QUIT:
+                    _r.ending = true;
+                    break;
+
+                default:
+                    break;
             }
 
             /* Update the various timers that are running */
@@ -1522,11 +855,11 @@ int main( int argc, char *argv[] )
             }
 
             /* Deal with possible timeout on sampling */
-            if ( ( ( genericsTimestampmS() - lastTime ) > HANG_TIME_MS ) && ( _r.wp != _r.rp ) )
+            if ( ( ( genericsTimestampmS() - lastTime ) > HANG_TIME_MS ) && ( !_r.numLines ) &&  ( _r.wp != _r.rp ) )
             {
                 _dumpBuffer( &_r );
-                /* After we've got a dump we don't want to lose it again!! */
                 _r.held = true;
+                SIOheld( _r.sio, _r.held );
             }
 
             /* Update the intervals */
