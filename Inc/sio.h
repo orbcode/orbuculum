@@ -49,23 +49,24 @@ extern "C" {
 struct SIOInstance;
 
 /* Events that can be returned by the handler */
-enum SIOEvent { SIO_EV_NONE, SIO_EV_HOLD, SIO_EV_QUIT, SIO_EV_SAVE, SIO_EV_CONSUMED };
+enum SIOEvent { SIO_EV_NONE, SIO_EV_HOLD, SIO_EV_QUIT, SIO_EV_SAVE, SIO_EV_CONSUMED, SIO_EV_LEFT, SIO_EV_RIGHT };
 
 /* Types of line (each with their own display mechanism & colours, potentially */
-enum LineType { LT_EVENT, LT_SOURCE, LT_ASSEMBLY, LT_NASSEMBLY, LT_LABEL, LT_FILE };
+enum LineType { LT_EVENT, LT_SOURCE, LT_ASSEMBLY, LT_NASSEMBLY, LT_LABEL, LT_FILE, LT_MU_SOURCE };
 
 /* Definition for a single line...collections of these are what get displayed */
 struct line
 {
     enum LineType lt;
+    bool isRef;
     char *buffer;
     int32_t line;
 };
 
 // ====================================================================================================
 const char *SIOgetSaveFilename( struct SIOInstance *sio );
-void SIOsetOutputBuffer( struct SIOInstance *sio, int32_t numLines, int32_t currentLine, struct line **opTextSet );
-
+int32_t SIOgetCurrentLineno( struct SIOInstance *sio );
+void SIOsetOutputBuffer( struct SIOInstance *sio, int32_t numLines, int32_t currentLine, struct line **opTextSet, bool amDiving );
 void SIOalert( struct SIOInstance *sio, const char *msg );
 void SIOrequestRefresh( struct SIOInstance *sio );
 void SIOheld( struct SIOInstance *sio, bool isHeld );

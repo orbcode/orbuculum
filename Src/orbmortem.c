@@ -122,6 +122,12 @@ struct RunTime
     struct line *opText;                /* Text of the output buffer */
     int32_t numLines;                   /* Number of lines in the output buffer */
 
+    int32_t diveline;                   /* Line number we're currently diving into */
+    char *divefile;                     /* Filename we're currently diving into */
+    bool diving;                        /* Flag indicating we're diving into a file at the moment */
+    struct line *fileopText;            /* The text lines of the file we're diving into */
+    int32_t filenumLines;               /* ...and how many lines of it there are */
+
     bool held;                          /* If we are actively collecting data */
 
     struct SIOInstance *sio;            /* Our screen IO instance for managed I/O */
@@ -129,6 +135,8 @@ struct RunTime
     struct dataBlock rawBlock;          /* Datablock received from distribution */
 
     struct Options *options;            /* Our runtime configuration */
+
+    const char openFileCL;              /* Command line for opening refernced file */
 } _r =
 {
     .options = &_options
@@ -353,12 +361,16 @@ static void _flushBuffer( struct RunTime *r )
 
 {
     /* Tell the UI there's nothing more to show */
-    SIOsetOutputBuffer( r->sio, 0, 0, NULL );
+    SIOsetOutputBuffer( r->sio, 0, 0, NULL, false );
 
     /* Remove all of the recorded lines */
     while ( r->numLines )
     {
-        free( r->opText[r->numLines - 1].buffer );
+        if ( !r->opText[r->numLines - 1].isRef )
+        {
+            free( r->opText[r->numLines - 1].buffer );
+        }
+
         r->numLines--;
     }
 
@@ -390,6 +402,22 @@ static void _appendToOPBuffer( struct RunTime *r, int32_t lineno, enum LineType 
     r->opText[r->numLines].buffer = strdup( construct );
     r->opText[r->numLines].lt     = lt;
     r->opText[r->numLines].line   = lineno;
+    r->opText[r->numLines].isRef  = false;
+    r->numLines++;
+}
+// ====================================================================================================
+static void _appendRefToOPBuffer( struct RunTime *r, int32_t lineno, enum LineType lt, const char *ref )
+
+/* Add line to output buffer, as a reference (which don't be free'd later) */
+
+{
+    r->opText = ( struct line * )realloc( r->opText, ( sizeof( struct line ) ) * ( r->numLines + 1 ) );
+
+    /* This line removes the 'const', but we know to not mess with this line */
+    r->opText[r->numLines].buffer = ( char * )ref;
+    r->opText[r->numLines].lt     = lt;
+    r->opText[r->numLines].line   = lineno;
+    r->opText[r->numLines].isRef  = true;
     r->numLines++;
 }
 // ====================================================================================================
@@ -444,38 +472,38 @@ static void _dumpBuffer( struct RunTime *r )
 
             if ( ETMStateChanged( &r->i, EV_CH_VMID ) )
             {
-                _appendToOPBuffer( r, currentLine, LT_EVENT, "*** VMID Set to %d" EOL, cpu->vmid );
+                _appendToOPBuffer( r, currentLine, LT_EVENT, "*** VMID Set to %d", cpu->vmid );
             }
 
             if ( ETMStateChanged( &r->i, EV_CH_EX_ENTRY ) )
             {
-                _appendToOPBuffer( r, currentLine, LT_EVENT, "========== Exception Entry%s (%d at %08x) ==========" EOL,
+                _appendToOPBuffer( r, currentLine, LT_EVENT, "========== Exception Entry%s (%d at %08x) ==========",
                                    ETMStateChanged( &r->i, EV_CH_CANCELLED ) ? ", Last Instruction Cancelled" : "", cpu->exception, cpu->addr );
             }
 
             if ( ETMStateChanged( &r->i, EV_CH_EX_EXIT ) )
             {
-                _appendToOPBuffer( r, currentLine, LT_EVENT, "========== Exception Exit ==========" EOL );
+                _appendRefToOPBuffer( r, currentLine, LT_EVENT, "========== Exception Exit ==========" );
             }
 
             if ( ETMStateChanged( &r->i, EV_CH_TSTAMP ) )
             {
-                _appendToOPBuffer( r, currentLine, LT_EVENT, "*** Timestamp %ld" EOL, cpu->ts );
+                _appendToOPBuffer( r, currentLine, LT_EVENT, "*** Timestamp %ld", cpu->ts );
             }
 
             if ( ETMStateChanged( &r->i, EV_CH_TRIGGER ) )
             {
-                _appendToOPBuffer( r, currentLine, LT_EVENT, "*** Trigger" EOL );
+                _appendRefToOPBuffer( r, currentLine, LT_EVENT, "*** Trigger" );
             }
 
             if ( ETMStateChanged( &r->i, EV_CH_CLOCKSPEED ) )
             {
-                _appendToOPBuffer( r, currentLine, LT_EVENT, "*** Change Clockspeed" EOL );
+                _appendRefToOPBuffer( r, currentLine, LT_EVENT, "*** Change Clockspeed" );
             }
 
             if ( ETMStateChanged( &r->i, EV_CH_ISLSIP ) )
             {
-                _appendToOPBuffer( r, currentLine, LT_EVENT, "*** ISLSIP Triggered" EOL );
+                _appendRefToOPBuffer( r, currentLine, LT_EVENT, "*** ISLSIP Triggered" );
             }
 
             if ( ETMStateChanged( &r->i, EV_CH_CYCLECOUNT ) )
@@ -613,7 +641,166 @@ static void _dumpBuffer( struct RunTime *r )
     }
 
     /* Submit this constructed buffer for display */
-    SIOsetOutputBuffer( r->sio, r->numLines, r->numLines - 1, &r->opText );
+    SIOsetOutputBuffer( r->sio, r->numLines, r->numLines - 1, &r->opText, false );
+}
+// ====================================================================================================
+static bool _currentFileAndLine( struct RunTime *r, char **file, int32_t *l )
+
+{
+    /* Search backwards from current file and line until we find (a) a source line with a line number and */
+    /* (b) a filename which contains this line. */
+
+    int32_t sl = 0;
+    int32_t i = SIOgetCurrentLineno( r->sio );
+    *file = NULL;
+
+    while ( ( i ) && ( r->opText[i].lt != LT_FILE ) )
+    {
+        if ( ( r->opText[i].lt == LT_SOURCE ) && ( !sl ) )
+        {
+            sl = r->opText[i].line;
+        }
+
+        i--;
+    }
+
+    if ( r->opText[i].lt == LT_FILE )
+    {
+        *file = r->opText[i].buffer;
+    }
+
+    if ( !sl )
+    {
+        /* This was odd, no line number found before filename was. Let's search forward for one */
+        while ( ( i < r->numLines ) && ( r->opText[i].lt != LT_SOURCE ) )
+        {
+            i++;
+        }
+
+        if ( i < r->numLines )
+        {
+            sl = r->opText[i].line;
+        }
+    }
+
+    if ( ( !sl ) || ( !*file ) )
+    {
+        /* We didn't find everything */
+        return false;
+    }
+
+    *l = sl;
+    return true;
+}
+// ====================================================================================================
+static void _openFileCommand( struct RunTime *r, int32_t line, char *fileToOpen )
+
+{
+    /* We now have the filename and line number that we're targetting...go collect this file */
+    if ( r->openFileCL )
+    {
+        return;
+    }
+}
+// ====================================================================================================
+static void _doFiledive( struct RunTime *r )
+
+{
+    char *p;
+    char *filename;
+    int32_t lineNo;
+    FILE *f;
+    int32_t lc = 0;
+    char construct[SCRATCH_STRING_LEN];
+
+    if ( ( r->diving ) || ( !r->numLines ) || ( !r->held ) )
+    {
+        return;
+    }
+
+    /* There should be no file read in at the moment */
+    assert( !r->fileopText );
+    assert( !r->filenumLines );
+
+
+    if ( !_currentFileAndLine( r, &p, &lineNo ) )
+    {
+        SIOalert( r->sio, "Couldn't get filename/line" );
+        return;
+    }
+
+    filename = strdup( p );
+    p = &filename[strlen( filename )];
+
+    /* Roll back to before the '::' to turn this into a filename */
+    while ( ( p != filename ) && ( *p != ':' ) )
+    {
+        p--;
+    }
+
+    if ( ( p == filename ) || ( *( p - 1 ) != ':' ) )
+    {
+        SIOalert( r->sio, "Couldn't decode filename" );
+        free( filename );
+        return;
+    }
+
+    *( p - 1 ) = 0;
+
+    f = fopen( filename, "r" );
+
+    if ( !f )
+    {
+        SIOalert( r->sio, "Couldn't open file" );
+        free( filename );
+        return;
+    }
+
+    while ( !feof( f ) )
+    {
+        if ( !fgets( construct, SCRATCH_STRING_LEN, f ) )
+        {
+            break;
+        }
+
+        lc++;
+        r->fileopText = ( struct line * )realloc( r->fileopText, ( sizeof( struct line ) ) * ( r->filenumLines + 1 ) );
+
+        /* Remove and LF/CR */
+        for ( p = construct; ( ( *p ) && ( *p != '\n' ) && ( *p != '\r' ) ); p++ );
+
+        *p = 0;
+
+        r->fileopText[r->filenumLines].buffer = strdup( construct );
+        r->fileopText[r->filenumLines].lt     = LT_MU_SOURCE;
+        r->fileopText[r->filenumLines].line   = lc;
+        r->fileopText[r->filenumLines].isRef  = false;
+        r->filenumLines++;
+    }
+
+    fclose( f );
+
+    SIOsetOutputBuffer( r->sio, r->filenumLines, lineNo - 1, &r->fileopText, true );
+    r->diving = true;
+    free( filename );
+}
+// ====================================================================================================
+static void _doFilesurface( struct RunTime *r )
+
+{
+    if ( !r->diving )
+    {
+        return;
+    }
+
+    while ( r->filenumLines )
+    {
+        free( r->fileopText[--r->filenumLines].buffer );
+    }
+
+    r->fileopText = NULL;
+    r->diving = false;
+    SIOsetOutputBuffer( r->sio, r->numLines, r->numLines - 1, &r->opText, false );
 }
 // ====================================================================================================
 static void _doSave( struct RunTime *r )
@@ -829,6 +1016,12 @@ int main( int argc, char *argv[] )
                     if ( !_r.held )
                     {
                         _r.wp = _r.rp = 0;
+
+                        if ( _r.diving )
+                        {
+                            _doFilesurface( &_r );
+                        }
+
                         _flushBuffer( &_r );
                     }
 
@@ -838,6 +1031,14 @@ int main( int argc, char *argv[] )
 
                 case SIO_EV_SAVE:
                     _doSave( &_r );
+                    break;
+
+                case SIO_EV_RIGHT:
+                    _doFiledive( &_r );
+                    break;
+
+                case SIO_EV_LEFT:
+                    _doFilesurface( &_r );
                     break;
 
                 case SIO_EV_QUIT:

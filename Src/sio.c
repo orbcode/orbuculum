@@ -99,6 +99,9 @@ struct SIOInstance
 
     int Key;                            /* Latest keypress */
 
+    bool amDiving;                      /* Indicator that we're in a diving buffer */
+    int32_t pushedopTextRline;          /* Buffered cursor position for when we're recovering from diving */
+
     bool held;
     bool forceRefresh;                  /* Force a refresh of everything */
     bool outputtingHelp;                /* Output help window */
@@ -197,6 +200,9 @@ static void _outputHelp( struct SIOInstance *sio )
     wprintw( sio->outputWindow, "       Q: Quit the application" EOL );
     wprintw( sio->outputWindow, "       ?: This help" EOL );
     wprintw( sio->outputWindow, "    0..%d: Move to mark in sample buffer, if its defined" EOL EOL, MAX_TAGS - 1 );
+    wprintw( sio->outputWindow, "      ->: Dive into source file that contains the referenced code" EOL );
+    wprintw( sio->outputWindow, "      <-: Surface from source file that contains the referenced code" EOL );
+    wprintw( sio->outputWindow, " Shift->: Open source file that contains the referenced code in external editor (if defined)" EOL );
     wprintw( sio->outputWindow, "  CTRL-C: Quit the current task or the application" EOL );
     wprintw( sio->outputWindow, "  CTRL-L: Refresh the screen" EOL );
     wprintw( sio->outputWindow, "  CTRL-R: Search backwards, CTRL-R again for next match" EOL );
@@ -275,20 +281,28 @@ static enum SIOEvent _processRegularKeys( struct SIOInstance *sio )
             break;
 
         case 'd': /* ---------------------------- Display Mode ----------------------------------- */
-            sio->displayMode = ( sio->displayMode + 1 ) % DISP_MAX_OPTIONS;
-            op = SIO_EV_CONSUMED;
-            SIOrequestRefresh( sio );
+            if ( !sio->amDiving )
+            {
+                sio->displayMode = ( sio->displayMode + 1 ) % DISP_MAX_OPTIONS;
+                op = SIO_EV_CONSUMED;
+                SIOrequestRefresh( sio );
+            }
+
             break;
 
         case 'm':
         case 'M': /* ---------------------------- Enter Mark ------------------------------------- */
-            sio->enteringMark = !sio->enteringMark;
-            op = SIO_EV_CONSUMED;
+            if ( !sio->amDiving )
+            {
+                sio->enteringMark = !sio->enteringMark;
+                op = SIO_EV_CONSUMED;
+            }
+
             break;
 
         case 's':
         case 'S': /* ---------------------------- Enter save filename ---------------------------- */
-            if ( sio->opTextWline )
+            if ( ( sio->opTextWline ) && ( !sio->amDiving ) )
             {
                 sio->saveFilename = ( char * )realloc( sio->saveFilename, 1 );
                 *sio->saveFilename = 0;
@@ -304,20 +318,27 @@ static enum SIOEvent _processRegularKeys( struct SIOInstance *sio )
             break;
 
         case '0' ... '0'+MAX_TAGS: /* ----------- Tagged Location -------------------------------- */
-            if ( sio->enteringMark )
+            if ( sio->amDiving )
             {
-                sio->tag[sio->Key - '0'] = sio->opTextRline + 1;
-                sio->enteringMark = false;
+                beep();
             }
             else
             {
-                if ( ( sio->tag[sio->Key - '0'] ) && ( sio->tag[sio->Key - '0'] < sio->opTextWline ) )
+                if ( sio->enteringMark )
                 {
-                    sio->opTextRline = sio->tag[sio->Key - '0'] - 1;
+                    sio->tag[sio->Key - '0'] = sio->opTextRline + 1;
+                    sio->enteringMark = false;
                 }
                 else
                 {
-                    beep();
+                    if ( ( sio->tag[sio->Key - '0'] ) && ( sio->tag[sio->Key - '0'] < sio->opTextWline ) )
+                    {
+                        sio->opTextRline = sio->tag[sio->Key - '0'] - 1;
+                    }
+                    else
+                    {
+                        beep();
+                    }
                 }
             }
 
@@ -326,25 +347,21 @@ static enum SIOEvent _processRegularKeys( struct SIOInstance *sio )
 
         case 259: /* ---------------------------- UP --------------------------------------------- */
             _moveCursor( sio, -1 );
-            //            sio->opTextRline = ( sio->opTextRline > 0 ) ? sio->opTextRline - 1 : 0;
             op = SIO_EV_CONSUMED;
             break;
 
         case 398: /* ---------------------------- Shift PgUp ------------------------------------- */
             _moveCursor( sio, -( 10 * OUTPUT_WINDOW_L ) );
-            //sio->opTextRline = ( sio->opTextRline > 10 * OUTPUT_WINDOW_L ) ? ( sio->opTextRline - 10 * OUTPUT_WINDOW_L ) : 0;
             op = SIO_EV_CONSUMED;
             break;
 
         case 339: /* ---------------------------- PREV PAGE -------------------------------------- */
             _moveCursor( sio, -OUTPUT_WINDOW_L );
-            //sio->opTextRline = ( sio->opTextRline > OUTPUT_WINDOW_L ) ? ( sio->opTextRline - OUTPUT_WINDOW_L ) : 0;
             op = SIO_EV_CONSUMED;
             break;
 
         case 338: /* ---------------------------- NEXT PAGE -------------------------------------- */
             _moveCursor( sio, OUTPUT_WINDOW_L );
-            //            sio->opTextRline = ( ( sio->opTextRline + OUTPUT_WINDOW_L ) < sio->opTextWline ) ? ( sio->opTextRline + OUTPUT_WINDOW_L ) : sio->opTextWline - 1;
             op = SIO_EV_CONSUMED;
             break;
 
@@ -364,14 +381,11 @@ static enum SIOEvent _processRegularKeys( struct SIOInstance *sio )
 
         case 258: /* ---------------------------- DOWN ------------------------------------------- */
             _moveCursor( sio, 1 );
-            //            sio->opTextRline = ( sio->opTextRline < ( sio->opTextWline - 1 ) ) ? sio->opTextRline + 1 :
-            //                 sio->opTextRline;
             op = SIO_EV_CONSUMED;
             break;
 
         case 396: /* ---------------------------- With shift for added speeeeeed ----------------- */
             _moveCursor( sio, 10 * OUTPUT_WINDOW_L );
-            //            sio->opTextRline = ( sio->opTextRline + 10 * OUTPUT_WINDOW_L < sio->opTextWline ) ? ( sio->opTextRline + 10 * OUTPUT_WINDOW_L ) : sio->opTextWline - 1;
             op = SIO_EV_CONSUMED;
             break;
 
@@ -546,6 +560,7 @@ static bool _displayLine( struct SIOInstance *sio, int32_t lineNum, int32_t scre
             wattrset( sio->outputWindow, ( highlight ? A_STANDOUT : 0 ) | A_BOLD | COLOR_PAIR( CP_FILEFUNCTION ) );
             break;
 
+        case LT_MU_SOURCE:
         case LT_SOURCE:
             wattrset( sio->outputWindow, ( highlight ? A_STANDOUT : 0 ) | COLOR_PAIR( CP_LINENO ) );
             wprintw( sio->outputWindow, "%5d ", ( *sio->opText )[lineNum].line );
@@ -569,7 +584,10 @@ static bool _displayLine( struct SIOInstance *sio, int32_t lineNum, int32_t scre
     wattr_get( sio->outputWindow, &attr, &pair, NULL );
 
     /* Now output the text of the line */
-    while ( *u )
+    getyx( sio->outputWindow, y, x );
+    ( void )y;
+
+    while ( ( *u ) && ( x < OUTPUT_WINDOW_W ) )
     {
         /* Colour matches if we're in search mode, but whatever is happening, output the characters */
         if ( ( sio->searchMode != SRCH_OFF ) && ( *sio->searchString ) && ( !strncmp( u, ssp, strlen( ssp ) ) ) )
@@ -587,19 +605,19 @@ static bool _displayLine( struct SIOInstance *sio, int32_t lineNum, int32_t scre
             wattr_set( sio->outputWindow, attr, pair, NULL );
         }
 
-        waddch( sio->outputWindow, *u++ );
+        waddch( sio->outputWindow, ( x == OUTPUT_WINDOW_W - 1 ) ? '>' : *u++ );
+
+        /* This is done like this so chars like tabs are accounted for correctly */
+        getyx( sio->outputWindow, y, x );
     }
 
     /* Now pad out the rest of this line with spaces */
-    while ( true )
+    if ( highlight )
     {
-        getyx( sio->outputWindow, y, x );
-        ( void )y;
-        waddch( sio->outputWindow, ' ' );
-
-        if ( x == OUTPUT_WINDOW_W - 1 )
+        while ( x < OUTPUT_WINDOW_W )
         {
-            break;
+            waddch( sio->outputWindow, ' ' );
+            x++;
         }
     }
 
@@ -667,9 +685,17 @@ static void _outputStatus( struct SIOInstance *sio, uint64_t oldintervalBytes )
         mvwprintw( sio->statusWindow, 0, 2, " %d%% (%d/%d) ", ( sio->opTextRline * 100 ) / ( sio->opTextWline - 1 ), sio->opTextRline, sio->opTextWline );
     }
 
-    mvwprintw( sio->statusWindow, 0, 44, " %s ", ( char *[] )
-    {"Mixed", "Source", "Assembly"
-    }[sio->displayMode] );
+    if ( !sio->amDiving )
+    {
+        mvwprintw( sio->statusWindow, 0, 64, " %s ", ( char *[] )
+        {"Mixed", "Source", "Assembly"
+        }[sio->displayMode] );
+    }
+    else
+    {
+        mvwprintw( sio->statusWindow, 0, 30,  " Diving Buffer " );
+    }
+
 
     wattrset( sio->statusWindow, A_BOLD | COLOR_PAIR( CP_BASELINETEXT ) );
 
@@ -703,35 +729,39 @@ static void _outputStatus( struct SIOInstance *sio, uint64_t oldintervalBytes )
         mvwprintw( sio->statusWindow, 0, 30, " " );
     }
 
-    for ( uint32_t t = 0; t < MAX_TAGS; t++ )
+    /* We only output the tags while not in a diving buffer */
+    if ( ! sio->amDiving )
     {
-        if ( sio->tag[t] )
+        for ( uint32_t t = 0; t < MAX_TAGS; t++ )
         {
-            wattrset( sio->statusWindow, A_BOLD | COLOR_PAIR( CP_BASELINETEXT ) );
-
-            if ( ( sio->tag[t] >= ( sio->opTextRline - OUTPUT_WINDOW_L / 2 ) ) &&
-                    ( sio->tag[t] <= ( sio->opTextRline + ( OUTPUT_WINDOW_L + 1 ) / 2 ) ) )
+            if ( sio->tag[t] )
             {
-                /* This tag is on the visible page */
-                wattrset( sio->outputWindow, A_BOLD | COLOR_PAIR( CP_BASELINETEXT ) );
-                mvwprintw( sio->outputWindow, ( OUTPUT_WINDOW_L ) / 2 + sio->tag[t] - sio->opTextRline - 1, OUTPUT_WINDOW_W - 1, "%d", t );
+                wattrset( sio->statusWindow, A_BOLD | COLOR_PAIR( CP_BASELINETEXT ) );
+
+                if ( ( sio->tag[t] >= ( sio->opTextRline - OUTPUT_WINDOW_L / 2 ) ) &&
+                        ( sio->tag[t] <= ( sio->opTextRline + ( OUTPUT_WINDOW_L + 1 ) / 2 ) ) )
+                {
+                    /* This tag is on the visible page */
+                    wattrset( sio->outputWindow, A_BOLD | COLOR_PAIR( CP_BASELINETEXT ) );
+                    mvwprintw( sio->outputWindow, ( OUTPUT_WINDOW_L ) / 2 + sio->tag[t] - sio->opTextRline - 1, OUTPUT_WINDOW_W - 1, "%d", t );
+                }
             }
-        }
-        else
-        {
-            wattrset( sio->statusWindow, A_BOLD | COLOR_PAIR( CP_BASELINE ) );
+            else
+            {
+                wattrset( sio->statusWindow, A_BOLD | COLOR_PAIR( CP_BASELINE ) );
+            }
+
+            if ( !sio->warnTimeout )
+            {
+                /* We only print this if we're not outputting a warning message */
+                wprintw( sio->statusWindow, "%d", t );
+            }
         }
 
         if ( !sio->warnTimeout )
         {
-            /* We only print this if we're not outputting a warning message */
-            wprintw( sio->statusWindow, "%d", t );
+            wprintw( sio->statusWindow, " " );
         }
-    }
-
-    if ( !sio->warnTimeout )
-    {
-        wprintw( sio->statusWindow, " " );
     }
 
     if ( sio->enteringSaveFilename )
@@ -753,7 +783,7 @@ static void _outputStatus( struct SIOInstance *sio, uint64_t oldintervalBytes )
     }
 
     // Uncomment this line to get a track of latest key values
-    // mvwprintw( sio->statusWindow, 1, 40, "Key %d", sio->Key );
+    //mvwprintw( sio->statusWindow, 1, 40, "Key %d", sio->Key );
 }
 // ====================================================================================================
 static void _updateWindows( struct SIOInstance *sio, bool isTick, bool isKey, uint64_t oldintervalBytes )
@@ -858,6 +888,12 @@ const char *SIOgetSaveFilename( struct SIOInstance *sio )
     return sio->saveFilename;
 }
 // ====================================================================================================
+int32_t SIOgetCurrentLineno( struct SIOInstance *sio )
+
+{
+    return sio->opTextRline;
+}
+// ====================================================================================================
 void SIOalert( struct SIOInstance *sio, const char *msg )
 
 {
@@ -867,7 +903,6 @@ void SIOalert( struct SIOInstance *sio, const char *msg )
     SIOrequestRefresh( sio );
 }
 // ====================================================================================================
-
 void SIOterminate( struct SIOInstance *sio )
 
 {
@@ -890,22 +925,37 @@ void SIOrequestRefresh( struct SIOInstance *sio  )
     sio->forceRefresh = true;
 }
 // ====================================================================================================
-void SIOsetOutputBuffer( struct SIOInstance *sio, int32_t numLines, int32_t currentLine, struct line **opTextSet )
+void SIOsetOutputBuffer( struct SIOInstance *sio, int32_t numLines, int32_t currentLine, struct line **opTextSet, bool amDiving )
 
 {
     sio->opText      = opTextSet;
 
+    /* If we're starting diving store the current cursor position, on surfacing restore it */
+    if ( ( !sio->amDiving ) && ( amDiving ) )
+    {
+        sio->pushedopTextRline = sio->opTextRline;
+    }
+
     if ( opTextSet )
     {
         sio->opTextWline = numLines;
-        sio->opTextRline = currentLine;
+
+        if ( ( sio->amDiving ) && ( !amDiving ) )
+        {
+            sio->opTextRline = sio->pushedopTextRline;
+        }
+        else
+        {
+            sio->opTextRline = currentLine;
+        }
     }
     else
     {
         sio->opTextWline = sio->opTextRline = 0;
+        _deleteTags( sio );
     }
 
-    _deleteTags( sio );
+    sio->amDiving    = amDiving;
     SIOrequestRefresh( sio );
 }
 // ====================================================================================================
@@ -952,6 +1002,14 @@ enum SIOEvent SIOHandler( struct SIOInstance *sio, bool isTick, uint64_t oldinte
                 case 'h':
                 case 'H':
                     op = SIO_EV_HOLD;
+                    break;
+
+                case 261:
+                    op = SIO_EV_RIGHT;
+                    break;
+
+                case 260:
+                    op = SIO_EV_LEFT;
                     break;
 
                 case 'q':
