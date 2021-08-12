@@ -587,7 +587,7 @@ static bool _displayLine( struct SIOInstance *sio, int32_t lineNum, int32_t scre
     getyx( sio->outputWindow, y, x );
     ( void )y;
 
-    while ( ( *u ) && ( x < OUTPUT_WINDOW_W ) )
+    while ( ( *u ) && ( *u != '\n' ) && ( *u != '\r' ) && ( x < OUTPUT_WINDOW_W ) )
     {
         /* Colour matches if we're in search mode, but whatever is happening, output the characters */
         if ( ( sio->searchMode != SRCH_OFF ) && ( *sio->searchString ) && ( !strncmp( u, ssp, strlen( ssp ) ) ) )
@@ -783,7 +783,7 @@ static void _outputStatus( struct SIOInstance *sio, uint64_t oldintervalBytes )
     }
 
     // Uncomment this line to get a track of latest key values
-    //mvwprintw( sio->statusWindow, 1, 40, "Key %d", sio->Key );
+    // mvwprintw( sio->statusWindow, 1, 40, "Key %d", sio->Key );
 }
 // ====================================================================================================
 static void _updateWindows( struct SIOInstance *sio, bool isTick, bool isKey, uint64_t oldintervalBytes )
@@ -1005,11 +1005,15 @@ enum SIOEvent SIOHandler( struct SIOInstance *sio, bool isTick, uint64_t oldinte
                     break;
 
                 case 261:
-                    op = SIO_EV_RIGHT;
+                    op = SIO_EV_DIVE;
+                    break;
+
+                case 402:
+                    op = SIO_EV_FOPEN;
                     break;
 
                 case 260:
-                    op = SIO_EV_LEFT;
+                    op = SIO_EV_SURFACE;
                     break;
 
                 case 'q':

@@ -529,7 +529,6 @@ static bool _getTargetProgramInfo( struct SymbolSet *s )
                             sourceEntry->assy = ( struct assyLineEntry * )realloc( sourceEntry->assy, sizeof( struct assyLineEntry ) * ( sourceEntry->assyLines + 1 ) );
                             sourceEntry->assy[sourceEntry->assyLines].addr = sourceEntry->endAddr;
                             sourceEntry->assy[sourceEntry->assyLines].is4Byte = ( ( *p2 ) != 0 );
-
                             sourceEntry->assy[sourceEntry->assyLines].codes = strtoul( p3, NULL, 16 );
 
                             if ( *p2 )
@@ -537,14 +536,16 @@ static bool _getTargetProgramInfo( struct SymbolSet *s )
                                 sourceEntry->assy[sourceEntry->assyLines].codes |= ( strtoul( p2, NULL, 16 ) << 16 );
                             }
 
-                            sourceEntry->assy[sourceEntry->assyLines].lineText = strdup( p4 );
+                            sourceEntry->assy[sourceEntry->assyLines].lineText = strdup( line );
+
+                            /* Just hook the assy pointer to the location in the line where the assembly itself starts */
+                            sourceEntry->assy[sourceEntry->assyLines].assy = strstr( sourceEntry->assy[sourceEntry->assyLines].lineText, p4 );
 
                             /* Record the label is there was one */
                             sourceEntry->assy[sourceEntry->assyLines].label = *label ? strdup( label ) : NULL;
                             GTPIP( "%08x %x [%s]" EOL, sourceEntry->assy[sourceEntry->assyLines].addr, sourceEntry->assy[sourceEntry->assyLines].codes, sourceEntry->assy[sourceEntry->assyLines].lineText );
                             sourceEntry->assyLines++;
                         }
-
 
                         *label = 0;
 

@@ -60,6 +60,7 @@ struct assyLineEntry
     uint32_t addr;                          /* Address of this assembly */
     char *label;                            /* Any associated label */
     char *lineText;                         /* Text of the line */
+    char *assy;                             /* Pointer to the start of the assembly in the lineText above */
     uint32_t codes;                         /* Binary code for the line */
     bool is4Byte;                           /* Indicate if this is a 4 byte entry */
 };
