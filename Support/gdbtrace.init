@@ -123,11 +123,21 @@ end
 # ====================================================================
 
 define startETM
+  set $br_out=0
+  if $argc >= 1
+    set $br_out=$arg0
+  end
+
+  set $stall = 0
+  if $argc >= 2
+    set $stall = $arg1
+  end
+
   # Allow access to device
   set *($ETMBASE+0xfb0) = 0xc5acce55
 
   # Enter configuration mode
-  set *($ETMBASE) |= 0x400
+  set *($ETMBASE) |= (1<<10)
 
   # Set busID 2
   set *($ETMBASE+0x200) = 2
@@ -145,14 +155,16 @@ define startETM
   set *($ETMBASE+0x2c) = 1
 
   # Enable trace
-  set *($ETMBASE) = 0x191e | 0x400
+  set *($ETMBASE) = 0x0800 | ($stall << 7) | ($br_out << 8)
 
   # Essential that this bit is only cleared after everything else is done
-  set *($ETMBASE) &= ~0x400
+  set *($ETMBASE) &= ~(1<<10)
 
 end
 document startETM
-startETM
+startETM <br_out> <stall>
+<br_out>     : 1 = Explicitly report branch events
+<stall>      : 1 = Stall the CPU when trace buffer is full
 end
 
 # ====================================================================
@@ -334,6 +346,7 @@ define enableSTM32SWO
   if $argc >= 1
     set $tgt = $arg0
   end
+
   set $CPU=$CPU_STM32
    _setAddressesSTM32
   if ($tgt==4)

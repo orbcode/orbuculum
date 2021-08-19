@@ -54,11 +54,10 @@
 #include "git_version_info.h"
 #include "generics.h"
 #include "fileWriter.h"
+#include "nw.h"
 
 #include "itmfifos.h"
 
-#define TRANSFER_SIZE       (4096)
-#define SERVER_PORT         (3443)           /* Server port definition */
 
 //#define DUMP_BLOCK
 
@@ -79,7 +78,7 @@ struct
 
 } options =
 {
-    .port = SERVER_PORT,
+    .port = NWCLIENT_SERVER_PORT,
     .server = "localhost"
 };
 

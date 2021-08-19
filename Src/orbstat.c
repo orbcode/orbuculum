@@ -71,13 +71,12 @@
 #include "itmDecoder.h"
 #include "symbols.h"
 #include "msgDecoder.h"
+#include "nw.h"
 
 #define TEXT_SEGMENT ".text"
 #define DEFAULT_TRACE_CHANNEL  30            /* Channel that we expect trace data to arrive on */
 #define DEFAULT_FILE_CHANNEL   29            /* Channel that we expect file data to arrive on */
 
-#define SERVER_PORT 3443                     /* Server port definition */
-#define TRANSFER_SIZE (4096)                 /* Maximum packet we might receive */
 #define TOP_UPDATE_INTERVAL (1000LL)         /* Interval between each on screen update */
 
 /* Interface to/from target */
@@ -141,7 +140,7 @@ struct                                       /* Record for options, either defau
     .forceITMSync = true,
     .tpiuITMChannel = 1,
     .demangle = true,
-    .port = SERVER_PORT,
+    .port = NWCLIENT_SERVER_PORT,
     .server = "localhost",
     .traceChannel = DEFAULT_TRACE_CHANNEL,
     .fileChannel = DEFAULT_FILE_CHANNEL
@@ -893,7 +892,7 @@ int _processOptions( int argc, char *argv[] )
 
                 if ( !options.port )
                 {
-                    options.port = SERVER_PORT;
+                    options.port = NWCLIENT_SERVER_PORT;
                 }
 
                 break;

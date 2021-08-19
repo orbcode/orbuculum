@@ -1,0 +1,4 @@
+source [find interface/stlink.cfg]
+source [find target/stm32f4x.cfg]
+tpiu config internal op.swo uart off 168000000 800000
+itm ports on

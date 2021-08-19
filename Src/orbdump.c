@@ -66,8 +66,8 @@
 #include "tpiuDecoder.h"
 #include "itmDecoder.h"
 
-#define SERVER_PORT 3443                     /* Server port definition */
-#define TRANSFER_SIZE (4096)                 /* Maximum packet we might receive */
+#include "nw.h"
+
 #define MAX_STRING_LENGTH (256)              /* Maximum length that will be output from a fifo for a single event */
 
 #define DEFAULT_OUTFILE "/dev/stdout"
@@ -101,7 +101,7 @@ struct                                      /* Record for options, either defaul
     .tpiuITMChannel = 1,
     .outfile = DEFAULT_OUTFILE,
     .timelen = DEFAULT_TIMELEN,
-    .port = SERVER_PORT,
+    .port = NWCLIENT_SERVER_PORT,
     .server = "localhost"
 };
 

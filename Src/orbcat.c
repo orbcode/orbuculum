@@ -61,16 +61,14 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netdb.h>
-
+#include "nw.h"
 #include "git_version_info.h"
 #include "generics.h"
 #include "tpiuDecoder.h"
 #include "itmDecoder.h"
 #include "msgDecoder.h"
 
-#define SERVER_PORT 3443                  /* Server port definition */
 
-#define TRANSFER_SIZE (4096)
 #define NUM_CHANNELS  32
 #define HW_CHANNEL    (NUM_CHANNELS)      /* Make the hardware fifo on the end of the software ones */
 
@@ -94,7 +92,7 @@ struct
 
     char *file;                                          /* File host connection */
     bool fileTerminate;                                  /* Terminate when file read isn't successful */
-} options = {.forceITMSync = true, .tpiuChannel = 1, .port = SERVER_PORT, .server = "localhost"};
+} options = {.forceITMSync = true, .tpiuChannel = 1, .port = NWCLIENT_SERVER_PORT, .server = "localhost"};
 
 struct
 {
@@ -441,7 +439,7 @@ int _processOptions( int argc, char *argv[] )
 
                 if ( !options.port )
                 {
-                    options.port = SERVER_PORT;
+                    options.port = NWCLIENT_SERVER_PORT;
                 }
 
                 break;

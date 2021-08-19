@@ -605,7 +605,15 @@ static bool _displayLine( struct SIOInstance *sio, int32_t lineNum, int32_t scre
             wattr_set( sio->outputWindow, attr, pair, NULL );
         }
 
-        waddch( sio->outputWindow, ( x == OUTPUT_WINDOW_W - 1 ) ? '>' : *u++ );
+        if ( x == OUTPUT_WINDOW_W - 1 )
+        {
+            waddch( sio->outputWindow, '>' );
+            break;
+        }
+        else
+        {
+            waddch( sio->outputWindow, ( x == OUTPUT_WINDOW_W - 1 ) ? '>' : *u++ );
+        }
 
         /* This is done like this so chars like tabs are accounted for correctly */
         getyx( sio->outputWindow, y, x );

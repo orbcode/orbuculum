@@ -201,7 +201,8 @@ static void _sortLines( struct SymbolSet *s )
 }
 
 // ====================================================================================================
-static bool _find_symbol( struct SymbolSet *s, uint32_t workingAddr, const char **pfilename, const char **pfunction, uint32_t *pline, const char **psource, const struct assyLineEntry **assy,
+static bool _find_symbol( struct SymbolSet *s, uint32_t workingAddr, const char **pfilename, const char **pfunction, uint32_t *pline, uint16_t *linesInBlock, const char **psource,
+                          const struct assyLineEntry **assy,
                           uint32_t *assyLine )
 
 /* Find symbol and return pointers to contents */
@@ -213,9 +214,10 @@ static bool _find_symbol( struct SymbolSet *s, uint32_t workingAddr, const char 
 
     if ( found )
     {
-        *pfunction = s->functions[found->functionIdx].name;
+        *pfunction = ( found->functionIdx != SYM_NOT_FOUND ) ? s->functions[found->functionIdx].name : "";
         *pline = found->lineNo;
-        *pfilename = s->files[found->fileIdx].name;
+        *linesInBlock = found->linesInBlock;
+        *pfilename = ( found->fileIdx != SYM_NOT_FOUND ) ? s->files[found->fileIdx].name : "";
         *psource = found->lineText;
         *assy    = found->assy;
 
@@ -293,6 +295,15 @@ static enum LineType _getLineType( char *sourceLine, char *p1, char *p2, char *p
 
     /* ...otherwise we consider it junk */
     return LT_NOISE;
+}
+// ====================================================================================================
+static bool _getDest( char *assy, uint32_t *dest )
+
+/* Return destination address if this assembly instruction is a precomputed jump */
+/* The jump destination is the second field in the assembly string */
+
+{
+    return ( 1 == sscanf( assy, "%*[^\t]\t%x", dest ) );
 }
 // ====================================================================================================
 static bool _getTargetProgramInfo( struct SymbolSet *s )
@@ -476,6 +487,7 @@ static bool _getTargetProgramInfo( struct SymbolSet *s )
                         break;
 
                     case LT_SOURCE: /* ----------------------------------------------------- */
+                        /* Bundle source lines together, separated by the newlines */
                         existingTextLen = sourceEntry->lineText ? strlen( sourceEntry->lineText ) : 0;
                         sourceEntry->functionIdx = functionEntryIdx;
                         sourceEntry->lineNo = lineNo;
@@ -485,6 +497,7 @@ static bool _getTargetProgramInfo( struct SymbolSet *s )
                         {
                             sourceEntry->lineText = ( char * )realloc( sourceEntry->lineText, strlen( line ) - strlen( SOURCE_INDICATOR ) + existingTextLen + 1 );
                             strcpy( &sourceEntry->lineText[existingTextLen], &line[strlen( SOURCE_INDICATOR )] );
+                            sourceEntry->linesInBlock++;
                             GTPIP( "Got Source [%s]", &line[strlen( SOURCE_INDICATOR )] );
                         }
 
@@ -524,7 +537,8 @@ static bool _getTargetProgramInfo( struct SymbolSet *s )
                         sourceEntry->endAddr = strtoul( p1, NULL, 16 );
                         s->functions[functionEntryIdx].endAddr = sourceEntry->endAddr;
 
-                        if ( s->recordAssy )
+                        /* If we're recording entries and this is not seomthing we explicitly want to ignore */
+                        if ( ( s->recordAssy )  && ( !strstr( p4, ".word" ) ) )
                         {
                             sourceEntry->assy = ( struct assyLineEntry * )realloc( sourceEntry->assy, sizeof( struct assyLineEntry ) * ( sourceEntry->assyLines + 1 ) );
                             sourceEntry->assy[sourceEntry->assyLines].addr = sourceEntry->endAddr;
@@ -537,13 +551,44 @@ static bool _getTargetProgramInfo( struct SymbolSet *s )
                             }
 
                             sourceEntry->assy[sourceEntry->assyLines].lineText = strdup( line );
+                            sourceEntry->assy[sourceEntry->assyLines].isJump = false;
 
                             /* Just hook the assy pointer to the location in the line where the assembly itself starts */
                             sourceEntry->assy[sourceEntry->assyLines].assy = strstr( sourceEntry->assy[sourceEntry->assyLines].lineText, p4 );
 
                             /* Record the label is there was one */
                             sourceEntry->assy[sourceEntry->assyLines].label = *label ? strdup( label ) : NULL;
-                            GTPIP( "%08x %x [%s]" EOL, sourceEntry->assy[sourceEntry->assyLines].addr, sourceEntry->assy[sourceEntry->assyLines].codes, sourceEntry->assy[sourceEntry->assyLines].lineText );
+                            GTPIP( "%08x %x [%s]" EOL, sourceEntry->assy[sourceEntry->assyLines].addr,
+                                   sourceEntry->assy[sourceEntry->assyLines].codes,
+                                   sourceEntry->assy[sourceEntry->assyLines].lineText );
+
+                            /* Finally, if this is a jump that might be taken, then get the jump destination */
+                            /* This is done by checking if the opcode is a valid jump in either 16 or 32 bit world */
+                            if (
+                                        (
+                                                    ( !sourceEntry->assy[sourceEntry->assyLines].is4Byte ) &&
+                                                    ( ( ( sourceEntry->assy[sourceEntry->assyLines].codes & 0xf800 ) == 0xe000 ) || ( sourceEntry->assy[sourceEntry->assyLines].codes & 0xf000 ) == 0xd000 )
+                                        )
+
+                                        || ( ( sourceEntry->assy[sourceEntry->assyLines].codes & 0xf8009000 ) == 0xf0009000 )
+
+                                        || ( ( sourceEntry->assy[sourceEntry->assyLines].codes & 0xf800C001 ) == 0xf000C000 )
+
+                                        // || ((sourceEntry->assy[sourceEntry->assyLines].codes&0xf800D000)==0xf0008000)
+                            )
+                            {
+
+                                if ( _getDest( sourceEntry->assy[sourceEntry->assyLines].assy, &sourceEntry->assy[sourceEntry->assyLines].jumpdest ) )
+                                {
+                                    sourceEntry->assy[sourceEntry->assyLines].isJump = true;
+                                }
+                                else
+                                {
+                                    //      exit(1);
+                                    GTPIP( "Failed to get jump destination for text %s " EOL, sourceEntry->assy[sourceEntry->assyLines].assy );
+                                }
+                            }
+
                             sourceEntry->assyLines++;
                         }
 
@@ -593,6 +638,7 @@ bool SymbolLookup( struct SymbolSet *s, uint32_t addr, struct nameEntry *n, char
     const char *source   = NULL;
     const struct assyLineEntry *assy = NULL;
     uint32_t assyLine;
+    uint16_t linesInBlock;
 
     uint32_t line;
 
@@ -632,7 +678,7 @@ bool SymbolLookup( struct SymbolSet *s, uint32_t addr, struct nameEntry *n, char
         return false;
     }
 
-    if ( _find_symbol( s, addr, &filename, &function, &line, &source, &assy, &assyLine ) )
+    if ( _find_symbol( s, addr, &filename, &function, &line, &linesInBlock, &source, &assy, &assyLine ) )
     {
 
         /* Remove any frontmatter off filename string that matches */
@@ -654,6 +700,7 @@ bool SymbolLookup( struct SymbolSet *s, uint32_t addr, struct nameEntry *n, char
         n->assyLine = assyLine;
         n->addr = addr;
         n->line = line;
+        n->linesInBlock = linesInBlock;
         return true;
     }
 

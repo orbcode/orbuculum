@@ -158,11 +158,13 @@ struct dataBlock
 {
     ssize_t fillLevel;
     uint8_t buffer[TRANSFER_SIZE];
+    struct libusb_transfer *usbtfr;
 };
 
 struct handlers
 {
     uint8_t channel;
+    uint64_t intervalBytes;                                                  /* Number of depacketised bytes output on this channel */
     struct dataBlock *strippedBlock;                                         /* Processed buffer for output to clients */
     struct nwclientsHandle *n;                                               /* Link to the network client subsystem */
 };
@@ -179,7 +181,7 @@ struct RunTime
 
     pthread_t intervalThread;                                                /* Thread reporting on intervals */
     pthread_t processThread;                                                 /* Thread distributing to clients */
-    pthread_mutex_t dataForClients;                                               /* Mutex to release data for clients */
+    sem_t     dataForClients;                                                /* Semaphore counting data for clients */
     bool      ending;                                                        /* Flag indicating app is terminating */
     int f;                                                                   /* File handle to data source */
 
@@ -538,6 +540,7 @@ void *_checkInterval( void *params )
 {
     struct RunTime *r = ( struct RunTime * )params;
     uint64_t snapInterval;
+    struct handlers *h;
 
     while ( !r->ending )
     {
@@ -545,7 +548,6 @@ void *_checkInterval( void *params )
 
         /* Grab the interval and scale to 1 second */
         snapInterval = r->intervalBytes * 1000 / r->options->intervalReportTime;
-        r->intervalBytes = 0;
 
         snapInterval *= 8;
         genericsPrintf( C_PREV_LN C_CLR_LN C_DATA );
@@ -562,6 +564,26 @@ void *_checkInterval( void *params )
         {
             genericsPrintf( "  %4d " C_RESET " Bits/sec ", snapInterval );
         }
+
+        h = r->handler;
+        uint64_t totalDat = 0;
+
+        if ( ( r->intervalBytes ) && ( r->options->useTPIU ) )
+        {
+            for ( int chIndex = 0; chIndex < r->numHandlers; chIndex++ )
+            {
+                genericsPrintf( " %d:%3d%% ",  h->channel, ( h->intervalBytes * 100 ) / r->intervalBytes );
+                totalDat += h->intervalBytes;
+                /* TODO: This needs a mutex */
+                h->intervalBytes = 0;
+
+                h++;
+            }
+
+            genericsPrintf( " Waste:%3d%% ",  100 - ( ( totalDat * 100 ) / r->intervalBytes ) );
+        }
+
+        r->intervalBytes = 0;
 
         if ( r->options->dataSpeed > 100 )
         {
@@ -607,19 +629,19 @@ static void _purgeBlock( struct RunTime *r )
             if ( h->strippedBlock->fillLevel )
             {
                 nwclientSend( h->n, h->strippedBlock->fillLevel, h->strippedBlock->buffer );
+                h->intervalBytes += h->strippedBlock->fillLevel;
                 h->strippedBlock->fillLevel = 0;
-                h++;
             }
+
+            h++;
         }
     }
 }
 // ====================================================================================================
-static void _stripTPIU( struct RunTime *r )
+static void _stripTPIU( struct RunTime *r, uint8_t *c, int bytes )
 
 {
     struct TPIUPacket p;
-    uint8_t *c = ( uint8_t * )r->rawBlock[r->rp].buffer;
-    ssize_t bytes = r->rawBlock[r->rp].fillLevel;
 
     struct handlers *h = NULL;
     int cachedChannel;
@@ -691,53 +713,79 @@ static void *_processBlocks( void *params )
 
     while ( !r->ending )
     {
-        while ( r->wp == r->rp )
-        {
-            pthread_mutex_lock( &r->dataForClients );
-        }
+        sem_wait( &r->dataForClients );
 
-        genericsReport( V_DEBUG, "RXED Packet of %d bytes" EOL, r->rawBlock[r->rp].fillLevel );
-
-        if ( r->rawBlock[r->rp].fillLevel )
+        if ( r->rp != r->wp )
         {
-            /* Account for this reception */
-            r->intervalBytes += r->rawBlock[r->rp].fillLevel;
+            genericsReport( V_DEBUG, "RXED Packet of %d bytes" EOL, r->rawBlock[r->rp].fillLevel );
+
+            if ( r->rawBlock[r->rp].fillLevel )
+            {
+                /* Account for this reception */
+                r->intervalBytes += r->rawBlock[r->rp].fillLevel;
 
 #ifdef DUMP_BLOCK
-            uint8_t *c = r->rawBlock[r->rp].buffer;
-            uint32_t y = r->rawBlock[r->rp].fillLevel;
+                uint8_t *c = r->rawBlock[r->rp].buffer;
+                uint32_t y = r->rawBlock[r->rp].fillLevel;
 
-            fprintf( stderr, EOL );
+                fprintf( stderr, EOL );
 
-            while ( y-- )
-            {
-                fprintf( stderr, "%02X ", *c++ );
-
-                if ( !( y % 16 ) )
+                while ( y-- )
                 {
-                    fprintf( stderr, EOL );
+                    fprintf( stderr, "%02X ", *c++ );
+
+                    if ( !( y % 16 ) )
+                    {
+                        fprintf( stderr, EOL );
+                    }
                 }
-            }
 
 #endif
 
-            if ( r-> options->useTPIU )
-            {
-                /* Strip the TPIU framing from this input */
-                _stripTPIU( r );
-                _purgeBlock( r );
+                if ( r-> options->useTPIU )
+                {
+                    /* Strip the TPIU framing from this input */
+                    _stripTPIU( r, r->rawBlock[r->rp].buffer, r->rawBlock[r->rp].fillLevel );
+                    _purgeBlock( r );
+                }
+                else
+                {
+                    /* Do it the old fashioned way and send out the unfettered block */
+                    nwclientSend( _r.n, r->rawBlock[r->rp].fillLevel, r->rawBlock[r->rp].buffer );
+                }
             }
-            else
-            {
-                /* Do it the old fashioned way and send out the unfettered block */
-                nwclientSend( _r.n, r->rawBlock[r->rp].fillLevel, r->rawBlock[r->rp].buffer );
-            }
-        }
 
-        r->rp = ( r->rp + 1 ) % NUM_RAW_BLOCKS;
+            r->rp = ( r->rp + 1 ) % NUM_RAW_BLOCKS;
+        }
     }
 
     return NULL;
+}
+
+// ====================================================================================================
+static void _usb_callback( struct libusb_transfer *t )
+
+/* For the USB case the ringbuffer isn't used .. packets are sent directly from this callback */
+
+{
+    if ( t->status == LIBUSB_TRANSFER_COMPLETED )
+    {
+        _r.intervalBytes += t->actual_length;
+
+        if ( _r.options->useTPIU )
+        {
+            /* Strip the TPIU framing from this input */
+            _stripTPIU( &_r, t->buffer, t->actual_length );
+            _purgeBlock( &_r );
+        }
+        else
+        {
+            /* Do it the old fashioned way and send out the unfettered block */
+            nwclientSend( _r.n, t->actual_length, t->buffer );
+        }
+    }
+
+    libusb_submit_transfer( t );
 }
 // ====================================================================================================
 int usbFeeder( struct RunTime *r )
@@ -858,19 +906,24 @@ int usbFeeder( struct RunTime *r )
 
         genericsReport( V_DEBUG, "USB Interface claimed, ready for data" EOL );
 
+        for ( uint32_t t = 0; t < NUM_RAW_BLOCKS; t++ )
+        {
+            r->rawBlock[t].usbtfr = libusb_alloc_transfer( 0 );
+
+            libusb_fill_bulk_transfer ( r->rawBlock[t].usbtfr, handle, ep,
+                                        r->rawBlock[t].buffer,
+                                        TRANSFER_SIZE,
+                                        _usb_callback,
+                                        &r->rawBlock[t].usbtfr,
+                                        1000 + 100 * t
+                                      );
+
+            libusb_submit_transfer( r->rawBlock[t].usbtfr );
+        }
+
         while ( !r->ending )
         {
-            struct dataBlock *rxBlock = &r->rawBlock[r->wp];
-            int32_t ret = libusb_bulk_transfer( handle, ep, rxBlock->buffer, TRANSFER_SIZE, ( int * )&rxBlock->fillLevel, 10 );
-
-            if ( ( ret < 0 ) && ( ret != LIBUSB_ERROR_TIMEOUT ) )
-            {
-                genericsReport( V_INFO, "USB data collection failed with error %d" EOL, ret );
-                break;
-            }
-
-            r->wp = ( r->wp + 1 ) % NUM_RAW_BLOCKS;
-            pthread_mutex_unlock( &r->dataForClients );
+            libusb_handle_events_completed( NULL, ( int * )&r->ending );
         }
 
         libusb_close( handle );
@@ -937,7 +990,7 @@ int seggerFeeder( struct RunTime *r )
             }
 
             r->wp = ( r->wp + 1 ) % NUM_RAW_BLOCKS;
-            pthread_mutex_unlock( &r->dataForClients );
+            sem_post( &r->dataForClients );
         }
 
         close( r->f );
@@ -1003,7 +1056,7 @@ int serialFeeder( struct RunTime *r )
             }
 
             r->wp = ( r->wp + 1 ) % NUM_RAW_BLOCKS;
-            pthread_mutex_unlock( &r->dataForClients );
+            sem_post( &r->dataForClients );
         }
 
         if ( ! r->ending )
@@ -1078,7 +1131,7 @@ int serialFpgaFeeder( struct RunTime *r )
             }
 
             r->wp = ( r->wp + 1 ) % NUM_RAW_BLOCKS;
-            pthread_mutex_unlock( &r->dataForClients );
+            sem_post( &r->dataForClients );
         }
 
         if ( !r->ending )
@@ -1121,6 +1174,7 @@ int fileFeeder( struct RunTime *r )
         }
 
         r->wp = ( r->wp + 1 ) % NUM_RAW_BLOCKS;
+        sem_post( &r->dataForClients );
     }
 
     if ( !r->options->fileTerminate )
@@ -1147,6 +1201,7 @@ int main( int argc, char *argv[] )
 {
     /* Setup TPIU in case we call it into service later */
     TPIUDecoderInit( &_r.t );
+    sem_init( &_r.dataForClients, 0, 0 );
 
     if ( !_processOptions( argc, argv, &_r ) )
     {

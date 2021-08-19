@@ -1,6 +1,6 @@
 /*
- * Network Server support
- * ======================
+ * Network support
+ * ===============
  *
  * Copyright (C) 2017, 2019  Dave Marples  <dave@marples.net>
  * All rights reserved.
@@ -31,8 +31,8 @@
  * SUCH DAMAGE.
  */
 
-#ifndef _NW_CLIENT_
-#define _NW_CLIENT_
+#ifndef _NW_
+#define _NW_
 
 #include "generics.h"
 
@@ -40,21 +40,13 @@
 extern "C" {
 #endif
 
-#include <semaphore.h>
-#include "nw.h"
 // ====================================================================================================
 
-struct nwclientsHandle;
+#define NWCLIENT_SERVER_PORT (3443)           /* Server port definition */
+#define TRANSFER_SIZE (65536)
 
 // ====================================================================================================
 
-void nwclientSend( struct nwclientsHandle *h, uint32_t len, uint8_t *buffer );
-
-void nwclientShutdown( struct nwclientsHandle *h );
-bool nwclientShutdownComplete( struct nwclientsHandle *h );
-struct nwclientsHandle *nwclientStart( int port );
-
-// ====================================================================================================
 #ifdef __cplusplus
 }
 #endif

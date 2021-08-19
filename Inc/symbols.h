@@ -63,6 +63,8 @@ struct assyLineEntry
     char *assy;                             /* Pointer to the start of the assembly in the lineText above */
     uint32_t codes;                         /* Binary code for the line */
     bool is4Byte;                           /* Indicate if this is a 4 byte entry */
+    bool isJump;                            /* This is a potential jump */
+    uint32_t jumpdest;                      /* If this is an absolute jump, the destination */
 };
 
 
@@ -88,6 +90,7 @@ struct sourceLineEntry
     uint32_t endAddr;                       /* End of this line in memory */
     uint32_t lineNo;                        /* Line number in source file */
     char *lineText;                         /* All source text relating to this memory range */
+    uint16_t linesInBlock;                  /* How many lines in the source file correspond to this line? */
     uint32_t assyLines;                     /* Number of lines of assembly for this memory range */
     struct assyLineEntry *assy;             /* Assembly entries for this memory range */
 
@@ -124,6 +127,7 @@ struct nameEntry
     const char *filename;                /* Filename containing the address */
     const char *function;                /* Function containing the address */
     uint32_t line;                       /* Source line containing the address */
+    uint16_t linesInBlock;               /* Number of lines in this text block */
     const char *source;                  /* Corresponding source text */
     const struct assyLineEntry *assy;    /* Corresponding assembly text */
     uint32_t assyLine;                   /* Line of assembly text */

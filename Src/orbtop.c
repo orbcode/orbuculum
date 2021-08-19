@@ -69,10 +69,9 @@
 #include "itmDecoder.h"
 #include "symbols.h"
 #include "msgSeq.h"
+#include "nw.h"
 
 #define CUTOFF              (10)             /* Default cutoff at 0.1% */
-#define SERVER_PORT         (3443)           /* Server port definition */
-#define TRANSFER_SIZE       (4096)           /* Maximum packet we might receive */
 #define TOP_UPDATE_INTERVAL (1000)           /* Interval between each on screen update */
 
 #define MAX_EXCEPTIONS      (512)            /* Maximum number of exceptions to be considered */
@@ -152,7 +151,7 @@ struct                                       /* Record for options, either defau
     .maxRoutines = 8,
     .demangle = true,
     .displayInterval = TOP_UPDATE_INTERVAL,
-    .port = SERVER_PORT,
+    .port = NWCLIENT_SERVER_PORT,
     .server = "localhost"
 };
 
@@ -1064,7 +1063,7 @@ int _processOptions( int argc, char *argv[] )
 
                 if ( !options.port )
                 {
-                    options.port = SERVER_PORT;
+                    options.port = NWCLIENT_SERVER_PORT;
                 }
 
                 break;

@@ -55,13 +55,12 @@
 
 #include "git_version_info.h"
 #include "generics.h"
+#include "nw.h"
 
 #include "etmDecoder.h"
 #include "symbols.h"
 #include "sio.h"
 
-#define TRANSFER_SIZE       (65536)
-#define REMOTE_ETM_PORT     (3443)            /* Server port definition */
 #define REMOTE_SERVER       "localhost"
 
 #define SCRATCH_STRING_LEN  (65535)            /* Max length for a string under construction */
@@ -91,9 +90,11 @@ struct Options
     int port;                           /* Source information */
     char *server;
     bool altAddr;                       /* Should alternate addressing be used? */
+    char *openFileCL;                   /* Command line for opening refernced file */
+
 } _options =
 {
-    .port = REMOTE_ETM_PORT,
+    .port = NWCLIENT_SERVER_PORT,
     .server = REMOTE_SERVER,
     .demangle = true,
     .channel = 2,
@@ -135,12 +136,17 @@ struct RunTime
     struct dataBlock rawBlock;          /* Datablock received from distribution */
 
     struct Options *options;            /* Our runtime configuration */
-
-    const char openFileCL;              /* Command line for opening refernced file */
 } _r =
 {
     .options = &_options
 };
+
+/* For opening the editor (Shift-Right-Arrow) the following command lines work for a few editors;
+ *
+ * emacs; -c "emacs +%l %f"
+ * codium: -c "codium  -g %f:%l"
+ * eclipse: -c "eclipse %f:%l"
+ */
 
 // ====================================================================================================
 // ====================================================================================================
@@ -165,6 +171,7 @@ static void _printHelp( struct RunTime *r )
     genericsPrintf( "Usage: %s [options]" EOL, r->progName );
     genericsPrintf( "       -a: Use alternate address encoding" EOL );
     genericsPrintf( "       -b: <Length> Length of post-mortem buffer, in KBytes (Default %d KBytes)" EOL, DEFAULT_PM_BUFLEN_K );
+    genericsPrintf( "       -c: <command> Command line for external editor (%f = filename, %l = line)" EOL );
     genericsPrintf( "       -D: Switch off C++ symbol demangling" EOL );
     genericsPrintf( "       -d: <String> Material to delete off front of filenames" EOL );
     genericsPrintf( "       -e: <ElfFile> to use for symbols and source" EOL );
@@ -183,7 +190,7 @@ static int _processOptions( int argc, char *argv[], struct RunTime *r )
 {
     int c;
 
-    while ( ( c = getopt ( argc, argv, "ab:Dd:Ee:f:hO:s:v:" ) ) != -1 )
+    while ( ( c = getopt ( argc, argv, "ab:c:Dd:Ee:f:hO:s:v:" ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -194,6 +201,11 @@ static int _processOptions( int argc, char *argv[], struct RunTime *r )
             // ------------------------------------
             case 'b':
                 r->options->buflen = atoi( optarg ) * 1024;
+                break;
+
+            // ------------------------------------
+            case 'c':
+                r->options->openFileCL = optarg;
                 break;
 
             // ------------------------------------
@@ -255,7 +267,7 @@ static int _processOptions( int argc, char *argv[], struct RunTime *r )
 
                 if ( !r->options->port )
                 {
-                    r->options->port = REMOTE_ETM_PORT;
+                    r->options->port = NWCLIENT_SERVER_PORT;
                 }
 
                 break;
@@ -560,80 +572,71 @@ static void _dumpBuffer( struct RunTime *r )
                         currentFunction = n.function;
                     }
 
-                    if ( n.line != currentLine )
+                    if ( n.line != currentLine - 1 )
                     {
                         const char *v = n.source;
-                        currentLine = n.line;
+                        currentLine = n.line - n.linesInBlock + 1;
                         *construct = 0;
-                        uint32_t lp = 0;
-                        uint32_t sline = 0;
 
                         while ( *v )
                         {
-                            while ( *v )
+                            /* In buffer output NL/CR are treated as end of string, so this is safe */
+                            /* with these buffers that can span multiple lines. Split into separate ones. */
+                            _appendRefToOPBuffer( r, currentLine++, LT_SOURCE, v );
+
+                            /* Move to the CR/NL or EOL on this line */
+                            while ( ( *v ) && ( *v != '\r' ) && ( *v != '\n' ) )
                             {
-                                /* Source can cover multiple lines, split into separate ones */
-                                if ( ( *v != '\r' ) && ( *v != '\n' ) )
+                                v++;
+                            }
+
+                            if ( *v )
+                            {
+                                /* Found end of string or NL/CR...move past those */
+                                if ( ( ( *v == '\r' ) && ( *( v + 1 ) == '\n' ) ) ||
+                                        ( ( *v == '\n' ) && ( *( v + 1 ) == '\r' ) )
+                                   )
                                 {
-                                    construct[lp++] = *v++;
+                                    v += 2;
                                 }
                                 else
                                 {
-                                    construct[lp++] = 0;
-                                    _appendToOPBuffer( r, currentLine + sline, LT_SOURCE, construct );
-
-                                    *construct = 0;
-                                    lp = 0;
-
-                                    /* Move past the CR/LF */
-                                    while ( ( *v == '\r' ) || ( *v == '\n' ) )
-                                    {
-                                        v++;
-                                    }
-
-                                    sline++;
-                                    break;
+                                    v++;
                                 }
                             }
+
                         }
                     }
 
                     if ( n.assyLine != ASSY_NOT_FOUND )
                     {
-                        if ( n.assy[n.assyLine].label )
+                        _appendRefToOPBuffer( r, currentLine, ( disposition & 1 ) ? LT_ASSEMBLY : LT_NASSEMBLY, n.assy[n.assyLine].lineText );
+
+                        if ( n.assy[n.assyLine].isJump )
                         {
-                            _appendToOPBuffer( r, currentLine, LT_LABEL, "\t%s:" EOL, n.assy[n.assyLine].label );
-                        }
-
-
-
-                        if ( n.assy[n.assyLine].is4Byte )
-                        {
-                            _appendToOPBuffer( r, currentLine, ( disposition & 1 ) ? LT_ASSEMBLY : LT_NASSEMBLY, "\t\t%08x:\t%04x %04x\t%s"  EOL,
-                                               n.assy[n.assyLine].addr,
-                                               ( n.assy[n.assyLine].codes >> 16 ) & 0xffff,
-                                               n.assy[n.assyLine].codes & 0xffff,
-                                               n.assy[n.assyLine].lineText );
-                            workingAddr += 4;
+                            if ( disposition & 1 )
+                            {
+                                /* This is a fixed jump that _was_ taken, so update working address */
+                                workingAddr = n.assy[n.assyLine].jumpdest;
+                            }
                         }
                         else
                         {
-                            _appendToOPBuffer( r, currentLine, ( disposition & 1 ) ? LT_ASSEMBLY : LT_NASSEMBLY, "\t\t%08x:\t%04x     \t%s" EOL,
-                                               n.assy[n.assyLine].addr,
-                                               n.assy[n.assyLine].codes & 0xffff,
-                                               n.assy[n.assyLine].lineText );
-                            workingAddr += 2;
+                            workingAddr += ( n.assy[n.assyLine].is4Byte ) ? 4 : 2;
                         }
-
                     }
                     else
                     {
-                        _appendToOPBuffer( r, currentLine, LT_ASSEMBLY, "\t\tASSEMBLY NOT FOUND" EOL );
+                        _appendRefToOPBuffer( r, currentLine, LT_ASSEMBLY, "\t\tASSEMBLY NOT FOUND" EOL );
                         workingAddr += 2;
                     }
-
-                    disposition >>= 1;
                 }
+                else
+                {
+                    workingAddr += 2;
+                }
+
+                disposition >>= 1;
             }
         }
 
@@ -643,6 +646,103 @@ static void _dumpBuffer( struct RunTime *r )
     /* Submit this constructed buffer for display */
     SIOsetOutputBuffer( r->sio, r->numLines, r->numLines - 1, &r->opText, false );
 }
+// ====================================================================================================
+#if 0
+/* This is just patched out to avoid unused function warnings */
+
+static void _dumpRange( struct RunTime *r, uint32_t workingAddr, uint32_t endAddr )
+
+/* Dump address range to screen - used for debugging the symbol subsystem */
+
+{
+    const char *currentFilename = NULL;
+    const char *currentFunction = NULL;
+    uint32_t currentLine = 0;
+    struct nameEntry n;
+    char construct[SCRATCH_STRING_LEN];
+
+    if ( !SymbolSetValid( &r->s, r->options->elffile ) )
+    {
+        if ( !( r->s = SymbolSetCreate( r->options->elffile, r->options->objdump, r->options->demangle, true, true ) ) )
+        {
+            genericsReport( V_ERROR, "Elf file or symbols in it not found" EOL );
+            return;
+        }
+        else
+        {
+            genericsReport( V_DEBUG, "Loaded %s" EOL, r->options->elffile );
+        }
+    }
+
+    _flushBuffer( r );
+
+    while ( workingAddr < endAddr )
+    {
+        if ( SymbolLookup( r->s, workingAddr, &n, r->options->deleteMaterial ) )
+        {
+            if ( ( n.filename != currentFilename ) || ( n.function != currentFunction ) )
+            {
+                _appendToOPBuffer( r, currentLine, LT_FILE, "%s::%s" EOL, n.filename, n.function );
+                currentFilename = n.filename;
+                currentFunction = n.function;
+            }
+
+            if ( n.line != currentLine - 1 )
+            {
+                const char *v = n.source;
+                currentLine = n.line - n.linesInBlock + 1;
+                *construct = 0;
+
+                while ( *v )
+                {
+                    /* In buffer output NL/CR are treated as end of string, so this is safe */
+                    /* with these buffers that can span multiple lines. Split into separate ones. */
+                    _appendRefToOPBuffer( r, currentLine++, LT_SOURCE, v );
+
+                    /* Move to the CR/NL or EOL on this line */
+                    while ( ( *v ) && ( *v != '\r' ) && ( *v != '\n' ) )
+                    {
+                        v++;
+                    }
+
+                    if ( *v )
+                    {
+                        /* Found end of string or NL/CR...move past those */
+                        if ( ( ( *v == '\r' ) && ( *( v + 1 ) == '\n' ) ) ||
+                                ( ( *v == '\n' ) && ( *( v + 1 ) == '\r' ) )
+                           )
+                        {
+                            v += 2;
+                        }
+                        else
+                        {
+                            v++;
+                        }
+                    }
+                }
+            }
+
+            if ( n.assyLine != ASSY_NOT_FOUND )
+            {
+                _appendRefToOPBuffer( r, currentLine, LT_ASSEMBLY, n.assy[n.assyLine].lineText );
+                workingAddr += ( n.assy[n.assyLine].is4Byte ) ? 4 : 2;
+            }
+            else
+            {
+                workingAddr += 2;
+            }
+        }
+        else
+        {
+            _appendToOPBuffer( r, currentLine, LT_FILE, "%08x No symbol found" EOL, workingAddr );
+            workingAddr += 2;
+        }
+    }
+
+    /* Submit this constructed buffer for display */
+    SIOsetOutputBuffer( r->sio, r->numLines, r->numLines - 1, &r->opText, false );
+}
+#endif
 // ====================================================================================================
 static bool _currentFileAndLine( struct RunTime *r, char **file, int32_t *l )
 
@@ -696,21 +796,97 @@ static bool _currentFileAndLine( struct RunTime *r, char **file, int32_t *l )
 static void _openFileCommand( struct RunTime *r, int32_t line, char *fileToOpen )
 
 {
+    char construct[SCRATCH_STRING_LEN];
+    char *a = r->options->openFileCL;
+    char *b = construct;
+
     /* We now have the filename and line number that we're targetting...go collect this file */
-    if ( r->openFileCL )
+
+    while ( *a )
     {
-        return;
+        if ( *a != '%' )
+        {
+            *b++ = *a++;
+        }
+        else
+        {
+            a++;
+
+            if ( *a == 'f' )
+            {
+                a++;
+                b += snprintf( b, SCRATCH_STRING_LEN - ( b - construct ), "%s", fileToOpen );
+            }
+            else if ( *a == 'l' )
+            {
+                a++;
+                b += snprintf( b, SCRATCH_STRING_LEN - ( b - construct ), "%d", line );
+            }
+            else
+            {
+                *b++ = *a++;
+            }
+        }
     }
+
+    *b++ = ' ';
+    *b++ = '&';
+    *b++ = 0;
+
+    /* Now detach from controlling terminal and send the message */
+    system( construct );
 }
 // ====================================================================================================
-static void _doFiledive( struct RunTime *r )
+static void _openFileBuffer( struct RunTime *r, int32_t line, char *fileToOpen )
+
+{
+    FILE *f;
+    char construct[SCRATCH_STRING_LEN];
+    char *p;
+    int32_t lc = 0;
+
+    f = fopen( fileToOpen, "r" );
+
+    if ( !f )
+    {
+        SIOalert( r->sio, "Couldn't open file" );
+        return;
+    }
+
+    while ( !feof( f ) )
+    {
+        if ( !fgets( construct, SCRATCH_STRING_LEN, f ) )
+        {
+            break;
+        }
+
+        lc++;
+        r->fileopText = ( struct line * )realloc( r->fileopText, ( sizeof( struct line ) ) * ( r->filenumLines + 1 ) );
+
+        /* Remove and LF/CR */
+        for ( p = construct; ( ( *p ) && ( *p != '\n' ) && ( *p != '\r' ) ); p++ );
+
+        *p = 0;
+
+        r->fileopText[r->filenumLines].buffer = strdup( construct );
+        r->fileopText[r->filenumLines].lt     = LT_MU_SOURCE;
+        r->fileopText[r->filenumLines].line   = lc;
+        r->fileopText[r->filenumLines].isRef  = false;
+        r->filenumLines++;
+    }
+
+    fclose( f );
+
+    SIOsetOutputBuffer( r->sio, r->filenumLines, line - 1, &r->fileopText, true );
+    r->diving = true;
+}
+// ====================================================================================================
+static void _doFileOpen( struct RunTime *r, bool isDive )
 
 {
     char *p;
     char *filename;
     int32_t lineNo;
-    FILE *f;
-    int32_t lc = 0;
     char construct[SCRATCH_STRING_LEN];
 
     if ( ( r->diving ) || ( !r->numLines ) || ( !r->held ) )
@@ -747,41 +923,18 @@ static void _doFiledive( struct RunTime *r )
 
     *( p - 1 ) = 0;
 
-    f = fopen( filename, "r" );
+    /* Now create filename including stripped material if need be */
+    snprintf( construct, SCRATCH_STRING_LEN, "%s%s", r->options->deleteMaterial ? r->options->deleteMaterial : "", filename );
 
-    if ( !f )
+    if ( isDive )
     {
-        SIOalert( r->sio, "Couldn't open file" );
-        free( filename );
-        return;
+        _openFileBuffer( r, lineNo, construct );
+    }
+    else
+    {
+        _openFileCommand( r, lineNo, construct );
     }
 
-    while ( !feof( f ) )
-    {
-        if ( !fgets( construct, SCRATCH_STRING_LEN, f ) )
-        {
-            break;
-        }
-
-        lc++;
-        r->fileopText = ( struct line * )realloc( r->fileopText, ( sizeof( struct line ) ) * ( r->filenumLines + 1 ) );
-
-        /* Remove and LF/CR */
-        for ( p = construct; ( ( *p ) && ( *p != '\n' ) && ( *p != '\r' ) ); p++ );
-
-        *p = 0;
-
-        r->fileopText[r->filenumLines].buffer = strdup( construct );
-        r->fileopText[r->filenumLines].lt     = LT_MU_SOURCE;
-        r->fileopText[r->filenumLines].line   = lc;
-        r->fileopText[r->filenumLines].isRef  = false;
-        r->filenumLines++;
-    }
-
-    fclose( f );
-
-    SIOsetOutputBuffer( r->sio, r->filenumLines, lineNo - 1, &r->fileopText, true );
-    r->diving = true;
     free( filename );
 }
 // ====================================================================================================
@@ -967,6 +1120,9 @@ int main( int argc, char *argv[] )
             }
         }
 
+        //        _dumpRange( &_r, 0x08009bec, 0x0800a000 );
+        //        _r.held = true;
+
         FD_ZERO( &readfds );
 
         /* ----------------------------------------------------------------------------- */
@@ -1033,11 +1189,19 @@ int main( int argc, char *argv[] )
                     _doSave( &_r );
                     break;
 
-                case SIO_EV_RIGHT:
-                    _doFiledive( &_r );
+                case SIO_EV_DIVE:
+                    _doFileOpen( &_r, true );
                     break;
 
-                case SIO_EV_LEFT:
+                case SIO_EV_FOPEN:
+                    if ( _r.options->openFileCL )
+                    {
+                        _doFileOpen( &_r, false );
+                    }
+
+                    break;
+
+                case SIO_EV_SURFACE:
                     _doFilesurface( &_r );
                     break;
 
