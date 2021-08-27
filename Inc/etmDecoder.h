@@ -41,23 +41,6 @@
 extern "C" {
 #endif
 
-/* The different packet types that can be identified */
-enum ETMDecoderPacketType
-
-{
-    ETM_PT_NONE
-};
-
-/* Events from the process of pumping bytes through the ETM decoder */
-enum ETMDecoderPumpEvent
-{
-    ETM_EV_NONE,
-    ETM_EV_UNSYNCED,
-    ETM_EV_SYNCED,
-    ETM_EV_ERROR,
-    ETM_EV_MSG_RXED
-};
-
 /* Internal states of the protocol machine */
 enum ETMprotoState
 {
@@ -189,6 +172,8 @@ struct ETMDecoder
 };
 
 // ====================================================================================================
+typedef void ( *etmDecodeCB )( void *d );
+
 void ETMDecoderForceSync( struct ETMDecoder *i, bool isSynced );
 void ETMDecoderZeroStats( struct ETMDecoder *i );
 bool ETMDecoderIsSynced( struct ETMDecoder *i );
@@ -206,7 +191,8 @@ inline bool ETMStateChanged( struct ETMDecoder *i, enum ETMchanges c )
 struct ETMDecoderStats *ETMDecoderGetStats( struct ETMDecoder *i );
 
 void ETMDecodeUsingAltAddrEncode( struct ETMDecoder *i, bool usingAltAddrEncodeSet );
-enum ETMDecoderPumpEvent ETMDecoderPump( struct ETMDecoder *i, uint8_t c );
+
+void ETMDecoderPump( struct ETMDecoder *i, uint8_t *buf, int len, etmDecodeCB cb, void *d );
 
 void ETMDecoderInit( struct ETMDecoder *i, bool usingAltAddrEncodeSet );
 // ====================================================================================================

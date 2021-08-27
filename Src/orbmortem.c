@@ -84,9 +84,9 @@ struct Options
     char *elffile;                      /* File to use for symbols etc. */
     char *objdump;                      /* Novel Objdump file */
 
-    uint32_t buflen;                    /* Length of post-mortem buffer, in bytes */
+    int buflen;                         /* Length of post-mortem buffer, in bytes */
     bool useTPIU;                       /* Are we using TPIU, and stripping TPIU frames? */
-    uint8_t channel;                    /* When TPIU is in use, which channel to decode? */
+    int channel;                        /* When TPIU is in use, which channel to decode? */
     int port;                           /* Source information */
     char *server;
     bool altAddr;                       /* Should alternate addressing be used? */
@@ -101,11 +101,22 @@ struct Options
     .buflen = DEFAULT_PM_BUFLEN_K * 1024
 };
 
+/* A block of received data */
 struct dataBlock
 {
     ssize_t fillLevel;
     uint8_t buffer[TRANSFER_SIZE];
 };
+
+/* Materials required to be maintained across callbacks for output construction */
+struct opConstruct
+{
+    const char *currentFilename;         /* The filename we're currently in */
+    const char *currentFunction;         /* The function we're currently in */
+    uint32_t currentLine;                /* The line we're currently in */
+    uint32_t workingAddr;                /* The address we're currently in */
+};
+
 
 struct RunTime
 {
@@ -117,8 +128,8 @@ struct RunTime
     uint64_t intervalBytes;             /* Number of bytes transferred in current interval */
     uint64_t oldintervalBytes;          /* Number of bytes transferred previously */
     uint8_t *pmBuffer;                  /* The post-mortem buffer */
-    uint32_t wp;                        /* Index pointers for ring buffer */
-    uint32_t rp;
+    int wp;                             /* Index pointers for ring buffer */
+    int rp;
 
     struct line *opText;                /* Text of the output buffer */
     int32_t numLines;                   /* Number of lines in the output buffer */
@@ -134,6 +145,8 @@ struct RunTime
     struct SIOInstance *sio;            /* Our screen IO instance for managed I/O */
 
     struct dataBlock rawBlock;          /* Datablock received from distribution */
+
+    struct opConstruct op;              /* The mechanical elements for creating the output buffer */
 
     struct Options *options;            /* Our runtime configuration */
 } _r =
@@ -376,14 +389,12 @@ static void _flushBuffer( struct RunTime *r )
     SIOsetOutputBuffer( r->sio, 0, 0, NULL, false );
 
     /* Remove all of the recorded lines */
-    while ( r->numLines )
+    while ( r->numLines-- )
     {
-        if ( !r->opText[r->numLines - 1].isRef )
+        if ( !r->opText[r->numLines].isRef )
         {
-            free( r->opText[r->numLines - 1].buffer );
+            free( r->opText[r->numLines].buffer );
         }
-
-        r->numLines--;
     }
 
     /* and the opText buffer */
@@ -433,271 +444,135 @@ static void _appendRefToOPBuffer( struct RunTime *r, int32_t lineno, enum LineTy
     r->numLines++;
 }
 // ====================================================================================================
-static void _dumpBuffer( struct RunTime *r )
+static void _etmCB( void *d )
 
-/* Dump received data buffer into text buffer */
+/* Callback function for when valid ETM decode is detected */
 
 {
+    struct RunTime *r = ( struct RunTime * )d;
     struct ETMCPUState *cpu = ETMCPUState( &r->i );
-    const char *currentFilename = NULL;
-    const char *currentFunction = NULL;
-    uint32_t currentLine = 0;
-    uint32_t workingAddr = 0, incAddr = 0, p;
+    char construct[SCRATCH_STRING_LEN];
+    uint32_t incAddr = 0;
     struct nameEntry n;
     uint32_t disposition;
-    char construct[SCRATCH_STRING_LEN];
 
-    _flushBuffer( r );
-
-    if ( !SymbolSetValid( &r->s, r->options->elffile ) )
+    /* Deal with changes introduced by this event ========================= */
+    if ( ETMStateChanged( &r->i, EV_CH_ADDRESS ) )
     {
-        if ( !( r->s = SymbolSetCreate( r->options->elffile, r->options->objdump, r->options->demangle, true, true ) ) )
-        {
-            genericsReport( V_ERROR, "Elf file or symbols in it not found" EOL );
-            return;
-        }
-        else
-        {
-            genericsReport( V_DEBUG, "Loaded %s" EOL, r->options->elffile );
-        }
+        r->op.workingAddr = cpu->addr;
     }
 
-    p = r->rp;
-
-    while ( p != r->wp )
+    if ( ETMStateChanged( &r->i, EV_CH_ENATOMS ) )
     {
-        if ( ETMDecoderPump( &r->i, r->pmBuffer[p] ) == ETM_EV_MSG_RXED )
-        {
-            incAddr = 0;
-
-            /* Deal with changes introduced by this event ========================= */
-            if ( ETMStateChanged( &r->i, EV_CH_ADDRESS ) )
-            {
-                workingAddr = cpu->addr;
-            }
-
-            if ( ETMStateChanged( &r->i, EV_CH_ENATOMS ) )
-            {
-                incAddr = cpu->eatoms + cpu->natoms;
-                disposition = cpu->disposition;
-            }
-
-            if ( ETMStateChanged( &r->i, EV_CH_VMID ) )
-            {
-                _appendToOPBuffer( r, currentLine, LT_EVENT, "*** VMID Set to %d", cpu->vmid );
-            }
-
-            if ( ETMStateChanged( &r->i, EV_CH_EX_ENTRY ) )
-            {
-                _appendToOPBuffer( r, currentLine, LT_EVENT, "========== Exception Entry%s (%d at %08x) ==========",
-                                   ETMStateChanged( &r->i, EV_CH_CANCELLED ) ? ", Last Instruction Cancelled" : "", cpu->exception, cpu->addr );
-            }
-
-            if ( ETMStateChanged( &r->i, EV_CH_EX_EXIT ) )
-            {
-                _appendRefToOPBuffer( r, currentLine, LT_EVENT, "========== Exception Exit ==========" );
-            }
-
-            if ( ETMStateChanged( &r->i, EV_CH_TSTAMP ) )
-            {
-                _appendToOPBuffer( r, currentLine, LT_EVENT, "*** Timestamp %ld", cpu->ts );
-            }
-
-            if ( ETMStateChanged( &r->i, EV_CH_TRIGGER ) )
-            {
-                _appendRefToOPBuffer( r, currentLine, LT_EVENT, "*** Trigger" );
-            }
-
-            if ( ETMStateChanged( &r->i, EV_CH_CLOCKSPEED ) )
-            {
-                _appendRefToOPBuffer( r, currentLine, LT_EVENT, "*** Change Clockspeed" );
-            }
-
-            if ( ETMStateChanged( &r->i, EV_CH_ISLSIP ) )
-            {
-                _appendRefToOPBuffer( r, currentLine, LT_EVENT, "*** ISLSIP Triggered" );
-            }
-
-            if ( ETMStateChanged( &r->i, EV_CH_CYCLECOUNT ) )
-            {
-                _appendToOPBuffer( r, currentLine, LT_EVENT, "(Cycle Count %d)" EOL, cpu->cycleCount );
-            }
-
-            if ( ETMStateChanged( &r->i, EV_CH_VMID ) )
-            {
-                _appendToOPBuffer( r, currentLine, LT_EVENT, "(VMID is now %d)" EOL, cpu->vmid );
-            }
-
-            if ( ETMStateChanged( &r->i, EV_CH_CONTEXTID ) )
-            {
-                _appendToOPBuffer( r, currentLine, LT_EVENT, "(Context ID is now %d)" EOL, cpu->contextID );
-            }
-
-            if ( ETMStateChanged( &r->i, EV_CH_SECURE ) )
-            {
-
-                _appendToOPBuffer( r, currentLine, LT_EVENT, "(Non-Secure State is now %s)" EOL, cpu->nonSecure ? "True" : "False" );
-            }
-
-            if ( ETMStateChanged( &r->i, EV_CH_ALTISA ) )
-            {
-                _appendToOPBuffer( r, currentLine, LT_EVENT, "(Using AltISA  is now %s)" EOL, cpu->altISA ? "True" : "False" );
-            }
-
-            if ( ETMStateChanged( &r->i, EV_CH_HYP ) )
-            {
-                _appendToOPBuffer( r, currentLine,  LT_EVENT, "(Using Hypervisor is now %s)" EOL, cpu->hyp ? "True" : "False" );
-            }
-
-            if ( ETMStateChanged( &r->i, EV_CH_JAZELLE ) )
-            {
-                _appendToOPBuffer( r, currentLine, LT_EVENT, "(Using Jazelle is now %s)" EOL, cpu->jazelle ? "True" : "False" );
-            }
-
-            if ( ETMStateChanged( &r->i, EV_CH_THUMB ) )
-            {
-                _appendToOPBuffer( r, currentLine, LT_EVENT, "(Using Thumb is now %s)" EOL, cpu->thumb ? "True" : "False" );
-            }
-
-            /* End of dealing with changes introduced by this event =============== */
-
-            while ( incAddr-- )
-            {
-                if ( SymbolLookup( r->s, workingAddr, &n, r->options->deleteMaterial ) )
-                {
-                    if ( ( n.filename != currentFilename ) || ( n.function != currentFunction ) )
-                    {
-                        _appendToOPBuffer( r, currentLine, LT_FILE, "%s::%s" EOL, n.filename, n.function );
-                        currentFilename = n.filename;
-                        currentFunction = n.function;
-                    }
-
-                    if ( n.line != currentLine - 1 )
-                    {
-                        const char *v = n.source;
-                        currentLine = n.line - n.linesInBlock + 1;
-                        *construct = 0;
-
-                        while ( *v )
-                        {
-                            /* In buffer output NL/CR are treated as end of string, so this is safe */
-                            /* with these buffers that can span multiple lines. Split into separate ones. */
-                            _appendRefToOPBuffer( r, currentLine++, LT_SOURCE, v );
-
-                            /* Move to the CR/NL or EOL on this line */
-                            while ( ( *v ) && ( *v != '\r' ) && ( *v != '\n' ) )
-                            {
-                                v++;
-                            }
-
-                            if ( *v )
-                            {
-                                /* Found end of string or NL/CR...move past those */
-                                if ( ( ( *v == '\r' ) && ( *( v + 1 ) == '\n' ) ) ||
-                                        ( ( *v == '\n' ) && ( *( v + 1 ) == '\r' ) )
-                                   )
-                                {
-                                    v += 2;
-                                }
-                                else
-                                {
-                                    v++;
-                                }
-                            }
-
-                        }
-                    }
-
-                    if ( n.assyLine != ASSY_NOT_FOUND )
-                    {
-                        _appendRefToOPBuffer( r, currentLine, ( disposition & 1 ) ? LT_ASSEMBLY : LT_NASSEMBLY, n.assy[n.assyLine].lineText );
-
-                        if ( n.assy[n.assyLine].isJump )
-                        {
-                            if ( disposition & 1 )
-                            {
-                                /* This is a fixed jump that _was_ taken, so update working address */
-                                workingAddr = n.assy[n.assyLine].jumpdest;
-                            }
-                        }
-                        else
-                        {
-                            workingAddr += ( n.assy[n.assyLine].is4Byte ) ? 4 : 2;
-                        }
-                    }
-                    else
-                    {
-                        _appendRefToOPBuffer( r, currentLine, LT_ASSEMBLY, "\t\tASSEMBLY NOT FOUND" EOL );
-                        workingAddr += 2;
-                    }
-                }
-                else
-                {
-                    workingAddr += 2;
-                }
-
-                disposition >>= 1;
-            }
-        }
-
-        p = ( p + 1 ) % r->options->buflen;
+        incAddr = cpu->eatoms + cpu->natoms;
+        disposition = cpu->disposition;
     }
 
-    /* Submit this constructed buffer for display */
-    SIOsetOutputBuffer( r->sio, r->numLines, r->numLines - 1, &r->opText, false );
-}
-// ====================================================================================================
-#if 0
-/* This is just patched out to avoid unused function warnings */
-
-static void _dumpRange( struct RunTime *r, uint32_t workingAddr, uint32_t endAddr )
-
-/* Dump address range to screen - used for debugging the symbol subsystem */
-
-{
-    const char *currentFilename = NULL;
-    const char *currentFunction = NULL;
-    uint32_t currentLine = 0;
-    struct nameEntry n;
-    char construct[SCRATCH_STRING_LEN];
-
-    if ( !SymbolSetValid( &r->s, r->options->elffile ) )
+    if ( ETMStateChanged( &r->i, EV_CH_VMID ) )
     {
-        if ( !( r->s = SymbolSetCreate( r->options->elffile, r->options->objdump, r->options->demangle, true, true ) ) )
-        {
-            genericsReport( V_ERROR, "Elf file or symbols in it not found" EOL );
-            return;
-        }
-        else
-        {
-            genericsReport( V_DEBUG, "Loaded %s" EOL, r->options->elffile );
-        }
+      _appendToOPBuffer( r, r->op.currentLine, LT_EVENT, "*** VMID Set to %d", cpu->vmid );
     }
 
-    _flushBuffer( r );
-
-    while ( workingAddr < endAddr )
+    if ( ETMStateChanged( &r->i, EV_CH_EX_ENTRY ) )
     {
-        if ( SymbolLookup( r->s, workingAddr, &n, r->options->deleteMaterial ) )
+        _appendToOPBuffer( r, r->op.currentLine, LT_EVENT, "========== Exception Entry%s (%d at 0x%08x) ==========",
+                           ETMStateChanged( &r->i, EV_CH_CANCELLED ) ? ", Last Instruction Cancelled" : "", cpu->exception, cpu->addr );
+    }
+
+    if ( ETMStateChanged( &r->i, EV_CH_EX_EXIT ) )
+    {
+        _appendRefToOPBuffer( r, r->op.currentLine, LT_EVENT, "========== Exception Exit ==========");
+    }
+
+    if ( ETMStateChanged( &r->i, EV_CH_TSTAMP ) )
+    {
+        _appendToOPBuffer( r, r->op.currentLine, LT_EVENT, "*** Timestamp %ld", cpu->ts );
+    }
+
+    if ( ETMStateChanged( &r->i, EV_CH_TRIGGER ) )
+    {
+        _appendRefToOPBuffer( r, r->op.currentLine, LT_EVENT, "*** Trigger" );
+    }
+
+    if ( ETMStateChanged( &r->i, EV_CH_CLOCKSPEED ) )
+    {
+        _appendRefToOPBuffer( r, r->op.currentLine, LT_EVENT, "*** Change Clockspeed" );
+    }
+
+    if ( ETMStateChanged( &r->i, EV_CH_ISLSIP ) )
+    {
+        _appendRefToOPBuffer( r, r->op.currentLine, LT_EVENT, "*** ISLSIP Triggered" );
+    }
+
+    if ( ETMStateChanged( &r->i, EV_CH_CYCLECOUNT ) )
+    {
+        _appendToOPBuffer( r, r->op.currentLine, LT_EVENT, "(Cycle Count %d)", cpu->cycleCount );
+    }
+
+    if ( ETMStateChanged( &r->i, EV_CH_VMID ) )
+    {
+        _appendToOPBuffer( r, r->op.currentLine, LT_EVENT, "(VMID is now %d)", cpu->vmid );
+    }
+
+    if ( ETMStateChanged( &r->i, EV_CH_CONTEXTID ) )
+    {
+        _appendToOPBuffer( r, r->op.currentLine, LT_EVENT, "(Context ID is now %d)", cpu->contextID );
+    }
+
+    if ( ETMStateChanged( &r->i, EV_CH_SECURE ) )
+    {
+        _appendToOPBuffer( r, r->op.currentLine, LT_EVENT, "(Non-Secure State is now %s)", cpu->nonSecure ? "True" : "False" );
+    }
+
+    if ( ETMStateChanged( &r->i, EV_CH_ALTISA ) )
+    {
+        _appendToOPBuffer( r, r->op.currentLine, LT_EVENT, "(Using AltISA  is now %s)", cpu->altISA ? "True" : "False" );
+    }
+
+    if ( ETMStateChanged( &r->i, EV_CH_HYP ) )
+    {
+        _appendToOPBuffer( r, r->op.currentLine,  LT_EVENT, "(Using Hypervisor is now %s)", cpu->hyp ? "True" : "False" );
+    }
+
+    if ( ETMStateChanged( &r->i, EV_CH_JAZELLE ) )
+    {
+        _appendToOPBuffer( r, r->op.currentLine, LT_EVENT, "(Using Jazelle is now %s)", cpu->jazelle ? "True" : "False" );
+    }
+
+    if ( ETMStateChanged( &r->i, EV_CH_THUMB ) )
+    {
+        _appendToOPBuffer( r, r->op.currentLine, LT_EVENT, "(Using Thumb is now %s)", cpu->thumb ? "True" : "False" );
+    }
+
+    /* End of dealing with changes introduced by this event =============== */
+
+    while ( incAddr )
+    {
+        incAddr--;
+
+        if ( SymbolLookup( r->s, r->op.workingAddr, &n, r->options->deleteMaterial ) )
         {
-            if ( ( n.filename != currentFilename ) || ( n.function != currentFunction ) )
+            /* If we have changed file or function put a header line in */
+            if ( ( n.filename != r->op.currentFilename ) || ( n.function != r->op.currentFunction ) )
             {
-                _appendToOPBuffer( r, currentLine, LT_FILE, "%s::%s" EOL, n.filename, n.function );
-                currentFilename = n.filename;
-                currentFunction = n.function;
+                _appendToOPBuffer( r, r->op.currentLine, LT_FILE, "%s::%s", n.filename, n.function );
+                r->op.currentFilename = n.filename;
+                r->op.currentFunction = n.function;
+                r->op.currentLine = NO_LINE;
             }
 
-            if ( n.line != currentLine - 1 )
+            /* If we have changed line then output the new one */
+            if ( n.line != r->op.currentLine - 1 )
             {
                 const char *v = n.source;
-                currentLine = n.line - n.linesInBlock + 1;
+                r->op.currentLine = n.line - n.linesInBlock + 1;
                 *construct = 0;
 
                 while ( *v )
                 {
                     /* In buffer output NL/CR are treated as end of string, so this is safe */
                     /* with these buffers that can span multiple lines. Split into separate ones. */
-                    _appendRefToOPBuffer( r, currentLine++, LT_SOURCE, v );
+                    _appendRefToOPBuffer( r, r->op.currentLine++, LT_SOURCE, v );
 
                     /* Move to the CR/NL or EOL on this line */
                     while ( ( *v ) && ( *v != '\r' ) && ( *v != '\n' ) )
@@ -719,30 +594,79 @@ static void _dumpRange( struct RunTime *r, uint32_t workingAddr, uint32_t endAdd
                             v++;
                         }
                     }
+
                 }
             }
 
+            /* If this line has assembly then output it */
             if ( n.assyLine != ASSY_NOT_FOUND )
             {
-                _appendRefToOPBuffer( r, currentLine, LT_ASSEMBLY, n.assy[n.assyLine].lineText );
-                workingAddr += ( n.assy[n.assyLine].is4Byte ) ? 4 : 2;
+                _appendRefToOPBuffer( r, r->op.currentLine, ( disposition & 1 ) ? LT_ASSEMBLY : LT_NASSEMBLY, n.assy[n.assyLine].lineText );
+
+                if ( ( n.assy[n.assyLine].isJump ) && ( disposition & 1 ) )
+                {
+                    /* This is a fixed jump that _was_ taken, so update working address */
+                    r->op.workingAddr = n.assy[n.assyLine].jumpdest;
+                }
+                else
+                {
+                    r->op.workingAddr += ( n.assy[n.assyLine].is4Byte ) ? 4 : 2;
+                }
             }
             else
             {
-                workingAddr += 2;
+                _appendRefToOPBuffer( r, r->op.currentLine, LT_ASSEMBLY, "\t\tASSEMBLY NOT FOUND" EOL );
+                r->op.workingAddr += 2;
             }
         }
         else
         {
-            _appendToOPBuffer( r, currentLine, LT_FILE, "%08x No symbol found" EOL, workingAddr );
-            workingAddr += 2;
+            /* We didn't have a symbol for this address, so let's just assume a short instruction */
+            r->op.workingAddr += 2;
         }
+
+        disposition >>= 1;
+    }
+}
+// ====================================================================================================
+static void _dumpBuffer( struct RunTime *r )
+
+/* Dump received data buffer into text buffer */
+
+{
+    _flushBuffer( r );
+
+    if ( !SymbolSetValid( &r->s, r->options->elffile ) )
+    {
+        if ( !( r->s = SymbolSetCreate( r->options->elffile, r->options->objdump, r->options->demangle, true, true ) ) )
+        {
+            genericsReport( V_ERROR, "Elf file or symbols in it not found" EOL );
+            return;
+        }
+        else
+        {
+            genericsReport( V_DEBUG, "Loaded %s" EOL, r->options->elffile );
+        }
+    }
+
+    /* Pump the received messages through the ETM decoder, it will callback to _etmCB with complete sentences */
+    int bytesAvailable = ( ( r->wp + r->options->buflen ) - r->rp ) % r->options->buflen;
+
+    if ( ( bytesAvailable + r->rp ) > r->options->buflen )
+    {
+        /* Buffer is wrapped - submit both parts */
+        ETMDecoderPump( &r->i, &r->pmBuffer[r->rp], r->options->buflen - r->rp, _etmCB, r );
+        ETMDecoderPump( &r->i, &r->pmBuffer[0], r->rp, _etmCB, r );
+    }
+    else
+    {
+        /* Buffer is not wrapped */
+        ETMDecoderPump( &r->i, &r->pmBuffer[r->rp], bytesAvailable, _etmCB, r );
     }
 
     /* Submit this constructed buffer for display */
     SIOsetOutputBuffer( r->sio, r->numLines, r->numLines - 1, &r->opText, false );
 }
-#endif
 // ====================================================================================================
 static bool _currentFileAndLine( struct RunTime *r, char **file, int32_t *l )
 
@@ -962,6 +886,7 @@ static void _doSave( struct RunTime *r )
     FILE *f;
     char fn[SCRATCH_STRING_LEN];
     uint32_t w;
+    char *p;
 
     snprintf( fn, SCRATCH_STRING_LEN, "%s.trace", SIOgetSaveFilename( r->sio ) );
     f = fopen( fn, "wb" );
@@ -995,10 +920,35 @@ static void _doSave( struct RunTime *r )
 
     while ( w != r->numLines )
     {
-        for ( char *u = r->opText[w++].buffer; *u; u++ )
+      p = r->opText[w].buffer;
+
+      if ((r->opText[w].lt == LT_SOURCE) || (r->opText[w].lt == LT_MU_SOURCE))
         {
-            fwrite( u, strlen( u ), 1, f );
+          /* Need a line number on this */
+          fwrite( fn, sprintf(fn,"%5d ",r->opText[w].line), 1, f);
         }
+
+      if (r->opText[w].lt == LT_NASSEMBLY)
+        {
+          /* This is an _unexecuted_ assembly line, need to mark it */
+          fwrite( "(**", 3, 1, f);
+        }
+
+      /* Search forward for a NL or 0, both are EOL for this purpose */
+      while ((*p) && (*p!='\n') && (*p!='\r'))
+        {
+          p++;
+        }
+      fwrite( r->opText[w].buffer,p-r->opText[w].buffer,1,f);
+
+      if (r->opText[w].lt == LT_NASSEMBLY)
+        {
+          /* This is an _unexecuted_ assembly line, need to mark it */
+          fwrite( " **)", 4, 1, f);
+        }
+
+      fwrite( EOL, strlen(EOL),1,f);
+      w++;
     }
 
     fclose( f );

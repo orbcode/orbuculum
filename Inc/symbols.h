@@ -52,6 +52,7 @@
 #define SLEEPING          0xB             /* Special address flag sleeping */
 
 #define ASSY_NOT_FOUND    0xffffffff      /* Assembly line not found */
+#define NO_LINE           0xffffffff      /* No line number defined */
 
 /* Mapping of lines numbers to indicies */
 struct assyLineEntry

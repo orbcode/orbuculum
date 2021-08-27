@@ -51,8 +51,8 @@ struct SIOInstance;
 /* Events that can be returned by the handler */
 enum SIOEvent { SIO_EV_NONE, SIO_EV_HOLD, SIO_EV_QUIT, SIO_EV_SAVE, SIO_EV_CONSUMED, SIO_EV_SURFACE, SIO_EV_DIVE, SIO_EV_FOPEN };
 
-/* Types of line (each with their own display mechanism & colours, potentially */
-enum LineType { LT_EVENT, LT_SOURCE, LT_ASSEMBLY, LT_NASSEMBLY, LT_LABEL, LT_FILE, LT_MU_SOURCE };
+/* Types of line (each with their own display mechanism & colours */
+enum LineType { LT_SOURCE, LT_ASSEMBLY, LT_NASSEMBLY, LT_MU_SOURCE, LT_EVENT, LT_LABEL, LT_FILE  };
 
 /* Definition for a single line...collections of these are what get displayed */
 struct line

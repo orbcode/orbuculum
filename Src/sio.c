@@ -70,10 +70,13 @@ struct SIOInstance
     /* Materials for window handling */
     WINDOW *outputWindow;               /* Output window (main one) */
     WINDOW *statusWindow;               /* Status window (interaction one) */
-    int32_t tag[MAX_TAGS];              /* Buffer location tags */
-
     int32_t lines;                      /* Number of lines on current window config */
     int32_t cols;                       /* Number of columns on current window config */
+    bool forceRefresh;                  /* Force a refresh of everything */
+    int Key;                            /* Latest keypress */
+
+    /* Tagging */
+    int32_t tag[MAX_TAGS];              /* Buffer location tags */
 
     /* Search stuff */
     enum SRCH searchMode;               /* What kind of search is being conducted */
@@ -83,7 +86,6 @@ struct SIOInstance
     bool searchOK;                      /* Is the search currently sucessful? */
 
     /* Save stuff */
-    bool enteringSaveFilename;          /* State indicator that we're entering filename */
     char *saveFilename;                 /* Filename under construction */
 
     /* Warning and info messages */
@@ -97,13 +99,13 @@ struct SIOInstance
     int32_t oldopTextRline;             /* Old read position in op buffer (for redraw) */
     enum DISP displayMode;              /* How we want the file displaying */
 
-    int Key;                            /* Latest keypress */
-
-    bool amDiving;                      /* Indicator that we're in a diving buffer */
+    /* Diving */
     int32_t pushedopTextRline;          /* Buffered cursor position for when we're recovering from diving */
 
+    /* UI State information */
     bool held;
-    bool forceRefresh;                  /* Force a refresh of everything */
+    bool enteringSaveFilename;          /* State indicator that we're entering filename */
+    bool amDiving;                      /* Indicator that we're in a diving buffer */
     bool outputtingHelp;                /* Output help window */
     bool enteringMark;                  /* Set if we are in the process of marking a location */
 
@@ -135,7 +137,7 @@ static void _deleteTags( struct SIOInstance *sio )
     }
 }
 // ====================================================================================================
-static bool _processSaveFilename( struct SIOInstance *sio )
+static enum SIOEvent _processSaveFilename( struct SIOInstance *sio )
 
 {
     enum SIOEvent op = SIO_EV_NONE;
@@ -166,7 +168,6 @@ static bool _processSaveFilename( struct SIOInstance *sio )
         case 10: /* ----------------------------- Newline Commit Save ---------------------------- */
             /* Commit the save */
             curs_set( 0 );
-            sio->saveFilename = NULL;
             sio->enteringSaveFilename = false;
             op = SIO_EV_SAVE;
             break;
@@ -179,7 +180,6 @@ static bool _processSaveFilename( struct SIOInstance *sio )
                 sio->saveFilename[strlen( sio->saveFilename )] = sio->Key;
                 op = SIO_EV_CONSUMED;
             }
-
             break;
     }
 
@@ -213,6 +213,8 @@ static void _outputHelp( struct SIOInstance *sio )
 }
 // ====================================================================================================
 static bool _onDisplay( struct SIOInstance *sio, int32_t lineNum )
+
+/* Return true if this lineNum is currently to be displayed, according to the set filter criteria */
 
 {
     return !(
@@ -772,6 +774,7 @@ static void _outputStatus( struct SIOInstance *sio, uint64_t oldintervalBytes )
         }
     }
 
+    /* Deal with the various modes */
     if ( sio->enteringSaveFilename )
     {
         wattrset( sio->statusWindow, A_BOLD | COLOR_PAIR( CP_SEARCH ) );

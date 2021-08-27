@@ -41,6 +41,7 @@
 #include "etmDecoder.h"
 #include "msgDecoder.h"
 
+// Define this to get transitions printed out
 #ifdef DEBUG
     #include <stdio.h>
     #include "generics.h"
@@ -48,72 +49,28 @@
     #define genericsReport(x...)
 #endif
 
-#define MAX_PACKET            (10)
-
-// Define this to get transitions printed out
-// ====================================================================================================
-void ETMDecoderInit( struct ETMDecoder *i, bool usingAltAddrEncodeSet )
-
-/* Reset a ETMDecoder instance */
-
+/* Events from the process of pumping bytes through the ETM decoder */
+enum ETMDecoderPumpEvent
 {
-    memset( i, 0, sizeof( struct ETMDecoder ) );
-    ETMDecoderZeroStats( i );
-    ETMDecodeUsingAltAddrEncode( i, usingAltAddrEncodeSet );
-}
+    ETM_EV_NONE,
+    ETM_EV_UNSYNCED,
+    ETM_EV_SYNCED,
+    ETM_EV_ERROR,
+    ETM_EV_MSG_RXED
+};
+
 // ====================================================================================================
-void ETMDecodeUsingAltAddrEncode( struct ETMDecoder *i, bool usingAltAddrEncodeSet )
-
-{
-    i->usingAltAddrEncode = usingAltAddrEncodeSet;
-}
 // ====================================================================================================
-
-void ETMDecoderZeroStats( struct ETMDecoder *i )
-
-{
-    memset( &i->stats, 0, sizeof( struct ETMDecoderStats ) );
-}
 // ====================================================================================================
-bool ETMDecoderIsSynced( struct ETMDecoder *i )
-
-{
-    return i->p != ETM_UNSYNCED;
-}
+// Internal routines - the decoder itself
 // ====================================================================================================
-struct ETMDecoderStats *ETMDecoderGetStats( struct ETMDecoder *i )
-{
-    return &i->stats;
-}
 // ====================================================================================================
-void ETMDecoderForceSync( struct ETMDecoder *i, bool isSynced )
-
-/* Force the decoder into a specific sync state */
-
-{
-    if ( i->p == ETM_UNSYNCED )
-    {
-        if ( isSynced )
-        {
-            i->p = ETM_IDLE;
-            i->stats.syncCount++;
-        }
-    }
-    else
-    {
-        if ( !isSynced )
-        {
-            i->stats.lostSyncCount++;
-            i->p = ETM_UNSYNCED;
-        }
-    }
-}
 // ====================================================================================================
 #ifdef DEBUG
 static char *_protoNames[] = {ETM_PROTO_NAME_LIST};
 #endif
 
-enum ETMDecoderPumpEvent ETMDecoderPump( struct ETMDecoder *i, uint8_t c )
+static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB cb, void *d )
 
 /* Pump next byte into the protocol decoder */
 
@@ -808,6 +765,81 @@ enum ETMDecoderPumpEvent ETMDecoderPump( struct ETMDecoder *i, uint8_t c )
 
     i->p = newState;
 
-    return retVal;
+    if ( retVal != ETM_EV_NONE )
+    {
+        cb( d );
+    }
+}
+// ====================================================================================================
+// ====================================================================================================
+// ====================================================================================================
+// Externally available routines
+// ====================================================================================================
+// ====================================================================================================
+// ====================================================================================================
+void ETMDecoderInit( struct ETMDecoder *i, bool usingAltAddrEncodeSet )
+
+/* Reset a ETMDecoder instance */
+
+{
+    memset( i, 0, sizeof( struct ETMDecoder ) );
+    ETMDecoderZeroStats( i );
+    ETMDecodeUsingAltAddrEncode( i, usingAltAddrEncodeSet );
+}
+// ====================================================================================================
+void ETMDecodeUsingAltAddrEncode( struct ETMDecoder *i, bool usingAltAddrEncodeSet )
+
+{
+    i->usingAltAddrEncode = usingAltAddrEncodeSet;
+}
+// ====================================================================================================
+
+void ETMDecoderZeroStats( struct ETMDecoder *i )
+
+{
+    memset( &i->stats, 0, sizeof( struct ETMDecoderStats ) );
+}
+// ====================================================================================================
+bool ETMDecoderIsSynced( struct ETMDecoder *i )
+
+{
+    return i->p != ETM_UNSYNCED;
+}
+// ====================================================================================================
+struct ETMDecoderStats *ETMDecoderGetStats( struct ETMDecoder *i )
+{
+    return &i->stats;
+}
+// ====================================================================================================
+void ETMDecoderForceSync( struct ETMDecoder *i, bool isSynced )
+
+/* Force the decoder into a specific sync state */
+
+{
+    if ( i->p == ETM_UNSYNCED )
+    {
+        if ( isSynced )
+        {
+            i->p = ETM_IDLE;
+            i->stats.syncCount++;
+        }
+    }
+    else
+    {
+        if ( !isSynced )
+        {
+            i->stats.lostSyncCount++;
+            i->p = ETM_UNSYNCED;
+        }
+    }
+}
+// ====================================================================================================
+void ETMDecoderPump( struct ETMDecoder *i, uint8_t *buf, int len, etmDecodeCB cb, void *d )
+
+{
+    while ( len-- )
+    {
+        _ETMDecoderPumpAction( i, *buf++, cb, d );
+    }
 }
 // ====================================================================================================
