@@ -63,14 +63,14 @@
 
 #define REMOTE_SERVER       "localhost"
 
-#define SCRATCH_STRING_LEN  (65535)            /* Max length for a string under construction */
+#define SCRATCH_STRING_LEN  (65535)     /* Max length for a string under construction */
 //#define DUMP_BLOCK
-#define DEFAULT_PM_BUFLEN_K (32)               /* Default size of the Postmortem buffer */
-#define MAX_TAGS            (10)               /* How many tags we will allow */
+#define DEFAULT_PM_BUFLEN_K (32)        /* Default size of the Postmortem buffer */
+#define MAX_TAGS            (10)        /* How many tags we will allow */
 
-#define INTERVAL_TIME_MS    (1000)             /* Intervaltime between acculumator resets */
-#define HANG_TIME_MS        (490)              /* Time without a packet after which we dump the buffer */
-#define TICK_TIME_MS        (100)              /* Time intervals for screen updates and keypress check */
+#define INTERVAL_TIME_MS    (1000)      /* Intervaltime between acculumator resets */
+#define HANG_TIME_MS        (490)       /* Time without a packet after which we dump the buffer */
+#define TICK_TIME_MS        (100)       /* Time intervals for screen updates and keypress check */
 
 /* Record for options, either defaults or from command line */
 struct Options
@@ -470,7 +470,7 @@ static void _etmCB( void *d )
 
     if ( ETMStateChanged( &r->i, EV_CH_VMID ) )
     {
-      _appendToOPBuffer( r, r->op.currentLine, LT_EVENT, "*** VMID Set to %d", cpu->vmid );
+        _appendToOPBuffer( r, r->op.currentLine, LT_EVENT, "*** VMID Set to %d", cpu->vmid );
     }
 
     if ( ETMStateChanged( &r->i, EV_CH_EX_ENTRY ) )
@@ -481,7 +481,7 @@ static void _etmCB( void *d )
 
     if ( ETMStateChanged( &r->i, EV_CH_EX_EXIT ) )
     {
-        _appendRefToOPBuffer( r, r->op.currentLine, LT_EVENT, "========== Exception Exit ==========");
+        _appendRefToOPBuffer( r, r->op.currentLine, LT_EVENT, "========== Exception Exit ==========" );
     }
 
     if ( ETMStateChanged( &r->i, EV_CH_TSTAMP ) )
@@ -763,6 +763,8 @@ static void _openFileCommand( struct RunTime *r, int32_t line, char *fileToOpen 
 // ====================================================================================================
 static void _openFileBuffer( struct RunTime *r, int32_t line, char *fileToOpen )
 
+/* Read file into buffer */
+
 {
     FILE *f;
     char construct[SCRATCH_STRING_LEN];
@@ -806,6 +808,8 @@ static void _openFileBuffer( struct RunTime *r, int32_t line, char *fileToOpen )
 }
 // ====================================================================================================
 static void _doFileOpen( struct RunTime *r, bool isDive )
+
+/* Do actions required to open file to dive into */
 
 {
     char *p;
@@ -864,6 +868,8 @@ static void _doFileOpen( struct RunTime *r, bool isDive )
 // ====================================================================================================
 static void _doFilesurface( struct RunTime *r )
 
+/* Come back out of a file we're diving into */
+
 {
     if ( !r->diving )
     {
@@ -881,6 +887,8 @@ static void _doFilesurface( struct RunTime *r )
 }
 // ====================================================================================================
 static void _doSave( struct RunTime *r )
+
+/* Save buffer in both raw and processed formats */
 
 {
     FILE *f;
@@ -920,35 +928,36 @@ static void _doSave( struct RunTime *r )
 
     while ( w != r->numLines )
     {
-      p = r->opText[w].buffer;
+        p = r->opText[w].buffer;
 
-      if ((r->opText[w].lt == LT_SOURCE) || (r->opText[w].lt == LT_MU_SOURCE))
+        if ( ( r->opText[w].lt == LT_SOURCE ) || ( r->opText[w].lt == LT_MU_SOURCE ) )
         {
-          /* Need a line number on this */
-          fwrite( fn, sprintf(fn,"%5d ",r->opText[w].line), 1, f);
+            /* Need a line number on this */
+            fwrite( fn, sprintf( fn, "%5d ", r->opText[w].line ), 1, f );
         }
 
-      if (r->opText[w].lt == LT_NASSEMBLY)
+        if ( r->opText[w].lt == LT_NASSEMBLY )
         {
-          /* This is an _unexecuted_ assembly line, need to mark it */
-          fwrite( "(**", 3, 1, f);
+            /* This is an _unexecuted_ assembly line, need to mark it */
+            fwrite( "(**", 3, 1, f );
         }
 
-      /* Search forward for a NL or 0, both are EOL for this purpose */
-      while ((*p) && (*p!='\n') && (*p!='\r'))
+        /* Search forward for a NL or 0, both are EOL for this purpose */
+        while ( ( *p ) && ( *p != '\n' ) && ( *p != '\r' ) )
         {
-          p++;
-        }
-      fwrite( r->opText[w].buffer,p-r->opText[w].buffer,1,f);
-
-      if (r->opText[w].lt == LT_NASSEMBLY)
-        {
-          /* This is an _unexecuted_ assembly line, need to mark it */
-          fwrite( " **)", 4, 1, f);
+            p++;
         }
 
-      fwrite( EOL, strlen(EOL),1,f);
-      w++;
+        fwrite( r->opText[w].buffer, p - r->opText[w].buffer, 1, f );
+
+        if ( r->opText[w].lt == LT_NASSEMBLY )
+        {
+            /* This is an _unexecuted_ assembly line, need to mark it */
+            fwrite( " **)", 4, 1, f );
+        }
+
+        fwrite( EOL, strlen( EOL ), 1, f );
+        w++;
     }
 
     fclose( f );
@@ -1069,9 +1078,6 @@ int main( int argc, char *argv[] )
                 genericsExit( sourcefd, "Can't open file %s" EOL, _r.options->file );
             }
         }
-
-        //        _dumpRange( &_r, 0x08009bec, 0x0800a000 );
-        //        _r.held = true;
 
         FD_ZERO( &readfds );
 

@@ -180,6 +180,7 @@ static enum SIOEvent _processSaveFilename( struct SIOInstance *sio )
                 sio->saveFilename[strlen( sio->saveFilename )] = sio->Key;
                 op = SIO_EV_CONSUMED;
             }
+
             break;
     }
 
