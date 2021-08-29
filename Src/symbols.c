@@ -44,12 +44,6 @@
 #include <string.h>
 #include <stdarg.h>
 
-#ifdef OSX
-    #include "osxelf.h"
-#else
-    #include <elf.h>
-#endif
-
 #include <stdint.h>
 #include <assert.h>
 #include "generics.h"

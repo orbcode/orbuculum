@@ -42,10 +42,8 @@
 #include <stdio.h>
 #include <string.h>
 #if defined OSX
-    #include "osxelf.h"
     #include <libusb.h>
 #else
-    #include <elf.h>
     #if defined LINUX
         #include <libusb-1.0/libusb.h>
     #else

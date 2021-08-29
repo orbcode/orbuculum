@@ -198,7 +198,6 @@ Building on Linux
 Dependencies
 ------------
 * libusb-1.0
-* libelf (libelf-dev)
 
 Note that `objdump` is also required. By default the suite will run `arm-none-eabi-objdump` but another binary or pathname can be
 subsituted via the `-O` option.
@@ -217,7 +216,6 @@ Building on OSX
 
 Recipie instructions courtesy of FrankTheTank;
 
-* `brew install libelf`
 * `brew install libusb`
 
 and finally;
