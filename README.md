@@ -28,8 +28,7 @@ What is it?
 
 Orbuculum is a set of tools for decoding and presenting output flows from
 the Debug pins of a CORTEX-M CPU. Originally it only used the SWO pin but it now also
-supports hardware for parallel tracing through the TRACE pins too using the iCE40HX-8K and ECPIX-5
-FPGA Boards. Numerous types of data can be output through these
+supports hardware for parallel tracing through ORBtrace. Numerous types of data can be output through these
 pins, from multiple channels of text messages through to Program Counter samples. Processing
 these data gives you a huge amount of insight into what is really going on inside
 your CPU. The tools are all mix-and-match according to what you are trying to do. The current set is;
@@ -109,13 +108,6 @@ Serial device its set by the Orbuculum command line.  Segger devices
 can normally work faster, but no experimentation has yet been done to
 find their max limits, which are probably it's dependent on the specific JLink
 you are using. JLink-Pro and JTrace devices appear to work up to 50MHz. YMMV.
-
-When using parallel trace you are limited by the capabilities of the FPGA configuration and
-the speed you can get data off the chip. The current maximum speed supported for the
-target is around 150MHz but you will swamp the chip very quickly if you start streaming
-data at that speed. The offboard link is curently limited to about 22Mbps serial. This issue will be
-resolved when dedicated FPGA target hardware is available. Hardware in the lab is currently
-streaming to a PC at around 270 Mbps, and there's plenty more to come.
 
 Configuring the Target
 ======================
@@ -198,7 +190,7 @@ replace them with the following;
     enableSTM32TRACE                         <---- Switch on parallel trace on the STM32
     prepareTRACE 4                           <---- Set up the TPIU for 4 bit output (or 2 or 1)
 
-...be careful to set the trace width to be the same as what you've configured on the FPGA (the -o parameter on the orbuculum command line).
+...be careful to set the trace width to be the same as what you've configured on the FPGA.
 
 Building on Linux
 =================
@@ -207,7 +199,6 @@ Dependencies
 ------------
 * libusb-1.0
 * libelf (libelf-dev)
-* libftdi (For FPGA support only)
 
 Note that `objdump` is also required. By default the suite will run `arm-none-eabi-objdump` but another binary or pathname can be
 subsituted via the `-O` option.
@@ -219,16 +210,7 @@ The command line to build the Orbuculum tool suite is;
 
 >make
 
-or
-
->make WITH_FPGA=0
-
-if you don't need the fpga trace capture support....you may need to change the paths to your libusb files, depending on
-how well your build environment is set up.
-
-To build the FPGA and load it into the board, install the incredible [icestorm](https://github.com/YosysHQ/icestorm) tools from Claire
-Wolf, then go into the `orbtrace/src` directory and type `make ICE40HX8K_B_EVN` or `make ECPIX_5_85F`. It will take about 30 seconds
-to compile the image and burn it to the appropriate board.
+You may need to change the paths to your libusb files, depending on how well your build environment is set up.
 
 Building on OSX
 ===============
@@ -243,7 +225,6 @@ and finally;
 ```
 export LDFLAGS="-L/usr/local/opt/binutils/lib"
 export CPPFLAGS="-I/usr/local/opt/binutils/include"
-make WITH_FPGA=0
 ```
 
 
@@ -287,8 +268,6 @@ For `orbuculum`, the specific command line options of note are;
  `-h`: Brief help.
 
  `-m`: Monitor interval (in mS) for reporting on state of the link. If baudrate is specified (using `-a`) and is greater than 100bps then the percentage link occupancy is also reported.
-
-  `-o [width]`: Use the custom (ice40 FPGA) based interface (if compiled with support) at specified port width. Current fpga supports 1, 2 and 4 bit parallel operation.
 
   `-p [serialPort]`: to use. If not specified then the program defaults to Blackmagic probe.
 

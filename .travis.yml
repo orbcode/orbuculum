@@ -1,8 +1,5 @@
 language: c
-env:
-  - WITH_UART_FEEDER=0 WITH_SPI_FEEDER=1
-  - WITH_UART_FEEDER=1 WITH_SPI_FEEDER=0  
-  - WITH_UART_FEEDER=0 WITH_SPI_FEEDER=0
+
 script:
   - make
 
@@ -10,10 +7,3 @@ addons:
   apt:
     packages:
     - libusb-1.0-0-dev
-    - binutils-dev
-    - libelf-dev
-    - libiberty-dev
-
-before_install:
-  - if [ "$WITH_UART_FEEDER" = 1 ]; then sudo apt install -y libftdi1-dev; fi
-  - if [ "$WITH_SPI_FEEDER" = 1 ]; then sudo apt install -y libftdi1-dev; fi  

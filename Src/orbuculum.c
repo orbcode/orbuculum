@@ -77,21 +77,6 @@
 
 #include "nwclient.h"
 
-#ifdef INCLUDE_SERIAL_FPGA_SUPPORT
-    #define FPGA_MAX_FRAMES (0x1ff)
-
-    #include <libftdi1/ftdi.h>
-    #include "ftdispi.h"
-    #define IF_INCLUDE_SERIAL_FPGA_SUPPORT(...) __VA_ARGS__
-    #define FPGA_SERIAL_INTERFACE_SPEED (12000000)
-
-    #define EFFECTIVE_DATA_TRANSFER_SPEED ((FPGA_SERIAL_INTERFACE_SPEED/10)*8)
-    #define FPGA_HS_TRANSFER_SIZE (512)
-
-#else
-    #define IF_INCLUDE_SERIAL_FPGA_SUPPORT(...)
-#endif
-
 #define SEGGER_HOST "localhost"               /* Address to connect to SEGGER */
 #define SEGGER_PORT (2332)
 
@@ -125,10 +110,6 @@ struct Options
     /* Config information */
     bool segger;                                         /* Using a segger debugger */
 
-    /* FPGA Information */
-    IF_INCLUDE_SERIAL_FPGA_SUPPORT( bool orbtrace; )            /* In trace mode? */
-    IF_INCLUDE_SERIAL_FPGA_SUPPORT( uint32_t orbtraceWidth; )   /* Trace pin width */
-
     /* Source information */
     char *seggerHost;                                    /* Segger host connection */
     int32_t seggerPort;                                  /* ...and port */
@@ -149,9 +130,6 @@ struct Options
 {
     .listenPort = NWCLIENT_SERVER_PORT,
     .seggerHost = SEGGER_HOST,
-#ifdef INCLUDE_SERIAL_FPGA_SUPPORT
-    .orbtraceWidth = 4
-#endif
 };
 
 struct dataBlock
@@ -172,10 +150,6 @@ struct handlers
 struct RunTime
 {
     struct TPIUDecoder t;                                                    /* TPIU decoder instance, in case we need it */
-
-    /* Link to the FPGA subsystem */
-    IF_INCLUDE_SERIAL_FPGA_SUPPORT( struct ftdi_context *ftdi );             /* Connection materials for ftdi fpga interface */
-    IF_INCLUDE_SERIAL_FPGA_SUPPORT( struct ftdispi_context ftdifsc );
 
     uint64_t  intervalBytes;                                                 /* Number of bytes transferred in current interval */
 
@@ -310,7 +284,6 @@ void _printHelp( char *progName )
     genericsPrintf( "       -h: This help" EOL );
     genericsPrintf( "       -l: <port> Listen port for the incoming connections (defaults to %d)" EOL, NWCLIENT_SERVER_PORT );
     genericsPrintf( "       -m: <interval> Output monitor information about the link at <interval>ms" EOL );
-    IF_INCLUDE_SERIAL_FPGA_SUPPORT( genericsPrintf( "        o: <num> Use traceport FPGA custom interface with 1, 2 or 4 bits width" EOL ) );
     genericsPrintf( "       -p: <serialPort> to use" EOL );
     genericsPrintf( "       -s: <Server>:<Port> to use" EOL );
     genericsPrintf( "       -t: <Channel , ...> Use TPIU channels (and strip TIPU framing from output flows)" EOL );
@@ -323,7 +296,7 @@ int _processOptions( int argc, char *argv[], struct RunTime *r )
     int c;
 #define DELIMITER ','
 
-    while ( ( c = getopt ( argc, argv, "a:ef:hl:m:no:p:s:t:v:" ) ) != -1 )
+    while ( ( c = getopt ( argc, argv, "a:ef:hl:m:np:s:t:v:" ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -361,18 +334,6 @@ int _processOptions( int argc, char *argv[], struct RunTime *r )
                 break;
 
                 // ------------------------------------
-
-#ifdef INCLUDE_SERIAL_FPGA_SUPPORT
-
-            case 'o':
-                // Generally you need TPIU for orbtrace
-                r->options->orbtrace = true;
-                r->options->useTPIU = true;
-                r->options->orbtraceWidth = atoi( optarg );
-                break;
-#endif
-
-            // ------------------------------------
 
             case 'p':
                 r->options->port = optarg;
@@ -436,28 +397,6 @@ int _processOptions( int argc, char *argv[], struct RunTime *r )
                 // ------------------------------------
         }
 
-#ifdef INCLUDE_SERIAL_FPGA_SUPPORT
-
-    if ( ( r->options->orbtrace ) && !( ( r->options->orbtraceWidth == 1 ) || ( r->options->orbtraceWidth == 2 ) || ( r->options->orbtraceWidth == 4 ) ) )
-    {
-        genericsReport( V_ERROR, "Orbtrace interface illegal port width" EOL );
-        return false;
-    }
-
-    if ( ( r->options->orbtrace ) && ( !r->options->port ) )
-    {
-        genericsReport( V_ERROR, "Supporting serial port needs to be specified for orbtrace" EOL );
-        return false;
-    }
-
-    /* Override link speed as primary capacity indicator for orbtrace case */
-    if ( r->options->orbtrace )
-    {
-        r->options->dataSpeed = EFFECTIVE_DATA_TRANSFER_SPEED;
-    }
-
-#endif
-
     /* ... and dump the config if we're being verbose */
     genericsReport( V_INFO, "Orbuculum V" VERSION " (Git %08X %s, Built " BUILD_DATE ")" EOL, GIT_HASH, ( GIT_DIRTY ? "Dirty" : "Clean" ) );
 
@@ -494,15 +433,6 @@ int _processOptions( int argc, char *argv[], struct RunTime *r )
     {
         genericsReport( V_INFO, "Use/Strip TPIU : False" EOL );
     }
-
-#ifdef INCLUDE_SERIAL_FPGA_SUPPORT
-
-    if ( r->options->orbtrace )
-    {
-        genericsReport( V_INFO, "Serial Orbtrace: %d bits width, ", r->options->orbtraceWidth );
-    }
-
-#endif
 
     if ( r->options->file )
     {
@@ -1070,82 +1000,6 @@ int serialFeeder( struct RunTime *r )
     return 0;
 }
 // ====================================================================================================
-#ifdef INCLUDE_SERIAL_FPGA_SUPPORT
-int serialFpgaFeeder( struct RunTime *r )
-{
-    int ret;
-
-    assert( ( r->options->orbtraceWidth == 1 ) || ( r->options->orbtraceWidth == 2 ) || ( r->options->orbtraceWidth == 4 ) );
-    uint8_t wwString[] = { 'w', 0xA0 | ( ( r->options->orbtraceWidth == 4 ) ? 3 : r->options->orbtraceWidth ) };
-
-    while ( !r->ending )
-    {
-#ifdef OSX
-        int flags;
-
-        while ( ( !r->ending ) && ( r->f = open( r->options->port, O_RDWR | O_NONBLOCK ) ) < 0 )
-#else
-        while ( ( !r->ending ) && ( r->f = open( r->options->port, O_RDWR ) ) < 0 )
-#endif
-        {
-            genericsReport( V_WARN, "Can't open fpga serial port" EOL );
-            usleep( 500000 );
-        }
-
-        genericsReport( V_INFO, "Port opened" EOL );
-
-#ifdef OSX
-        /* Remove the O_NONBLOCK flag now the port is open (OSX Only) */
-
-        if ( ( flags = fcntl( r->f, F_GETFL, NULL ) ) < 0 )
-        {
-            genericsExit( -3, "F_GETFL failed" EOL );
-        }
-
-        flags &= ~O_NONBLOCK;
-
-        if ( ( flags = fcntl( r->f, F_SETFL, flags ) ) < 0 )
-        {
-            genericsExit( -3, "F_SETFL failed" EOL );
-        }
-
-#endif
-
-        if ( ( ret = _setSerialConfig ( r->f, FPGA_SERIAL_INTERFACE_SPEED ) ) < 0 )
-        {
-            genericsExit( ret, "fpga setSerialConfig failed" EOL );
-        }
-
-        if ( write ( r->f, wwString, sizeof( wwString ) ) < 0 )
-        {
-            genericsExit( ret, "Failed to set orbtrace width" EOL );
-        }
-
-        while ( !r->ending )
-        {
-            struct *dataBlock rxBlock = r->rawBlock[r->wp];
-
-            if ( ( rxBlock->fillLevel = read( r->f, rxBlock->buffer, TRANSFER_SIZE ) ) < 0 )
-            {
-                break;
-            }
-
-            r->wp = ( r->wp + 1 ) % NUM_RAW_BLOCKS;
-            sem_post( &r->dataForClients );
-        }
-
-        if ( !r->ending )
-        {
-            genericsReport( V_INFO, "fpga Read failed" EOL );
-        }
-
-        close( r->f );
-    }
-
-    return 0;
-}
-#endif
-// ====================================================================================================
 int fileFeeder( struct RunTime *r )
 
 {
@@ -1280,15 +1134,6 @@ int main( int argc, char *argv[] )
 
     /* Now start the distribution task */
     pthread_create( &_r.processThread, NULL, &_processBlocks, &_r );
-
-#ifdef INCLUDE_SERIAL_FPGA_SUPPORT
-
-    if ( _r.options->orbtrace )
-    {
-        exit( serialfpgaFeeder( &_r ) );
-    }
-
-#endif
 
     if ( _r.options->seggerPort )
     {

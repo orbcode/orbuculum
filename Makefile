@@ -1,6 +1,3 @@
-# Define only one of these
-WITH_FPGA=1
-
 # Build configuration
 VERBOSE?=0
 DEBUG=1
@@ -104,7 +101,7 @@ endif
 
 ORBLIB_CFILES = $(App_DIR)/itmDecoder.c $(App_DIR)/tpiuDecoder.c $(App_DIR)/msgDecoder.c $(App_DIR)/msgSeq.c $(App_DIR)/etmDecoder.c
 
-ORBUCULUM_CFILES = $(App_DIR)/$(ORBUCULUM).c $(FPGA_CFILES) $(App_DIR)/nwclient.c
+ORBUCULUM_CFILES = $(App_DIR)/$(ORBUCULUM).c $(App_DIR)/nwclient.c
 ORBFIFO_CFILES   = $(App_DIR)/$(ORBFIFO).c $(App_DIR)/filewriter.c $(App_DIR)/itmfifos.c
 ORBCAT_CFILES    = $(App_DIR)/$(ORBCAT).c
 ORBTOP_CFILES    = $(App_DIR)/$(ORBTOP).c $(App_DIR)/symbols.c $(EXT)/cJSON.c
@@ -112,15 +109,6 @@ ORBDUMP_CFILES   = $(App_DIR)/$(ORBDUMP).c
 ORBSTAT_CFILES   = $(App_DIR)/$(ORBSTAT).c $(App_DIR)/symbols.c
 ORBMORTEM_CFILES  = $(App_DIR)/$(ORBMORTEM).c $(App_DIR)/symbols.c $(App_DIR)/sio.c
 ORBPROFILE_CFILES = $(App_DIR)/$(ORBPROFILE).c $(App_DIR)/symbols.c
-
-# FPGA Files
-# ==========
-
-ifeq ($(WITH_FPGA),1)
-CFLAGS+=-DINCLUDE_FPGA_SUPPORT
-LDLIBS += -lftdi1
-ORBUCULUM_CFILES += $(EXT)/ftdispi.c
-endif
 
 ##########################################################################
 # GNU GCC compiler prefix and location
