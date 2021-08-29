@@ -3,7 +3,7 @@ WITH_FPGA=1
 
 # Build configuration
 VERBOSE?=0
-#DEBUG=1
+DEBUG=1
 SCREEN_HANDLING=1
 
 # Set your preferred screen colours here, or create a new palette by copying the file to a new one
@@ -22,6 +22,7 @@ ORBTOP    = orbtop
 ORBDUMP   = orbdump
 ORBSTAT   = orbstat
 ORBMORTEM = orbmortem
+ORBPROFILE= orbprofile
 
 ##########################################################################
 # Check Host OS
@@ -110,6 +111,7 @@ ORBTOP_CFILES    = $(App_DIR)/$(ORBTOP).c $(App_DIR)/symbols.c $(EXT)/cJSON.c
 ORBDUMP_CFILES   = $(App_DIR)/$(ORBDUMP).c
 ORBSTAT_CFILES   = $(App_DIR)/$(ORBSTAT).c $(App_DIR)/symbols.c
 ORBMORTEM_CFILES  = $(App_DIR)/$(ORBMORTEM).c $(App_DIR)/symbols.c $(App_DIR)/sio.c
+ORBPROFILE_CFILES = $(App_DIR)/$(ORBPROFILE).c $(App_DIR)/symbols.c
 
 # FPGA Files
 # ==========
@@ -202,6 +204,10 @@ ORBMORTEM_OBJS =  $(OBJS) $(patsubst %.c,%.o,$(ORBMORTEM_CFILES))
 ORBMORTEM_POBJS = $(POJBS) $(patsubst %,$(OLOC)/%,$(ORBMORTEM_OBJS))
 PDEPS += $(ORBMORTEM_POBJS:.o=.d)
 
+ORBPROFILE_OBJS =  $(OBJS) $(patsubst %.c,%.o,$(ORBPROFILE_CFILES))
+ORBPROFILE_POBJS = $(POJBS) $(patsubst %,$(OLOC)/%,$(ORBPROFILE_OBJS))
+PDEPS += $(ORBPROFILE_POBJS:.o=.d)
+
 CFILES += $(App_DIR)/generics.c
 
 ##########################################################################
@@ -219,7 +225,7 @@ $(OLOC)/%.o : %.c
 	$(call cmd, \$(CC) -c $(CFLAGS) -MMD -o $@ $< ,\
 	Compiling $<)
 
-build: $(ORBUCULUM) $(ORBFIFO) $(ORBCAT) $(ORBTOP) $(ORBDUMP) $(ORBSTAT) $(ORBMORTEM)
+build: $(ORBUCULUM) $(ORBFIFO) $(ORBCAT) $(ORBTOP) $(ORBDUMP) $(ORBSTAT) $(ORBMORTEM) $(ORBPROFILE)
 
 $(ORBLIB) : get_version $(ORBLIB_POBJS)
 	$(Q)$(AR) rcs $(OLOC)/lib$(ORBLIB).a  $(ORBLIB_POBJS)
@@ -253,11 +259,15 @@ $(ORBMORTEM) : $(ORBLIB) $(ORBMORTEM_POBJS)
 	$(Q)$(LD) $(LDFLAGS) -o $(OLOC)/$(ORBMORTEM) $(MAP) $(ORBMORTEM_POBJS)  $(LDLIBS)
 	-@echo "Completed build of" $(ORBMORTEM)
 
+$(ORBPROFILE) : $(ORBLIB) $(ORBPROFILE_POBJS)
+	$(Q)$(LD) $(LDFLAGS) -o $(OLOC)/$(ORBPROFILE) $(MAP) $(ORBPROFILE_POBJS)  $(LDLIBS)
+	-@echo "Completed build of" $(ORBPROFILE)
+
 tags:
 	-@etags $(CFILES) 2> /dev/null
 
 clean:
-	-$(call cmd, \rm -f $(POBJS) $(LD_TEMP) $(ORBUCULUM) $(ORBFIFO) $(ORBCAT) $(ORBDUMP) $(ORBSTAT) $(ORBMORTEM) $(OUTFILE).map $(EXPORT) ,\
+	-$(call cmd, \rm -f $(POBJS) $(LD_TEMP) $(ORBUCULUM) $(ORBFIFO) $(ORBCAT) $(ORBDUMP) $(ORBSTAT) $(ORBMORTEM) $(ORBPROFILE) $(OUTFILE).map $(EXPORT) ,\
 	Cleaning )
 	$(Q)-rm -rf SourceDoc/*
 	$(Q)-rm -rf *~ core
