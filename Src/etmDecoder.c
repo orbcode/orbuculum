@@ -246,6 +246,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                             /* Format-1 P-header */
                             cpu->eatoms = ( c & 0x3C ) >> 2;
                             cpu->natoms = ( c & ( 1 << 6 ) ) ? 1 : 0;
+                            cpu->instCount += cpu->eatoms;
 
                             /* Put a 1 in each element of disposition if was executed */
                             cpu->disposition = ( 1 << cpu->eatoms ) - 1;
@@ -258,6 +259,8 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                         {
                             /* Format-2 P-header */
                             cpu->eatoms = ( ( c & ( 1 << 2 ) ) == 0 ) + ( ( c & ( 1 << 3 ) ) == 0 );
+                            cpu->instCount += cpu->eatoms;
+
                             cpu->natoms = 2 - cpu->eatoms;
                             cpu->disposition = ( ( c & ( 1 << 3 ) ) == 0 ) | ( ( c & ( 1 << 2 ) ) == 0 );
                             cpu->changeRecord |= ( 1 << EV_CH_ENATOMS );
@@ -273,6 +276,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                         {
                             /* Format 0 cycle-accurate P-header */
                             cpu->watoms = 1;
+                            cpu->instCount += cpu->watoms;
                             cpu->eatoms = cpu->natoms = 0;
                             cpu->changeRecord |= ( 1 << EV_CH_ENATOMS );
                             cpu->changeRecord |= ( 1 << EV_CH_WATOMS );
@@ -286,6 +290,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                             cpu->eatoms = ( c & 0x1c ) >> 2;
                             cpu->natoms = ( c & 0x40 ) != 0;
                             cpu->watoms = cpu->eatoms + cpu->natoms;
+                            cpu->instCount += cpu->watoms;
                             cpu->disposition = ( 1 << cpu->eatoms ) - 1;
                             cpu->changeRecord |= ( 1 << EV_CH_ENATOMS );
                             cpu->changeRecord |= ( 1 << EV_CH_WATOMS );
@@ -299,6 +304,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                             cpu->eatoms = ( ( c & ( 1 << 2 ) ) != 0 ) + ( ( c & ( 1 << 3 ) ) != 0 );
                             cpu->natoms = 2 - cpu->eatoms;
                             cpu->watoms = 1;
+                            cpu->instCount += cpu->watoms;
                             cpu->disposition = ( ( c & ( 1 << 3 ) ) != 0 ) | ( ( c & ( 1 << 2 ) ) != 0 );
                             cpu->changeRecord |= ( 1 << EV_CH_ENATOMS );
                             cpu->changeRecord |= ( 1 << EV_CH_WATOMS );
@@ -312,6 +318,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                             cpu->eatoms = ( c & 0x40 ) != 0;
                             cpu->natoms = 0;
                             cpu->watoms = ( c & 0x1c ) >> 2;
+                            cpu->instCount += cpu->watoms;
                             /* Either 1 or 0 eatoms */
                             cpu->disposition = cpu->eatoms;
                             cpu->changeRecord |= ( 1 << EV_CH_ENATOMS );

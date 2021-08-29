@@ -121,6 +121,7 @@ struct ETMCPUState
     uint32_t cycleCount;                 /* Cycle Count for exact mode */
     uint16_t exception;                  /* Exception type being executed */
     uint16_t resume;                     /* Interrupt resume code */
+    uint64_t instCount;                  /* Number of instructions executed */
 
     // I-Sync related
     enum Reason reason;                  /* Why this i-sync was generated */

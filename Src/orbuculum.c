@@ -333,7 +333,7 @@ int _processOptions( int argc, char *argv[], struct RunTime *r )
                 r->options->intervalReportTime = atoi( optarg );
                 break;
 
-                // ------------------------------------
+            // ------------------------------------
 
             case 'p':
                 r->options->port = optarg;
