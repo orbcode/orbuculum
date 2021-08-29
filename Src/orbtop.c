@@ -58,8 +58,6 @@
 #include <netinet/in.h>
 #include <netdb.h>
 
-#include "bfd_wrapper.h"
-
 #include "cJSON.h"
 #include "generics.h"
 #include "uthash.h"
