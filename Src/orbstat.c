@@ -122,7 +122,6 @@ struct                                       /* Record for options, either defau
     char *deleteMaterial;                    /* Material to strip off front of filenames for target */
 
     char *elffile;                           /* Target program config */
-    char *objdump;                           /* Non-standard objdump binary */
 
     char *dotfile;                           /* File to output dot information */
     char *profile;                           /* File to output profile information */
@@ -812,12 +811,13 @@ void _printHelp( char *progName )
     fprintf( stdout, "      -h: This help" EOL );
     fprintf( stdout, "      -l: Aggregate per line rather than per function" EOL );
     fprintf( stdout, "      -n: Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
-    fprintf( stdout, "      -O: <program> Use non-standard obbdump binary" EOL );
     fprintf( stdout, "      -s: <Server>:<Port> to use" EOL );
     fprintf( stdout, "      -t: <channel> Use TPIU decoder on specified channel" EOL );
     fprintf( stdout, "      -v: <level> Verbose mode 0(errors)..3(debug)" EOL );
     fprintf( stdout, "      -y: <Filename> dotty filename for structured callgraph output" EOL );
     fprintf( stdout, "      -z: <Filename> profile filename for kcachegrind output" EOL );
+    fprintf( stdout, EOL "Environment Variables;" EOL );
+    fprintf( stdout, "  OBJDUMP: to use non-standard obbdump binary" EOL );
 }
 // ====================================================================================================
 int _processOptions( int argc, char *argv[] )
@@ -825,7 +825,7 @@ int _processOptions( int argc, char *argv[] )
 {
     int c;
 
-    while ( ( c = getopt ( argc, argv, "Dd:e:f:g:hlnO:p:s:t:vy:z:" ) ) != -1 )
+    while ( ( c = getopt ( argc, argv, "Dd:e:f:g:hlnp:s:t:vy:z:" ) ) != -1 )
 
         switch ( c )
         {
@@ -862,11 +862,6 @@ int _processOptions( int argc, char *argv[] )
             // ------------------------------------
             case 'n':
                 options.forceITMSync = false;
-                break;
-
-            // ------------------------------------
-            case 'O':
-                options.objdump = optarg;
                 break;
 
             // ------------------------------------
@@ -1055,7 +1050,7 @@ int main( int argc, char *argv[] )
             {
                 _flushHash();
 
-                if ( !( _r.s = SymbolSetCreate( options.elffile, options.objdump, options.demangle, false, false ) ) )
+                if ( !( _r.s = SymbolSetCreate( options.elffile, options.demangle, false, false ) ) )
                 {
                     genericsReport( V_ERROR, "Elf file was lost" EOL );
                     return -1;

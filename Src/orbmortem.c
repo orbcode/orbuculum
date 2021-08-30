@@ -82,7 +82,6 @@ struct Options
     bool demangle;                      /* Indicator that C++ should be demangled */
 
     char *elffile;                      /* File to use for symbols etc. */
-    char *objdump;                      /* Novel Objdump file */
 
     int buflen;                         /* Length of post-mortem buffer, in bytes */
     bool useTPIU;                       /* Are we using TPIU, and stripping TPIU frames? */
@@ -191,11 +190,12 @@ static void _printHelp( struct RunTime *r )
     genericsPrintf( "       -E: When reading from file, terminate at end of file rather than waiting for further input" EOL );
     genericsPrintf( "       -f <filename>: Take input from specified file" EOL );
     genericsPrintf( "       -h: This help" EOL );
-    genericsPrintf( "       -O: <program> Use non-standard obbdump binary" EOL );
     genericsPrintf( "       -s: <Server>:<Port> to use" EOL );
     //genericsPrintf( "       -t <channel>: Use TPIU to strip TPIU on specfied channel (defaults to 2)" EOL );
     genericsPrintf( "       -v: <level> Verbose mode 0(errors)..3(debug)" EOL );
     genericsPrintf( EOL "(Will connect one port higher than that set in -s when TPIU is not used)" EOL );
+    genericsPrintf( EOL "Environment Variables;" EOL );
+    genericsPrintf( "  OBJDUMP: to use non-standard obbdump binary" EOL );
 }
 // ====================================================================================================
 static int _processOptions( int argc, char *argv[], struct RunTime *r )
@@ -203,7 +203,7 @@ static int _processOptions( int argc, char *argv[], struct RunTime *r )
 {
     int c;
 
-    while ( ( c = getopt ( argc, argv, "ab:c:Dd:Ee:f:hO:s:v:" ) ) != -1 )
+    while ( ( c = getopt ( argc, argv, "ab:c:Dd:Ee:f:hs:v:" ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -253,11 +253,6 @@ static int _processOptions( int argc, char *argv[], struct RunTime *r )
             case 'h':
                 _printHelp( r );
                 return false;
-
-            // ------------------------------------
-            case 'O':
-                r->options->objdump = optarg;
-                break;
 
             // ------------------------------------
 
@@ -638,7 +633,7 @@ static void _dumpBuffer( struct RunTime *r )
 
     if ( !SymbolSetValid( &r->s, r->options->elffile ) )
     {
-        if ( !( r->s = SymbolSetCreate( r->options->elffile, r->options->objdump, r->options->demangle, true, true ) ) )
+        if ( !( r->s = SymbolSetCreate( r->options->elffile, r->options->demangle, true, true ) ) )
         {
             genericsReport( V_ERROR, "Elf file or symbols in it not found" EOL );
             return;

@@ -55,6 +55,7 @@
 #define ELF_CHECK_DELAY_TIME  100000    /* Time that elf file has to be stable before it's considered complete */
 
 #define OBJDUMP "arm-none-eabi-objdump"
+#define OBJENVNAME "OBJDUMP"
 
 #define SOURCE_INDICATOR "sRc##"
 #define SYM_NOT_FOUND (0xffffffff)
@@ -330,9 +331,9 @@ static bool _getTargetProgramInfo( struct SymbolSet *s )
         return false;
     }
 
-    if ( s->objdump )
+    if ( getenv( OBJENVNAME ) )
     {
-        snprintf( commandLine, MAX_LINE_LEN, "%s -Sl%s --source-comment=" SOURCE_INDICATOR " %s", s->objdump,  s->demanglecpp ? " -C" : "", s->elfFile );
+        snprintf( commandLine, MAX_LINE_LEN, "%s -Sl%s --source-comment=" SOURCE_INDICATOR " %s", getenv( OBJENVNAME ),  s->demanglecpp ? " -C" : "", s->elfFile );
     }
     else
     {
@@ -819,7 +820,7 @@ bool SymbolSetValid( struct SymbolSet **s, char *filename )
     }
 }
 // ====================================================================================================
-struct SymbolSet *SymbolSetCreate( char *filename, char *newObjdump, bool demanglecpp, bool recordSource, bool recordAssy )
+struct SymbolSet *SymbolSetCreate( char *filename, bool demanglecpp, bool recordSource, bool recordAssy )
 
 /* Create new symbol set by reading from elf file, if it's there and stable */
 
@@ -827,7 +828,6 @@ struct SymbolSet *SymbolSetCreate( char *filename, char *newObjdump, bool demang
     struct stat statbuf, newstatbuf;
     struct SymbolSet *s = ( struct SymbolSet * )calloc( sizeof( struct SymbolSet ), 1 );
     s->elfFile = strdup( filename );
-    s->objdump = newObjdump;
     s->recordSource = recordSource;
     s->demanglecpp = demanglecpp;
     s->recordAssy = recordAssy;

@@ -71,8 +71,9 @@
 #include "nw.h"
 
 #define SCRATCH_STRING_LEN  (65535)     /* Max length for a string under construction */
-#define TICK_TIME_MS        (100)       /* Time intervals for screen updates and keypress check */
-#define INTERVAL_TIME_MS    (1000)      /* Intervaltime between acculumator resets */
+#define TICK_TIME_MS        (1)         /* Time intervals for checks */
+
+#define DEFAULT_DURATION_MS (1000)      /* Default time to sample, in mS */
 /* An entry in the names table */
 struct nameEntryHash
 {
@@ -118,10 +119,10 @@ struct Options                               /* Record for options, either defau
     char *deleteMaterial;                    /* Material to strip off front of filenames for target */
 
     char *elffile;                           /* Target program config */
-    char *objdump;                           /* Non-standard objdump binary */
 
     char *dotfile;                           /* File to output dot information */
     char *profile;                           /* File to output profile information */
+    uint32_t sampleDuration;            /* How long we are going to sample for */
 
     bool altAddr;                       /* Should alternate addressing be used? */
     bool useTPIU;                       /* Are we using TPIU, and stripping TPIU frames? */
@@ -133,6 +134,7 @@ struct Options                               /* Record for options, either defau
 } _options =
 {
     .demangle = true,
+    .sampleDuration = DEFAULT_DURATION_MS,
     .port = NWCLIENT_SERVER_PORT,
     .server = "localhost"
 };
@@ -164,8 +166,6 @@ struct RunTime
     const char *progName;               /* Name by which this program was called */
     bool      ending;                   /* Flag indicating app is terminating */
     uint64_t intervalBytes;             /* Number of bytes transferred in current interval */
-    uint64_t oldintervalBytes;          /* Number of bytes transferred previously */
-
 
     /* Calls related info */
     enum CDState CDState;                   /* State of the call data machine */
@@ -173,9 +173,9 @@ struct RunTime
     struct edge *calls;                     /* Call data table */
     struct subcalls *sub;                   /* Construct data */
 
-    uint32_t subPsn;                        /* Counter for sub calls */
-    uint32_t psn;                           /* Current position in assessment of data */
-    uint32_t cdCount;                       /* Call data count */
+    uint64_t subPsn;                        /* Counter for sub calls */
+    uint64_t psn;                           /* Current position in assessment of data */
+    uint64_t cdCount;                       /* Call data count */
 
     struct SymbolSet *s;                    /* Symbols read from elf */
     FILE *c;                                /* Writable file */
@@ -185,13 +185,10 @@ struct RunTime
 
     struct dataBlock rawBlock;          /* Datablock received from distribution */
 
+    bool sampling;                      /* Are we actively sampling at the moment */
     /* Turn addresses into files and routines tags */
     uint32_t nameCount;
     struct nameEntryHash *name;
-
-    /* Used for stretching number of bits in target timer */
-    uint32_t oldt;
-    uint64_t highOrdert;
 } _r =
 {
     .options = &_options
@@ -269,7 +266,7 @@ static int _calls_sort_dest_fn( const void *a_v, const void *b_v )
     return c;
 }
 // ====================================================================================================
-void _outputDot( struct RunTime *r )
+bool _outputDot( struct RunTime *r )
 
 /* Output call graph to dot file */
 
@@ -278,7 +275,7 @@ void _outputDot( struct RunTime *r )
 
     if ( !r->options->dotfile )
     {
-        return;
+        return false;
     }
 
     /* Sort according to addresses visited. */
@@ -361,6 +358,8 @@ void _outputDot( struct RunTime *r )
 
     fprintf( c, "}\n" );
     fclose( c );
+
+    return true;
 }
 // ====================================================================================================
 // ====================================================================================================
@@ -548,8 +547,8 @@ uint64_t _traverse( struct RunTime *r, uint32_t layer )
     /* At this point startPoint is the in node, and r_psn is the exit node, so store this entry */
 
     r->sub = ( struct subcalls * )realloc( r->sub, ( ++r->subPsn ) * ( sizeof( struct subcalls ) ) );
-    r->sub[r->subPsn - 1].dst = r->calls[r->psn].dst;
-    r->sub[r->subPsn - 1].src = r->calls[r->psn].src;
+    r->sub[r->subPsn - 1].src = r->calls[r->psn].dst;
+    r->sub[r->subPsn - 1].dst = r->calls[r->psn].src;
     r->sub[r->subPsn - 1].total = r->calls[r->psn].tstamp - r->calls[startPoint].tstamp;
     r->sub[r->subPsn - 1].myCost = r->sub[r->subPsn - 1].total - childCost;
 
@@ -559,11 +558,17 @@ uint64_t _traverse( struct RunTime *r, uint32_t layer )
     return r->sub[r->subPsn - 1].total;
 }
 // ====================================================================================================
-void _outputProfile( struct RunTime *r )
+bool _outputProfile( struct RunTime *r )
 
 /* Output a KCacheGrind compatible profile */
 
 {
+    if ( !r->options->profile )
+    {
+        return false;
+    }
+
+
     r->c = fopen( r->options->profile, "w" );
     fprintf( r->c, "# callgrind format\n" );
     fprintf( r->c, "positions: line instr\nevent: Cyc : Processor Clock Cycles\nevents: Cyc\n" );
@@ -589,6 +594,8 @@ void _outputProfile( struct RunTime *r )
 
     _dumpProfile( r );
     fclose( r->c );
+
+    return true;
 }
 // ====================================================================================================
 static void _etmCB( void *d )
@@ -637,10 +644,10 @@ static void _etmCB( void *d )
             {
                 r->calls = ( struct edge * )realloc( r->calls, sizeof( struct edge ) * ( r->cdCount + 1 ) );
                 r->calls[r->cdCount].tstamp = cpu->instCount;//cpu->cycleCount;
-                r->calls[r->cdCount].dst = r->op.workingAddr;
                 r->calls[r->cdCount].src = r->op.lastAddr;
                 r->calls[r->cdCount].srcFile = r->op.currentFilename ? r->op.currentFilename : "Entry";
                 r->calls[r->cdCount].srcFn   = r->op.currentFunction ? r->op.currentFunction : "Entry";
+                r->calls[r->cdCount].dst = r->op.workingAddr;
                 r->calls[r->cdCount].dstFile = n.filename;
                 r->calls[r->cdCount].dstFn = n.function;
                 r->calls[r->cdCount].in = r->op.lastWasJump;
@@ -701,7 +708,7 @@ static void _printHelp( struct RunTime *r )
     genericsPrintf( "       -e: <ElfFile> to use for symbols" EOL );
     genericsPrintf( "       -f <filename>: Take input from specified file" EOL );
     genericsPrintf( "       -h: This help" EOL );
-    genericsPrintf( "       -O: <program> Use non-standard obbdump binary" EOL );
+    genericsPrintf( "       -s <Duration>: Time to sample (in mS)" EOL );
     genericsPrintf( "       -s: <Server>:<Port> to use" EOL );
     //genericsPrintf( "       -t <channel>: Use TPIU to strip TPIU on specfied channel (defaults to 2)" EOL );
     genericsPrintf( "       -v: <level> Verbose mode 0(errors)..3(debug)" EOL );
@@ -716,7 +723,7 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
 {
     int c;
 
-    while ( ( c = getopt ( argc, argv, "aDd:Ee:f:hO:s:v:y:z:" ) ) != -1 )
+    while ( ( c = getopt ( argc, argv, "aDd:Ee:f:hr:s:v:y:z:" ) ) != -1 )
 
         switch ( c )
         {
@@ -756,8 +763,8 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
                 exit( 0 );
 
             // ------------------------------------
-            case 'O':
-                r->options->objdump = optarg;
+            case 'r':
+                r->options->sampleDuration = atoi( optarg );
                 break;
 
             // ------------------------------------
@@ -826,12 +833,20 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
         exit( -2 );
     }
 
+    if ( !r->options->sampleDuration )
+    {
+        genericsReport( V_ERROR, "Illegal sample duration" EOL );
+        exit( -2 );
+    }
+
+
     genericsReport( V_INFO, "%s V" VERSION " (Git %08X %s, Built " BUILD_DATE ")" EOL, r->progName, GIT_HASH, ( GIT_DIRTY ? "Dirty" : "Clean" ) );
 
-    genericsReport( V_INFO, "Server        : %s:%d" EOL, r->options->server, r->options->port );
-    genericsReport( V_INFO, "Delete Mat    : %s" EOL, r->options->deleteMaterial ? r->options->deleteMaterial : "None" );
-    genericsReport( V_INFO, "Elf File      : %s" EOL, r->options->elffile );
-    genericsReport( V_INFO, "DOT file      : %s" EOL, r->options->dotfile ? r->options->dotfile : "None" );
+    genericsReport( V_INFO, "Server          : %s:%d" EOL, r->options->server, r->options->port );
+    genericsReport( V_INFO, "Delete Mat      : %s" EOL, r->options->deleteMaterial ? r->options->deleteMaterial : "None" );
+    genericsReport( V_INFO, "Elf File        : %s" EOL, r->options->elffile );
+    genericsReport( V_INFO, "DOT file        : %s" EOL, r->options->dotfile ? r->options->dotfile : "None" );
+    genericsReport( V_INFO, "Sample Duration : %d mS" EOL, r->options->sampleDuration );
 
     return true;
 }
@@ -855,7 +870,7 @@ int main( int argc, char *argv[] )
     struct hostent *server;
     int flag = 1;
 
-    int32_t lastTTime, lastTSTime;
+    int32_t startTime = 0;
     int r;
     struct timeval tv;
     fd_set readfds;
@@ -871,9 +886,6 @@ int main( int argc, char *argv[] )
 
     /* Make sure the fifos get removed at the end */
     atexit( _doExit );
-
-    /* Fill in a time to start from */
-    lastTTime = lastTSTime = genericsTimestampmS();
 
     /* This ensures the atexit gets called */
     if ( SIG_ERR == signal( SIGINT, _intHandler ) )
@@ -948,7 +960,7 @@ int main( int argc, char *argv[] )
         /* We need symbols constantly while running */
         if ( !SymbolSetValid( &_r.s, _r.options->elffile ) )
         {
-            if ( !( _r.s = SymbolSetCreate( _r.options->elffile, _r.options->objdump, _r.options->demangle, true, true ) ) )
+            if ( !( _r.s = SymbolSetCreate( _r.options->elffile, _r.options->demangle, true, true ) ) )
             {
                 genericsExit( -1, "Elf file or symbols in it not found" EOL );
             }
@@ -966,9 +978,9 @@ int main( int argc, char *argv[] )
         /* ----------------------------------------------------------------------------- */
         while ( !_r.ending )
         {
-            /* Each time segment is restricted to 10mS */
+            /* Each time segment is restricted */
             tv.tv_sec = 0;
-            tv.tv_usec  = 10000;
+            tv.tv_usec  = TICK_TIME_MS * 1000;
 
             FD_SET( sourcefd, &readfds );
             FD_SET( STDIN_FILENO, &readfds );
@@ -991,36 +1003,38 @@ int main( int argc, char *argv[] )
                     break;
                 }
 
+                if ( ( _r.rawBlock.fillLevel ) && ( !_r.sampling ) )
+                {
+                    _r.sampling = true;
+                    genericsReport( V_WARN, "Sampling" EOL );
+                    /* Fill in a time to start from */
+                    startTime = genericsTimestampmS();
+                }
+
+                _r.intervalBytes += _r.rawBlock.fillLevel;
                 /* Pump all of the data through the protocol handler */
                 ETMDecoderPump( &_r.i, _r.rawBlock.buffer, _r.rawBlock.fillLevel, _etmCB, &_r );
-                //                lastTime = genericsTimestampmS();
-            }
-
-            /* Update the various timers that are running */
-            if ( ( genericsTimestampmS() - lastTTime ) > TICK_TIME_MS )
-            {
-                lastTTime = genericsTimestampmS();
             }
 
             /* Update the intervals */
-            if ( ( genericsTimestampmS() - lastTSTime ) > INTERVAL_TIME_MS )
+            if ( ( _r.sampling ) && ( ( genericsTimestampmS() - startTime ) > _r.options->sampleDuration ) )
             {
-                _r.oldintervalBytes = _r.intervalBytes;
-                _r.intervalBytes = 0;
-                lastTSTime = genericsTimestampmS();
+                _r.ending = true;
+                genericsReport( V_WARN, "Received %d raw sample bytes, %ld function changes" EOL, _r.intervalBytes, _r.cdCount );
 
                 if (  _r.cdCount )
                 {
-                    if ( _r.options->dotfile )
+                    if ( _outputDot( &_r ) )
                     {
-                        _outputDot( &_r );
+                        genericsReport( V_WARN, "Output DOT" EOL );
                     }
 
-                    if ( _r.options->profile )
+                    if ( _outputProfile( &_r ) )
                     {
-                        _outputProfile( &_r );
+                        genericsReport( V_WARN, "Output Profile" EOL );
                     }
                 }
+
             }
         }
 

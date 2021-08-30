@@ -110,7 +110,6 @@ struct                                       /* Record for options, either defau
     uint32_t tpiuITMChannel;                 /* What channel? */
     bool forceITMSync;                       /* Must ITM start synced? */
     char *file;                              /* File host connection */
-    char *objdump;                           /* Novel Objdump file */
 
     uint32_t hwOutputs;                      /* What hardware outputs are enabled */
 
@@ -931,12 +930,13 @@ void _printHelp( char *progName )
     fprintf( stdout, "       -l: Aggregate per line rather than per function" EOL );
     fprintf( stdout, "       -n: Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
     fprintf( stdout, "       -o: <filename> to be used for output live file" EOL );
-    fprintf( stdout, "       -O: <program> Use non-standard obbdump binary" EOL );
     fprintf( stdout, "       -r: <routines> to record in live file (default %d routines)" EOL, options.maxRoutines );
     fprintf( stdout, "       -R: Report filenames as part of function discriminator" EOL );
     fprintf( stdout, "       -s: <Server>:<Port> to use" EOL );
     fprintf( stdout, "       -t: <channel> Use TPIU decoder on specified channel" EOL );
     fprintf( stdout, "       -v: <level> Verbose mode 0(errors)..3(debug)" EOL );
+    fprintf( stdout, EOL "Environment Variables;" EOL );
+    fprintf( stdout, "  OBJDUMP: to use non-standard obbdump binary" EOL );
 }
 // ====================================================================================================
 int _processOptions( int argc, char *argv[] )
@@ -944,7 +944,7 @@ int _processOptions( int argc, char *argv[] )
 {
     int c;
 
-    while ( ( c = getopt ( argc, argv, "c:d:DEe:f:g:hI:j:lm:no:O:r:Rs:t:v:" ) ) != -1 )
+    while ( ( c = getopt ( argc, argv, "c:d:DEe:f:g:hI:j:lm:no:r:Rs:t:v:" ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -1011,11 +1011,6 @@ int _processOptions( int argc, char *argv[] )
             // ------------------------------------
             case 'o':
                 options.outfile = optarg;
-                break;
-
-            // ------------------------------------
-            case 'O':
-                options.objdump = optarg;
                 break;
 
             // ------------------------------------
@@ -1293,7 +1288,7 @@ int main( int argc, char *argv[] )
                 /* Make sure old references are invalidated */
                 _flushHash();
 
-                if ( !( _r.s = SymbolSetCreate( options.elffile, options.objdump, options.demangle, false, false ) ) )
+                if ( !( _r.s = SymbolSetCreate( options.elffile, options.demangle, false, false ) ) )
                 {
                     genericsReport( V_ERROR, "Could not read symbols" EOL );
                     usleep( 1000000 );

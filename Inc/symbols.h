@@ -105,7 +105,6 @@ struct SymbolSet
 {
     char *elfFile;                         /* File containing structure info */
     struct stat st;
-    char *objdump;                         /* Objdump to use */
 
     /* For memory saving and speedup... */
     bool recordSource;                     /* Keep a record of source code */
@@ -137,7 +136,7 @@ struct nameEntry
 };
 
 // ====================================================================================================
-struct SymbolSet *SymbolSetCreate( char *filename, char *newObjdump, bool demanglecpp, bool recordSource, bool recordAssy );
+struct SymbolSet *SymbolSetCreate( char *filename, bool demanglecpp, bool recordSource, bool recordAssy );
 void SymbolSetDelete( struct SymbolSet **s );
 bool SymbolSetValid( struct SymbolSet **s, char *filename );
 bool SymbolLookup( struct SymbolSet *s, uint32_t addr, struct nameEntry *n, char *deleteMaterial );
