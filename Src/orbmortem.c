@@ -58,6 +58,7 @@
 #include "nw.h"
 
 #include "etmDecoder.h"
+#include "tpiuDecoder.h"
 #include "symbols.h"
 #include "sio.h"
 
@@ -120,6 +121,7 @@ struct opConstruct
 struct RunTime
 {
     struct ETMDecoder i;
+    struct TPIUDecoder t;
 
     const char *progName;               /* Name by which this program was called */
     struct SymbolSet *s;                /* Symbols read from elf */
@@ -191,7 +193,7 @@ static void _printHelp( struct RunTime *r )
     genericsPrintf( "       -f <filename>: Take input from specified file" EOL );
     genericsPrintf( "       -h: This help" EOL );
     genericsPrintf( "       -s: <Server>:<Port> to use" EOL );
-    //genericsPrintf( "       -t <channel>: Use TPIU to strip TPIU on specfied channel (defaults to 2)" EOL );
+    genericsPrintf( "       -t <channel>: Use TPIU to strip TPIU on specfied channel" EOL );
     genericsPrintf( "       -v: <level> Verbose mode 0(errors)..3(debug)" EOL );
     genericsPrintf( EOL "(Will connect one port higher than that set in -s when TPIU is not used)" EOL );
     genericsPrintf( EOL "Environment Variables;" EOL );
@@ -203,7 +205,7 @@ static int _processOptions( int argc, char *argv[], struct RunTime *r )
 {
     int c;
 
-    while ( ( c = getopt ( argc, argv, "ab:c:Dd:Ee:f:hs:v:" ) ) != -1 )
+    while ( ( c = getopt ( argc, argv, "ab:c:Dd:Ee:f:hs:t:v:" ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -362,14 +364,49 @@ static void _processBlock( struct RunTime *r )
         y = r->rawBlock.fillLevel;
 #endif
 
-        while ( y-- )
+        if ( r->options->useTPIU )
         {
-            r->pmBuffer[r->wp] = *c++;
-            r->wp = ( r->wp + 1 ) % r->options->buflen;
+            struct TPIUPacket p;
 
-            if ( r->wp == r->rp )
+            while ( y-- )
             {
-                r->rp++;
+                if ( TPIU_EV_RXEDPACKET == TPIUPump( &r->t, *c++ ) )
+                {
+                    if ( !TPIUGetPacket( &r->t, &p ) )
+                    {
+                        genericsReport( V_WARN, "TPIUGetPacket fell over" EOL );
+                    }
+                    else
+                    {
+                        /* Iterate through the packet, putting bytes for ETM into the processing buffer */
+                        for ( uint32_t g = 0; g < p.len; g++ )
+                        {
+                            if ( r->options->channel == p.packet[g].s )
+                            {
+                                r->pmBuffer[r->wp] = p.packet[g].d;
+                                r->wp = ( r->wp + 1 ) % r->options->buflen;
+
+                                if ( r->wp == r->rp )
+                                {
+                                    r->rp++;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        else
+        {
+            while ( y-- )
+            {
+                r->pmBuffer[r->wp] = *c++;
+                r->wp = ( r->wp + 1 ) % r->options->buflen;
+
+                if ( r->wp == r->rp )
+                {
+                    r->rp++;
+                }
             }
         }
     }
@@ -1018,6 +1055,11 @@ int main( int argc, char *argv[] )
     _r.pmBuffer = ( uint8_t * )calloc( 1, _r.options->buflen );
 
     ETMDecoderInit( &_r.i, &_r.options->altAddr );
+
+    if ( _r.options->useTPIU )
+    {
+        TPIUDecoderInit( &_r.t );
+    }
 
     while ( !_r.ending )
     {
