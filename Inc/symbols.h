@@ -65,6 +65,8 @@ struct assyLineEntry
     uint32_t codes;                         /* Binary code for the line */
     bool is4Byte;                           /* Indicate if this is a 4 byte entry */
     bool isJump;                            /* This is a potential jump */
+    bool isSubCall;                         /* this is a subrouine call (BL/BLX) */
+    bool isReturn;                          /* this is a return instruction (i.e. branch to LR or pop into PC) */
     uint32_t jumpdest;                      /* If this is an absolute jump, the destination */
 };
 
@@ -126,6 +128,8 @@ struct nameEntry
 {
     const char *filename;                /* Filename containing the address */
     const char *function;                /* Function containing the address */
+    uint32_t fileindex;                  /* Index of filename */
+    uint32_t functionindex;              /* Index of functionname */
     uint32_t line;                       /* Source line containing the address */
     uint16_t linesInBlock;               /* Number of lines in this text block */
     const char *source;                  /* Corresponding source text */

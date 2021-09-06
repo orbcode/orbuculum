@@ -57,7 +57,7 @@
 #include "sio.h"
 
 /* Colours for output */
-enum CP { CP_NONE, CP_EVENT, CP_NORMAL, CP_FILEFUNCTION, CP_LINENO, CP_EXECASSY, CP_NEXECASSY, CP_BASELINE, CP_BASELINETEXT, CP_SEARCH };
+enum CP { CP_NONE, CP_EVENT, CP_NORMAL, CP_FILEFUNCTION, CP_LINENO, CP_EXECASSY, CP_EXECASSYFLOW, CP_NEXECASSY, CP_BASELINE, CP_BASELINETEXT, CP_SEARCH };
 
 /* Search types */
 enum SRCH { SRCH_OFF, SRCH_FORWARDS, SRCH_BACKWARDS };
@@ -219,7 +219,10 @@ static bool _onDisplay( struct SIOInstance *sio, int32_t lineNum )
 
 {
     return !(
-                       ( ( sio->displayMode == DISP_SRC )  && ( ( ( *sio->opText )[lineNum].lt == LT_LABEL ) || ( ( *sio->opText )[lineNum].lt == LT_ASSEMBLY ) || ( ( *sio->opText )[lineNum].lt == LT_NASSEMBLY ) ) ) ||
+                       ( ( sio->displayMode == DISP_SRC )  &&
+                         ( ( ( *sio->opText )[lineNum].lt == LT_LABEL ) ||
+                           ( ( *sio->opText )[lineNum].lt == LT_ASSEMBLY ) ||
+                           ( ( *sio->opText )[lineNum].lt == LT_ASSEMBLYFLOW ) || ( ( *sio->opText )[lineNum].lt == LT_NASSEMBLY ) ) ) ||
                        ( ( sio->displayMode == DISP_ASSY ) &&  ( ( *sio->opText )[lineNum].lt == LT_SOURCE ) )
            );
 }
@@ -574,6 +577,10 @@ static bool _displayLine( struct SIOInstance *sio, int32_t lineNum, int32_t scre
             wattrset( sio->outputWindow, ( highlight ? A_STANDOUT : 0 ) | COLOR_PAIR( CP_EXECASSY ) );
             break;
 
+        case LT_ASSEMBLYFLOW:
+            wattrset( sio->outputWindow, ( highlight ? A_STANDOUT : 0 ) | COLOR_PAIR( CP_EXECASSYFLOW ) );
+            break;
+
         case LT_NASSEMBLY:
             wattrset( sio->outputWindow, ( highlight ? A_STANDOUT : 0 ) | COLOR_PAIR( CP_NEXECASSY ) );
             break;
@@ -871,6 +878,7 @@ struct SIOInstance *SIOsetup( const char *progname, const char *elffile )
         init_pair( CP_FILEFUNCTION, COLOR_RED, COLOR_BLACK );
         init_pair( CP_LINENO, COLOR_YELLOW, COLOR_BLACK );
         init_pair( CP_EXECASSY, COLOR_CYAN, COLOR_BLACK );
+        init_pair( CP_EXECASSYFLOW, COLOR_MAGENTA, COLOR_BLACK );
         init_pair( CP_NEXECASSY, COLOR_BLUE, COLOR_BLACK );
         init_pair( CP_BASELINE, COLOR_BLUE, COLOR_BLACK );
         init_pair( CP_BASELINETEXT, COLOR_YELLOW, COLOR_BLACK );

@@ -633,7 +633,14 @@ static void _etmCB( void *d )
             /* If this line has assembly then output it */
             if ( n.assyLine != ASSY_NOT_FOUND )
             {
-                _appendRefToOPBuffer( r, r->op.currentLine, ( disposition & 1 ) ? LT_ASSEMBLY : LT_NASSEMBLY, n.assy[n.assyLine].lineText );
+                if ( ( n.assy[n.assyLine].isSubCall ) || ( n.assy[n.assyLine].isReturn ) )
+                {
+                    _appendRefToOPBuffer( r, r->op.currentLine, LT_ASSEMBLYFLOW, n.assy[n.assyLine].lineText );
+                }
+                else
+                {
+                    _appendRefToOPBuffer( r, r->op.currentLine, ( disposition & 1 ) ? LT_ASSEMBLY : LT_NASSEMBLY, n.assy[n.assyLine].lineText );
+                }
 
                 if ( ( n.assy[n.assyLine].isJump ) && ( disposition & 1 ) )
                 {
@@ -1234,6 +1241,12 @@ int main( int argc, char *argv[] )
         /* ----------------------------------------------------------------------------- */
 
         close( sourcefd );
+
+        if ( _r.options->file )
+        {
+            /* Don't keep re-reading the file if it is a file! */
+            _r.held = true;
+        }
 
         if ( _r.options->fileTerminate )
         {

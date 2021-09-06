@@ -70,10 +70,11 @@
 #include "symbols.h"
 #include "nw.h"
 
-#define SCRATCH_STRING_LEN  (65535)     /* Max length for a string under construction */
-#define TICK_TIME_MS        (1)         /* Time intervals for checks */
+#define SCRATCH_STRING_LEN  (65535)      /* Max length for a string under construction */
+#define TICK_TIME_MS        (1)          /* Time intervals for checks */
+#define ADDR_INTERRUPT      (0xFFFFFFFA) /* False address indicating an interrupt source */
+#define DEFAULT_DURATION_MS (1000)       /* Default time to sample, in mS */
 
-#define DEFAULT_DURATION_MS (1000)      /* Default time to sample, in mS */
 /* An entry in the names table */
 struct nameEntryHash
 {
@@ -83,27 +84,55 @@ struct nameEntryHash
     UT_hash_handle hh;
 };
 
+struct execEntryHash
+{
+    uint32_t addr;
+    uint64_t count;
+    bool isJump;
+    bool is4Byte;
+    bool isSubCall;
+    bool isReturn;
+    uint32_t jumpdest;
+    uint32_t fileindex;
+    uint32_t functionindex;
+    const char *filename;
+    const char *function;
+    UT_hash_handle hh;
+};
+
+
 /* A calling edge */
 struct edge
 {
-    uint64_t tstamp;
-    const char *srcFile;
-    const char *srcFn;
-    const char *dstFile;
-    const char *dstFn;
     uint32_t src;
     uint32_t dst;
-    int line;
+    uint64_t spentcycles;
     bool in;
 };
 
-/* Processed subcalls from routine to routine */
-struct subcalls
+struct subcallSig
 {
+    uint32_t srcfileindex;
+    uint32_t srcfunctionindex;
+    uint32_t dstfileindex;
+    uint32_t dstfunctionindex;
+};
+/* Processed subcalls from routine to routine */
+struct subcall
+{
+    struct subcallSig sig;
+
     uint32_t src;
     uint32_t dst;
+    uint32_t srcline;
+    uint32_t dstline;
+
     uint64_t myCost;
-    uint64_t total;
+    uint64_t count;
+    uint64_t inTicks;
+
+    UT_hash_handle hh;
+    struct subcall *next;
 };
 
 /* States for sample reception state machine */
@@ -142,12 +171,13 @@ struct Options                               /* Record for options, either defau
 /* Materials required to be maintained across callbacks for output construction */
 struct opConstruct
 {
-    const char *currentFilename;         /* The filename we're currently in */
-    const char *currentFunction;         /* The function we're currently in */
+    uint32_t fileindex;                  /* The file we're currently in */
+    uint32_t functionindex;              /* The function we're currently in */
     uint32_t currentLine;                /* The line we're currently in */
     uint32_t workingAddr;                /* The address we're currently in */
     uint32_t lastAddr;                   /* The address we were last */
     bool lastWasJump;                    /* Was the last instruction a jump? */
+    uint64_t lasttstamp;                 /* Last timestamp we recorded */
 };
 
 /* A block of received data */
@@ -168,17 +198,22 @@ struct RunTime
     uint64_t intervalBytes;             /* Number of bytes transferred in current interval */
 
     /* Calls related info */
-    enum CDState CDState;                   /* State of the call data machine */
-    struct edge callsConstruct;             /* Call data entry under construction */
-    struct edge *calls;                     /* Call data table */
-    struct subcalls *sub;                   /* Construct data */
+    enum CDState CDState;               /* State of the call data machine */
+    struct edge callsConstruct;         /* Call data entry under construction */
+    struct edge *calls;                 /* Call data table */
 
-    uint64_t subPsn;                        /* Counter for sub calls */
-    uint64_t psn;                           /* Current position in assessment of data */
-    uint64_t cdCount;                       /* Call data count */
+    struct subcall *subhead;            /* Calls onstruct data */
+    struct subcall **substack;          /* Calls stack data */
+    uint32_t substacklen;               /* Calls stack length */
 
-    struct SymbolSet *s;                    /* Symbols read from elf */
-    FILE *c;                                /* Writable file */
+    struct execEntryHash *insthead;     /* Exec table handle for hash */
+
+    int instCount;                      /* Number of instruction locations */
+
+    uint64_t callsCount;                   /* Call data count */
+
+    struct SymbolSet *s;                /* Symbols read from elf */
+    FILE *c;                            /* Writable file */
 
     struct opConstruct op;              /* The mechanical elements for creating the output buffer */
     struct Options *options;            /* Our runtime configuration */
@@ -186,6 +221,7 @@ struct RunTime
     struct dataBlock rawBlock;          /* Datablock received from distribution */
 
     bool sampling;                      /* Are we actively sampling at the moment */
+
     /* Turn addresses into files and routines tags */
     uint32_t nameCount;
     struct nameEntryHash *name;
@@ -217,21 +253,11 @@ static int _calls_sort_src_fn( const void *a_v, const void *b_v )
     struct edge *b = ( struct edge * )b_v;
     int32_t c;
 
-    c = strcmp( a->srcFile, b->srcFile );
+    c = ( int32_t )a->src - ( int32_t )b->src;
 
     if ( !c )
     {
-        c = strcmp( a->srcFn, b->srcFn );
-    }
-
-    if ( !c )
-    {
-        c = strcmp( a->dstFile, b->dstFile );
-    }
-
-    if ( !c )
-    {
-        c = strcmp( a->dstFn, b->dstFn );
+        c = ( int32_t )a->dst - ( int32_t )b->dst;
     }
 
     return c;
@@ -246,21 +272,11 @@ static int _calls_sort_dest_fn( const void *a_v, const void *b_v )
     struct edge *b = ( struct edge * )b_v;
     int32_t c;
 
-    c = strcmp( a->dstFile, b->dstFile );
+    c = ( int32_t )a->dst - ( int32_t )b->dst;
 
     if ( !c )
     {
-        c = strcmp( a->dstFn, b->dstFn );
-    }
-
-    if ( !c )
-    {
-        c = strcmp( a->srcFile, b->srcFile );
-    }
-
-    if ( !c )
-    {
-        c = strcmp( a->srcFn, b->srcFn );
+        c = ( int32_t )a->src - ( int32_t )b->src;
     }
 
     return c;
@@ -271,6 +287,7 @@ bool _outputDot( struct RunTime *r )
 /* Output call graph to dot file */
 
 {
+#if 0
     FILE *c;
 
     if ( !r->options->dotfile )
@@ -279,28 +296,28 @@ bool _outputDot( struct RunTime *r )
     }
 
     /* Sort according to addresses visited. */
-    qsort( r->calls, r->cdCount, sizeof( struct edge ), _calls_sort_dest_fn );
+    qsort( r->calls, r->callsCount, sizeof( struct edge ), _calls_sort_dest_fn );
 
     c = fopen( r->options->dotfile, "w" );
     fprintf( c, "digraph calls\n{\n  overlap=false; splines=true; size=\"7.75,10.25\"; orientation=portrait; sep=0.1; nodesep=0.1;\n" );
 
     /* firstly write out the nodes in each subgraph - dest side clustered */
-    for ( uint32_t x = 1; x < r->cdCount; x++ )
+    for ( uint32_t x = 1; x < r->callsCount; x++ )
     {
         fprintf( c, "  subgraph \"cluster_%s\"\n  {\n    label=\"%s\";\n    bgcolor=lightgrey;\n", r->calls[x - 1].dstFile, r->calls[x - 1].dstFile );
 
-        while ( x < r->cdCount )
+        while ( x < r->callsCount )
         {
             /* Now output each function in the subgraph */
             fprintf( c, "    %s [style=filled, fillcolor=white];\n", r->calls[x - 1].dstFn );
 
             /* Spin forwards until the function name _or_ filename changes */
-            while ( ( x < r->cdCount ) && ( r->calls[x - 1].dstFn == r->calls[x].dstFn ) )
+            while ( ( x < r->callsCount ) && ( r->calls[x - 1].dstFn == r->calls[x].dstFn ) )
             {
                 x++;
             }
 
-            if ( ( x >= r->cdCount ) || ( r->calls[x - 1].dstFile != r->calls[x].dstFile ) )
+            if ( ( x >= r->callsCount ) || ( r->calls[x - 1].dstFile != r->calls[x].dstFile ) )
             {
                 break;
             }
@@ -313,24 +330,24 @@ bool _outputDot( struct RunTime *r )
 
     printf( "Sort completed" EOL );
     /* now write out the nodes in each subgraph - source side clustered */
-    qsort( r->calls, r->cdCount, sizeof( struct edge ), _calls_sort_src_fn );
+    qsort( r->calls, r->callsCount, sizeof( struct edge ), _calls_sort_src_fn );
 
-    for ( uint32_t x = 1; x < r->cdCount; x++ )
+    for ( uint32_t x = 1; x < r->callsCount; x++ )
     {
         fprintf( c, "  subgraph \"cluster_%s\"\n  {\n    label=\"%s\";\n    bgcolor=lightgrey;\n", r->calls[x - 1].srcFile, r->calls[x - 1].srcFile );
 
-        while ( x < r->cdCount )
+        while ( x < r->callsCount )
         {
             /* Now output each function in the subgraph */
             fprintf( c, "    %s [style=filled, fillcolor=white];\n", r->calls[x - 1].srcFn );
 
             /* Spin forwards until the function name _or_ filename changes */
-            while ( ( x < r->cdCount ) && ( r->calls[x - 1].srcFn == r->calls[x].srcFn ) )
+            while ( ( x < r->callsCount ) && ( r->calls[x - 1].srcFn == r->calls[x].srcFn ) )
             {
                 x++;
             }
 
-            if ( ( x >= r->cdCount ) || ( r->calls[x - 1].srcFile != r->calls[x].srcFile ) )
+            if ( ( x >= r->callsCount ) || ( r->calls[x - 1].srcFile != r->calls[x].srcFile ) )
             {
                 break;
             }
@@ -342,11 +359,11 @@ bool _outputDot( struct RunTime *r )
     }
 
     /* Now go through and label the arrows... */
-    for ( uint32_t x = 0; x < r->cdCount; x++ )
+    for ( uint32_t x = 0; x < r->callsCount; x++ )
     {
         int cnt = 0;
 
-        while ( ( x < r->cdCount - 1 ) && ( r->calls[x].srcFn == r->calls[x + 1].srcFn ) && ( r->calls[x].dstFn == r->calls[x + 1].dstFn ) )
+        while ( ( x < r->callsCount - 1 ) && ( r->calls[x].srcFn == r->calls[x + 1].srcFn ) && ( r->calls[x].dstFn == r->calls[x + 1].dstFn ) )
         {
             cnt++;
             x++;
@@ -358,7 +375,7 @@ bool _outputDot( struct RunTime *r )
 
     fprintf( c, "}\n" );
     fclose( c );
-
+#endif
     return true;
 }
 // ====================================================================================================
@@ -366,196 +383,12 @@ bool _outputDot( struct RunTime *r )
 // KCacheGrind support
 // ====================================================================================================
 // ====================================================================================================
-void _lookup( struct RunTime *r, struct nameEntryHash **h, uint32_t addr )
+static int _inst_sort_fn( const void *a, const void *b )
 
-/* Lookup function for address to line, and hence to function, and cache in case we need it later */
-
-{
-    struct nameEntry *np;
-
-    HASH_FIND_INT( r->name, &addr, *h );
-
-    if ( !( *h ) )
-    {
-        struct nameEntry ne;
-
-        /* Find a matching name record if there is one */
-        SymbolLookup( r->s, addr, &ne, r->options->deleteMaterial );
-
-        /* Was found, so create new hash entry for this */
-        np = ( struct nameEntry * )malloc( sizeof( struct nameEntry ) );
-        *h = ( struct nameEntryHash * )malloc( sizeof( struct nameEntryHash ) );
-        memcpy( np, &ne, sizeof( struct nameEntry ) );
-        ( *h )->n = np;
-        ( *h )->index = r->nameCount++;
-        ( *h )->seen = false;
-
-        HASH_ADD_INT( r->name, n->addr, *h );
-    }
-}
-// ====================================================================================================
-int _addresses_sort_fn( const void *a, const void *b )
-
-/* Sort addresses first by src, then by dst */
+/* Sort instructions by address */
 
 {
-    int32_t c = ( ( ( struct subcalls * )a )->src ) - ( ( ( struct subcalls * )b )->src );
-
-    if ( c )
-    {
-        return c;
-    }
-
-    return ( ( ( struct subcalls * )a )->dst ) - ( ( ( struct subcalls * )b )->dst );
-}
-// ====================================================================================================
-int _addresses_sort_dest_fn( const void *a, const void *b )
-
-/* Sort addresses first by dst, then by src */
-
-{
-    int32_t c = ( ( ( struct subcalls * )a )->dst ) - ( ( ( struct subcalls * )b )->dst );
-
-    if ( c )
-    {
-        return c;
-    }
-
-    return ( ( ( struct subcalls * )a )->src ) - ( ( ( struct subcalls * )b )->src );
-}
-// ====================================================================================================
-void _dumpProfile( struct RunTime *r )
-
-/* Dump profile to Valgrind (KCacheGrind compatible) file format */
-
-{
-    struct nameEntryHash *f, *t;
-
-    uint64_t myCost;
-    uint64_t totalCost;
-    uint32_t totalCalls;
-
-    /* Empty the 'seen' field of the name cache */
-    HASH_ITER( hh, r->name, f, t )
-    {
-        f->seen = false;
-    }
-
-    /* Record any destination routine and the time it's taken */
-    qsort( r->sub, r->subPsn, sizeof( struct subcalls ), _addresses_sort_dest_fn );
-
-    for ( uint32_t i = 0; i < r->subPsn - 1; i++ )
-    {
-        /* Collect total cost and sub costs for this dest routine */
-        myCost = r->sub[i].myCost;
-
-        while ( ( i < r->subPsn - 1 ) && ( r->sub[i].dst == r->sub[i + 1].dst ) )
-        {
-            myCost += r->sub[i++].myCost;
-        }
-
-        _lookup( r, &t, r->sub[i].dst );
-
-        if ( !t->seen )
-        {
-            /* Haven't seen it before, so announce it */
-            fprintf( r->c, "fl=(%d) %s%s\nfn=(%d) %s\n0x%08x %d %" PRIu64 "\n", t->index, r->options->deleteMaterial, t->n->filename, t->index, t->n->function, t->n->addr, t->n->line, myCost );
-            t->seen = true;
-        }
-    }
-
-
-    /* OK, now proceed to report the calls */
-
-    fprintf( r->c, "\n\n## ------------------- Calls Follow ------------------------\n" );
-
-    for ( uint32_t i = 0; i < r->subPsn - 2; i++ )
-    {
-        myCost = r->sub[i].myCost;
-        totalCost = r->sub[i].total;
-        totalCalls = 1;
-
-        while ( ( i < r->subPsn - 2 ) && ( r->sub[i].dst == r->sub[i + 1].dst ) && ( r->sub[i].src == r->sub[i + 1].src ) )
-        {
-            i++;
-            totalCost += r->sub[i].total;
-            myCost += r->sub[i].myCost;
-            totalCalls++;
-        }
-
-        _lookup( r, &t, r->sub[i].dst );
-
-        if ( !t->seen )
-        {
-            /* This is a previously unseen dest, announce it */
-            fprintf( r->c, "fl=(%d) %s\nfn=(%d) %s\n0x%08x %d %" PRIu64 "\n", t->index, t->n->filename, t->index, t->n->function, t->n->addr, t->n->line, myCost );
-            t->seen = true;
-        }
-
-        _lookup( r, &f, r->sub[i].src );
-
-        if ( !f->seen )
-        {
-            /* Add this in, but cost of the caller is not visible here...we need to put 1 else no code is visible */
-            fprintf( r->c, "fl=(%d) %s%s\nfn=(%d) %s\n0x%08x %d 1\n", f->index, r->options->deleteMaterial, f->n->filename, f->index, f->n->function, f->n->addr, f->n->line );
-            f->seen = true;
-        }
-        else
-        {
-            fprintf( r->c, "fl=(%d)\nfn=(%d)\n", f->index, f->index );
-        }
-
-        /* Now publish the call destination. By definition is is known, so can be shortformed */
-        fprintf( r->c, "cfi=(%d)\ncfn=(%d)\ncalls=%d 0x%08x %d\n", t->index, t->index, totalCalls, r->sub[i].dst, t->n->line );
-        fprintf( r->c, "0x%08x %d %" PRIu64 "\n", r->sub[i].src, f->n->line, totalCost );
-    }
-}
-// ====================================================================================================
-uint64_t _traverse( struct RunTime *r, uint32_t layer )
-
-/* Recursively traverse the calls tree, recording each subroutine call as we go along */
-
-{
-    uint32_t startPoint = r->psn; /* Record where we came in on this iteration */
-    uint64_t childCost = 0;      /* ...and keep a record of any children visited */
-
-    /* If this is an out and we're already at the top level then it's to be ignored */
-    if ( ( layer == 0 ) && ( !r->calls[r->psn].in ) )
-    {
-        r->psn++;
-        return 0;
-    }
-
-    r->psn++; /* Move past my node... */
-
-    /* Two cases...either an in node, in which case there is more to be covered */
-    /* or an out node, in which case we're done and we can just record what we've got */
-
-    /* ...of course there might be a whole sequence if in calls if we call several routines from ours */
-    while ( r->calls[r->psn].in )
-    {
-        if ( r->psn >= r->cdCount - 2 )
-        {
-            return 0;
-        }
-
-        childCost += _traverse( r, layer + 1 );
-    }
-
-
-    /* This is my out node....they may have been others below, but this one matches my in node */
-    /* At this point startPoint is the in node, and r_psn is the exit node, so store this entry */
-
-    r->sub = ( struct subcalls * )realloc( r->sub, ( ++r->subPsn ) * ( sizeof( struct subcalls ) ) );
-    r->sub[r->subPsn - 1].src = r->calls[r->psn].dst;
-    r->sub[r->subPsn - 1].dst = r->calls[r->psn].src;
-    r->sub[r->subPsn - 1].total = r->calls[r->psn].tstamp - r->calls[startPoint].tstamp;
-    r->sub[r->subPsn - 1].myCost = r->sub[r->subPsn - 1].total - childCost;
-
-    r->psn++;
-
-    /* ...and float to level above any cost we've got */
-    return r->sub[r->subPsn - 1].total;
+    return ( int )( ( ( struct execEntryHash * )a )->addr ) - ( int )( ( ( struct execEntryHash * )b )->addr );
 }
 // ====================================================================================================
 bool _outputProfile( struct RunTime *r )
@@ -563,6 +396,12 @@ bool _outputProfile( struct RunTime *r )
 /* Output a KCacheGrind compatible profile */
 
 {
+    struct nameEntry n;
+    uint32_t prevfile = -1;
+    uint32_t prevfn = -1;
+    uint32_t prevaddr = -1;
+    uint32_t prevline = -1;
+
     if ( !r->options->profile )
     {
         return false;
@@ -571,28 +410,83 @@ bool _outputProfile( struct RunTime *r )
 
     r->c = fopen( r->options->profile, "w" );
     fprintf( r->c, "# callgrind format\n" );
-    fprintf( r->c, "positions: line instr\nevent: Cyc : Processor Clock Cycles\nevents: Cyc\n" );
+    fprintf( r->c, "creator: orbprofile\npositions: instr line\nevent: Inst : Processor Instruction Cycles\nevents: Inst\n" );
     /* Samples are in time order, so we can determine the extent of time.... */
-    fprintf( r->c, "summary: %" PRIu64 "\n", r->calls[r->cdCount - 1].tstamp - r->calls[0].tstamp );
+    fprintf( r->c, "summary: %" PRIu64 "\n", r->op.lasttstamp );
     fprintf( r->c, "ob=%s\n", r->options->elffile );
 
-    /* If we have a set of sub-calls from a previous run then delete them */
-    if ( r->sub )
+    HASH_SORT( r->insthead, _inst_sort_fn );
+    struct execEntryHash *f = r->insthead;
+
+    while ( f )
     {
-        free( r->sub );
-        r->sub = NULL;
+        SymbolLookup( r->s, f->addr, &n, r->options->deleteMaterial );
+
+        if ( prevfile != n.fileindex )
+        {
+            fprintf( r->c, "fl=(%d) %s%s\n", n.fileindex, r->options->deleteMaterial ? r->options->deleteMaterial : "", n.filename );
+        }
+        else
+        {
+            fprintf( r->c, "fl=(%d)\n", n.fileindex );
+        }
+
+        if ( prevfn != n.functionindex )
+        {
+            fprintf( r->c, "fn=(%d) %s\n", n.functionindex, n.function );
+        }
+        else
+        {
+            fprintf( r->c, "fn=(%d)\n", n.functionindex );
+        }
+
+        if ( 1 ) //(prevline == -1) || (prevaddr==-1))
+        {
+            fprintf( r->c, "0x%08x %d ", f->addr, n.line );
+        }
+        else
+        {
+            if ( prevaddr == f->addr )
+            {
+                fprintf( r->c, "* " );
+            }
+            else
+            {
+                fprintf( r->c, "%s%d ", f->addr > prevaddr ? "+" : "", ( int )f->addr - prevaddr );
+            }
+
+            if ( prevline == n.line )
+            {
+                fprintf( r->c, "* " );
+            }
+            else
+            {
+                fprintf( r->c, "%s%d ", n.line > prevline ? "+" : "", ( int )n.line - prevline );
+            }
+        }
+
+        fprintf( r->c, "%" PRIu64 "\n", f->count );
+
+
+        prevline = n.line;
+        prevaddr = f->addr;
+        prevfile = n.fileindex;
+        prevfn = n.functionindex;
+        f = f->hh.next;
     }
 
-    r->subPsn = 0;
+    struct subcall *s = r->subhead;
 
-    r->psn = 0;
-
-    while ( r->psn < r->cdCount - 2 )
+    while ( s )
     {
-        _traverse( r, 0 );
+        fprintf( r->c, "fl=(%d)\nfn=(%d)\n", s->sig.srcfileindex, s->sig.srcfunctionindex );
+
+        /* Now publish the call destination. By definition is is known, so can be shortformed */
+        fprintf( r->c, "cfi=(%d)\ncfn=(%d)\ncalls=%" PRIu64 " 0x%08x %d\n", s->sig.dstfileindex, s->sig.dstfunctionindex, s->count, s->dst, s->dstline );
+        fprintf( r->c, "0x%08x %d %" PRIu64 "\n", s->src, s->srcline, s->myCost );
+        s = s->hh.next;
     }
 
-    _dumpProfile( r );
     fclose( r->c );
 
     return true;
@@ -606,6 +500,8 @@ static void _etmCB( void *d )
     struct RunTime *r = ( struct RunTime * )d;
     struct ETMCPUState *cpu = ETMCPUState( &r->i );
     uint32_t incAddr = 0;
+    struct subcall *s;
+    struct subcallSig sig;
     struct nameEntry n;
     uint32_t disposition;
 
@@ -623,9 +519,9 @@ static void _etmCB( void *d )
 
     if ( ETMStateChanged( &r->i, EV_CH_EX_ENTRY ) )
     {
-        r->op.currentFilename = "INTERRUPT";
-        //r->op.currentFunction = NULL;
         r->op.lastWasJump = true;
+        r->op.functionindex = r->op.fileindex = -1;
+        r->op.lastAddr = ADDR_INTERRUPT;
     }
 
     if ( ETMStateChanged( &r->i, EV_CH_EX_EXIT ) )
@@ -637,52 +533,97 @@ static void _etmCB( void *d )
     {
         incAddr--;
 
-        if ( SymbolLookup( r->s, r->op.workingAddr, &n, r->options->deleteMaterial ) )
+        struct execEntryHash *h = NULL;
+
+        HASH_FIND_INT( r->insthead, &r->op.workingAddr, h );
+
+        if ( !h )
         {
-            /* If we have changed file or function put a header line in */
-            if ( ( n.filename != r->op.currentFilename ) || ( n.function != r->op.currentFunction ) )
+            /* We don't have this address captured yet, do it now */
+            if ( SymbolLookup( r->s, r->op.workingAddr, &n, r->options->deleteMaterial ) )
             {
-                r->calls = ( struct edge * )realloc( r->calls, sizeof( struct edge ) * ( r->cdCount + 1 ) );
-                r->calls[r->cdCount].tstamp = cpu->instCount;//cpu->cycleCount;
-                r->calls[r->cdCount].src = r->op.lastAddr;
-                r->calls[r->cdCount].srcFile = r->op.currentFilename ? r->op.currentFilename : "Entry";
-                r->calls[r->cdCount].srcFn   = r->op.currentFunction ? r->op.currentFunction : "Entry";
-                r->calls[r->cdCount].dst = r->op.workingAddr;
-                r->calls[r->cdCount].dstFile = n.filename;
-                r->calls[r->cdCount].dstFn = n.function;
-                r->calls[r->cdCount].in = r->op.lastWasJump;
-                r->cdCount++;
+                h = calloc( 1, sizeof( struct execEntryHash ) );
 
-                r->op.currentFilename = n.filename;
-                r->op.currentFunction = n.function;
-            }
+                h->addr = r->op.workingAddr;
+                h->fileindex = n.fileindex;
+                h->functionindex = n.functionindex;
 
-            r->op.lastWasJump = false;
-            r->op.lastAddr = r->op.workingAddr;
-
-            /* If this line has assembly then process it */
-            if ( n.assyLine != ASSY_NOT_FOUND )
-            {
-                if ( ( n.assy[n.assyLine].isJump ) && ( disposition & 1 ) )
+                if ( n.assyLine == ASSY_NOT_FOUND )
                 {
-                    /* This is a fixed jump that _was_ taken, so update working address */
-                    r->op.workingAddr = n.assy[n.assyLine].jumpdest;
-                    r->op.lastWasJump = true;
+                    genericsExit( -1, "No assembly for function at address %08x, %s" EOL, r->op.workingAddr, n.function );
                 }
-                else
-                {
-                    r->op.workingAddr += ( n.assy[n.assyLine].is4Byte ) ? 4 : 2;
-                }
+
+                h->isJump = n.assy[n.assyLine].isJump;
+                h->isSubCall = n.assy[n.assyLine].isSubCall;
+                h->isReturn = n.assy[n.assyLine].isReturn;
+                h->jumpdest = n.assy[n.assyLine].jumpdest;
+                h->is4Byte = n.assy[n.assyLine].is4Byte;
+
             }
             else
             {
-                r->op.workingAddr += 2;
+                genericsExit( -1, "No symbol for address %08x" EOL, r->op.workingAddr );
             }
+
+            HASH_ADD_INT( r->insthead, addr, h );
+        }
+
+        /* By hook or by crook we've got an address entry now, so increment the number of executions */
+        h->count++;
+
+        /* Now process calls and returns */
+        if ( h->isSubCall )
+        {
+            sig.srcfileindex     = r->op.fileindex;
+            sig.srcfunctionindex = r->op.functionindex;
+            sig.dstfileindex     = h->fileindex;
+            sig.dstfunctionindex = h->functionindex;
+
+            /* Diving in a level */
+            HASH_FIND( hh, r->subhead, &sig, sizeof( struct subcallSig ), s );
+
+            if ( !s )
+            {
+                /* This entry doesn't exist...let's create it */
+                s = ( struct subcall * )calloc( 1, sizeof( struct subcall ) );
+                memcpy( &s->sig, &sig, sizeof( struct subcallSig ) );
+                s->src = r->op.lastAddr;
+                s->dst = r->op.workingAddr;
+                s->srcline = r->op.currentLine;
+                s->dstline = n.line;
+                HASH_ADD( hh, r->subhead, sig, sizeof( struct subcallSig ), s );
+            }
+
+            /* However we got here, we've got a subcall record, so initialise starting ticks */
+            s->inTicks = cpu->instCount;
+            s->count++;
+
+            /* ...and add it to the call stack */
+            r->substack = ( struct subcall ** )realloc( r->substack, ( r->substacklen + 1 ) * sizeof( struct subcall * ) );
+            r->substack[r->substacklen++] = s;
+        }
+
+        if ( ( h->isReturn ) && ( r->substacklen ) )
+        {
+            /* We don't bother deallocating memory here cos it'll be done on the next isSubCall */
+            s = r->substack[--r->substacklen];
+            s->myCost += cpu->instCount - s->inTicks;
+        }
+
+        r->op.lastWasJump = false;
+        r->op.lastAddr = r->op.workingAddr;
+        r->op.currentLine = n.line;
+        r->op.lasttstamp = cpu->instCount;
+
+        if ( ( h->isJump ) && ( disposition & 1 ) )
+        {
+            /* This is a fixed jump that _was_ taken, so update working address */
+            r->op.workingAddr = h->jumpdest;
+            r->op.lastWasJump = true;
         }
         else
         {
-            /* We didn't have a symbol for this address, so let's just assume a short instruction */
-            r->op.workingAddr += 2;
+            r->op.workingAddr += ( h->is4Byte ) ? 4 : 2;
         }
 
         disposition >>= 1;
@@ -1020,9 +961,9 @@ int main( int argc, char *argv[] )
             if ( ( _r.sampling ) && ( ( genericsTimestampmS() - startTime ) > _r.options->sampleDuration ) )
             {
                 _r.ending = true;
-                genericsReport( V_WARN, "Received %d raw sample bytes, %ld function changes" EOL, _r.intervalBytes, _r.cdCount );
+                genericsReport( V_WARN, "Received %d raw sample bytes, %ld function changes, %ld distinct addresses" EOL, _r.intervalBytes, HASH_COUNT( _r.subhead ), HASH_COUNT( _r.insthead ) );
 
-                if (  _r.cdCount )
+                if ( HASH_COUNT( _r.subhead ) )
                 {
                     if ( _outputDot( &_r ) )
                     {

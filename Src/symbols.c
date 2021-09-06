@@ -196,7 +196,8 @@ static void _sortLines( struct SymbolSet *s )
 }
 
 // ====================================================================================================
-static bool _find_symbol( struct SymbolSet *s, uint32_t workingAddr, const char **pfilename, const char **pfunction, uint32_t *pline, uint16_t *linesInBlock, const char **psource,
+static bool _find_symbol( struct SymbolSet *s, uint32_t workingAddr, uint32_t *fileindex, const char **pfilename, uint32_t *functionindex, const char **pfunction, uint32_t *pline,
+                          uint16_t *linesInBlock, const char **psource,
                           const struct assyLineEntry **assy,
                           uint32_t *assyLine )
 
@@ -215,6 +216,8 @@ static bool _find_symbol( struct SymbolSet *s, uint32_t workingAddr, const char 
         *pfilename = ( found->fileIdx != SYM_NOT_FOUND ) ? s->files[found->fileIdx].name : "";
         *psource = found->lineText;
         *assy    = found->assy;
+        *fileindex = found->fileIdx;
+        *functionindex = found->functionIdx;
 
         /* If there is assembly then match the line too */
         for ( *assyLine = 0; *assyLine < found->assyLines; ( *assyLine )++ )
@@ -547,6 +550,8 @@ static bool _getTargetProgramInfo( struct SymbolSet *s )
 
                             sourceEntry->assy[sourceEntry->assyLines].lineText = strdup( line );
                             sourceEntry->assy[sourceEntry->assyLines].isJump = false;
+                            sourceEntry->assy[sourceEntry->assyLines].isReturn = false;
+                            sourceEntry->assy[sourceEntry->assyLines].isSubCall = false;
 
                             /* Just hook the assy pointer to the location in the line where the assembly itself starts */
                             sourceEntry->assy[sourceEntry->assyLines].assy = strstr( sourceEntry->assy[sourceEntry->assyLines].lineText, p4 );
@@ -557,29 +562,49 @@ static bool _getTargetProgramInfo( struct SymbolSet *s )
                                    sourceEntry->assy[sourceEntry->assyLines].codes,
                                    sourceEntry->assy[sourceEntry->assyLines].lineText );
 
+#define MASKED_COMPARE(mask,compare) (((sourceEntry->assy[sourceEntry->assyLines].codes)&(mask))==(compare))
+
+                            /* Mark if this is a subroutine call (BX/BLX) */
+                            if (
+                                        MASKED_COMPARE( 0xf800C000, 0xf000C000 ) ||
+                                        MASKED_COMPARE( 0xffffff00, 0x00004700 )
+                            )
+                            {
+                                /* Branching to LR is often used as a RETURN shortform */
+                                if ( sourceEntry->assy[sourceEntry->assyLines].codes == 0x4770 )
+                                {
+                                    sourceEntry->assy[sourceEntry->assyLines].isReturn = true;
+                                }
+                                else
+                                {
+                                    sourceEntry->assy[sourceEntry->assyLines].isSubCall = true;
+                                }
+                            }
+
+                            /* Mark if instruction is a return (i.e. PC popped from stack) */
+                            if (
+                                        MASKED_COMPARE( 0xffffff00, 0x0000bd00 ) ||
+                                        MASKED_COMPARE( 0xffff8000, 0xe8bd8000 )
+                            )
+                            {
+                                sourceEntry->assy[sourceEntry->assyLines].isReturn = true;
+                            }
+
                             /* Finally, if this is a jump that might be taken, then get the jump destination */
                             /* This is done by checking if the opcode is a valid jump in either 16 or 32 bit world */
                             if (
-                                        (
-                                                    ( !sourceEntry->assy[sourceEntry->assyLines].is4Byte ) &&
-                                                    ( ( ( sourceEntry->assy[sourceEntry->assyLines].codes & 0xf800 ) == 0xe000 ) || ( sourceEntry->assy[sourceEntry->assyLines].codes & 0xf000 ) == 0xd000 )
-                                        )
-
-                                        || ( ( sourceEntry->assy[sourceEntry->assyLines].codes & 0xf8009000 ) == 0xf0009000 )
-
-                                        || ( ( sourceEntry->assy[sourceEntry->assyLines].codes & 0xf800C001 ) == 0xf000C000 )
-
-                                        // || ((sourceEntry->assy[sourceEntry->assyLines].codes&0xf800D000)==0xf0008000)
+                                        MASKED_COMPARE( 0xfffff800, 0x0000e000 ) ||
+                                        MASKED_COMPARE( 0xfffff000, 0x0000d000 ) ||
+                                        MASKED_COMPARE( 0xf8009000, 0xf0009000 ) ||
+                                        MASKED_COMPARE( 0xf800C001, 0xf000C000 )
                             )
                             {
-
                                 if ( _getDest( sourceEntry->assy[sourceEntry->assyLines].assy, &sourceEntry->assy[sourceEntry->assyLines].jumpdest ) )
                                 {
                                     sourceEntry->assy[sourceEntry->assyLines].isJump = true;
                                 }
                                 else
                                 {
-                                    //      exit(1);
                                     GTPIP( "Failed to get jump destination for text %s " EOL, sourceEntry->assy[sourceEntry->assyLines].assy );
                                 }
                             }
@@ -631,6 +656,8 @@ bool SymbolLookup( struct SymbolSet *s, uint32_t addr, struct nameEntry *n, char
     const char *function = NULL;
     const char *filename = NULL;
     const char *source   = NULL;
+    uint32_t fileindex;
+    uint32_t functionindex;
     const struct assyLineEntry *assy = NULL;
     uint32_t assyLine;
     uint16_t linesInBlock;
@@ -673,7 +700,7 @@ bool SymbolLookup( struct SymbolSet *s, uint32_t addr, struct nameEntry *n, char
         return false;
     }
 
-    if ( _find_symbol( s, addr, &filename, &function, &line, &linesInBlock, &source, &assy, &assyLine ) )
+    if ( _find_symbol( s, addr, &fileindex, &filename, &functionindex, &function, &line, &linesInBlock, &source, &assy, &assyLine ) )
     {
 
         /* Remove any frontmatter off filename string that matches */
@@ -689,7 +716,9 @@ bool SymbolLookup( struct SymbolSet *s, uint32_t addr, struct nameEntry *n, char
         }
 
         n->filename = filename ? filename : "";
+        n->fileindex = fileindex;
         n->function = function ? function : "";
+        n->functionindex = functionindex;
         n->source   = source ? source : "";
         n->assy     = assy;
         n->assyLine = assyLine;
@@ -702,10 +731,10 @@ bool SymbolLookup( struct SymbolSet *s, uint32_t addr, struct nameEntry *n, char
 
     n->filename = "Unknown";
     n->function = "Unknown";
+    n->fileindex = n->functionindex = n->line = 0;
     n->source   = "";
     n->assy     = NULL;
     n->addr = SYM_NOT_FOUND;
-    n->line = 0;
     return false;
 }
 // ====================================================================================================

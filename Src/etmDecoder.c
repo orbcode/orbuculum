@@ -88,9 +88,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
     /* Perform A-Sync accumulation check */
     if ( ( i->asyncCount >= 5 ) && ( c == 0x80 ) )
     {
-        retVal = ETM_EV_SYNCED;
-        /* If we're already idle then stay there, otherwise wait for an ISYNC */
-        newState = ( i->p == ETM_IDLE ) ? ETM_IDLE : ETM_WAIT_ISYNC;
+        newState = ETM_IDLE;
     }
     else
     {
@@ -134,6 +132,14 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                     i->byteCount = 0;
                     i->contextConstruct = 0;
                     newState = i->contextBytes ? ETM_GET_CONTEXTBYTE : ETM_GET_INFOBYTE;
+
+                    /* We won't start reporting data until a valid ISYNC has been received */
+                    if ( !i->rxedISYNC )
+                    {
+                        retVal = ETM_EV_SYNCED;
+                        i->rxedISYNC = true;
+                    }
+
                     break;
                 }
 
@@ -607,6 +613,12 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
             case ETM_WAIT_ISYNC:
                 if ( c == 0b00001000 )
                 {
+                    if ( !i->rxedISYNC )
+                    {
+                        retVal = ETM_EV_SYNCED;
+                        i->rxedISYNC = true;
+                    }
+
                     i->byteCount = i->contextBytes;
                     i->contextConstruct = 0;
                     newState = i->contextBytes ? ETM_GET_CONTEXTBYTE : ETM_GET_INFOBYTE;
@@ -672,12 +684,6 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                     cpu->changeRecord |= ( 1 << EV_CH_HYP );
                 }
 
-                if ( cpu->thumb != ( ( c & 0x00000001 ) != 0 ) )
-                {
-                    cpu->thumb     = ( c & 0x00000001 ) != 0;
-                    cpu->changeRecord |= ( 1 << EV_CH_THUMB );
-                }
-
                 i->byteCount = 0;
 
                 if ( i->dataOnlyMode )
@@ -695,7 +701,6 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
             // -----------------------------------------------------
 
             case ETM_GET_IADDRESS: /* Collecting I-Sync Address bytes */
-                // WORKING CASE
                 i->addrConstruct = ( i->addrConstruct & ( ~( 0xff << ( 8 * i->byteCount ) ) ) )  | ( c << ( 8 * i->byteCount ) ) ;
                 i->byteCount++;
 
@@ -712,6 +717,12 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                     }
                     else
                     {
+                        if ( ( i->addrConstruct & ( 1 << 0 ) ) ^ ( !cpu->thumb ) )
+                        {
+                            cpu->thumb     = ( c & 0x00000001 ) != 0;
+                            cpu->changeRecord |= ( 1 << EV_CH_THUMB );
+                        }
+
                         if ( i->addrConstruct & ( 1 << 0 ) )
                         {
                             cpu->addrMode = ETM_ADDRMODE_THUMB;
@@ -772,7 +783,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
 
     i->p = newState;
 
-    if ( retVal != ETM_EV_NONE )
+    if ( ( retVal != ETM_EV_NONE ) && ( i->rxedISYNC ) )
     {
         cb( d );
     }

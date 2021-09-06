@@ -149,6 +149,7 @@ struct ETMDecoder
 {
     struct ETMDecoderStats stats;        /* Record of the statistics */
     enum ETMprotoState p;                /* Current state of the receiver */
+    bool rxedISYNC;                      /* Indicator that we're fully synced */
 
     /* Trace configuration */
     /* ------------------- */
