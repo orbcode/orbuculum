@@ -43,16 +43,33 @@
 #define INT_ORIGIN_HANDLER     0x1
 #define INT_ORIGIN_MAIN_STACK  0x9
 #define INT_ORIGIN_PROC_STACK  0xD
+#define INT_ORIGIN_UNKNOWN     0xE
 
-#define NOT_FOUND         0x1             /* Special address flag - not found */
-#define INTERRUPT_HANDLER 0x3             /* Call from interrupt handler */
-#define INTERRUPT_MAIN    0x5             /* Called from main stack */
-#define INTERRUPT_PROC    0x7             /* Called from process stack */
-#define INTERRUPT_UNKNOWN 0x9             /* umm...we don't really know */
-#define SLEEPING          0xB             /* Special address flag sleeping */
+//#define NOT_FOUND         0x1             /* Special address flag - not found */
+//#define INTERRUPT_HANDLER 0x3             /* Call from interrupt handler */
+//#define INTERRUPT_MAIN    0x5             /* Called from main stack */
+//#define INTERRUPT_PROC    0x7             /* Called from process stack */
+//#define INTERRUPT_UNKNOWN 0x9             /* umm...we don't really know */
+#define SLEEPING          0xB               /* Special address flag sleeping */
 
-#define ASSY_NOT_FOUND    0xffffffff      /* Assembly line not found */
-#define NO_LINE           0xffffffff      /* No line number defined */
+#define ASSY_NOT_FOUND    0xffffffff        /* Assembly line not found */
+#define NO_LINE           0xffffffff        /* No line number defined */
+#define NO_FILE           0xffffffff        /* No file defined */
+
+#define FN_SLEEPING           (EXC_RETURN_MASK|SLEEPING)                /* Marker for sleeping case */
+#define FN_SLEEPING_STR       "** Sleeping **"                          /* String for sleeping case */
+
+#define FN_ORIGIN_HANDLER     (EXC_RETURN_MASK|INT_ORIGIN_HANDLER)
+#define FN_ORIGIN_HANDLER_STR "INT_FROM_HANDLER"
+
+#define FN_ORIGIN_MAIN        (EXC_RETURN_MASK|INT_ORIGIN_MAIN_STACK)
+#define FN_ORIGIN_MAIN_STR    "INT_FROM_MAIN_STACK"
+
+#define FN_ORIGIN_PROC        (EXC_RETURN_MASK|INT_ORIGIN_PROC_STACK)
+#define FN_ORIGIN_PROC_STR    "INT_FROM_PROC_STACK"
+
+#define FN_ORIGIN_UNKN        (EXC_RETURN_MASK|INT_ORIGIN_UNKNOWN)
+#define FN_ORIGIN_UNKN_STR    "INT_FROM_UNKNOWN"
 
 /* Mapping of lines numbers to indicies */
 struct assyLineEntry
@@ -70,13 +87,14 @@ struct assyLineEntry
     uint32_t jumpdest;                      /* If this is an absolute jump, the destination */
 };
 
-
+/* Full string name for a file */
 struct fileEntry
 
 {
     char *name;                             /* Path to file */
 };
 
+/* Full details for a function */
 struct functionEntry
 
 {
@@ -86,6 +104,7 @@ struct functionEntry
     uint32_t fileEntryIdx;                  /* Link back to containing file */
 };
 
+/* Details for a source line */
 struct sourceLineEntry
 
 {
@@ -102,7 +121,7 @@ struct sourceLineEntry
 
 };
 
-
+/* The full set of symbols */
 struct SymbolSet
 {
     char *elfFile;                         /* File containing structure info */
@@ -114,11 +133,11 @@ struct SymbolSet
     bool demanglecpp;                      /* If we want C++ names demangling */
 
     /* For file mapping... */
-    uint32_t fileCount;                    /* Number of files we have loaded */
     uint32_t sourceCount;                  /* Number of source lines we have loaded */
-    uint32_t functionCount;                /* Number of functions we have loaded */
 
+    uint32_t fileCount;                    /* Number of files we have loaded */
     struct fileEntry *files;               /* Table of files */
+    uint32_t functionCount;                /* Number of functions we have loaded */
     struct functionEntry *functions;       /* Table of functions */
     struct sourceLineEntry *sources;       /* Table of sources */
 };
@@ -126,16 +145,14 @@ struct SymbolSet
 /* An entry in the names table ... what we return to our caller */
 struct nameEntry
 {
-    const char *filename;                /* Filename containing the address */
-    const char *function;                /* Function containing the address */
-    uint32_t fileindex;                  /* Index of filename */
-    uint32_t functionindex;              /* Index of functionname */
-    uint32_t line;                       /* Source line containing the address */
-    uint16_t linesInBlock;               /* Number of lines in this text block */
-    const char *source;                  /* Corresponding source text */
-    const struct assyLineEntry *assy;    /* Corresponding assembly text */
-    uint32_t assyLine;                   /* Line of assembly text */
-    uint32_t addr;                       /* Matched address */
+    uint32_t fileindex;                    /* Index of filename */
+    uint32_t functionindex;                /* Index of functionname */
+    uint32_t line;                         /* Source line containing the address */
+    uint16_t linesInBlock;                 /* Number of lines in this text block */
+    const char *source;                    /* Corresponding source text */
+    const struct assyLineEntry *assy;      /* Corresponding assembly text */
+    uint32_t assyLine;                     /* Line of assembly text */
+    uint32_t addr;                         /* Matched address */
     uint32_t index;
 };
 
@@ -143,6 +160,8 @@ struct nameEntry
 struct SymbolSet *SymbolSetCreate( char *filename, bool demanglecpp, bool recordSource, bool recordAssy );
 void SymbolSetDelete( struct SymbolSet **s );
 bool SymbolSetValid( struct SymbolSet **s, char *filename );
+const char *SymbolFilename( struct SymbolSet *s, uint32_t index );
+const char *SymbolFunction( struct SymbolSet *s, uint32_t index );
 bool SymbolLookup( struct SymbolSet *s, uint32_t addr, struct nameEntry *n, char *deleteMaterial );
 // ====================================================================================================
 #endif

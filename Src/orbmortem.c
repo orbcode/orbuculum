@@ -111,8 +111,8 @@ struct dataBlock
 /* Materials required to be maintained across callbacks for output construction */
 struct opConstruct
 {
-    const char *currentFilename;         /* The filename we're currently in */
-    const char *currentFunction;         /* The function we're currently in */
+    uint32_t currentFileindex;           /* The filename we're currently in */
+    uint32_t currentFunctionindex;       /* The function we're currently in */
     uint32_t currentLine;                /* The line we're currently in */
     uint32_t workingAddr;                /* The address we're currently in */
 };
@@ -585,11 +585,11 @@ static void _etmCB( void *d )
         if ( SymbolLookup( r->s, r->op.workingAddr, &n, r->options->deleteMaterial ) )
         {
             /* If we have changed file or function put a header line in */
-            if ( ( n.filename != r->op.currentFilename ) || ( n.function != r->op.currentFunction ) )
+            if ( ( n.fileindex != r->op.currentFileindex ) || ( n.functionindex != r->op.currentFunctionindex ) )
             {
-                _appendToOPBuffer( r, r->op.currentLine, LT_FILE, "%s::%s", n.filename, n.function );
-                r->op.currentFilename = n.filename;
-                r->op.currentFunction = n.function;
+                _appendToOPBuffer( r, r->op.currentLine, LT_FILE, "%s::%s", SymbolFilename( r->s, n.fileindex ), SymbolFunction( r->s, n.functionindex ) );
+                r->op.currentFileindex     = n.fileindex;
+                r->op.currentFunctionindex = n.functionindex;
                 r->op.currentLine = NO_LINE;
             }
 

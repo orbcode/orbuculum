@@ -86,17 +86,24 @@ struct nameEntryHash
 
 struct execEntryHash
 {
+    /* The address is the memory map */
     uint32_t addr;
+
+    /* Counter at assembly and source line levels */
     uint64_t count;
+    uint64_t scount;
+
+    /* Details about this instruction */
     bool isJump;
     bool is4Byte;
     bool isSubCall;
     bool isReturn;
     uint32_t jumpdest;
+
+    /* Location of this line in source code */
     uint32_t fileindex;
     uint32_t functionindex;
-    const char *filename;
-    const char *function;
+    uint32_t line;
     UT_hash_handle hh;
 };
 
@@ -110,13 +117,17 @@ struct edge
     bool in;
 };
 
+/* Signature for a source/dest calling pair */
 struct subcallSig
 {
     uint32_t srcfileindex;
     uint32_t srcfunctionindex;
+    uint32_t srcline;
     uint32_t dstfileindex;
     uint32_t dstfunctionindex;
+    uint32_t dstline;
 };
+
 /* Processed subcalls from routine to routine */
 struct subcall
 {
@@ -132,7 +143,6 @@ struct subcall
     uint64_t inTicks;
 
     UT_hash_handle hh;
-    struct subcall *next;
 };
 
 /* States for sample reception state machine */
@@ -168,15 +178,14 @@ struct Options                               /* Record for options, either defau
     .server = "localhost"
 };
 
-/* Materials required to be maintained across callbacks for output construction */
+/* State of routine tracking, maintained across ETM callbacks to reconstruct program flow */
 struct opConstruct
 {
-    uint32_t fileindex;                  /* The file we're currently in */
-    uint32_t functionindex;              /* The function we're currently in */
-    uint32_t currentLine;                /* The line we're currently in */
+    struct execEntryHash *h;             /* The exec entry we're currently in (file, function, line, addr etc) */
     uint32_t workingAddr;                /* The address we're currently in */
-    uint32_t lastAddr;                   /* The address we were last */
-    bool lastWasJump;                    /* Was the last instruction a jump? */
+    bool lastWasSubcall;                 /* Was the last instruction an executed subroutine call? */
+    bool lastWasReturn;                  /* Was the last instruction an executed return? */
+    uint64_t firsttstamp;                /* First timestamp we recorded (that was valid) */
     uint64_t lasttstamp;                 /* Last timestamp we recorded */
 };
 
@@ -186,7 +195,6 @@ struct dataBlock
     ssize_t fillLevel;
     uint8_t buffer[TRANSFER_SIZE];
 };
-
 
 /* ----------- LIVE STATE ----------------- */
 struct RunTime
@@ -221,6 +229,7 @@ struct RunTime
     struct dataBlock rawBlock;          /* Datablock received from distribution */
 
     bool sampling;                      /* Are we actively sampling at the moment */
+    uint32_t starttime;                 /* At what time did we start sampling? */
 
     /* Turn addresses into files and routines tags */
     uint32_t nameCount;
@@ -410,9 +419,9 @@ bool _outputProfile( struct RunTime *r )
 
     r->c = fopen( r->options->profile, "w" );
     fprintf( r->c, "# callgrind format\n" );
-    fprintf( r->c, "creator: orbprofile\npositions: instr line\nevent: Inst : Processor Instruction Cycles\nevents: Inst\n" );
+    fprintf( r->c, "creator: orbprofile\npositions: instr line visits\nevent: Inst : CPU Instructions\nevent: Visits : Visits to source line\nevents: Inst Visits\n" );
     /* Samples are in time order, so we can determine the extent of time.... */
-    fprintf( r->c, "summary: %" PRIu64 "\n", r->op.lasttstamp );
+    fprintf( r->c, "summary: %" PRIu64 "\n", r->op.lasttstamp - r->op.firsttstamp );
     fprintf( r->c, "ob=%s\n", r->options->elffile );
 
     HASH_SORT( r->insthead, _inst_sort_fn );
@@ -424,7 +433,7 @@ bool _outputProfile( struct RunTime *r )
 
         if ( prevfile != n.fileindex )
         {
-            fprintf( r->c, "fl=(%d) %s%s\n", n.fileindex, r->options->deleteMaterial ? r->options->deleteMaterial : "", n.filename );
+            fprintf( r->c, "fl=(%d) %s%s\n", n.fileindex, r->options->deleteMaterial ? r->options->deleteMaterial : "", SymbolFilename( r->s, n.fileindex ) );
         }
         else
         {
@@ -433,7 +442,7 @@ bool _outputProfile( struct RunTime *r )
 
         if ( prevfn != n.functionindex )
         {
-            fprintf( r->c, "fn=(%d) %s\n", n.functionindex, n.function );
+            fprintf( r->c, "fn=(%d) %s\n", n.functionindex, SymbolFunction( r->s, n.functionindex ) );
         }
         else
         {
@@ -465,7 +474,7 @@ bool _outputProfile( struct RunTime *r )
             }
         }
 
-        fprintf( r->c, "%" PRIu64 "\n", f->count );
+        fprintf( r->c, "%" PRIu64 "%" PRIu64 "\n", f->count, f->scount );
 
 
         prevline = n.line;
@@ -505,6 +514,19 @@ static void _etmCB( void *d )
     struct nameEntry n;
     uint32_t disposition;
 
+
+    /* This routine gets called when valid data are available, if these are the first, reset counters etc */
+
+    if ( !r->sampling )
+    {
+        r->sampling = true;
+        r->op.firsttstamp = cpu->instCount;
+        genericsReport( V_WARN, "Sampling" EOL );
+        /* Fill in a time to start from */
+        r->starttime = genericsTimestampmS();
+        r->intervalBytes = 0;
+    }
+
     /* Deal with changes introduced by this event ========================= */
     if ( ETMStateChanged( &r->i, EV_CH_ADDRESS ) )
     {
@@ -517,24 +539,13 @@ static void _etmCB( void *d )
         disposition = cpu->disposition;
     }
 
-    if ( ETMStateChanged( &r->i, EV_CH_EX_ENTRY ) )
-    {
-        r->op.lastWasJump = true;
-        r->op.functionindex = r->op.fileindex = -1;
-        r->op.lastAddr = ADDR_INTERRUPT;
-    }
-
-    if ( ETMStateChanged( &r->i, EV_CH_EX_EXIT ) )
-    {
-
-    }
-
     while ( incAddr )
     {
         incAddr--;
 
         struct execEntryHash *h = NULL;
 
+        /* Firstly, let's find the local hash record for this address, or create it if it doesn't exist */
         HASH_FIND_INT( r->insthead, &r->op.workingAddr, h );
 
         if ( !h )
@@ -544,21 +555,22 @@ static void _etmCB( void *d )
             {
                 h = calloc( 1, sizeof( struct execEntryHash ) );
 
-                h->addr = r->op.workingAddr;
-                h->fileindex = n.fileindex;
+                h->addr          = r->op.workingAddr;
+                h->fileindex     = n.fileindex;
+                h->line          = n.line;
                 h->functionindex = n.functionindex;
 
                 if ( n.assyLine == ASSY_NOT_FOUND )
                 {
-                    genericsExit( -1, "No assembly for function at address %08x, %s" EOL, r->op.workingAddr, n.function );
+                    genericsExit( -1, "No assembly for function at address %08x, %s" EOL, r->op.workingAddr, SymbolFunction( r->s, n.functionindex ) );
                 }
 
-                h->isJump = n.assy[n.assyLine].isJump;
-                h->isSubCall = n.assy[n.assyLine].isSubCall;
-                h->isReturn = n.assy[n.assyLine].isReturn;
-                h->jumpdest = n.assy[n.assyLine].jumpdest;
-                h->is4Byte = n.assy[n.assyLine].is4Byte;
-
+                h->isJump        = n.assy[n.assyLine].isJump;
+                h->isSubCall     = n.assy[n.assyLine].isSubCall;
+                h->isReturn      = n.assy[n.assyLine].isReturn;
+                h->jumpdest      = n.assy[n.assyLine].jumpdest;
+                h->is4Byte       = n.assy[n.assyLine].is4Byte;
+                h->count         = h->scount = 0;
             }
             else
             {
@@ -568,18 +580,26 @@ static void _etmCB( void *d )
             HASH_ADD_INT( r->insthead, addr, h );
         }
 
-        /* By hook or by crook we've got an address entry now, so increment the number of executions */
+        /* OK, by hook or by crook we've got an address entry now, so increment the number of executions */
         h->count++;
 
-        /* Now process calls and returns */
-        if ( h->isSubCall )
+        /* If source postion changed then update source code line visitation counts too */
+        if ( ( !r->op.h ) || ( h->fileindex != r->op.h->fileindex ) || ( h->functionindex != r->op.h->functionindex ) || ( h->line != r->op.h->line ) )
         {
-            sig.srcfileindex     = r->op.fileindex;
-            sig.srcfunctionindex = r->op.functionindex;
+            h->scount++;
+        }
+
+        /* If this was an executed call then update, or make a record for it */
+        if ( r->op.lastWasSubcall )
+        {
+            sig.srcfileindex     = r->op.h->fileindex;
+            sig.srcfunctionindex = r->op.h->functionindex;
+            sig.srcline          = r->op.h->line;
             sig.dstfileindex     = h->fileindex;
             sig.dstfunctionindex = h->functionindex;
+            sig.dstline          = h->line;
 
-            /* Diving in a level */
+            /* Find a call record for this call. When this is executed we're at the point the call has been done */
             HASH_FIND( hh, r->subhead, &sig, sizeof( struct subcallSig ), s );
 
             if ( !s )
@@ -587,10 +607,8 @@ static void _etmCB( void *d )
                 /* This entry doesn't exist...let's create it */
                 s = ( struct subcall * )calloc( 1, sizeof( struct subcall ) );
                 memcpy( &s->sig, &sig, sizeof( struct subcallSig ) );
-                s->src = r->op.lastAddr;
+                s->src = r->op.h->addr;
                 s->dst = r->op.workingAddr;
-                s->srcline = r->op.currentLine;
-                s->dstline = n.line;
                 HASH_ADD( hh, r->subhead, sig, sizeof( struct subcallSig ), s );
             }
 
@@ -603,23 +621,25 @@ static void _etmCB( void *d )
             r->substack[r->substacklen++] = s;
         }
 
-        if ( ( h->isReturn ) && ( r->substacklen ) )
+
+        /* If this is an executed return then process it */
+        if ( ( r->op.lastWasReturn ) && ( r->substacklen ) )
         {
             /* We don't bother deallocating memory here cos it'll be done on the next isSubCall */
             s = r->substack[--r->substacklen];
             s->myCost += cpu->instCount - s->inTicks;
         }
 
-        r->op.lastWasJump = false;
-        r->op.lastAddr = r->op.workingAddr;
-        r->op.currentLine = n.line;
-        r->op.lasttstamp = cpu->instCount;
+        /* Record details of this instruction */
+        r->op.h              = h;
+        r->op.lasttstamp     = cpu->instCount;
+        r->op.lastWasReturn  = h->isReturn && ( disposition & 1 );
+        r->op.lastWasSubcall = h->isSubCall && ( disposition & 1 );
 
         if ( ( h->isJump ) && ( disposition & 1 ) )
         {
             /* This is a fixed jump that _was_ taken, so update working address */
             r->op.workingAddr = h->jumpdest;
-            r->op.lastWasJump = true;
         }
         else
         {
@@ -811,7 +831,6 @@ int main( int argc, char *argv[] )
     struct hostent *server;
     int flag = 1;
 
-    int32_t startTime = 0;
     int r;
     struct timeval tv;
     fd_set readfds;
@@ -944,13 +963,6 @@ int main( int argc, char *argv[] )
                     break;
                 }
 
-                if ( ( _r.rawBlock.fillLevel ) && ( !_r.sampling ) )
-                {
-                    _r.sampling = true;
-                    genericsReport( V_WARN, "Sampling" EOL );
-                    /* Fill in a time to start from */
-                    startTime = genericsTimestampmS();
-                }
 
                 _r.intervalBytes += _r.rawBlock.fillLevel;
                 /* Pump all of the data through the protocol handler */
@@ -958,7 +970,7 @@ int main( int argc, char *argv[] )
             }
 
             /* Update the intervals */
-            if ( ( _r.sampling ) && ( ( genericsTimestampmS() - startTime ) > _r.options->sampleDuration ) )
+            if ( ( _r.sampling ) && ( ( genericsTimestampmS() - _r.starttime ) > _r.options->sampleDuration ) )
             {
                 _r.ending = true;
                 genericsReport( V_WARN, "Received %d raw sample bytes, %ld function changes, %ld distinct addresses" EOL, _r.intervalBytes, HASH_COUNT( _r.subhead ), HASH_COUNT( _r.insthead ) );

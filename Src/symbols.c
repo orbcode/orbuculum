@@ -49,7 +49,6 @@
 #include "generics.h"
 #include "symbols.h"
 
-#define TEXT_SEGMENT ".text"
 #define MAX_LINE_LEN (4096)
 #define ELF_RELOAD_DELAY_TIME 1000000   /* Time before elf reload will be attempted when its been lost */
 #define ELF_CHECK_DELAY_TIME  100000    /* Time that elf file has to be stable before it's considered complete */
@@ -196,7 +195,8 @@ static void _sortLines( struct SymbolSet *s )
 }
 
 // ====================================================================================================
-static bool _find_symbol( struct SymbolSet *s, uint32_t workingAddr, uint32_t *fileindex, const char **pfilename, uint32_t *functionindex, const char **pfunction, uint32_t *pline,
+static bool _find_symbol( struct SymbolSet *s, uint32_t workingAddr,
+                          uint32_t *fileindex, uint32_t *functionindex, uint32_t *pline,
                           uint16_t *linesInBlock, const char **psource,
                           const struct assyLineEntry **assy,
                           uint32_t *assyLine )
@@ -210,10 +210,8 @@ static bool _find_symbol( struct SymbolSet *s, uint32_t workingAddr, uint32_t *f
 
     if ( found )
     {
-        *pfunction = ( found->functionIdx != SYM_NOT_FOUND ) ? s->functions[found->functionIdx].name : "";
         *pline = found->lineNo;
         *linesInBlock = found->linesInBlock;
-        *pfilename = ( found->fileIdx != SYM_NOT_FOUND ) ? s->files[found->fileIdx].name : "";
         *psource = found->lineText;
         *assy    = found->assy;
         *fileindex = found->fileIdx;
@@ -648,20 +646,65 @@ static bool _getTargetProgramInfo( struct SymbolSet *s )
     return true;
 }
 // ====================================================================================================
+const char *SymbolFilename( struct SymbolSet *s, uint32_t index )
+
+{
+    switch ( index )
+    {
+        case EXC_RETURN:
+            return "";
+
+        default:
+            if ( ( index > 0 ) && ( index < s->fileCount ) )
+            {
+                return s->files[index].name;
+            }
+
+            return "";
+    }
+}
+// ====================================================================================================
+const char *SymbolFunction( struct SymbolSet *s, uint32_t index )
+
+{
+    switch ( index )
+    {
+        case FN_SLEEPING:
+            return FN_SLEEPING_STR;
+
+        case FN_ORIGIN_HANDLER:
+            return FN_ORIGIN_HANDLER_STR;
+
+        case FN_ORIGIN_MAIN:
+            return FN_ORIGIN_MAIN_STR;
+
+        case FN_ORIGIN_PROC:
+            return FN_ORIGIN_PROC_STR;
+
+        case FN_ORIGIN_UNKN:
+            return FN_ORIGIN_UNKN_STR;
+
+        default:
+            if ( ( index > 0 ) && ( index < s->functionCount ) )
+            {
+                return s->functions[index].name;
+            }
+
+            return "";
+    }
+}
+// ====================================================================================================
 bool SymbolLookup( struct SymbolSet *s, uint32_t addr, struct nameEntry *n, char *deleteMaterial )
 
 /* Lookup function for address to line, and hence to function */
 
 {
-    const char *function = NULL;
-    const char *filename = NULL;
     const char *source   = NULL;
     uint32_t fileindex;
     uint32_t functionindex;
     const struct assyLineEntry *assy = NULL;
     uint32_t assyLine;
     uint16_t linesInBlock;
-
     uint32_t line;
 
     memset( n, 0, sizeof( struct nameEntry ) );
@@ -670,40 +713,16 @@ bool SymbolLookup( struct SymbolSet *s, uint32_t addr, struct nameEntry *n, char
     if ( ( addr & EXC_RETURN_MASK ) == EXC_RETURN )
     {
         /* Address is some sort of interrupt - see */
-        n->filename = "";
+        n->fileindex = EXC_RETURN;
         n->line = 0;
-
-        switch ( addr & INT_ORIGIN_MASK )
-        {
-            case INT_ORIGIN_HANDLER:
-                n->addr = INTERRUPT_HANDLER;
-                n->function = "INT_FROM_HANDLER";
-                break;
-
-            case INT_ORIGIN_MAIN_STACK:
-                n->addr = INTERRUPT_MAIN;
-                n->function = "INT_FROM_MAIN_STACK";
-                break;
-
-            case INT_ORIGIN_PROC_STACK:
-                n->addr = INTERRUPT_PROC;
-                n->function = "INT_FROM_PROC_STACK";
-                break;
-
-            default:
-                n->addr = INTERRUPT_UNKNOWN;
-                n->function = "INT_FROM_UNKNOWN";
-                break;
-
-        }
-
+        n->functionindex = n->addr = EXC_RETURN_MASK | ( addr & INT_ORIGIN_MASK );
         return false;
     }
 
-    if ( _find_symbol( s, addr, &fileindex, &filename, &functionindex, &function, &line, &linesInBlock, &source, &assy, &assyLine ) )
+    if ( _find_symbol( s, addr, &fileindex, &functionindex, &line, &linesInBlock, &source, &assy, &assyLine ) )
     {
+#if 0        /* Remove any frontmatter off filename string that matches */
 
-        /* Remove any frontmatter off filename string that matches */
         if ( ( deleteMaterial ) && ( filename ) )
         {
             char *m = deleteMaterial;
@@ -715,9 +734,8 @@ bool SymbolLookup( struct SymbolSet *s, uint32_t addr, struct nameEntry *n, char
             }
         }
 
-        n->filename = filename ? filename : "";
+#endif
         n->fileindex = fileindex;
-        n->function = function ? function : "";
         n->functionindex = functionindex;
         n->source   = source ? source : "";
         n->assy     = assy;
@@ -729,8 +747,6 @@ bool SymbolLookup( struct SymbolSet *s, uint32_t addr, struct nameEntry *n, char
     }
 
 
-    n->filename = "Unknown";
-    n->function = "Unknown";
     n->fileindex = n->functionindex = n->line = 0;
     n->source   = "";
     n->assy     = NULL;

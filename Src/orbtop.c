@@ -216,21 +216,17 @@ int _routines_sort_fn( void *a, void *b )
 {
     int r;
 
-    if ( options.reportFilenames )
+    if ( ( options.reportFilenames ) && ( ( ( ( struct visitedAddr * )a )->n->fileindex ) && ( ( ( struct visitedAddr * )b )->n->fileindex ) ) )
     {
-        if ( ( ( ( struct visitedAddr * )a )->n->filename ) &&   ( ( ( struct visitedAddr * )b )->n->filename ) )
-        {
-            r = strcmp( ( ( struct visitedAddr * )a )->n->filename, ( ( struct visitedAddr * )b )->n->filename );
+        r = ( ( int )( ( struct visitedAddr * )a )->n->fileindex ) - ( ( int )( ( struct visitedAddr * )b )->n->fileindex );
 
-            if ( r )
-            {
-                return r;
-            }
+        if ( r )
+        {
+            return r;
         }
     }
 
-
-    r = strcmp( ( ( struct visitedAddr * )a )->n->function, ( ( struct visitedAddr * )b )->n->function ) ;
+    r = ( ( int )( ( struct visitedAddr * )a )->n->functionindex ) - ( ( int )( ( struct visitedAddr * )b )->n->functionindex );
 
     if ( r )
     {
@@ -398,8 +394,8 @@ uint32_t _consolodateReport( struct reportLine **returnReport, uint32_t *returnR
         }
 
         if ( ( reportLines == 0 ) ||
-                ( ( options.reportFilenames ) &&  ( strcmp( report[reportLines - 1].n->filename, a->n->filename ) ) ) ||
-                ( strcmp( report[reportLines - 1].n->function, a->n->function ) ) ||
+                ( ( options.reportFilenames ) &&  ( report[reportLines - 1].n->fileindex != a->n->fileindex ) ) ||
+                ( report[reportLines - 1].n->functionindex != a->n->functionindex ) ||
                 ( ( report[reportLines - 1].n->line != a->n->line ) && ( options.lineDisaggregation ) ) )
         {
             /* Make room for a report line */
@@ -430,8 +426,8 @@ uint32_t _consolodateReport( struct reportLine **returnReport, uint32_t *returnR
         n = ( struct nameEntry * )malloc( sizeof( struct nameEntry ) );
     }
 
-    n->filename = "";
-    n->function = "** SLEEPING **";
+    n->fileindex = -1;
+    n->functionindex = FN_SLEEPING;
     n->addr = 0;
     n->line = 0;
 
@@ -515,10 +511,11 @@ static void _outputJson( FILE *f, uint32_t total, uint32_t reportLines, struct r
             jsonElement = cJSON_CreateNumber( report[n].count );
             assert( jsonElement );
             cJSON_AddItemToObject( jsonTableEntry, "count", jsonElement );
-            jsonElement = cJSON_CreateString( report[n].n->filename ? report[n].n->filename : "" );
+            jsonElement = cJSON_CreateString( SymbolFilename( _r.s, report[n].n->fileindex ) );
             assert( jsonElement );
             cJSON_AddItemToObject( jsonTableEntry, "filename", jsonElement );
-            jsonElement = cJSON_CreateString(  d ? d : report[n].n->function );
+
+            jsonElement = cJSON_CreateString(  d ? d : SymbolFunction( _r.s, report[n].n->functionindex ) );
             assert( jsonElement );
             cJSON_AddItemToObject( jsonTableEntry, "function", jsonElement );
 
@@ -623,18 +620,18 @@ static void _outputTop( uint32_t total, uint32_t reportLines, struct reportLine 
                     fprintf( stdout, C_DATA "%3d.%02d%% " C_SUPPORT " %7" PRIu64 " ", percentage / 100, percentage % 100, report[n].count );
 
 
-                    if ( ( options.reportFilenames ) && ( report[n].n->filename ) )
+                    if ( ( options.reportFilenames ) && ( report[n].n->fileindex != NO_FILE ) )
                     {
-                        fprintf( stdout, C_CONTEXT "%s" C_RESET "::", report[n].n->filename );
+                        fprintf( stdout, C_CONTEXT "%s" C_RESET "::", SymbolFilename( _r.s, report[n].n->fileindex ) );
                     }
 
                     if ( ( options.lineDisaggregation ) && ( report[n].n->line ) )
                     {
-                        fprintf( stdout, C_SUPPORT2 "%s" C_RESET "::" C_CONTEXT "%d" EOL, d ? d : report[n].n->function, report[n].n->line );
+                        fprintf( stdout, C_SUPPORT2 "%s" C_RESET "::" C_CONTEXT "%d" EOL, d ? d : SymbolFunction( _r.s, report[n].n->functionindex ), report[n].n->line );
                     }
                     else
                     {
-                        fprintf( stdout, C_SUPPORT2 "%s" C_RESET EOL, d ? d : report[n].n->function );
+                        fprintf( stdout, C_SUPPORT2 "%s" C_RESET EOL, d ? d : SymbolFunction( _r.s, report[n].n->functionindex ) );
                     }
 
                     printed++;
@@ -647,24 +644,24 @@ static void _outputTop( uint32_t total, uint32_t reportLines, struct reportLine 
                     {
                         if ( ( p ) && ( n < options.maxRoutines ) )
                         {
-                            fprintf( p, "%s,%3d.%02d" EOL, d ? d : report[n].n->function, percentage / 100, percentage % 100 );
+                            fprintf( p, "%s,%3d.%02d" EOL, d ? d : SymbolFunction( _r.s, report[n].n->functionindex ), percentage / 100, percentage % 100 );
                         }
 
                         if ( q )
                         {
-                            fprintf( q, "%s,%3d.%02d" EOL, d ? d : report[n].n->function, percentage / 100, percentage % 100 );
+                            fprintf( q, "%s,%3d.%02d" EOL, d ? d : SymbolFunction( _r.s, report[n].n->functionindex ), percentage / 100, percentage % 100 );
                         }
                     }
                     else
                     {
                         if ( ( p ) && ( n < options.maxRoutines ) )
                         {
-                            fprintf( p, "%s::%d,%3d.%02d" EOL, d ? d : report[n].n->function, report[n].n->line, percentage / 100, percentage % 100 );
+                            fprintf( p, "%s::%d,%3d.%02d" EOL, d ? d : SymbolFunction( _r.s, report[n].n->functionindex ), report[n].n->line, percentage / 100, percentage % 100 );
                         }
 
                         if ( q )
                         {
-                            fprintf( q, "%s::%d,%3d.%02d" EOL, d ? d : report[n].n->function, report[n].n->line, percentage / 100, percentage % 100 );
+                            fprintf( q, "%s::%d,%3d.%02d" EOL, d ? d : SymbolFunction( _r.s, report[n].n->functionindex ), report[n].n->line, percentage / 100, percentage % 100 );
                         }
                     }
 
