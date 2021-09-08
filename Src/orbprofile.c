@@ -72,102 +72,80 @@
 
 #define SCRATCH_STRING_LEN  (65535)      /* Max length for a string under construction */
 #define TICK_TIME_MS        (1)          /* Time intervals for checks */
-#define ADDR_INTERRUPT      (0xFFFFFFFA) /* False address indicating an interrupt source */
 #define DEFAULT_DURATION_MS (1000)       /* Default time to sample, in mS */
 
-/* An entry in the names table */
-struct nameEntryHash
-{
-    struct nameEntry *n;
-    bool seen;
-    uint32_t index;
-    UT_hash_handle hh;
-};
-
+/* Execution of an instruction. We maintain a lot of information, but it's a PC, so we've got the room :-) */
 struct execEntryHash
 {
-    /* The address is the memory map */
+    /* The address in the memory map of the target */
     uint32_t addr;
 
     /* Counter at assembly and source line levels */
-    uint64_t count;
-    uint64_t scount;
+    uint64_t count;                      /* Instruction level count */
+    uint64_t scount;                     /* Source level count (applied to first instruction of a new source line) */
 
     /* Details about this instruction */
-    bool isJump;
-    bool is4Byte;
-    bool isSubCall;
-    bool isReturn;
-    uint32_t jumpdest;
+    bool     isJump;                     /* Flag if this is a jump instruction */
+    bool     is4Byte;                    /* Flag for 4 byte instruction */
+    bool     isSubCall;                  /* Flag for subroutine call (BL/BLX) */
+    bool     isReturn;                   /* Flag for return */
+    uint32_t jumpdest;                   /* Destination for a jump, if it's taken */
 
     /* Location of this line in source code */
-    uint32_t fileindex;
-    uint32_t functionindex;
-    uint32_t line;
+    uint32_t fileindex;                  /* File index (from symbols.c) */
+    uint32_t functionindex;              /* Function index (from symbols.c) */
+    uint32_t line;                       /* Line number in identified file */
+
+    /* Hash handle to make construct hashable */
     UT_hash_handle hh;
 };
 
-
-/* A calling edge */
-struct edge
-{
-    uint32_t src;
-    uint32_t dst;
-    uint64_t spentcycles;
-    bool in;
-};
 
 /* Signature for a source/dest calling pair */
 struct subcallSig
 {
-    uint32_t srcfileindex;
-    uint32_t srcfunctionindex;
-    uint32_t srcline;
-    uint32_t dstfileindex;
-    uint32_t dstfunctionindex;
-    uint32_t dstline;
+    uint32_t src;                       /* Where the call is from */
+    uint32_t dst;                       /* Where the call is to */
 };
 
 /* Processed subcalls from routine to routine */
 struct subcall
 {
-    struct subcallSig sig;
+    struct subcallSig sig;              /* Calling and called side record, forming an index entry */
 
-    uint32_t src;
-    uint32_t dst;
-    uint32_t srcline;
-    uint32_t dstline;
+    struct execEntryHash *srch;         /* Calling side */
+    struct execEntryHash *dsth;         /* Called side */
 
-    uint64_t myCost;
-    uint64_t count;
-    uint64_t inTicks;
+    /* Housekeeping */
+    uint64_t myCost;                   /* Inclusive cost of this call */
+    uint64_t count;                    /* Number of executions of this call */
+    uint64_t inTicks;                  /* Tick count at point of entry to this routine */
 
+    /* Hash handle to make construct hashable */
     UT_hash_handle hh;
 };
 
-/* States for sample reception state machine */
-enum CDState { CD_waitinout, CD_waitsrc, CD_waitdst };
-
 /* ---------- CONFIGURATION ----------------- */
-struct Options                               /* Record for options, either defaults or from command line */
+struct Options                           /* Record for options, either defaults or from command line */
 {
-    bool demangle;                           /* Demangle C++ names */
-    char *file;                         /* File host connection */
-    bool fileTerminate;                 /* Terminate when file read isn't successful */
+    bool demangle;                       /* Demangle C++ names */
+    char *file;                          /* File host connection */
+    bool fileTerminate;                  /* Terminate when file read isn't successful */
 
-    char *deleteMaterial;                    /* Material to strip off front of filenames for target */
+    char *deleteMaterial;                /* Material to strip off front of filenames for target */
+    bool truncateDeleteMaterial;         /* Do we want this material totally removing from file references? */
 
-    char *elffile;                           /* Target program config */
+    char *elffile;                       /* Target program config */
 
-    char *dotfile;                           /* File to output dot information */
-    char *profile;                           /* File to output profile information */
-    uint32_t sampleDuration;            /* How long we are going to sample for */
+    char *dotfile;                       /* File to output dot information */
+    char *profile;                       /* File to output profile information */
+    uint32_t sampleDuration;             /* How long we are going to sample for */
 
-    bool altAddr;                       /* Should alternate addressing be used? */
-    bool useTPIU;                       /* Are we using TPIU, and stripping TPIU frames? */
-    int channel;                        /* When TPIU is in use, which channel to decode? */
+    bool noaltAddr;                      /* Dont use alternate addressing */
+    bool useTPIU;                        /* Are we using TPIU, and stripping TPIU frames? */
+    int channel;                         /* When TPIU is in use, which channel to decode? */
 
-    int port;                                /* Source information for where to connect to */
+    int port;                            /* Source information for where to connect to */
     char *server;
 
 } _options =
@@ -206,8 +184,6 @@ struct RunTime
     uint64_t intervalBytes;             /* Number of bytes transferred in current interval */
 
     /* Calls related info */
-    enum CDState CDState;               /* State of the call data machine */
-    struct edge callsConstruct;         /* Call data entry under construction */
     struct edge *calls;                 /* Call data table */
 
     struct subcall *subhead;            /* Calls onstruct data */
@@ -252,44 +228,6 @@ struct RunTime
 // ====================================================================================================
 // Dot support
 // ====================================================================================================
-// ====================================================================================================
-static int _calls_sort_src_fn( const void *a_v, const void *b_v )
-
-/* Sort addresses first by src, then by dst */
-
-{
-    struct edge *a = ( struct edge * )a_v;
-    struct edge *b = ( struct edge * )b_v;
-    int32_t c;
-
-    c = ( int32_t )a->src - ( int32_t )b->src;
-
-    if ( !c )
-    {
-        c = ( int32_t )a->dst - ( int32_t )b->dst;
-    }
-
-    return c;
-}
-// ====================================================================================================
-static int _calls_sort_dest_fn( const void *a_v, const void *b_v )
-
-/* Sort addresses first by dst, then by src */
-
-{
-    struct edge *a = ( struct edge * )a_v;
-    struct edge *b = ( struct edge * )b_v;
-    int32_t c;
-
-    c = ( int32_t )a->dst - ( int32_t )b->dst;
-
-    if ( !c )
-    {
-        c = ( int32_t )a->src - ( int32_t )b->src;
-    }
-
-    return c;
-}
 // ====================================================================================================
 bool _outputDot( struct RunTime *r )
 
@@ -407,9 +345,11 @@ bool _outputProfile( struct RunTime *r )
 {
     struct nameEntry n;
     uint32_t prevfile = -1;
-    uint32_t prevfn = -1;
+    uint32_t prevfn   = -1;
     uint32_t prevaddr = -1;
     uint32_t prevline = -1;
+    char *e = r->options->elffile;
+    char *d = r->options->deleteMaterial;
 
     if ( !r->options->profile )
     {
@@ -419,21 +359,40 @@ bool _outputProfile( struct RunTime *r )
 
     r->c = fopen( r->options->profile, "w" );
     fprintf( r->c, "# callgrind format\n" );
-    fprintf( r->c, "creator: orbprofile\npositions: instr line visits\nevent: Inst : CPU Instructions\nevent: Visits : Visits to source line\nevents: Inst Visits\n" );
+    fprintf( r->c, "creator: orbprofile\npositions: instr line\nevent: Inst : CPU Instructions\nevent: Visits : Visits to source line\nevents: Inst Visits\n" );
+
     /* Samples are in time order, so we can determine the extent of time.... */
     fprintf( r->c, "summary: %" PRIu64 "\n", r->op.lasttstamp - r->op.firsttstamp );
-    fprintf( r->c, "ob=%s\n", r->options->elffile );
+
+    /* Try to remove frontmatter off the elfile if nessessary and possible */
+    if ( r->options->truncateDeleteMaterial )
+    {
+        while ( ( *d ) && ( *d == *e ) )
+        {
+            d++;
+            e++;
+        }
+
+        if ( e - r->options->elffile != strlen( r->options->deleteMaterial ) )
+        {
+            /* Strings don't match, give up and use the file elffile name */
+            e = r->options->elffile;
+        }
+    }
+
+    /* ...and record whatever elffilename we ended up with */
+    fprintf( r->c, "ob=%s\n", e );
 
     HASH_SORT( r->insthead, _inst_sort_fn );
     struct execEntryHash *f = r->insthead;
 
     while ( f )
     {
-        SymbolLookup( r->s, f->addr, &n, r->options->deleteMaterial );
+        SymbolLookup( r->s, f->addr, &n );
 
         if ( prevfile != n.fileindex )
         {
-            fprintf( r->c, "fl=(%d) %s%s\n", n.fileindex, r->options->deleteMaterial ? r->options->deleteMaterial : "", SymbolFilename( r->s, n.fileindex ) );
+            fprintf( r->c, "fl=(%d) %s%s\n", n.fileindex, ( !r->options->truncateDeleteMaterial && r->options->deleteMaterial ) ? r->options->deleteMaterial : "", SymbolFilename( r->s, n.fileindex ) );
         }
         else
         {
@@ -449,7 +408,7 @@ bool _outputProfile( struct RunTime *r )
             fprintf( r->c, "fn=(%d)\n", n.functionindex );
         }
 
-        if ( 1 ) //(prevline == -1) || (prevaddr==-1))
+        if ( 1 ) //((prevline == -1) || (prevaddr==-1))
         {
             fprintf( r->c, "0x%08x %d ", f->addr, n.line );
         }
@@ -474,7 +433,7 @@ bool _outputProfile( struct RunTime *r )
             }
         }
 
-        fprintf( r->c, "%" PRIu64 "%" PRIu64 "\n", f->count, f->scount );
+        fprintf( r->c, "%" PRIu64 " %" PRIu64 "\n", f->count, f->scount );
 
 
         prevline = n.line;
@@ -484,15 +443,16 @@ bool _outputProfile( struct RunTime *r )
         f = f->hh.next;
     }
 
+    fprintf( _r.c, "\n\n## ------------------- Calls Follow ------------------------\n" );
     struct subcall *s = r->subhead;
 
     while ( s )
     {
-        fprintf( r->c, "fl=(%d)\nfn=(%d)\n", s->sig.srcfileindex, s->sig.srcfunctionindex );
-
         /* Now publish the call destination. By definition is is known, so can be shortformed */
-        fprintf( r->c, "cfi=(%d)\ncfn=(%d)\ncalls=%" PRIu64 " 0x%08x %d\n", s->sig.dstfileindex, s->sig.dstfunctionindex, s->count, s->dst, s->dstline );
-        fprintf( r->c, "0x%08x %d %" PRIu64 "\n", s->src, s->srcline, s->myCost );
+        fprintf( r->c, "fl=(%d)\nfn=(%d)\n", s->srch->fileindex, s->srch->functionindex );
+        fprintf( r->c, "cfl=(%d)\ncfn=(%d)\n", s->dsth->fileindex, s->dsth->functionindex );
+        fprintf( r->c, "calls=%" PRIu64 " 0x%08x %d\n", s->count, s->sig.dst, s->dsth->line );
+        fprintf( r->c, "0x%08x %d %" PRIu64 " %" PRIu64 "\n", s->sig.src, s->srch->line, s->myCost, s->count );
         s = s->hh.next;
     }
 
@@ -515,7 +475,7 @@ static void _etmCB( void *d )
     uint32_t disposition;
 
 
-    /* This routine gets called when valid data are available, if these are the first, reset counters etc */
+    /* This routine gets called when valid data are available, if these are the first data, then reset counters etc */
 
     if ( !r->sampling )
     {
@@ -539,6 +499,7 @@ static void _etmCB( void *d )
         disposition = cpu->disposition;
     }
 
+    /* Action those changes =============================================== */
     while ( incAddr )
     {
         incAddr--;
@@ -551,7 +512,7 @@ static void _etmCB( void *d )
         if ( !h )
         {
             /* We don't have this address captured yet, do it now */
-            if ( SymbolLookup( r->s, r->op.workingAddr, &n, r->options->deleteMaterial ) )
+            if ( SymbolLookup( r->s, r->op.workingAddr, &n ) )
             {
                 h = calloc( 1, sizeof( struct execEntryHash ) );
 
@@ -584,22 +545,17 @@ static void _etmCB( void *d )
         h->count++;
 
         /* If source postion changed then update source code line visitation counts too */
-        if ( ( !r->op.h ) || ( h->fileindex != r->op.h->fileindex ) || ( h->functionindex != r->op.h->functionindex ) || ( h->line != r->op.h->line ) )
+        if ( ( !r->op.h ) || ( h->line != r->op.h->line ) || ( h->functionindex != r->op.h->functionindex ) || ( h->fileindex != r->op.h->fileindex ) )
         {
             h->scount++;
         }
 
-        /* If this was an executed call then update, or make a record for it */
+        /* If this is the start of a subroutine call then update, or make, a record for it */
         if ( r->op.lastWasSubcall )
         {
-            sig.srcfileindex     = r->op.h->fileindex;
-            sig.srcfunctionindex = r->op.h->functionindex;
-            sig.srcline          = r->op.h->line;
-            sig.dstfileindex     = h->fileindex;
-            sig.dstfunctionindex = h->functionindex;
-            sig.dstline          = h->line;
+            sig.src = r->op.h->addr;
+            sig.dst = h->addr;
 
-            /* Find a call record for this call. When this is executed we're at the point the call has been done */
             HASH_FIND( hh, r->subhead, &sig, sizeof( struct subcallSig ), s );
 
             if ( !s )
@@ -607,12 +563,12 @@ static void _etmCB( void *d )
                 /* This entry doesn't exist...let's create it */
                 s = ( struct subcall * )calloc( 1, sizeof( struct subcall ) );
                 memcpy( &s->sig, &sig, sizeof( struct subcallSig ) );
-                s->src = r->op.h->addr;
-                s->dst = r->op.workingAddr;
+                s->srch = r->op.h;
+                s->dsth = h;
                 HASH_ADD( hh, r->subhead, sig, sizeof( struct subcallSig ), s );
             }
 
-            /* However we got here, we've got a subcall record, so initialise starting ticks */
+            /* However we got here, we've got a subcall record, so initialise its starting ticks */
             s->inTicks = cpu->instCount;
             s->count++;
 
@@ -622,7 +578,7 @@ static void _etmCB( void *d )
         }
 
 
-        /* If this is an executed return then process it */
+        /* If this is an executed return then process it, if we've not emptied the stack already (safety measure) */
         if ( ( r->op.lastWasReturn ) && ( r->substacklen ) )
         {
             /* We don't bother deallocating memory here cos it'll be done on the next isSubCall */
@@ -636,6 +592,7 @@ static void _etmCB( void *d )
         r->op.lastWasReturn  = h->isReturn && ( disposition & 1 );
         r->op.lastWasSubcall = h->isSubCall && ( disposition & 1 );
 
+        /* Finally, update execution address as appropriate */
         if ( ( h->isJump ) && ( disposition & 1 ) )
         {
             /* This is a fixed jump that _was_ taken, so update working address */
@@ -662,7 +619,7 @@ static void _printHelp( struct RunTime *r )
 
 {
     genericsPrintf( "Usage: %s [options]" EOL, r->progName );
-    genericsPrintf( "       -a: Use alternate address encoding" EOL );
+    genericsPrintf( "       -a: Switch off alternate address decoding (on by default)" EOL );
     genericsPrintf( "       -D: Switch off C++ symbol demangling" EOL );
     genericsPrintf( "       -d: <String> Material to delete off front of filenames" EOL );
     genericsPrintf( "       -E: When reading from file, terminate at end of file rather than waiting for further input" EOL );
@@ -672,6 +629,7 @@ static void _printHelp( struct RunTime *r )
     genericsPrintf( "       -s <Duration>: Time to sample (in mS)" EOL );
     genericsPrintf( "       -s: <Server>:<Port> to use" EOL );
     //genericsPrintf( "       -t <channel>: Use TPIU to strip TPIU on specfied channel (defaults to 2)" EOL );
+    genericsPrintf( "       -T: truncate -d material off all references (i.e. make output relative)" EOL );
     genericsPrintf( "       -v: <level> Verbose mode 0(errors)..3(debug)" EOL );
     genericsPrintf( "       -y: <Filename> dotty filename for structured callgraph output" EOL );
     genericsPrintf( "       -z: <Filename> profile filename for kcachegrind output" EOL );
@@ -684,13 +642,13 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
 {
     int c;
 
-    while ( ( c = getopt ( argc, argv, "aDd:Ee:f:hr:s:v:y:z:" ) ) != -1 )
+    while ( ( c = getopt ( argc, argv, "aDd:Ee:f:hr:s:Tv:y:z:" ) ) != -1 )
 
         switch ( c )
         {
             // ------------------------------------
             case 'a':
-                r->options->altAddr = true;
+                r->options->noaltAddr = true;
                 break;
 
             // ------------------------------------
@@ -754,6 +712,11 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
                 break;
 
             // ------------------------------------
+            case 'T':
+                r->options->truncateDeleteMaterial = true;
+                break;
+
+            // ------------------------------------
             case 'v':
                 genericsSetReportLevel( atoi( optarg ) );
                 break;
@@ -800,12 +763,10 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
         exit( -2 );
     }
 
-
     genericsReport( V_INFO, "%s V" VERSION " (Git %08X %s, Built " BUILD_DATE ")" EOL, r->progName, GIT_HASH, ( GIT_DIRTY ? "Dirty" : "Clean" ) );
-
     genericsReport( V_INFO, "Server          : %s:%d" EOL, r->options->server, r->options->port );
-    genericsReport( V_INFO, "Delete Mat      : %s" EOL, r->options->deleteMaterial ? r->options->deleteMaterial : "None" );
-    genericsReport( V_INFO, "Elf File        : %s" EOL, r->options->elffile );
+    genericsReport( V_INFO, "Delete Material : %s" EOL, r->options->deleteMaterial ? r->options->deleteMaterial : "None" );
+    genericsReport( V_INFO, "Elf File        : %s %s" EOL, r->options->elffile, r->options->truncateDeleteMaterial ? "(Truncate)" : "(Don't Truncate)" );
     genericsReport( V_INFO, "DOT file        : %s" EOL, r->options->dotfile ? r->options->dotfile : "None" );
     genericsReport( V_INFO, "Sample Duration : %d mS" EOL, r->options->sampleDuration );
 
@@ -859,7 +820,7 @@ int main( int argc, char *argv[] )
         genericsExit( -1, "Failed to ignore SIGPIPEs" EOL );
     }
 
-    ETMDecoderInit( &_r.i, &_r.options->altAddr );
+    ETMDecoderInit( &_r.i, !_r.options->noaltAddr );
 
     while ( !_r.ending )
     {
@@ -916,11 +877,10 @@ int main( int argc, char *argv[] )
             }
         }
 
-
-        /* We need symbols constantly while running */
+        /* We need symbols constantly while running ... check they are current */
         if ( !SymbolSetValid( &_r.s, _r.options->elffile ) )
         {
-            if ( !( _r.s = SymbolSetCreate( _r.options->elffile, _r.options->demangle, true, true ) ) )
+            if ( !( _r.s = SymbolSetCreate( _r.options->elffile, _r.options->deleteMaterial, _r.options->demangle, true, true ) ) )
             {
                 genericsExit( -1, "Elf file or symbols in it not found" EOL );
             }
@@ -963,7 +923,6 @@ int main( int argc, char *argv[] )
                     break;
                 }
 
-
                 _r.intervalBytes += _r.rawBlock.fillLevel;
                 /* Pump all of the data through the protocol handler */
                 ETMDecoderPump( &_r.i, _r.rawBlock.buffer, _r.rawBlock.fillLevel, _etmCB, &_r );
@@ -973,33 +932,25 @@ int main( int argc, char *argv[] )
             if ( ( _r.sampling ) && ( ( genericsTimestampmS() - _r.starttime ) > _r.options->sampleDuration ) )
             {
                 _r.ending = true;
-                genericsReport( V_WARN, "Received %d raw sample bytes, %ld function changes, %ld distinct addresses" EOL, _r.intervalBytes, HASH_COUNT( _r.subhead ), HASH_COUNT( _r.insthead ) );
-
-                if ( HASH_COUNT( _r.subhead ) )
-                {
-                    if ( _outputDot( &_r ) )
-                    {
-                        genericsReport( V_WARN, "Output DOT" EOL );
-                    }
-
-                    if ( _outputProfile( &_r ) )
-                    {
-                        genericsReport( V_WARN, "Output Profile" EOL );
-                    }
-                }
-
             }
         }
 
-        /* ----------------------------------------------------------------------------- */
-        /* End of main loop ... we get here because something forced us out              */
-        /* ----------------------------------------------------------------------------- */
-
         close( sourcefd );
+    }
 
-        if ( _r.options->fileTerminate )
+    /* Data are collected, now process and report */
+    genericsReport( V_WARN, "Received %d raw sample bytes, %ld function changes, %ld distinct addresses" EOL, _r.intervalBytes, HASH_COUNT( _r.subhead ), HASH_COUNT( _r.insthead ) );
+
+    if ( HASH_COUNT( _r.subhead ) )
+    {
+        if ( _outputDot( &_r ) )
         {
-            _r.ending = true;
+            genericsReport( V_WARN, "Output DOT" EOL );
+        }
+
+        if ( _outputProfile( &_r ) )
+        {
+            genericsReport( V_WARN, "Output Profile" EOL );
         }
     }
 

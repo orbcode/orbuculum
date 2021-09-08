@@ -758,7 +758,7 @@ void _handlePCSample( struct pcSampleMsg *m, struct ITMDecoder *i )
             struct nameEntry n;
 
             /* Find a matching name record if there is one */
-            SymbolLookup( _r.s, m->pc, &n, options.deleteMaterial );
+            SymbolLookup( _r.s, m->pc, &n );
 
             /* This is a new entry - record it */
 
@@ -1285,7 +1285,7 @@ int main( int argc, char *argv[] )
                 /* Make sure old references are invalidated */
                 _flushHash();
 
-                if ( !( _r.s = SymbolSetCreate( options.elffile, options.demangle, false, false ) ) )
+                if ( !( _r.s = SymbolSetCreate( options.elffile, options.deleteMaterial, options.demangle, false, false ) ) )
                 {
                     genericsReport( V_ERROR, "Could not read symbols" EOL );
                     usleep( 1000000 );

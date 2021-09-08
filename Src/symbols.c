@@ -97,7 +97,24 @@ static uint32_t _getOrAddFileEntryIdx( struct SymbolSet *s, char *filename )
 /* Return index to file entry in the files table, or create an entry and return that */
 
 {
-    uint32_t f = _getFileEntryIdx( s, filename );
+    char *fl = filename;
+    char *d  = s->deleteMaterial;
+
+    /* Scan forwards past any delete material on the front */
+    while ( ( d ) && ( *d ) && ( *fl == *d ) )
+    {
+        d++;
+        fl++;
+    }
+
+    /* If we didn't manage to delete everything then don't delete anything */
+    if ( fl - filename != strlen( s->deleteMaterial ) )
+    {
+        fl = filename;
+    }
+
+
+    uint32_t f = _getFileEntryIdx( s, fl );
 
     if ( SYM_NOT_FOUND == f )
     {
@@ -105,7 +122,7 @@ static uint32_t _getOrAddFileEntryIdx( struct SymbolSet *s, char *filename )
         s->files = ( struct fileEntry * )realloc( s->files, sizeof( struct fileEntry ) * ( s->fileCount + 1 ) );
         f = s->fileCount;
         memset( &( s->files[f] ), 0, sizeof( struct fileEntry ) );
-        s->files[f].name = strdup( filename );
+        s->files[f].name = strdup( fl );
         s->fileCount++;
     }
 
@@ -204,17 +221,16 @@ static bool _find_symbol( struct SymbolSet *s, uint32_t workingAddr,
 /* Find symbol and return pointers to contents */
 
 {
-    struct sourceLineEntry needle = { .startAddr = workingAddr };
+    struct sourceLineEntry needle = { .startAddr = workingAddr, .endAddr = workingAddr };
     struct sourceLineEntry *found = bsearch( &needle, s->sources, s->sourceCount, sizeof( struct sourceLineEntry ), _compareLines );
-
 
     if ( found )
     {
-        *pline = found->lineNo;
-        *linesInBlock = found->linesInBlock;
-        *psource = found->lineText;
-        *assy    = found->assy;
-        *fileindex = found->fileIdx;
+        *pline         = found->lineNo;
+        *linesInBlock  = found->linesInBlock;
+        *psource       = found->lineText;
+        *assy          = found->assy;
+        *fileindex     = found->fileIdx;
         *functionindex = found->functionIdx;
 
         /* If there is assembly then match the line too */
@@ -655,7 +671,7 @@ const char *SymbolFilename( struct SymbolSet *s, uint32_t index )
             return "";
 
         default:
-            if ( ( index > 0 ) && ( index < s->fileCount ) )
+            if ( index < s->fileCount )
             {
                 return s->files[index].name;
             }
@@ -685,7 +701,7 @@ const char *SymbolFunction( struct SymbolSet *s, uint32_t index )
             return FN_ORIGIN_UNKN_STR;
 
         default:
-            if ( ( index > 0 ) && ( index < s->functionCount ) )
+            if ( index < s->functionCount )
             {
                 return s->functions[index].name;
             }
@@ -694,7 +710,7 @@ const char *SymbolFunction( struct SymbolSet *s, uint32_t index )
     }
 }
 // ====================================================================================================
-bool SymbolLookup( struct SymbolSet *s, uint32_t addr, struct nameEntry *n, char *deleteMaterial )
+bool SymbolLookup( struct SymbolSet *s, uint32_t addr, struct nameEntry *n )
 
 /* Lookup function for address to line, and hence to function */
 
@@ -721,20 +737,6 @@ bool SymbolLookup( struct SymbolSet *s, uint32_t addr, struct nameEntry *n, char
 
     if ( _find_symbol( s, addr, &fileindex, &functionindex, &line, &linesInBlock, &source, &assy, &assyLine ) )
     {
-#if 0        /* Remove any frontmatter off filename string that matches */
-
-        if ( ( deleteMaterial ) && ( filename ) )
-        {
-            char *m = deleteMaterial;
-
-            while ( ( *m ) && ( *filename ) && ( *filename == *m ) )
-            {
-                m++;
-                filename++;
-            }
-        }
-
-#endif
         n->fileindex = fileindex;
         n->functionindex = functionindex;
         n->source   = source ? source : "";
@@ -824,6 +826,11 @@ void SymbolSetDelete( struct SymbolSet **s )
             free( ( *s )->sources );
         }
 
+        if ( ( *s )->deleteMaterial )
+        {
+            free( ( *s )->deleteMaterial );
+        }
+
         free( *s );
         *s = NULL;
     }
@@ -865,17 +872,18 @@ bool SymbolSetValid( struct SymbolSet **s, char *filename )
     }
 }
 // ====================================================================================================
-struct SymbolSet *SymbolSetCreate( char *filename, bool demanglecpp, bool recordSource, bool recordAssy )
+struct SymbolSet *SymbolSetCreate( const char *filename, const char *deleteMaterial, bool demanglecpp, bool recordSource, bool recordAssy )
 
 /* Create new symbol set by reading from elf file, if it's there and stable */
 
 {
     struct stat statbuf, newstatbuf;
     struct SymbolSet *s = ( struct SymbolSet * )calloc( sizeof( struct SymbolSet ), 1 );
-    s->elfFile = strdup( filename );
-    s->recordSource = recordSource;
-    s->demanglecpp = demanglecpp;
-    s->recordAssy = recordAssy;
+    s->elfFile          = strdup( filename );
+    s->deleteMaterial   = strdup( deleteMaterial ? deleteMaterial : "" );
+    s->recordSource     = recordSource;
+    s->demanglecpp      = demanglecpp;
+    s->recordAssy       = recordAssy;
 
     /* Make sure this file is stable before trying to load it */
     if ( stat( filename, &statbuf ) == 0 )

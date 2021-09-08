@@ -125,6 +125,8 @@ struct sourceLineEntry
 struct SymbolSet
 {
     char *elfFile;                         /* File containing structure info */
+    char *deleteMaterial;                  /* Material to strip off filenames */
+
     struct stat st;
 
     /* For memory saving and speedup... */
@@ -134,6 +136,7 @@ struct SymbolSet
 
     /* For file mapping... */
     uint32_t sourceCount;                  /* Number of source lines we have loaded */
+
 
     uint32_t fileCount;                    /* Number of files we have loaded */
     struct fileEntry *files;               /* Table of files */
@@ -157,11 +160,12 @@ struct nameEntry
 };
 
 // ====================================================================================================
-struct SymbolSet *SymbolSetCreate( char *filename, bool demanglecpp, bool recordSource, bool recordAssy );
+struct SymbolSet *SymbolSetCreate( const char *filename, const char *deleteMaterial, bool demanglecpp, bool recordSource, bool recordAssy );
+
 void SymbolSetDelete( struct SymbolSet **s );
 bool SymbolSetValid( struct SymbolSet **s, char *filename );
 const char *SymbolFilename( struct SymbolSet *s, uint32_t index );
 const char *SymbolFunction( struct SymbolSet *s, uint32_t index );
-bool SymbolLookup( struct SymbolSet *s, uint32_t addr, struct nameEntry *n, char *deleteMaterial );
+bool SymbolLookup( struct SymbolSet *s, uint32_t addr, struct nameEntry *n );
 // ====================================================================================================
 #endif

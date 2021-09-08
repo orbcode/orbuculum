@@ -582,7 +582,7 @@ static void _etmCB( void *d )
     {
         incAddr--;
 
-        if ( SymbolLookup( r->s, r->op.workingAddr, &n, r->options->deleteMaterial ) )
+        if ( SymbolLookup( r->s, r->op.workingAddr, &n ) )
         {
             /* If we have changed file or function put a header line in */
             if ( ( n.fileindex != r->op.currentFileindex ) || ( n.functionindex != r->op.currentFunctionindex ) )
@@ -677,7 +677,7 @@ static void _dumpBuffer( struct RunTime *r )
 
     if ( !SymbolSetValid( &r->s, r->options->elffile ) )
     {
-        if ( !( r->s = SymbolSetCreate( r->options->elffile, r->options->demangle, true, true ) ) )
+        if ( !( r->s = SymbolSetCreate( r->options->elffile, r->options->deleteMaterial, r->options->demangle, true, true ) ) )
         {
             genericsReport( V_ERROR, "Elf file or symbols in it not found" EOL );
             return;
