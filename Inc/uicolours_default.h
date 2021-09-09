@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: BSD-3-Clause */
+
 /* Default user interface colours */
 
 #define C_VERB_ERROR C_LRED        /* Verbal level error */

@@ -1,34 +1,9 @@
+/* SPDX-License-Identifier: BSD-3-Clause */
+
 /*
  * Symbol Management
  * =================
  *
- * Copyright (C) 2017, 2019, 2021  Dave Marples  <dave@marples.net>
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *
- * * Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- * * Redistributions in binary form must reproduce the above copyright
- *   notice, this list of conditions and the following disclaimer in the
- *   documentation and/or other materials provided with the distribution.
- * * Neither the names Orbtrace, Orbuculum nor the names of its
- *   contributors may be used to endorse or promote products derived from
- *   this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
- * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
- * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
- * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
- * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
- * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
- * SUCH DAMAGE.
  */
 
 #ifndef _SYMBOLS_H_
@@ -37,39 +12,17 @@
 #include <stdbool.h>
 #include "uthash.h"
 
-#define EXC_RETURN      0xF0000000        /* interrupt origin */
-#define EXC_RETURN_MASK 0xF0000000
-#define INT_ORIGIN_MASK 0x0000000F
-#define INT_ORIGIN_HANDLER     0x1
-#define INT_ORIGIN_MAIN_STACK  0x9
-#define INT_ORIGIN_PROC_STACK  0xD
-#define INT_ORIGIN_UNKNOWN     0xE
-
-//#define NOT_FOUND         0x1             /* Special address flag - not found */
-//#define INTERRUPT_HANDLER 0x3             /* Call from interrupt handler */
-//#define INTERRUPT_MAIN    0x5             /* Called from main stack */
-//#define INTERRUPT_PROC    0x7             /* Called from process stack */
-//#define INTERRUPT_UNKNOWN 0x9             /* umm...we don't really know */
-#define SLEEPING          0xB               /* Special address flag sleeping */
-
 #define ASSY_NOT_FOUND    0xffffffff        /* Assembly line not found */
 #define NO_LINE           0xffffffff        /* No line number defined */
 #define NO_FILE           0xffffffff        /* No file defined */
+#define NO_FUNCTION       0xffffffff        /* No function defined */
 
-#define FN_SLEEPING           (EXC_RETURN_MASK|SLEEPING)                /* Marker for sleeping case */
-#define FN_SLEEPING_STR       "** Sleeping **"                          /* String for sleeping case */
+#define SPECIALS_MASK     0xfffffff0
+#define FN_SLEEPING       (SPECIALS_MASK|0xb)         /* Marker for sleeping case */
+#define FN_SLEEPING_STR   "** Sleeping **"            /* String for sleeping case */
 
-#define FN_ORIGIN_HANDLER     (EXC_RETURN_MASK|INT_ORIGIN_HANDLER)
-#define FN_ORIGIN_HANDLER_STR "INT_FROM_HANDLER"
-
-#define FN_ORIGIN_MAIN        (EXC_RETURN_MASK|INT_ORIGIN_MAIN_STACK)
-#define FN_ORIGIN_MAIN_STR    "INT_FROM_MAIN_STACK"
-
-#define FN_ORIGIN_PROC        (EXC_RETURN_MASK|INT_ORIGIN_PROC_STACK)
-#define FN_ORIGIN_PROC_STR    "INT_FROM_PROC_STACK"
-
-#define FN_ORIGIN_UNKN        (EXC_RETURN_MASK|INT_ORIGIN_UNKNOWN)
-#define FN_ORIGIN_UNKN_STR    "INT_FROM_UNKNOWN"
+#define INTERRUPT         (SPECIALS_MASK|0xd)
+#define FN_INTERRUPT_STR  "INTERRUPT"
 
 /* Mapping of lines numbers to indicies */
 struct assyLineEntry

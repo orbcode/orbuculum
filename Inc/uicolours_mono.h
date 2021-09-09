@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: BSD-3-Clause */
+
 /* Monochrome user interface colours */
 
 #define C_VERB_ERROR C_MONO    /* Verbal level error */

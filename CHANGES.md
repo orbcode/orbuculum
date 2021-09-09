@@ -1,5 +1,8 @@
 Version 1.20 in Progress
 
+* Addition of `orbprofile` for ETM profiling and integration with {k/q}cachegrind, see https://github.com/KDE/kcachegrind.
+* Addition of `orbmortem` for ETM/ETB post-mortem analysis.
+* Licenses updated to use SPDX identifiers...the license itself hasn't changed, we just lost a chunk of text at the head of every file, with the license now in the LICENSE file.
 * Orbtrace split off into separate repository
 * Split of orbuculum into the network server (orbuculum) and the fifo server (orbfifo).
 * Extensive changes to support orbtrace
@@ -31,7 +34,7 @@ Version 1.20 in Progress
 * Change to BSD from GPL License
 * Fixes to command line options, raw output and HW event decoding
 * Use of nextpnr-ice40 instead of arachne-pnr
-* Extensive changes to gdbtrace.init 
+* Extensive changes to gdbtrace.init
 
 14th August 2019 (Version 0.23)
 
@@ -55,4 +58,3 @@ Version 1.20 in Progress
 * Addition of C++ demangling support.
 * Specific gdbinit support for STM32F4
 * Small changes to support libftdi1.4 exclusively. It's essential you use this version of libftdi or higher!
-

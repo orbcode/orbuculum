@@ -1,34 +1,9 @@
+/* SPDX-License-Identifier: BSD-3-Clause */
+
 /*
- * Profiling module for orb suite
+ * Profiling module for Orbuculum
  * ==============================
  *
- * Copyright (C) 2017, 2019, 2021  Dave Marples  <dave@marples.net>
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *
- * * Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- * * Redistributions in binary form must reproduce the above copyright
- *   notice, this list of conditions and the following disclaimer in the
- *   documentation and/or other materials provided with the distribution.
- * * Neither the names Orbtrace, Orbuculum nor the names of its
- *   contributors may be used to endorse or promote products derived from
- *   this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
- * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
- * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
- * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
- * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
- * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
- * SUCH DAMAGE.
  */
 
 #include <stdlib.h>
@@ -73,6 +48,7 @@
 #define SCRATCH_STRING_LEN  (65535)      /* Max length for a string under construction */
 #define TICK_TIME_MS        (1)          /* Time intervals for checks */
 #define DEFAULT_DURATION_MS (1000)       /* Default time to sample, in mS */
+#define HANDLE_MASK         (0xFFFFFF)   /* cachegrind cannot cope with large file handle numbers */
 
 /* Execution of an instruction. We maintain a lot of information, but it's a PC, so we've got the room :-) */
 struct execEntryHash
@@ -160,11 +136,14 @@ struct Options                           /* Record for options, either defaults 
 struct opConstruct
 {
     struct execEntryHash *h;             /* The exec entry we're currently in (file, function, line, addr etc) */
+    struct execEntryHash *inth;          /* Fake exec entry for an interrupt source */
     uint32_t workingAddr;                /* The address we're currently in */
     bool lastWasSubcall;                 /* Was the last instruction an executed subroutine call? */
     bool lastWasReturn;                  /* Was the last instruction an executed return? */
     uint64_t firsttstamp;                /* First timestamp we recorded (that was valid) */
     uint64_t lasttstamp;                 /* Last timestamp we recorded */
+    bool isExceptReturn;                 /* Is this flagged as an exception return? */
+    bool isException;                    /* Is this flagged as an exception? */
 };
 
 /* A block of received data */
@@ -223,7 +202,43 @@ struct RunTime
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
+static int _inst_sort_fn( const void *a, const void *b )
 
+/* Sort instructions by address */
+
+{
+    return ( int )( ( ( struct execEntryHash * )a )->addr ) - ( int )( ( ( struct execEntryHash * )b )->addr );
+}
+// ====================================================================================================
+static int _calls_src_sort_fn( const void *a, const void *b )
+
+/* Sort instructions by called from address */
+
+{
+    int i;
+
+    if ( ( i = ( int )( ( ( struct subcall * )a )->sig.src ) - ( int )( ( ( struct subcall * )b )->sig.src ) ) )
+    {
+        return i;
+    }
+
+    return ( int )( ( ( struct subcall * )a )->sig.dst ) - ( int )( ( ( struct subcall * )b )->sig.dst );
+}
+// ====================================================================================================
+static int _calls_dst_sort_fn( const void *a, const void *b )
+
+/* Sort instructions by called to address */
+
+{
+    int i;
+
+    if ( ( i = ( int )( ( ( struct subcall * )a )->sig.dst ) - ( int )( ( ( struct subcall * )b )->sig.dst ) ) )
+    {
+        return i;
+    }
+
+    return ( int )( ( ( struct subcall * )a )->sig.src ) - ( int )( ( ( struct subcall * )b )->sig.src );
+}
 // ====================================================================================================
 // ====================================================================================================
 // Dot support
@@ -234,8 +249,10 @@ bool _outputDot( struct RunTime *r )
 /* Output call graph to dot file */
 
 {
-#if 0
     FILE *c;
+    uint32_t functionidx, dfunctionidx, fileidx;
+    uint64_t cnt;
+    struct subcall *s;
 
     if ( !r->options->dotfile )
     {
@@ -243,86 +260,97 @@ bool _outputDot( struct RunTime *r )
     }
 
     /* Sort according to addresses visited. */
-    qsort( r->calls, r->callsCount, sizeof( struct edge ), _calls_sort_dest_fn );
 
     c = fopen( r->options->dotfile, "w" );
     fprintf( c, "digraph calls\n{\n  overlap=false; splines=true; size=\"7.75,10.25\"; orientation=portrait; sep=0.1; nodesep=0.1;\n" );
 
     /* firstly write out the nodes in each subgraph - dest side clustered */
-    for ( uint32_t x = 1; x < r->callsCount; x++ )
+    HASH_SORT( r->subhead, _calls_dst_sort_fn );
+    s = r->subhead;
+
+    while ( s )
     {
-        fprintf( c, "  subgraph \"cluster_%s\"\n  {\n    label=\"%s\";\n    bgcolor=lightgrey;\n", r->calls[x - 1].dstFile, r->calls[x - 1].dstFile );
-
-        while ( x < r->callsCount )
+        if ( s->dsth->fileindex != INTERRUPT )
         {
-            /* Now output each function in the subgraph */
-            fprintf( c, "    %s [style=filled, fillcolor=white];\n", r->calls[x - 1].dstFn );
+            fprintf( c, "  subgraph \"cluster_%s\"\n  {\n    label=\"%s\";\n    bgcolor=lightgrey;\n", SymbolFilename( r->s, s->dsth->fileindex ), SymbolFilename( r->s, s->dsth->fileindex ) );
+            fileidx = s->dsth->fileindex;
 
-            /* Spin forwards until the function name _or_ filename changes */
-            while ( ( x < r->callsCount ) && ( r->calls[x - 1].dstFn == r->calls[x].dstFn ) )
+            while ( s && ( fileidx == s->dsth->fileindex ) )
             {
-                x++;
-            }
+                /* Now output each function in the subgraph */
+                fprintf( c, "    %s [style=filled, fillcolor=white];\n", SymbolFunction( r->s, s->dsth->functionindex )  );
+                functionidx = s->dsth->functionindex;
 
-            if ( ( x >= r->callsCount ) || ( r->calls[x - 1].dstFile != r->calls[x].dstFile ) )
-            {
-                break;
+                /* Spin forwards until the function name _or_ filename changes */
+                while ( ( s ) && ( functionidx == s->dsth->functionindex ) && ( fileidx == s->dsth->fileindex ) )
+                {
+                    s = s->hh.next;
+                }
             }
-
-            x++;
+        }
+        else
+        {
+            s = s->hh.next;
         }
 
         fprintf( c, "  }\n\n" );
     }
 
-    printf( "Sort completed" EOL );
     /* now write out the nodes in each subgraph - source side clustered */
-    qsort( r->calls, r->callsCount, sizeof( struct edge ), _calls_sort_src_fn );
+    HASH_SORT( r->subhead, _calls_src_sort_fn );
+    s = r->subhead;
 
-    for ( uint32_t x = 1; x < r->callsCount; x++ )
+    while ( s )
     {
-        fprintf( c, "  subgraph \"cluster_%s\"\n  {\n    label=\"%s\";\n    bgcolor=lightgrey;\n", r->calls[x - 1].srcFile, r->calls[x - 1].srcFile );
+        fprintf( c, "  subgraph \"cluster_%s\"\n  {\n    label=\"%s\";\n    bgcolor=lightgrey;\n", SymbolFilename( r->s, s->srch->fileindex ), SymbolFilename( r->s, s->srch->fileindex ) );
+        fileidx = s->srch->fileindex;
 
-        while ( x < r->callsCount )
+        while ( s && ( fileidx == s->srch->fileindex ) )
         {
-            /* Now output each function in the subgraph */
-            fprintf( c, "    %s [style=filled, fillcolor=white];\n", r->calls[x - 1].srcFn );
-
-            /* Spin forwards until the function name _or_ filename changes */
-            while ( ( x < r->callsCount ) && ( r->calls[x - 1].srcFn == r->calls[x].srcFn ) )
+            if ( s->srch->fileindex != INTERRUPT )
             {
-                x++;
-            }
+                /* Now output each function in the subgraph */
+                fprintf( c, "    %s [style=filled, fillcolor=white];\n", SymbolFunction( r->s, s->srch->functionindex )  );
+                functionidx = s->srch->functionindex;
 
-            if ( ( x >= r->callsCount ) || ( r->calls[x - 1].srcFile != r->calls[x].srcFile ) )
+                /* Spin forwards until the function name _or_ filename changes */
+                while ( ( s ) && ( functionidx == s->srch->functionindex ) && ( fileidx == s->srch->fileindex ) )
+                {
+                    s = s->hh.next;
+                }
+            }
+            else
             {
-                break;
+                s = s->hh.next;
             }
-
-            x++;
         }
 
         fprintf( c, "  }\n\n" );
     }
 
     /* Now go through and label the arrows... */
-    for ( uint32_t x = 0; x < r->callsCount; x++ )
-    {
-        int cnt = 0;
 
-        while ( ( x < r->callsCount - 1 ) && ( r->calls[x].srcFn == r->calls[x + 1].srcFn ) && ( r->calls[x].dstFn == r->calls[x + 1].dstFn ) )
+    s = r->subhead;
+
+    while ( s )
+    {
+        functionidx = s->srch->functionindex;
+        dfunctionidx = s->dsth->functionindex;
+        cnt = s->count;
+        s = s->hh.next;
+
+        while ( ( s ) && ( functionidx == s->srch->functionindex ) && ( dfunctionidx == s->dsth->functionindex ) )
         {
-            cnt++;
-            x++;
+            cnt += s->count;
+            s = s->hh.next;
         }
 
-        fprintf( c, "    %s -> ", r->calls[x].srcFn );
-        fprintf( c, "%s [label=%d , weight=0.1;];\n", r->calls[x].dstFn, cnt );
+        fprintf( c, "    %s -> ", SymbolFunction( r->s, functionidx ) );
+        fprintf( c, "%s [label=%" PRIu64 ", weight=0.1];\n", SymbolFunction( r->s, dfunctionidx ), cnt );
     }
 
     fprintf( c, "}\n" );
     fclose( c );
-#endif
     return true;
 }
 // ====================================================================================================
@@ -330,24 +358,16 @@ bool _outputDot( struct RunTime *r )
 // KCacheGrind support
 // ====================================================================================================
 // ====================================================================================================
-static int _inst_sort_fn( const void *a, const void *b )
-
-/* Sort instructions by address */
-
-{
-    return ( int )( ( ( struct execEntryHash * )a )->addr ) - ( int )( ( ( struct execEntryHash * )b )->addr );
-}
-// ====================================================================================================
 bool _outputProfile( struct RunTime *r )
 
 /* Output a KCacheGrind compatible profile */
 
 {
     struct nameEntry n;
-    uint32_t prevfile = -1;
-    uint32_t prevfn   = -1;
-    uint32_t prevaddr = -1;
-    uint32_t prevline = -1;
+    uint32_t prevfile = NO_FILE;
+    uint32_t prevfn   = NO_FUNCTION;
+    uint32_t prevaddr = NO_FUNCTION;
+    uint32_t prevline = NO_LINE;
     char *e = r->options->elffile;
     char *d = r->options->deleteMaterial;
 
@@ -392,23 +412,16 @@ bool _outputProfile( struct RunTime *r )
 
         if ( prevfile != n.fileindex )
         {
-            fprintf( r->c, "fl=(%d) %s%s\n", n.fileindex, ( !r->options->truncateDeleteMaterial && r->options->deleteMaterial ) ? r->options->deleteMaterial : "", SymbolFilename( r->s, n.fileindex ) );
-        }
-        else
-        {
-            fprintf( r->c, "fl=(%d)\n", n.fileindex );
+            fprintf( r->c, "fl=(%u) %s%s\n", n.fileindex & HANDLE_MASK, ( !r->options->truncateDeleteMaterial
+                     && r->options->deleteMaterial ) ? r->options->deleteMaterial : "", SymbolFilename( r->s, n.fileindex ) );
         }
 
         if ( prevfn != n.functionindex )
         {
-            fprintf( r->c, "fn=(%d) %s\n", n.functionindex, SymbolFunction( r->s, n.functionindex ) );
-        }
-        else
-        {
-            fprintf( r->c, "fn=(%d)\n", n.functionindex );
+            fprintf( r->c, "fn=(%u) %s\n", n.functionindex & HANDLE_MASK, SymbolFunction( r->s, n.functionindex ) );
         }
 
-        if ( 1 ) //((prevline == -1) || (prevaddr==-1))
+        if ( ( prevline == NO_LINE ) || ( prevaddr == NO_FUNCTION ) )
         {
             fprintf( r->c, "0x%08x %d ", f->addr, n.line );
         }
@@ -444,12 +457,24 @@ bool _outputProfile( struct RunTime *r )
     }
 
     fprintf( _r.c, "\n\n## ------------------- Calls Follow ------------------------\n" );
+    HASH_SORT( r->subhead, _calls_src_sort_fn );
     struct subcall *s = r->subhead;
 
     while ( s )
     {
         /* Now publish the call destination. By definition is is known, so can be shortformed */
-        fprintf( r->c, "fl=(%d)\nfn=(%d)\n", s->srch->fileindex, s->srch->functionindex );
+        if ( prevfile != s->srch->fileindex )
+        {
+            fprintf( r->c, "fl=(%u)\n", s->srch->fileindex & HANDLE_MASK );
+            prevfile = s->srch->fileindex;
+        }
+
+        if ( prevfn != s->srch->functionindex )
+        {
+            fprintf( r->c, "fn=(%u)\n", s->srch->functionindex & HANDLE_MASK );
+            prevfn = s->srch->functionindex;
+        }
+
         fprintf( r->c, "cfl=(%d)\ncfn=(%d)\n", s->dsth->fileindex, s->dsth->functionindex );
         fprintf( r->c, "calls=%" PRIu64 " 0x%08x %d\n", s->count, s->sig.dst, s->dsth->line );
         fprintf( r->c, "0x%08x %d %" PRIu64 " %" PRIu64 "\n", s->sig.src, s->srch->line, s->myCost, s->count );
@@ -474,7 +499,6 @@ static void _etmCB( void *d )
     struct nameEntry n;
     uint32_t disposition;
 
-
     /* This routine gets called when valid data are available, if these are the first data, then reset counters etc */
 
     if ( !r->sampling )
@@ -485,6 +509,15 @@ static void _etmCB( void *d )
         /* Fill in a time to start from */
         r->starttime = genericsTimestampmS();
         r->intervalBytes = 0;
+
+        /* Create false entry for an interrupt source */
+        r->op.inth = calloc( 1, sizeof( struct execEntryHash ) );
+        r->op.inth->addr          = INTERRUPT;
+        r->op.inth->fileindex     = INTERRUPT;
+        r->op.inth->line          = 1;//NO_LINE;
+        r->op.inth->count         = 1;//NO_LINE;
+        r->op.inth->functionindex = INTERRUPT;
+        HASH_ADD_INT( r->insthead, addr, r->op.inth );
     }
 
     /* Deal with changes introduced by this event ========================= */
@@ -499,6 +532,19 @@ static void _etmCB( void *d )
         disposition = cpu->disposition;
     }
 
+    /* If this is going to be an exception or return from one then there's special handling to be done */
+    if ( ETMStateChanged( &r->i, EV_CH_EX_ENTRY ) )
+    {
+        r->op.isException = true;
+        r->op.h = r->op.inth;
+    }
+
+    if ( ETMStateChanged( &r->i, EV_CH_EX_EXIT ) )
+    {
+        r->op.isExceptReturn = true;
+    }
+
+
     /* Action those changes =============================================== */
     while ( incAddr )
     {
@@ -506,7 +552,10 @@ static void _etmCB( void *d )
 
         struct execEntryHash *h = NULL;
 
-        /* Firstly, let's find the local hash record for this address, or create it if it doesn't exist */
+        /* ------------------------------------------------------------------------------------*/
+        /* First Stage: Individual address visit accounting.                                   */
+        /* Let's find the local hash record for this address, or create it if it doesn't exist */
+        /* ------------------------------------------------------------------------------------*/
         HASH_FIND_INT( r->insthead, &r->op.workingAddr, h );
 
         if ( !h )
@@ -544,6 +593,10 @@ static void _etmCB( void *d )
         /* OK, by hook or by crook we've got an address entry now, so increment the number of executions */
         h->count++;
 
+        /* ---------------------------------------------------------------------------------------------------*/
+        /* Second stage: Handle calls between functions. These are flagged via isSubCall/isException with the */
+        /* End flagged by matching isReturn/isExceptReturn statements.                                        */
+        /* ---------------------------------------------------------------------------------------------------*/
         /* If source postion changed then update source code line visitation counts too */
         if ( ( !r->op.h ) || ( h->line != r->op.h->line ) || ( h->functionindex != r->op.h->functionindex ) || ( h->fileindex != r->op.h->fileindex ) )
         {
@@ -551,9 +604,9 @@ static void _etmCB( void *d )
         }
 
         /* If this is the start of a subroutine call then update, or make, a record for it */
-        if ( r->op.lastWasSubcall )
+        if ( ( r->op.lastWasSubcall ) || ( r->op.isException ) )
         {
-            sig.src = r->op.h->addr;
+            sig.src = r->op.isException ? INTERRUPT : r->op.h->addr;
             sig.dst = h->addr;
 
             HASH_FIND( hh, r->subhead, &sig, sizeof( struct subcallSig ), s );
@@ -568,6 +621,12 @@ static void _etmCB( void *d )
                 HASH_ADD( hh, r->subhead, sig, sizeof( struct subcallSig ), s );
             }
 
+            /* If this is an exception, then update the calling routines execution time to now-1 instructions */
+            if ( ( r->op.isException ) && ( r->substacklen ) )
+            {
+                r->substack[r->substacklen - 1]->myCost += cpu->instCount - r->substack[r->substacklen - 1]->inTicks;
+            }
+
             /* However we got here, we've got a subcall record, so initialise its starting ticks */
             s->inTicks = cpu->instCount;
             s->count++;
@@ -575,15 +634,28 @@ static void _etmCB( void *d )
             /* ...and add it to the call stack */
             r->substack = ( struct subcall ** )realloc( r->substack, ( r->substacklen + 1 ) * sizeof( struct subcall * ) );
             r->substack[r->substacklen++] = s;
+
+            r->op.isException    = false;
         }
 
 
         /* If this is an executed return then process it, if we've not emptied the stack already (safety measure) */
-        if ( ( r->op.lastWasReturn ) && ( r->substacklen ) )
+        if ( ( r->op.lastWasReturn || r->op.isExceptReturn ) && ( r->substacklen ) )
         {
             /* We don't bother deallocating memory here cos it'll be done on the next isSubCall */
             s = r->substack[--r->substacklen];
             s->myCost += cpu->instCount - s->inTicks;
+
+            /* If this was an interrupt return then re-establish the instruction counter */
+            if ( ( r->op.isExceptReturn ) && ( r->substacklen ) )
+            {
+                r->substack[r->substacklen]->inTicks = cpu->instCount;
+
+                /* Have to update h since we don't want a record of the interrupt */
+                r->op.h = r->substack[r->substacklen]->dsth;
+            }
+
+            r->op.isExceptReturn = false;
         }
 
         /* Record details of this instruction */
@@ -626,7 +698,7 @@ static void _printHelp( struct RunTime *r )
     genericsPrintf( "       -e: <ElfFile> to use for symbols" EOL );
     genericsPrintf( "       -f <filename>: Take input from specified file" EOL );
     genericsPrintf( "       -h: This help" EOL );
-    genericsPrintf( "       -s <Duration>: Time to sample (in mS)" EOL );
+    genericsPrintf( "       -I <Interval>: Time to sample (in mS)" EOL );
     genericsPrintf( "       -s: <Server>:<Port> to use" EOL );
     //genericsPrintf( "       -t <channel>: Use TPIU to strip TPIU on specfied channel (defaults to 2)" EOL );
     genericsPrintf( "       -T: truncate -d material off all references (i.e. make output relative)" EOL );
@@ -642,7 +714,7 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
 {
     int c;
 
-    while ( ( c = getopt ( argc, argv, "aDd:Ee:f:hr:s:Tv:y:z:" ) ) != -1 )
+    while ( ( c = getopt ( argc, argv, "aDd:Ee:f:hI:s:Tv:y:z:" ) ) != -1 )
 
         switch ( c )
         {
@@ -682,7 +754,7 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
                 exit( 0 );
 
             // ------------------------------------
-            case 'r':
+            case 'I':
                 r->options->sampleDuration = atoi( optarg );
                 break;
 
@@ -923,9 +995,11 @@ int main( int argc, char *argv[] )
                     break;
                 }
 
-                _r.intervalBytes += _r.rawBlock.fillLevel;
                 /* Pump all of the data through the protocol handler */
                 ETMDecoderPump( &_r.i, _r.rawBlock.buffer, _r.rawBlock.fillLevel, _etmCB, &_r );
+
+                /* ...and record the fact that we received some data */
+                _r.intervalBytes += _r.rawBlock.fillLevel;
             }
 
             /* Update the intervals */

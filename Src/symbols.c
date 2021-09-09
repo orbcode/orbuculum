@@ -1,34 +1,9 @@
+/* SPDX-License-Identifier: BSD-3-Clause */
+
 /*
  * Symbol recovery from elf file
  * =============================
  *
- * Copyright (C) 2017, 2019, 2021  Dave Marples  <dave@marples.net>
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *
- * * Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- * * Redistributions in binary form must reproduce the above copyright
- *   notice, this list of conditions and the following disclaimer in the
- *   documentation and/or other materials provided with the distribution.
- * * Neither the names Orbtrace, Orbuculum nor the names of its
- *   contributors may be used to endorse or promote products derived from
- *   this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
- * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
- * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
- * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
- * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
- * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
- * SUCH DAMAGE.
  */
 
 #include <stdlib.h>
@@ -667,16 +642,13 @@ const char *SymbolFilename( struct SymbolSet *s, uint32_t index )
 {
     switch ( index )
     {
-        case EXC_RETURN:
-            return "";
-
         default:
             if ( index < s->fileCount )
             {
                 return s->files[index].name;
             }
 
-            return "";
+            return "NONE";
     }
 }
 // ====================================================================================================
@@ -688,17 +660,8 @@ const char *SymbolFunction( struct SymbolSet *s, uint32_t index )
         case FN_SLEEPING:
             return FN_SLEEPING_STR;
 
-        case FN_ORIGIN_HANDLER:
-            return FN_ORIGIN_HANDLER_STR;
-
-        case FN_ORIGIN_MAIN:
-            return FN_ORIGIN_MAIN_STR;
-
-        case FN_ORIGIN_PROC:
-            return FN_ORIGIN_PROC_STR;
-
-        case FN_ORIGIN_UNKN:
-            return FN_ORIGIN_UNKN_STR;
+        case INTERRUPT:
+            return FN_INTERRUPT_STR;
 
         default:
             if ( index < s->functionCount )
@@ -706,7 +669,7 @@ const char *SymbolFunction( struct SymbolSet *s, uint32_t index )
                 return s->functions[index].name;
             }
 
-            return "";
+            return "NONE";
     }
 }
 // ====================================================================================================
@@ -726,12 +689,11 @@ bool SymbolLookup( struct SymbolSet *s, uint32_t addr, struct nameEntry *n )
     memset( n, 0, sizeof( struct nameEntry ) );
     assert( s );
 
-    if ( ( addr & EXC_RETURN_MASK ) == EXC_RETURN )
+    if ( ( addr & SPECIALS_MASK ) == SPECIALS_MASK )
     {
-        /* Address is some sort of interrupt - see */
-        n->fileindex = EXC_RETURN;
+        /* Address is some sort of interrupt */
         n->line = 0;
-        n->functionindex = n->addr = EXC_RETURN_MASK | ( addr & INT_ORIGIN_MASK );
+        n->fileindex = n->functionindex = n->addr = INTERRUPT;
         return false;
     }
 
