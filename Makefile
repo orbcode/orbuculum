@@ -20,6 +20,7 @@ ORBDUMP   = orbdump
 ORBSTAT   = orbstat
 ORBMORTEM = orbmortem
 ORBPROFILE= orbprofile
+ORBTRACE  = orbtrace
 
 ##########################################################################
 # Check Host OS
@@ -100,14 +101,15 @@ endif
 
 ORBLIB_CFILES = $(App_DIR)/itmDecoder.c $(App_DIR)/tpiuDecoder.c $(App_DIR)/msgDecoder.c $(App_DIR)/msgSeq.c $(App_DIR)/etmDecoder.c
 
-ORBUCULUM_CFILES = $(App_DIR)/$(ORBUCULUM).c $(App_DIR)/nwclient.c
-ORBFIFO_CFILES   = $(App_DIR)/$(ORBFIFO).c $(App_DIR)/filewriter.c $(App_DIR)/itmfifos.c
-ORBCAT_CFILES    = $(App_DIR)/$(ORBCAT).c
-ORBTOP_CFILES    = $(App_DIR)/$(ORBTOP).c $(App_DIR)/symbols.c $(EXT)/cJSON.c
-ORBDUMP_CFILES   = $(App_DIR)/$(ORBDUMP).c
-ORBSTAT_CFILES   = $(App_DIR)/$(ORBSTAT).c $(App_DIR)/symbols.c
+ORBUCULUM_CFILES  = $(App_DIR)/$(ORBUCULUM).c $(App_DIR)/nwclient.c
+ORBFIFO_CFILES    = $(App_DIR)/$(ORBFIFO).c $(App_DIR)/filewriter.c $(App_DIR)/itmfifos.c
+ORBCAT_CFILES     = $(App_DIR)/$(ORBCAT).c
+ORBTOP_CFILES     = $(App_DIR)/$(ORBTOP).c $(App_DIR)/symbols.c $(EXT)/cJSON.c
+ORBDUMP_CFILES    = $(App_DIR)/$(ORBDUMP).c
+ORBSTAT_CFILES    = $(App_DIR)/$(ORBSTAT).c $(App_DIR)/symbols.c
 ORBMORTEM_CFILES  = $(App_DIR)/$(ORBMORTEM).c $(App_DIR)/symbols.c $(App_DIR)/sio.c
 ORBPROFILE_CFILES = $(App_DIR)/$(ORBPROFILE).c $(App_DIR)/symbols.c
+ORBTRACE_CFILES   = $(App_DIR)/$(ORBTRACE).c $(App_DIR)/orbtraceIf.c $(App_DIR)/symbols.c
 
 ##########################################################################
 # GNU GCC compiler prefix and location
@@ -195,6 +197,10 @@ ORBPROFILE_OBJS =  $(OBJS) $(patsubst %.c,%.o,$(ORBPROFILE_CFILES))
 ORBPROFILE_POBJS = $(POJBS) $(patsubst %,$(OLOC)/%,$(ORBPROFILE_OBJS))
 PDEPS += $(ORBPROFILE_POBJS:.o=.d)
 
+ORBTRACE_OBJS =  $(OBJS) $(patsubst %.c,%.o,$(ORBTRACE_CFILES))
+ORBTRACE_POBJS = $(POJBS) $(patsubst %,$(OLOC)/%,$(ORBTRACE_OBJS))
+PDEPS += $(ORBTRACE_POBJS:.o=.d)
+
 CFILES += $(App_DIR)/generics.c
 
 ##########################################################################
@@ -212,7 +218,7 @@ $(OLOC)/%.o : %.c
 	$(call cmd, \$(CC) -c $(CFLAGS) -MMD -o $@ $< ,\
 	Compiling $<)
 
-build: $(ORBUCULUM) $(ORBFIFO) $(ORBCAT) $(ORBTOP) $(ORBDUMP) $(ORBMORTEM) $(ORBPROFILE) #$(ORBSTAT)
+build: $(ORBUCULUM) $(ORBFIFO) $(ORBCAT) $(ORBTOP) $(ORBDUMP) $(ORBMORTEM) $(ORBPROFILE) $(ORBTRACE) #$(ORBSTAT)
 
 $(ORBLIB) : get_version $(ORBLIB_POBJS)
 	$(Q)$(AR) rcs $(OLOC)/lib$(ORBLIB).a  $(ORBLIB_POBJS)
@@ -250,11 +256,15 @@ $(ORBPROFILE) : $(ORBLIB) $(ORBPROFILE_POBJS)
 	$(Q)$(LD) $(LDFLAGS) -o $(OLOC)/$(ORBPROFILE) $(MAP) $(ORBPROFILE_POBJS)  $(LDLIBS)
 	-@echo "Completed build of" $(ORBPROFILE)
 
+$(ORBTRACE) : $(ORBTRACE_POBJS)
+	$(Q)$(LD) $(LDFLAGS) -o $(OLOC)/$(ORBTRACE) $(MAP) $(ORBTRACE_POBJS)  $(LDLIBS)
+	-@echo "Completed build of" $(ORBTRACE)
+
 tags:
 	-@etags $(CFILES) 2> /dev/null
 
 clean:
-	-$(call cmd, \rm -f $(POBJS) $(LD_TEMP) $(ORBUCULUM) $(ORBFIFO) $(ORBCAT) $(ORBDUMP) $(ORBSTAT) $(ORBMORTEM) $(ORBPROFILE) $(OUTFILE).map $(EXPORT) ,\
+	-$(call cmd, \rm -f $(POBJS) $(LD_TEMP) $(ORBUCULUM) $(ORBFIFO) $(ORBCAT) $(ORBDUMP) $(ORBSTAT) $(ORBMORTEM) $(ORBPROFILE) $(ORBTRACE) $(OUTFILE).map $(EXPORT) ,\
 	Cleaning )
 	$(Q)-rm -rf SourceDoc/*
 	$(Q)-rm -rf *~ core
