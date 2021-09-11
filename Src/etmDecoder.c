@@ -10,7 +10,6 @@
  */
 
 #include <string.h>
-#include <stdio.h>
 #include "etmDecoder.h"
 #include "msgDecoder.h"
 

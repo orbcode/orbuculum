@@ -9,10 +9,9 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdint.h>
 #include <string.h>
-#include <limits.h>
 #include <sys/time.h>
+
 #include "generics.h"
 
 #define MAX_STRLEN (4096) // Maximum length of debug string

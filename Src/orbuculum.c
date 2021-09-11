@@ -8,18 +8,14 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <fcntl.h>
-#include <stdbool.h>
 #include <ctype.h>
-#include <sys/socket.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <stdio.h>
-#include <string.h>
+#include <strings.h>
 #include <pthread.h>
-#include <assert.h>
 #if defined OSX
     #include <sys/ioctl.h>
     #include <libusb.h>
@@ -40,9 +36,6 @@
         #error "Unknown OS"
     #endif
 #endif
-#include <stdint.h>
-#include <inttypes.h>
-#include <limits.h>
 #include <signal.h>
 
 #include "git_version_info.h"

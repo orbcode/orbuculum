@@ -6,37 +6,15 @@
  *
  */
 
-#include <stdlib.h>
-#include <unistd.h>
-#include <fcntl.h>
 #include <ctype.h>
-#include <sys/socket.h>
 #include <sys/types.h>
-#include <sys/ioctl.h>
 #include <sys/stat.h>
+#include <fcntl.h>
 #include <stdio.h>
-#include <string.h>
-#include <stdarg.h>
 #include <signal.h>
-
-#if defined OSX
-    #include <libusb.h>
-#else
-    #if defined LINUX
-        #include <libusb-1.0/libusb.h>
-    #else
-        #error "Unknown OS"
-    #endif
-#endif
-#include <stdint.h>
-#include <limits.h>
-#include <termios.h>
-#include <pthread.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
-#include <assert.h>
 #include <netdb.h>
-#include <inttypes.h>
 
 #include "git_version_info.h"
 #include "uthash.h"
@@ -44,62 +22,12 @@
 #include "etmDecoder.h"
 #include "symbols.h"
 #include "nw.h"
+#include "ext_fileformats.h"
 
 #define SCRATCH_STRING_LEN  (65535)      /* Max length for a string under construction */
 #define TICK_TIME_MS        (1)          /* Time intervals for checks */
 #define DEFAULT_DURATION_MS (1000)       /* Default time to sample, in mS */
 #define HANDLE_MASK         (0xFFFFFF)   /* cachegrind cannot cope with large file handle numbers */
-
-/* Execution of an instruction. We maintain a lot of information, but it's a PC, so we've got the room :-) */
-struct execEntryHash
-{
-    /* The address in the memory map of the target */
-    uint32_t addr;
-
-    /* Counter at assembly and source line levels */
-    uint64_t count;                      /* Instruction level count */
-    uint64_t scount;                     /* Source level count (applied to first instruction of a new source line) */
-
-    /* Details about this instruction */
-    bool     isJump;                     /* Flag if this is a jump instruction */
-    bool     is4Byte;                    /* Flag for 4 byte instruction */
-    bool     isSubCall;                  /* Flag for subroutine call (BL/BLX) */
-    bool     isReturn;                   /* Flag for return */
-    uint32_t jumpdest;                   /* Destination for a jump, if it's taken */
-
-    /* Location of this line in source code */
-    uint32_t fileindex;                  /* File index (from symbols.c) */
-    uint32_t functionindex;              /* Function index (from symbols.c) */
-    uint32_t line;                       /* Line number in identified file */
-
-    /* Hash handle to make construct hashable */
-    UT_hash_handle hh;
-};
-
-
-/* Signature for a source/dest calling pair */
-struct subcallSig
-{
-    uint32_t src;                       /* Where the call is from */
-    uint32_t dst;                       /* Where the call is to */
-};
-
-/* Processed subcalls from routine to routine */
-struct subcall
-{
-    struct subcallSig sig;              /* Calling and called side record, forming an index entry */
-
-    struct execEntryHash *srch;         /* Calling side */
-    struct execEntryHash *dsth;         /* Called side */
-
-    /* Housekeeping */
-    uint64_t myCost;                   /* Inclusive cost of this call */
-    uint64_t count;                    /* Number of executions of this call */
-    uint64_t inTicks;                  /* Tick count at point of entry to this routine */
-
-    /* Hash handle to make construct hashable */
-    UT_hash_handle hh;
-};
 
 /* ---------- CONFIGURATION ----------------- */
 struct Options                           /* Record for options, either defaults or from command line */
@@ -176,7 +104,6 @@ struct RunTime
     uint64_t callsCount;                   /* Call data count */
 
     struct SymbolSet *s;                /* Symbols read from elf */
-    FILE *c;                            /* Writable file */
 
     struct opConstruct op;              /* The mechanical elements for creating the output buffer */
     struct Options *options;            /* Our runtime configuration */
@@ -201,290 +128,8 @@ struct RunTime
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
-// ====================================================================================================
-static int _inst_sort_fn( const void *a, const void *b )
-
-/* Sort instructions by address */
-
-{
-    return ( int )( ( ( struct execEntryHash * )a )->addr ) - ( int )( ( ( struct execEntryHash * )b )->addr );
-}
-// ====================================================================================================
-static int _calls_src_sort_fn( const void *a, const void *b )
-
-/* Sort instructions by called from address */
-
-{
-    int i;
-
-    if ( ( i = ( int )( ( ( struct subcall * )a )->sig.src ) - ( int )( ( ( struct subcall * )b )->sig.src ) ) )
-    {
-        return i;
-    }
-
-    return ( int )( ( ( struct subcall * )a )->sig.dst ) - ( int )( ( ( struct subcall * )b )->sig.dst );
-}
-// ====================================================================================================
-static int _calls_dst_sort_fn( const void *a, const void *b )
-
-/* Sort instructions by called to address */
-
-{
-    int i;
-
-    if ( ( i = ( int )( ( ( struct subcall * )a )->sig.dst ) - ( int )( ( ( struct subcall * )b )->sig.dst ) ) )
-    {
-        return i;
-    }
-
-    return ( int )( ( ( struct subcall * )a )->sig.src ) - ( int )( ( ( struct subcall * )b )->sig.src );
-}
-// ====================================================================================================
-// ====================================================================================================
-// Dot support
-// ====================================================================================================
-// ====================================================================================================
-bool _outputDot( struct RunTime *r )
-
-/* Output call graph to dot file */
-
-{
-    FILE *c;
-    uint32_t functionidx, dfunctionidx, fileidx;
-    uint64_t cnt;
-    struct subcall *s;
-
-    if ( !r->options->dotfile )
-    {
-        return false;
-    }
-
-    /* Sort according to addresses visited. */
-
-    c = fopen( r->options->dotfile, "w" );
-    fprintf( c, "digraph calls\n{\n  overlap=false; splines=true; size=\"7.75,10.25\"; orientation=portrait; sep=0.1; nodesep=0.1;\n" );
-
-    /* firstly write out the nodes in each subgraph - dest side clustered */
-    HASH_SORT( r->subhead, _calls_dst_sort_fn );
-    s = r->subhead;
-
-    while ( s )
-    {
-        if ( s->dsth->fileindex != INTERRUPT )
-        {
-            fprintf( c, "  subgraph \"cluster_%s\"\n  {\n    label=\"%s\";\n    bgcolor=lightgrey;\n", SymbolFilename( r->s, s->dsth->fileindex ), SymbolFilename( r->s, s->dsth->fileindex ) );
-            fileidx = s->dsth->fileindex;
-
-            while ( s && ( fileidx == s->dsth->fileindex ) )
-            {
-                /* Now output each function in the subgraph */
-                fprintf( c, "    %s [style=filled, fillcolor=white];\n", SymbolFunction( r->s, s->dsth->functionindex )  );
-                functionidx = s->dsth->functionindex;
-
-                /* Spin forwards until the function name _or_ filename changes */
-                while ( ( s ) && ( functionidx == s->dsth->functionindex ) && ( fileidx == s->dsth->fileindex ) )
-                {
-                    s = s->hh.next;
-                }
-            }
-        }
-        else
-        {
-            s = s->hh.next;
-        }
-
-        fprintf( c, "  }\n\n" );
-    }
-
-    /* now write out the nodes in each subgraph - source side clustered */
-    HASH_SORT( r->subhead, _calls_src_sort_fn );
-    s = r->subhead;
-
-    while ( s )
-    {
-        fprintf( c, "  subgraph \"cluster_%s\"\n  {\n    label=\"%s\";\n    bgcolor=lightgrey;\n", SymbolFilename( r->s, s->srch->fileindex ), SymbolFilename( r->s, s->srch->fileindex ) );
-        fileidx = s->srch->fileindex;
-
-        while ( s && ( fileidx == s->srch->fileindex ) )
-        {
-            if ( s->srch->fileindex != INTERRUPT )
-            {
-                /* Now output each function in the subgraph */
-                fprintf( c, "    %s [style=filled, fillcolor=white];\n", SymbolFunction( r->s, s->srch->functionindex )  );
-                functionidx = s->srch->functionindex;
-
-                /* Spin forwards until the function name _or_ filename changes */
-                while ( ( s ) && ( functionidx == s->srch->functionindex ) && ( fileidx == s->srch->fileindex ) )
-                {
-                    s = s->hh.next;
-                }
-            }
-            else
-            {
-                s = s->hh.next;
-            }
-        }
-
-        fprintf( c, "  }\n\n" );
-    }
-
-    /* Now go through and label the arrows... */
-
-    s = r->subhead;
-
-    while ( s )
-    {
-        functionidx = s->srch->functionindex;
-        dfunctionidx = s->dsth->functionindex;
-        cnt = s->count;
-        s = s->hh.next;
-
-        while ( ( s ) && ( functionidx == s->srch->functionindex ) && ( dfunctionidx == s->dsth->functionindex ) )
-        {
-            cnt += s->count;
-            s = s->hh.next;
-        }
-
-        fprintf( c, "    %s -> ", SymbolFunction( r->s, functionidx ) );
-        fprintf( c, "%s [label=%" PRIu64 ", weight=0.1];\n", SymbolFunction( r->s, dfunctionidx ), cnt );
-    }
-
-    fprintf( c, "}\n" );
-    fclose( c );
-    return true;
-}
-// ====================================================================================================
-// ====================================================================================================
-// KCacheGrind support
-// ====================================================================================================
-// ====================================================================================================
-bool _outputProfile( struct RunTime *r )
-
-/* Output a KCacheGrind compatible profile */
-
-{
-    struct nameEntry n;
-    uint32_t prevfile = NO_FILE;
-    uint32_t prevfn   = NO_FUNCTION;
-    uint32_t prevaddr = NO_FUNCTION;
-    uint32_t prevline = NO_LINE;
-    char *e = r->options->elffile;
-    char *d = r->options->deleteMaterial;
-
-    if ( !r->options->profile )
-    {
-        return false;
-    }
 
 
-    r->c = fopen( r->options->profile, "w" );
-    fprintf( r->c, "# callgrind format\n" );
-    fprintf( r->c, "creator: orbprofile\npositions: instr line\nevent: Inst : CPU Instructions\nevent: Visits : Visits to source line\nevents: Inst Visits\n" );
-
-    /* Samples are in time order, so we can determine the extent of time.... */
-    fprintf( r->c, "summary: %" PRIu64 "\n", r->op.lasttstamp - r->op.firsttstamp );
-
-    /* Try to remove frontmatter off the elfile if nessessary and possible */
-    if ( r->options->truncateDeleteMaterial )
-    {
-        while ( ( *d ) && ( *d == *e ) )
-        {
-            d++;
-            e++;
-        }
-
-        if ( e - r->options->elffile != strlen( r->options->deleteMaterial ) )
-        {
-            /* Strings don't match, give up and use the file elffile name */
-            e = r->options->elffile;
-        }
-    }
-
-    /* ...and record whatever elffilename we ended up with */
-    fprintf( r->c, "ob=%s\n", e );
-
-    HASH_SORT( r->insthead, _inst_sort_fn );
-    struct execEntryHash *f = r->insthead;
-
-    while ( f )
-    {
-        SymbolLookup( r->s, f->addr, &n );
-
-        if ( prevfile != n.fileindex )
-        {
-            fprintf( r->c, "fl=(%u) %s%s\n", n.fileindex & HANDLE_MASK, ( !r->options->truncateDeleteMaterial
-                     && r->options->deleteMaterial ) ? r->options->deleteMaterial : "", SymbolFilename( r->s, n.fileindex ) );
-        }
-
-        if ( prevfn != n.functionindex )
-        {
-            fprintf( r->c, "fn=(%u) %s\n", n.functionindex & HANDLE_MASK, SymbolFunction( r->s, n.functionindex ) );
-        }
-
-        if ( ( prevline == NO_LINE ) || ( prevaddr == NO_FUNCTION ) )
-        {
-            fprintf( r->c, "0x%08x %d ", f->addr, n.line );
-        }
-        else
-        {
-            if ( prevaddr == f->addr )
-            {
-                fprintf( r->c, "* " );
-            }
-            else
-            {
-                fprintf( r->c, "%s%d ", f->addr > prevaddr ? "+" : "", ( int )f->addr - prevaddr );
-            }
-
-            if ( prevline == n.line )
-            {
-                fprintf( r->c, "* " );
-            }
-            else
-            {
-                fprintf( r->c, "%s%d ", n.line > prevline ? "+" : "", ( int )n.line - prevline );
-            }
-        }
-
-        fprintf( r->c, "%" PRIu64 " %" PRIu64 "\n", f->count, f->scount );
-
-
-        prevline = n.line;
-        prevaddr = f->addr;
-        prevfile = n.fileindex;
-        prevfn = n.functionindex;
-        f = f->hh.next;
-    }
-
-    fprintf( _r.c, "\n\n## ------------------- Calls Follow ------------------------\n" );
-    HASH_SORT( r->subhead, _calls_src_sort_fn );
-    struct subcall *s = r->subhead;
-
-    while ( s )
-    {
-        /* Now publish the call destination. By definition is is known, so can be shortformed */
-        if ( prevfile != s->srch->fileindex )
-        {
-            fprintf( r->c, "fl=(%u)\n", s->srch->fileindex & HANDLE_MASK );
-            prevfile = s->srch->fileindex;
-        }
-
-        if ( prevfn != s->srch->functionindex )
-        {
-            fprintf( r->c, "fn=(%u)\n", s->srch->functionindex & HANDLE_MASK );
-            prevfn = s->srch->functionindex;
-        }
-
-        fprintf( r->c, "cfl=(%d)\ncfn=(%d)\n", s->dsth->fileindex, s->dsth->functionindex );
-        fprintf( r->c, "calls=%" PRIu64 " 0x%08x %d\n", s->count, s->sig.dst, s->dsth->line );
-        fprintf( r->c, "0x%08x %d %" PRIu64 " %" PRIu64 "\n", s->sig.src, s->srch->line, s->myCost, s->count );
-        s = s->hh.next;
-    }
-
-    fclose( r->c );
-
-    return true;
-}
 // ====================================================================================================
 // ====================================================================================================
 // Callback function for state changes from the target CPU (via ETB or ETM)
@@ -1021,12 +666,13 @@ int main( int argc, char *argv[] )
 
     if ( HASH_COUNT( _r.subhead ) )
     {
-        if ( _outputDot( &_r ) )
+        if ( ext_ff_outputDot( _r.options->dotfile, _r.subhead, _r.s ) )
         {
             genericsReport( V_WARN, "Output DOT" EOL );
         }
 
-        if ( _outputProfile( &_r ) )
+        if ( ext_ff_outputProfile( _r.options->profile, _r.options->elffile, _r.options->truncateDeleteMaterial ? _r.options->deleteMaterial : NULL,
+                                   _r.op.lasttstamp - _r.op.firsttstamp, _r.insthead, _r.subhead, _r.s ) )
         {
             genericsReport( V_WARN, "Output Profile" EOL );
         }

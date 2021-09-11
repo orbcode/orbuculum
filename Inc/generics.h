@@ -8,6 +8,7 @@
 
 #ifndef _GENERICS_
 #define _GENERICS_
+
 #include <stdbool.h>
 #include <limits.h>
 #include <stdint.h>

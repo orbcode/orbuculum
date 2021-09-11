@@ -10,6 +10,10 @@
 #define _SYMBOLS_H_
 
 #include <stdbool.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
 #include "uthash.h"
 
 #define ASSY_NOT_FOUND    0xffffffff        /* Assembly line not found */

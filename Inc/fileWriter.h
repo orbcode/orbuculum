@@ -11,6 +11,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+
 #include "generics.h"
 #include "fileWriterProtocol.h"
 #include "msgDecoder.h"

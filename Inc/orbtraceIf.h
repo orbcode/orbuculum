@@ -11,7 +11,6 @@
 
 #include <stdint.h>
 #include <stdbool.h>
-#include <sys/time.h>
 
 #if defined OSX
     #include <sys/ioctl.h>

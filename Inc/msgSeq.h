@@ -15,8 +15,8 @@
 
 #include <stdbool.h>
 #include <stdint.h>
-#include "generics.h"
 
+#include "generics.h"
 #include "itmDecoder.h"
 #include "msgDecoder.h"
 

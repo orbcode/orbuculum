@@ -8,35 +8,10 @@
 
 #include <stdlib.h>
 #include <unistd.h>
-#include <fcntl.h>
-#include <stdbool.h>
 #include <ctype.h>
 #include <stdio.h>
 #include <string.h>
 #include <assert.h>
-#if defined OSX
-    #include <sys/ioctl.h>
-    #include <libusb.h>
-    #include <termios.h>
-#else
-    #if defined LINUX
-        #include <libusb-1.0/libusb.h>
-        #include <asm/ioctls.h>
-        #if defined TCGETS2
-            #include <asm/termios.h>
-            /* Manual declaration to avoid conflict. */
-            extern int ioctl ( int __fd, unsigned long int __request, ... ) __THROW;
-        #else
-            #include <sys/ioctl.h>
-            #include <termios.h>
-        #endif
-    #else
-        #error "Unknown OS"
-    #endif
-#endif
-#include <stdint.h>
-#include <inttypes.h>
-#include <limits.h>
 #include <signal.h>
 
 #include "git_version_info.h"

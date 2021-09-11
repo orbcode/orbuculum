@@ -6,11 +6,8 @@
  *
  */
 
-#include <stdlib.h>
 #include <stdarg.h>
-#include <unistd.h>
 #include <fcntl.h>
-#include <stdbool.h>
 #include <ctype.h>
 #include <sys/socket.h>
 #include <netdb.h>
@@ -19,19 +16,12 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <stdio.h>
-#include <string.h>
-#include <pthread.h>
 #include <assert.h>
-#include <stdint.h>
-#include <inttypes.h>
-#include <limits.h>
 #include <signal.h>
-#include <sys/ioctl.h>
 
 #include "git_version_info.h"
 #include "generics.h"
 #include "nw.h"
-
 #include "etmDecoder.h"
 #include "tpiuDecoder.h"
 #include "symbols.h"

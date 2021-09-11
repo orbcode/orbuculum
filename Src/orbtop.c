@@ -6,22 +6,13 @@
  *
  */
 
-#include <stdlib.h>
-#include <stdbool.h>
-#include <unistd.h>
 #include <fcntl.h>
 #include <ctype.h>
-#include <sys/socket.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <stdio.h>
-#include <string.h>
-#include <stdarg.h>
 #include <assert.h>
 #include <inttypes.h>
-#include <stdint.h>
-#include <limits.h>
-#include <pthread.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netdb.h>

@@ -6,32 +6,13 @@
  *
  */
 
-#include <stdlib.h>
 #include <unistd.h>
-#include <fcntl.h>
 #include <ctype.h>
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <sys/ioctl.h>
-#include <sys/stat.h>
 #include <stdio.h>
-#include <string.h>
-#if defined OSX
-    #include <libusb.h>
-#else
-    #if defined LINUX
-        #include <libusb-1.0/libusb.h>
-    #else
-        #error "Unknown OS"
-    #endif
-#endif
-#include <stdint.h>
-#include <limits.h>
-#include <termios.h>
-#include <pthread.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netdb.h>
+
 #include "generics.h"
 #include "uthash.h"
 #include "git_version_info.h"
