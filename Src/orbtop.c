@@ -392,7 +392,7 @@ uint32_t _consolodateReport( struct reportLine **returnReport, uint32_t *returnR
         n = ( struct nameEntry * )malloc( sizeof( struct nameEntry ) );
     }
 
-    n->fileindex = -1;
+    n->fileindex = NO_FILE;
     n->functionindex = FN_SLEEPING;
     n->addr = 0;
     n->line = 0;
@@ -1074,7 +1074,11 @@ int _processOptions( int argc, char *argv[] )
 
     if ( options.useTPIU )
     {
-        genericsReport( V_INFO, "Using TPIU  : true (ITM on channel %d)" EOL, options.tpiuITMChannel );
+        genericsReport( V_INFO, "Using TPIU       : true (ITM on channel %d)" EOL, options.tpiuITMChannel );
+    }
+    else
+    {
+        genericsReport( V_INFO, "Using TPIU       : false" EOL );
     }
 
     return OK;

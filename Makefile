@@ -106,7 +106,7 @@ ORBFIFO_CFILES    = $(App_DIR)/$(ORBFIFO).c $(App_DIR)/filewriter.c $(App_DIR)/i
 ORBCAT_CFILES     = $(App_DIR)/$(ORBCAT).c
 ORBTOP_CFILES     = $(App_DIR)/$(ORBTOP).c $(App_DIR)/symbols.c $(EXT)/cJSON.c
 ORBDUMP_CFILES    = $(App_DIR)/$(ORBDUMP).c
-ORBSTAT_CFILES    = $(App_DIR)/$(ORBSTAT).c $(App_DIR)/symbols.c
+ORBSTAT_CFILES    = $(App_DIR)/$(ORBSTAT).c $(App_DIR)/symbols.c $(App_DIR)/ext_fileformats.c
 ORBMORTEM_CFILES  = $(App_DIR)/$(ORBMORTEM).c $(App_DIR)/symbols.c $(App_DIR)/sio.c
 ORBPROFILE_CFILES = $(App_DIR)/$(ORBPROFILE).c $(App_DIR)/symbols.c $(App_DIR)/ext_fileformats.c
 ORBTRACE_CFILES   = $(App_DIR)/$(ORBTRACE).c $(App_DIR)/orbtraceIf.c $(App_DIR)/symbols.c
@@ -218,7 +218,7 @@ $(OLOC)/%.o : %.c
 	$(call cmd, \$(CC) -c $(CFLAGS) -MMD -o $@ $< ,\
 	Compiling $<)
 
-build: $(ORBUCULUM) $(ORBFIFO) $(ORBCAT) $(ORBTOP) $(ORBDUMP) $(ORBMORTEM) $(ORBPROFILE) $(ORBTRACE) #$(ORBSTAT)
+build: $(ORBUCULUM) $(ORBFIFO) $(ORBCAT) $(ORBTOP) $(ORBDUMP) $(ORBMORTEM) $(ORBPROFILE) $(ORBTRACE) $(ORBSTAT)
 
 $(ORBLIB) : get_version $(ORBLIB_POBJS)
 	$(Q)$(AR) rcs $(OLOC)/lib$(ORBLIB).a  $(ORBLIB_POBJS)

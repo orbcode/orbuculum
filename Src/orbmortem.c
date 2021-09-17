@@ -90,7 +90,8 @@ struct RunTime
 
     const char *progName;               /* Name by which this program was called */
     struct SymbolSet *s;                /* Symbols read from elf */
-    bool      ending;                   /* Flag indicating app is terminating */
+    bool     ending;                    /* Flag indicating app is terminating */
+    bool     singleShot;                /* Flag indicating take a single buffer then stop */
     uint64_t intervalBytes;             /* Number of bytes transferred in current interval */
     uint64_t oldintervalBytes;          /* Number of bytes transferred previously */
     uint8_t *pmBuffer;                  /* The post-mortem buffer */
@@ -349,7 +350,20 @@ static void _processBlock( struct RunTime *r )
                             if ( r->options->channel == p.packet[g].s )
                             {
                                 r->pmBuffer[r->wp] = p.packet[g].d;
-                                r->wp = ( r->wp + 1 ) % r->options->buflen;
+                                uint32_t nwp = ( r->wp + 1 ) % r->options->buflen;
+
+                                if ( nwp == r->rp )
+                                {
+                                    if ( r->singleShot )
+                                    {
+                                        r->held = true;
+                                        return;
+                                    }
+                                }
+                                else
+                                {
+                                    r->wp = nwp;
+                                }
 
                                 if ( r->wp == r->rp )
                                 {
@@ -366,7 +380,20 @@ static void _processBlock( struct RunTime *r )
             while ( y-- )
             {
                 r->pmBuffer[r->wp] = *c++;
-                r->wp = ( r->wp + 1 ) % r->options->buflen;
+                uint32_t nwp = ( r->wp + 1 ) % r->options->buflen;
+
+                if ( nwp == r->rp )
+                {
+                    if ( r->singleShot )
+                    {
+                        r->held = true;
+                        return;
+                    }
+                }
+                else
+                {
+                    r->wp = nwp;
+                }
 
                 if ( r->wp == r->rp )
                 {

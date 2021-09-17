@@ -183,7 +183,7 @@ bool ext_ff_outputDot( char *dotfile, struct subcall *subcallList, struct Symbol
 // KCacheGrind support
 // ====================================================================================================
 // ====================================================================================================
-bool ext_ff_outputProfile( char *profile, char *elffile, char *deleteMaterial, uint64_t timelen,
+bool ext_ff_outputProfile( char *profile, char *elffile, char *deleteMaterial, bool includeVisits, uint64_t timelen,
                            struct execEntryHash *insthead, struct subcall *subcallList, struct SymbolSet *ss )
 
 /* Output a KCacheGrind compatible profile, with instruction coverage in insthead, calls in subcallList */
@@ -206,7 +206,15 @@ bool ext_ff_outputProfile( char *profile, char *elffile, char *deleteMaterial, u
 
     c = fopen( profile, "w" );
     fprintf( c, "# callgrind format\n" );
-    fprintf( c, "creator: orbprofile\npositions: instr line\nevent: Inst : CPU Instructions\nevent: Visits : Visits to source line\nevents: Inst Visits\n" );
+
+    if ( includeVisits )
+    {
+        fprintf( c, "creator: orbprofile\npositions: instr line\nevent: Inst : CPU Instructions\nevent: Visits : Visits to source line\nevents: Inst Visits\n" );
+    }
+    else
+    {
+        fprintf( c, "creator: orbprofile\npositions: instr line\nevent: Inst : CPU Instructions\nevents: Inst\n" );
+    }
 
     /* Samples are in time order, so we can determine the extent of time.... */
     fprintf( c, "summary: %" PRIu64 "\n", timelen );
@@ -272,7 +280,14 @@ bool ext_ff_outputProfile( char *profile, char *elffile, char *deleteMaterial, u
             }
         }
 
-        fprintf( c, "%" PRIu64 " %" PRIu64 "\n", f->count, f->scount );
+        if ( includeVisits )
+        {
+            fprintf( c, "%" PRIu64 " %" PRIu64 "\n", f->count, f->scount );
+        }
+        else
+        {
+            fprintf( c, "%" PRIu64 "\n", f->count );
+        }
 
 
         prevline = n.line;
@@ -303,7 +318,16 @@ bool ext_ff_outputProfile( char *profile, char *elffile, char *deleteMaterial, u
 
         fprintf( c, "cfl=(%d)\ncfn=(%d)\n", s->dsth->fileindex, s->dsth->functionindex );
         fprintf( c, "calls=%" PRIu64 " 0x%08x %d\n", s->count, s->sig.dst, s->dsth->line );
-        fprintf( c, "0x%08x %d %" PRIu64 " %" PRIu64 "\n", s->sig.src, s->srch->line, s->myCost, s->count );
+
+        if ( includeVisits )
+        {
+            fprintf( c, "0x%08x %d %" PRIu64 " %" PRIu64 "\n", s->sig.src, s->srch->line, s->myCost, s->count );
+        }
+        else
+        {
+            fprintf( c, "0x%08x %d %" PRIu64 "\n", s->sig.src, s->srch->line, s->myCost );
+        }
+
         s = s->hh.next;
     }
 

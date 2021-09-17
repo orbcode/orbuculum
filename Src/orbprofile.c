@@ -671,7 +671,7 @@ int main( int argc, char *argv[] )
             genericsReport( V_WARN, "Output DOT" EOL );
         }
 
-        if ( ext_ff_outputProfile( _r.options->profile, _r.options->elffile, _r.options->truncateDeleteMaterial ? _r.options->deleteMaterial : NULL,
+        if ( ext_ff_outputProfile( _r.options->profile, _r.options->elffile, _r.options->truncateDeleteMaterial ? _r.options->deleteMaterial : NULL, true,
                                    _r.op.lasttstamp - _r.op.firsttstamp, _r.insthead, _r.subhead, _r.s ) )
         {
             genericsReport( V_WARN, "Output Profile" EOL );
