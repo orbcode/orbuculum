@@ -10,9 +10,14 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <ctype.h>
-#include <netdb.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
+#ifdef WIN32
+    #include <winsock2.h>
+#else
+    #include <sys/socket.h>
+    #include <netinet/in.h>
+    #include <netdb.h>
+    #include <arpa/inet.h>
+#endif
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <strings.h>
@@ -34,6 +39,8 @@
             #include <sys/ioctl.h>
             #include <termios.h>
         #endif
+    #elif defined WIN32
+        #include <libusb-1.0/libusb.h>
     #else
         #error "Unknown OS"
     #endif
@@ -45,6 +52,11 @@
 #include "tpiuDecoder.h"
 
 #include "nwclient.h"
+
+#ifdef WIN32
+    // https://stackoverflow.com/a/14388707/995351
+    #define SO_REUSEPORT SO_REUSEADDR
+#endif
 
 #define SEGGER_HOST "localhost"               /* Address to connect to SEGGER */
 #define SEGGER_PORT (2332)
@@ -68,7 +80,7 @@ static const struct deviceList
     { 0, 0, 0, 0, 0 }
 };
 
-//#define DUMP_BLOCK
+// #define DUMP_BLOCK
 
 /* How many transfer buffers from the source to allocate */
 #define NUM_RAW_BLOCKS (3)
@@ -212,6 +224,8 @@ static int _setSerialConfig ( int f, speed_t speed )
     ioctl( f, TCFLSH, TCIOFLUSH );
     return 0;
 }
+#elif defined WIN32
+
 #else
 static int _setSerialConfig ( int f, speed_t speed )
 {
@@ -903,7 +917,7 @@ int seggerFeeder( struct RunTime *r )
 
     int flag = 1;
 
-    bzero( ( char * ) &serv_addr, sizeof( serv_addr ) );
+    memset( ( char * ) &serv_addr, 0, sizeof( serv_addr ) );
     server = gethostbyname( r->options->seggerHost );
 
     if ( !server )
@@ -913,15 +927,16 @@ int seggerFeeder( struct RunTime *r )
     }
 
     serv_addr.sin_family = AF_INET;
-    bcopy( ( char * )server->h_addr,
-           ( char * )&serv_addr.sin_addr.s_addr,
-           server->h_length );
+    memcpy( ( char * )&serv_addr.sin_addr.s_addr,
+            ( const char * )server->h_addr,
+            server->h_length
+    );
     serv_addr.sin_port = htons( r->options->seggerPort );
 
     while ( !r->ending )
     {
         r->f = socket( AF_INET, SOCK_STREAM, 0 );
-        setsockopt( r->f, SOL_SOCKET, SO_REUSEPORT, &flag, sizeof( flag ) );
+        setsockopt( r->f, SOL_SOCKET, SO_REUSEPORT, (const void*)&flag, sizeof( flag ) );
 
         if ( r->f < 0 )
         {
@@ -966,6 +981,9 @@ int seggerFeeder( struct RunTime *r )
     return -2;
 }
 // ====================================================================================================
+#ifdef WIN32
+int serialFeeder( struct RunTime *r );
+#else
 int serialFeeder( struct RunTime *r )
 {
     int ret;
@@ -1031,6 +1049,7 @@ int serialFeeder( struct RunTime *r )
 
     return 0;
 }
+#endif
 // ====================================================================================================
 int fileFeeder( struct RunTime *r )
 
@@ -1075,6 +1094,11 @@ int fileFeeder( struct RunTime *r )
 int main( int argc, char *argv[] )
 
 {
+    #ifdef WIN32
+    WSADATA wsaData;
+    WSAStartup(MAKEWORD(2, 2), &wsaData);
+    #endif
+
     /* Setup TPIU in case we call it into service later */
     TPIUDecoderInit( &_r.t );
     sem_init( &_r.dataForClients, 0, 0 );
@@ -1095,10 +1119,12 @@ int main( int argc, char *argv[] )
     }
 
     /* Don't kill a sub-process when any reader or writer evaporates */
+    #if !defined WIN32
     if ( SIG_ERR == signal( SIGPIPE, SIG_IGN ) )
     {
         genericsExit( -1, "Failed to ignore SIGPIPEs" EOL );
     }
+    #endif
 
     if ( _r.options->useTPIU )
     {

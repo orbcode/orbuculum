@@ -9,16 +9,27 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <pthread.h>
-#include <sys/socket.h>
-#include <netdb.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
+#ifdef WIN32
+    #include <winsock2.h>
+    #include <ws2tcpip.h>
+#else
+    #include <sys/socket.h>
+    #include <netinet/in.h>
+    #include <netdb.h>
+    #include <arpa/inet.h>
+    #include <linux/tcp.h>
+#endif
 #include <assert.h>
 #include <strings.h>
 #include <stdio.h>
 #include "generics.h"
 #include "nwclient.h"
 
+
+#ifdef WIN32
+    // https://stackoverflow.com/a/14388707/995351
+    #define SO_REUSEPORT SO_REUSEADDR
+#endif
 
 #define CLIENT_TERM_INTERVAL_US (10000)       /* Interval to check for all clients lost */
 
@@ -128,8 +139,10 @@ static void *_client( void *args )
     while ( !c->finish )
     {
         readDataLen = read( c->listenHandle, maxTransitPacket, TRANSFER_SIZE );
+        fflush(stdout);
 
-        if ( ( c->finish ) || ( readDataLen <= 0 ) || ( write( c->portNo, maxTransitPacket, readDataLen ) < 0 ) )
+        // if ( ( c->finish ) || ( readDataLen <= 0 ) || ( write( c->portNo, maxTransitPacket, readDataLen ) < 0 ) )
+        if ( ( c->finish ) || ( readDataLen <= 0 ) || ( send( c->portNo, (const void*)maxTransitPacket, readDataLen, 0 ) < 0 ) )
         {
             /* This port went away, so remove it */
             if ( !c->finish )
@@ -153,7 +166,11 @@ static void *_listenTask( void *arg )
     struct nwclientsHandle *h = ( struct nwclientsHandle * )arg;
     const struct timespec ts = {.tv_sec = 1, .tv_nsec = 0};
     int newsockfd;
-    socklen_t clilen;
+    #ifdef WIN32
+    int clilen;
+    #else
+    size_t clilen;
+    #endif
     struct sockaddr_in cli_addr;
     int f[2];                               /* File descriptor set for pipe */
     struct nwClient *client;
@@ -175,8 +192,20 @@ static void *_listenTask( void *arg )
         inet_ntop( AF_INET, &cli_addr.sin_addr, s, 99 );
         genericsReport( V_INFO, "New connection from %s" EOL, s );
 
+        bool success = true;
+
+        #ifdef WIN32
+        HANDLE writeHandle;
+        HANDLE readHandle;
+        success = CreatePipe(&readHandle, &writeHandle, NULL, 0) != 0;
+        f[0] = _open_osfhandle((intptr_t)readHandle, 0);
+        f[1] = _open_osfhandle((intptr_t)writeHandle, 0);
+        #else
+        success = !pipe(f);
+        #endif
+
         /* We got a new connection - spawn a thread to handle it */
-        if ( !pipe( f ) )
+        if ( success )
         {
             client = ( struct nwClient * )calloc( 1, sizeof( struct nwClient ) );
             client->handle = f[1];
@@ -261,7 +290,7 @@ struct nwclientsHandle *nwclientStart( int port )
     }
 
     h->sockfd = socket( AF_INET, SOCK_STREAM, 0 );
-    setsockopt( h->sockfd, SOL_SOCKET, SO_REUSEPORT, &flag, sizeof( flag ) );
+    setsockopt( h->sockfd, SOL_SOCKET, SO_REUSEPORT, (const void*)&flag, sizeof( flag ) );
 
     if ( h->sockfd < 0 )
     {
@@ -269,12 +298,12 @@ struct nwclientsHandle *nwclientStart( int port )
         goto free_and_return;
     }
 
-    bzero( ( char * ) &serv_addr, sizeof( serv_addr ) );
+    memset( ( char * ) &serv_addr, 0, sizeof( serv_addr ) );
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_addr.s_addr = INADDR_ANY;
     serv_addr.sin_port = htons( port );
 
-    if ( setsockopt( h->sockfd, SOL_SOCKET, SO_REUSEADDR, &( int )
+    if ( setsockopt( h->sockfd, SOL_SOCKET, SO_REUSEADDR, (const void*)&( int )
 {
     1
 }, sizeof( int ) ) < 0 )
