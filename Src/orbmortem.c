@@ -625,14 +625,7 @@ static void _etmCB( void *d )
             /* If this line has assembly then output it */
             if ( n.assyLine != ASSY_NOT_FOUND )
             {
-                if ( ( n.assy[n.assyLine].isSubCall ) || ( n.assy[n.assyLine].isReturn ) )
-                {
-                    _appendRefToOPBuffer( r, r->op.currentLine, LT_ASSEMBLYFLOW, n.assy[n.assyLine].lineText );
-                }
-                else
-                {
-                    _appendRefToOPBuffer( r, r->op.currentLine, ( disposition & 1 ) ? LT_ASSEMBLY : LT_NASSEMBLY, n.assy[n.assyLine].lineText );
-                }
+                _appendRefToOPBuffer( r, r->op.currentLine, ( disposition & 1 ) ? LT_ASSEMBLY : LT_NASSEMBLY, n.assy[n.assyLine].lineText );
 
                 if ( ( n.assy[n.assyLine].isJump ) && ( disposition & 1 ) )
                 {

@@ -20,6 +20,7 @@
 #define NO_LINE           0xffffffff        /* No line number defined */
 #define NO_FILE           0xffffffff        /* No file defined */
 #define NO_FUNCTION       0xffffffff        /* No function defined */
+#define NO_DESTADDRESS    0xffffffe0        /* No address defined */
 
 #define SPECIALS_MASK     0xfffffff0
 #define FN_SLEEPING       (SPECIALS_MASK|0xb)         /* Marker for sleeping case */

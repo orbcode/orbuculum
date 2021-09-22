@@ -74,9 +74,40 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
 
             // -----------------------------------------------------
             case ETM_IDLE:
-
                 /* Start off by making sure entire received packet changes are 0'ed */
                 cpu->changeRecord = 0;
+
+                // *************************************************
+                // ************** BRANCH PACKET ********************
+                // *************************************************
+                if ( c & 0b1 )
+                {
+                    genericsReport( V_DEBUG, "BRANCH " );
+
+                    /* The lowest order 6 bits of address info... */
+                    switch ( cpu->addrMode )
+                    {
+                        case ETM_ADDRMODE_ARM:
+                            i->addrConstruct = ( i->addrConstruct & ~( 0b11111100 ) ) | ( ( c & 0b01111110 ) << 1 );
+                            break;
+
+                        case ETM_ADDRMODE_THUMB:
+                            i->addrConstruct = ( i->addrConstruct & ~( 0b01111111 ) ) | ( c & 0b01111110 );
+                            break;
+
+                        case ETM_ADDRMODE_JAZELLE:
+                            i->addrConstruct = ( i->addrConstruct & ~( 0b00111111 ) ) | ( ( c & 0b01111110 ) >> 1 );
+                            break;
+                    }
+
+                    i->byteCount = 1;
+                    C = c & 0x80;
+                    X = false;
+                    cpu->changeRecord |= ( 1 << EV_CH_ADDRESS );
+
+                    newState = ( i->usingAltAddrEncode ) ? ETM_COLLECT_BA_ALT_FORMAT : ETM_COLLECT_BA_STD_FORMAT;
+                    goto terminateAddrByte;
+                }
 
                 // *************************************************
                 // ************** A-SYNC PACKET ********************
@@ -87,10 +118,14 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                 }
 
                 // *************************************************
-                // ************** IGNORE PACKET ********************
+                // ************ CYCLECOUNT PACKET ******************
                 // *************************************************
-                if ( c == 0b01100110 )
+                if ( c == 0b00000100 )
                 {
+                    genericsReport( V_DEBUG, "CYCCNT " EOL );
+                    i->byteCount = 0;
+                    i->cycleConstruct = 0;
+                    newState = ETM_GET_CYCLECOUNT;
                     break;
                 }
 
@@ -99,7 +134,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                 // *************************************************
                 if ( c == 0b00001000 ) /* Normal ISYNC */
                 {
-                    genericsReport( V_DEBUG, "Normal ISYNC" EOL );
+                    genericsReport( V_DEBUG, "Normal ISYNC " EOL );
                     /* Collect either the context or the Info Byte next */
                     i->byteCount = 0;
                     i->contextConstruct = 0;
@@ -117,7 +152,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
 
                 if ( c == 0b01110000 ) /* ISYNC with Cycle Count */
                 {
-                    genericsReport( V_DEBUG, "ISYNC+CYCCNT" EOL );
+                    genericsReport( V_DEBUG, "ISYNC+CYCCNT " EOL );
                     /* Collect the cycle count next */
                     i->byteCount = 0;
                     i->cycleConstruct = 0;
@@ -126,47 +161,12 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                 }
 
                 // *************************************************
-                // ************ CYCLECOUNT PACKET ******************
-                // *************************************************
-                if ( c == 0b00000100 )
-                {
-                    genericsReport( V_DEBUG, "CYCCNT" EOL );
-                    i->byteCount = 0;
-                    i->cycleConstruct = 0;
-                    newState = ETM_GET_CYCLECOUNT;
-                    break;
-                }
-
-                // *************************************************
                 // ************** TRIGGER PACKET *******************
                 // *************************************************
                 if ( c == 0b00001100 )
                 {
-                    genericsReport( V_DEBUG, "TRIGGER" EOL );
+                    genericsReport( V_DEBUG, "TRIGGER " EOL );
                     cpu->changeRecord |= ( 1 << EV_CH_TRIGGER );
-                    retVal = ETM_EV_MSG_RXED;
-                    break;
-                }
-
-                // *************************************************
-                // ******** EXCEPTION ENTRY PACKET *****************
-                // *************************************************
-                if ( c == 0b01111110 )
-                {
-                    /* Note this is only used on CPUs with data tracing */
-                    genericsReport( V_DEBUG, "EXCEPT-ENTRY" EOL );
-                    cpu->changeRecord |= ( 1 << EV_CH_EX_ENTRY );
-                    retVal = ETM_EV_MSG_RXED;
-                    break;
-                }
-
-                // *************************************************
-                // ******** EXCEPTION EXIT PACKET ******************
-                // *************************************************
-                if ( c == 0b01110110 )
-                {
-                    genericsReport( V_DEBUG, "EXCEPT-EXIT" EOL );
-                    cpu->changeRecord |= ( 1 << EV_CH_EX_EXIT );
                     retVal = ETM_EV_MSG_RXED;
                     break;
                 }
@@ -176,20 +176,8 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                 // *************************************************
                 if ( c == 0b00111100 )
                 {
-                    genericsReport( V_DEBUG, "VMID" EOL );
+                    genericsReport( V_DEBUG, "VMID " EOL );
                     newState = ETM_GET_VMID;
-                    break;
-                }
-
-                // *************************************************
-                // ************ CONTEXTID PACKET *******************
-                // *************************************************
-                if ( c == 0b01101110 )
-                {
-                    genericsReport( V_DEBUG, "CONTEXTID" EOL );
-                    newState = ETM_GET_CONTEXTID;
-                    cpu->contextID = 0;
-                    i->byteCount = 0;
                     break;
                 }
 
@@ -198,7 +186,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                 // *************************************************
                 if ( ( c & 0b11111011 ) == 0b01000010 )
                 {
-                    genericsReport( V_DEBUG, "TS" EOL );
+                    genericsReport( V_DEBUG, "TS " EOL );
                     newState = ETM_GET_TSTAMP;
 
                     if ( ( c & ( 1 << 2 ) ) != 0 )
@@ -211,11 +199,54 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                 }
 
                 // *************************************************
+                // ************** IGNORE PACKET ********************
+                // *************************************************
+                if ( c == 0b01100110 )
+                {
+                    break;
+                }
+
+                // *************************************************
+                // ************ CONTEXTID PACKET *******************
+                // *************************************************
+                if ( c == 0b01101110 )
+                {
+                    genericsReport( V_DEBUG, "CONTEXTID " EOL );
+                    newState = ETM_GET_CONTEXTID;
+                    cpu->contextID = 0;
+                    i->byteCount = 0;
+                    break;
+                }
+
+                // *************************************************
+                // ******** EXCEPTION EXIT PACKET ******************
+                // *************************************************
+                if ( c == 0b01110110 )
+                {
+                    genericsReport( V_DEBUG, "EXCEPT-EXIT " EOL );
+                    cpu->changeRecord |= ( 1 << EV_CH_EX_EXIT );
+                    retVal = ETM_EV_MSG_RXED;
+                    break;
+                }
+
+                // *************************************************
+                // ******** EXCEPTION ENTRY PACKET *****************
+                // *************************************************
+                if ( c == 0b01111110 )
+                {
+                    /* Note this is only used on CPUs with data tracing */
+                    genericsReport( V_DEBUG, "EXCEPT-ENTRY " EOL );
+                    cpu->changeRecord |= ( 1 << EV_CH_EX_ENTRY );
+                    retVal = ETM_EV_MSG_RXED;
+                    break;
+                }
+
+                // *************************************************
                 // ************** P-HEADER PACKET ******************
                 // *************************************************
                 if ( ( c & 0b10000001 ) == 0b10000000 )
                 {
-                    genericsReport( V_DEBUG, "P" EOL );
+                    genericsReport( V_DEBUG, "P " EOL );
 
                     if ( !i->cycleAccurate )
                     {
@@ -224,7 +255,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                             /* Format-1 P-header */
                             cpu->eatoms = ( c & 0x3C ) >> 2;
                             cpu->natoms = ( c & ( 1 << 6 ) ) ? 1 : 0;
-                            cpu->instCount += cpu->eatoms;
+                            cpu->instCount += cpu->eatoms + cpu->natoms;
 
                             /* Put a 1 in each element of disposition if was executed */
                             cpu->disposition = ( 1 << cpu->eatoms ) - 1;
@@ -237,11 +268,13 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                         {
                             /* Format-2 P-header */
                             cpu->eatoms = ( ( c & ( 1 << 2 ) ) == 0 ) + ( ( c & ( 1 << 3 ) ) == 0 );
-                            cpu->instCount += cpu->eatoms;
-
                             cpu->natoms = 2 - cpu->eatoms;
-                            cpu->disposition = ( ( c & ( 1 << 3 ) ) == 0 ) | ( ( c & ( 1 << 2 ) ) == 0 );
+
+                            cpu->disposition = ( ( c & ( 1 << 3 ) ) == 0 ) |
+                                               ( ( ( c & ( 1 << 2 ) ) == 0 ) << 1 );
+
                             cpu->changeRecord |= ( 1 << EV_CH_ENATOMS );
+                            cpu->instCount += cpu->eatoms + cpu->natoms;
                             retVal = ETM_EV_MSG_RXED;
                             break;
                         }
@@ -326,39 +359,8 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                     break;
                 }
 
-                // *************************************************
-                // ************** BRANCH PACKET ********************
-                // *************************************************
-                if ( c & 0b1 )
-                {
-                    genericsReport( V_DEBUG, "BRANCH" );
-
-                    /* The lowest order 6 bits of address info... */
-                    switch ( cpu->addrMode )
-                    {
-                        case ETM_ADDRMODE_ARM:
-                            i->addrConstruct = ( i->addrConstruct & ~( 0b11111100 ) ) | ( ( c & 0b01111110 ) << 1 );
-                            break;
-
-                        case ETM_ADDRMODE_THUMB:
-                            i->addrConstruct = ( i->addrConstruct & ~( 0b01111111 ) ) | ( c & 0b01111110 );
-                            break;
-
-                        case ETM_ADDRMODE_JAZELLE:
-                            i->addrConstruct = ( i->addrConstruct & ~( 0b00111111 ) ) | ( ( c & 0b01111110 ) >> 1 );
-                            break;
-                    }
-
-                    i->byteCount = 1;
-                    C = c & 0x80;
-                    X = false;
-                    cpu->changeRecord |= ( 1 << EV_CH_ADDRESS );
-
-                    newState = ( i->usingAltAddrEncode ) ? ETM_COLLECT_BA_ALT_FORMAT : ETM_COLLECT_BA_STD_FORMAT;
-                    goto terminateAddrByte;
-                }
-
                 break;
+
 
             // -----------------------------------------------------
             // ADDRESS COLLECTION RELATED ACTIVITIES
@@ -372,7 +374,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                 mask = C ? 0x7f : 0x3f;
                 ofs = ( cpu->addrMode == ETM_ADDRMODE_ARM ) ? 1 : ( cpu->addrMode == ETM_ADDRMODE_THUMB ) ? 0 : -1;
 
-                i->addrConstruct = ( i->addrConstruct &  ( ~( mask << ( 7 * i->byteCount + ofs ) ) ) )
+                i->addrConstruct = ( i->addrConstruct &   ~( mask << ( 7 * i->byteCount + ofs ) ) )
                                    | ( ( c & mask ) << ( 7 * i->byteCount + ofs ) );
                 /* There is exception information only if no continuation and bit 6 set */
                 X = ( ( !C ) && ( c & 0x40 ) );
@@ -382,7 +384,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
             // -----------------------------------------------------
 
             case ETM_COLLECT_BA_STD_FORMAT: /* Collecting a branch address, standard format */
-                /* This will potentially connect too many bits, but that is OK */
+                /* This will potentially collect too many bits, but that is OK */
                 ofs = ( cpu->addrMode == ETM_ADDRMODE_ARM ) ? 1 : ( cpu->addrMode == ETM_ADDRMODE_THUMB ) ? 0 : -1;
                 i->addrConstruct = ( i->addrConstruct &  ~( 0x7F << ( ( 7 * i->byteCount ) + ofs ) ) ) | ( c & ( 0x7F <<  ( ( 7 * i->byteCount ) + ofs ) ) );
                 i->byteCount++;
@@ -749,8 +751,8 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
 
     if ( i->p != ETM_UNSYNCED )
     {
-        genericsReport( V_INFO, "%02x %s --> %s %s(%d)", c, ( i->p == ETM_IDLE ) ? _protoNames[i->p] : "", _protoNames[newState],
-                        ( ( newState == ETM_IDLE ) ? ( ( retVal == ETM_EV_NONE ) ? "!!!" EOL : "OK" EOL ) : " : " ), retVal );
+        genericsReport( V_DEBUG, "%02x:%s --> %s %s(%d)", c, ( i->p == ETM_IDLE ) ? _protoNames[i->p] : "", _protoNames[newState],
+                        ( ( newState == ETM_IDLE ) ? ( ( retVal == ETM_EV_NONE ) ? "!!!" : "OK" ) : " : " ), retVal );
     }
 
     i->p = newState;

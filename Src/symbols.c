@@ -8,6 +8,7 @@
 
 #include <stdio.h>
 #include <assert.h>
+#include <ctype.h>
 #include "generics.h"
 #include "symbols.h"
 
@@ -20,6 +21,9 @@
 
 #define SOURCE_INDICATOR "sRc##"
 #define SYM_NOT_FOUND (0xffffffff)
+
+#define NO_FUNCTION_TXT "No Function Name"
+#define NO_FILE_TXT      "No Source"
 
 //#define GPTI_DEBUG 1                 /* Define this for objdump data collection state machine trace */
 
@@ -227,6 +231,16 @@ static enum LineType _getLineType( char *sourceLine, char *p1, char *p2, char *p
         return LT_SOURCE;
     }
 
+    /* If it has an address followed by pairs of hex digits then it's a data block and we're not interested */
+    if ( 1 == sscanf( sourceLine, " %*[0-9a-fA-F]: %[0-9a-fA-F]", p1 ) )
+    {
+        /* Match is two digits followed by a whitespace */
+        if ( ( isxdigit( *p1 ) ) && ( isxdigit( *( p1 + 1 ) ) ) && ( !( *( p1 + 2 ) ) ) )
+        {
+            return LT_NOISE;
+        }
+    }
+
     /* If it has something with <xxx> in it, it's a proc label (function) */
     if ( 2 == sscanf( sourceLine, "%[0-9a-fA-F] <%[^>]>", p1, p2 ) )
     {
@@ -277,7 +291,14 @@ static bool _getDest( char *assy, uint32_t *dest )
 /* The jump destination is the second field in the assembly string */
 
 {
-    return ( 1 == sscanf( assy, "%*[^\t]\t%x", dest ) );
+  int r = sscanf( assy, "%*[^\t]\t%x", dest );
+  if (r == 1)
+    {
+      return r;
+    }
+
+  /* Check for cbz destination format (i.e. with a register in front of the destination address) */
+  return ( 1 == sscanf( assy, "%*[^\t]\tr%*[0-7],%x", dest ) );
 }
 // ====================================================================================================
 static bool _getTargetProgramInfo( struct SymbolSet *s )
@@ -286,23 +307,24 @@ static bool _getTargetProgramInfo( struct SymbolSet *s )
 /* If objdump output is misinterpreted, this is the second place to check */
 
 {
-    FILE *f;                                  /* Connection to objdum process */
-    char line[MAX_LINE_LEN];                  /* Line read from objdump process */
-    char commandLine[MAX_LINE_LEN];           /* Command line used to run objdump */
-    uint32_t existingTextLen;                 /* Line under construction */
+    FILE *f;                                    /* Connection to objdum process */
+    char line[MAX_LINE_LEN];                    /* Line read from objdump process */
+    char commandLine[MAX_LINE_LEN];             /* Command line used to run objdump */
+    uint32_t existingTextLen;                   /* Line under construction */
 
-    char label[MAX_LINE_LEN];                 /* Any cached label */
-    uint32_t lineNo = 0;                      /* Any cached line number */
-    bool startAddrSet = false;                /* If to attach start address to function */
+    char label[MAX_LINE_LEN];                   /* Any cached label */
+    uint32_t lineNo = 0;                        /* Any cached line number */
+    bool startAddrSet = false;                  /* If to attach start address to function */
 
     char p1[MAX_LINE_LEN];
     char p2[MAX_LINE_LEN];
     char p3[MAX_LINE_LEN];
-    char p4[MAX_LINE_LEN];                    /* Elements returned by line analysis */
-    enum LineType lt;                         /* Line type returned from anaylsis */
+    char p4[MAX_LINE_LEN];                      /* Elements returned by line analysis */
+    enum LineType lt;                           /* Line type returned from anaylsis */
 
-    uint32_t fileEntryIdx = SYM_NOT_FOUND;    /* Index into file entry table */
-    uint32_t functionEntryIdx = SYM_NOT_FOUND; /* Index into function entry table */
+    uint32_t fileEntryIdx;                      /* Index into file entry table */
+    uint32_t functionEntryIdx;                  /* Index into function entry table */
+    uint32_t nullFileEntry;                     /* Tag for when we don't have a filename */
     struct sourceLineEntry *sourceEntry = NULL; /* pointer to current source entry */
 
     if ( stat( s->elfFile, &s->st ) != 0 )
@@ -325,6 +347,11 @@ static bool _getTargetProgramInfo( struct SymbolSet *s )
     {
         return false;
     }
+
+
+    /* Create the null entries */
+    functionEntryIdx = _getOrAddFunctionEntryIdx( s, NO_FUNCTION_TXT );
+    nullFileEntry    = fileEntryIdx = _getOrAddFileEntryIdx( s, NO_FILE_TXT );
 
     while ( !feof( f ) )
     {
@@ -504,6 +531,10 @@ static bool _getTargetProgramInfo( struct SymbolSet *s )
                     case LT_FILEANDLINE: /* ------------------------------------------------ */
                     case LT_NEWLINE: /* ---------------------------------------------------- */
                         ps = PS_IDLE;
+
+                        /* For all these cases we would expect a new file and line, so reset those */
+                        fileEntryIdx = nullFileEntry;
+                        lineNo = 0;
                         goto repeat_process;
                         break;
 
@@ -512,7 +543,7 @@ static bool _getTargetProgramInfo( struct SymbolSet *s )
                         s->functions[functionEntryIdx].endAddr = sourceEntry->endAddr;
 
                         /* If we're recording entries and this is not seomthing we explicitly want to ignore */
-                        if ( ( s->recordAssy )  && ( !strstr( p4, ".word" ) ) )
+                        if ( ( s->recordAssy )  && ( !strstr( p4, ".word" ) ) && ( !strstr( p4, ".short" ) ) )
                         {
                             sourceEntry->assy = ( struct assyLineEntry * )realloc( sourceEntry->assy, sizeof( struct assyLineEntry ) * ( sourceEntry->assyLines + 1 ) );
                             sourceEntry->assy[sourceEntry->assyLines].addr = sourceEntry->endAddr;
@@ -524,10 +555,11 @@ static bool _getTargetProgramInfo( struct SymbolSet *s )
                                 sourceEntry->assy[sourceEntry->assyLines].codes |= ( strtoul( p2, NULL, 16 ) << 16 );
                             }
 
-                            sourceEntry->assy[sourceEntry->assyLines].lineText = strdup( line );
-                            sourceEntry->assy[sourceEntry->assyLines].isJump = false;
-                            sourceEntry->assy[sourceEntry->assyLines].isReturn = false;
+                            sourceEntry->assy[sourceEntry->assyLines].lineText  = strdup( line );
+                            sourceEntry->assy[sourceEntry->assyLines].isJump    = false;
+                            sourceEntry->assy[sourceEntry->assyLines].isReturn  = false;
                             sourceEntry->assy[sourceEntry->assyLines].isSubCall = false;
+                            sourceEntry->assy[sourceEntry->assyLines].jumpdest  = NO_DESTADDRESS;
 
                             /* Just hook the assy pointer to the location in the line where the assembly itself starts */
                             sourceEntry->assy[sourceEntry->assyLines].assy = strstr( sourceEntry->assy[sourceEntry->assyLines].lineText, p4 );
@@ -542,8 +574,8 @@ static bool _getTargetProgramInfo( struct SymbolSet *s )
 
                             /* Mark if this is a subroutine call (BX/BLX) */
                             if (
-                                        MASKED_COMPARE( 0xf800C000, 0xf000C000 ) ||
-                                        MASKED_COMPARE( 0xffffff00, 0x00004700 )
+                                        MASKED_COMPARE( 0xf800D000, 0xf000D000 ) ||  /* Covers 32 bit BL */
+                                        MASKED_COMPARE( 0xffffff00, 0x00004700 )     /* Covers 16 bit BL and BLX */
                             )
                             {
                                 /* Branching to LR is often used as a RETURN shortform */
@@ -554,6 +586,11 @@ static bool _getTargetProgramInfo( struct SymbolSet *s )
                                 else
                                 {
                                     sourceEntry->assy[sourceEntry->assyLines].isSubCall = true;
+
+                                    if ( MASKED_COMPARE( 0xf800C000, 0xf000C000 ) )
+                                    {
+                                        _getDest( sourceEntry->assy[sourceEntry->assyLines].assy, &sourceEntry->assy[sourceEntry->assyLines].jumpdest );
+                                    }
                                 }
                             }
 
@@ -569,10 +606,11 @@ static bool _getTargetProgramInfo( struct SymbolSet *s )
                             /* Finally, if this is a jump that might be taken, then get the jump destination */
                             /* This is done by checking if the opcode is a valid jump in either 16 or 32 bit world */
                             if (
-                                        MASKED_COMPARE( 0xfffff800, 0x0000e000 ) ||
-                                        MASKED_COMPARE( 0xfffff000, 0x0000d000 ) ||
-                                        MASKED_COMPARE( 0xf8009000, 0xf0009000 ) ||
-                                        MASKED_COMPARE( 0xf800C001, 0xf000C000 )
+                                        MASKED_COMPARE( 0xfffff800, 0x0000e000 ) || /* Bc Label (T2) */
+                                        MASKED_COMPARE( 0xfffff500, 0x0000b100 ) || /* CBNZ/CBZ      */
+                                        MASKED_COMPARE( 0xfffff000, 0x0000d000 ) || /* Bc Label (T1) */
+                                        MASKED_COMPARE( 0xf8009000, 0xf0009000 ) || /* Bc Label (T4) */
+                                        MASKED_COMPARE( 0xf800C000, 0xf0008000 )    /* Bc Label (T3) */
                             )
                             {
                                 if ( _getDest( sourceEntry->assy[sourceEntry->assyLines].assy, &sourceEntry->assy[sourceEntry->assyLines].jumpdest ) )
@@ -681,7 +719,7 @@ bool SymbolLookup( struct SymbolSet *s, uint32_t addr, struct nameEntry *n )
         /* Address is some sort of interrupt */
         n->line = 0;
         n->fileindex = n->functionindex = n->addr = INTERRUPT;
-        return false;
+        return true;
     }
 
     if ( _find_symbol( s, addr, &fileindex, &functionindex, &line, &linesInBlock, &source, &assy, &assyLine ) )

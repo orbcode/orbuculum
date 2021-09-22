@@ -151,8 +151,8 @@ define startETM
   # Trace and stall always enabled
   set *($ETMBASE+0x24) = 0x020000001
 
-  # Stall when < 24 byes free in fifo
-  set *($ETMBASE+0x2c) = 1
+  # Stall when < 8 byes free in fifo
+  set *($ETMBASE+0x2c) = 8
 
   # Enable trace
   set *($ETMBASE) = 0x0800 | ($stall << 7) | ($br_out << 8)
