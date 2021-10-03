@@ -291,14 +291,15 @@ static bool _getDest( char *assy, uint32_t *dest )
 /* The jump destination is the second field in the assembly string */
 
 {
-  int r = sscanf( assy, "%*[^\t]\t%x", dest );
-  if (r == 1)
+    int r = sscanf( assy, "%*[^\t]\t%x", dest );
+
+    if ( r == 1 )
     {
-      return r;
+        return r;
     }
 
-  /* Check for cbz destination format (i.e. with a register in front of the destination address) */
-  return ( 1 == sscanf( assy, "%*[^\t]\tr%*[0-7],%x", dest ) );
+    /* Check for cbz destination format (i.e. with a register in front of the destination address) */
+    return ( 1 == sscanf( assy, "%*[^\t]\tr%*[0-7],%x", dest ) );
 }
 // ====================================================================================================
 static bool _getTargetProgramInfo( struct SymbolSet *s )
@@ -572,32 +573,32 @@ static bool _getTargetProgramInfo( struct SymbolSet *s )
 
 #define MASKED_COMPARE(mask,compare) (((sourceEntry->assy[sourceEntry->assyLines].codes)&(mask))==(compare))
 
-                            /* Mark if this is a subroutine call (BX/BLX) */
+                            /* The only way a subroutine will be called from gcc (See gcc source code file gcc/config/arm/thumb2.md) is */
+                            /* via blx reg, blxns reg. In theory it could also be done via direct manipulation of R15, but fortunately  */
+                            /* gcc doesn't pull tricks like that. It _will_ tail chain (with BX) though.                                */
+                            /* Also see https://gcc.gnu.org/onlinedocs/gccint/Machine-Desc.html                                         */
+
+                            /* Mark if this is a subroutine call (BL/BLX) */
                             if (
-                                        MASKED_COMPARE( 0xf800D000, 0xf000D000 ) ||  /* Covers 32 bit BL */
-                                        MASKED_COMPARE( 0xffffff00, 0x00004700 )     /* Covers 16 bit BL and BLX */
+                                        MASKED_COMPARE( 0xf800D000, 0xf000D000 ) ||  /* BL Encoding T1 */
+                                        MASKED_COMPARE( 0xffffff80, 0x00004780 )     /* BLX rx */
                             )
                             {
-                                /* Branching to LR is often used as a RETURN shortform */
-                                if ( sourceEntry->assy[sourceEntry->assyLines].codes == 0x4770 )
-                                {
-                                    sourceEntry->assy[sourceEntry->assyLines].isReturn = true;
-                                }
-                                else
-                                {
-                                    sourceEntry->assy[sourceEntry->assyLines].isSubCall = true;
-
-                                    if ( MASKED_COMPARE( 0xf800C000, 0xf000C000 ) )
-                                    {
-                                        _getDest( sourceEntry->assy[sourceEntry->assyLines].assy, &sourceEntry->assy[sourceEntry->assyLines].jumpdest );
-                                    }
-                                }
+                                sourceEntry->assy[sourceEntry->assyLines].isSubCall = true;
+                                _getDest( sourceEntry->assy[sourceEntry->assyLines].assy, &sourceEntry->assy[sourceEntry->assyLines].jumpdest );
                             }
 
-                            /* Mark if instruction is a return (i.e. PC popped from stack) */
+                            /* Returns are selected via the function output_return_instruction in arm.c in the gcc source.              */
+                            /* Mark if instruction is a return (i.e. PC popped from stack)                                              */
                             if (
+                                        MASKED_COMPARE( 0xffd0a000, 0xe8908000 ) ||  /* LDM including PC */
+                                        MASKED_COMPARE( 0xffffff00, 0x0000bd00 ) ||  /* POP PC Encoding T1 */
+                                        MASKED_COMPARE( 0xffff8000, 0xe8bd8000 ) ||  /* POP PC Encoding T2 */
+                                        MASKED_COMPARE( 0xffffffff, 0xf85dfb04 ) ||  /* POP PC Encoding T3 */
                                         MASKED_COMPARE( 0xffffff00, 0x0000bd00 ) ||
-                                        MASKED_COMPARE( 0xffff8000, 0xe8bd8000 )
+                                        MASKED_COMPARE( 0xffff8000, 0xe8bd8000 ) ||
+                                        MASKED_COMPARE( 0xffffffff, 0x000047f0 ) ||  /* BLX LR */
+                                        MASKED_COMPARE( 0xffffffff, 0x00004770 )     /* BX LR */
                             )
                             {
                                 sourceEntry->assy[sourceEntry->assyLines].isReturn = true;
@@ -606,18 +607,18 @@ static bool _getTargetProgramInfo( struct SymbolSet *s )
                             /* Finally, if this is a jump that might be taken, then get the jump destination */
                             /* This is done by checking if the opcode is a valid jump in either 16 or 32 bit world */
                             if (
+                                        MASKED_COMPARE( 0xfff00000, 0xE8D00000 ) || /* TBB (T1) */
                                         MASKED_COMPARE( 0xfffff800, 0x0000e000 ) || /* Bc Label (T2) */
                                         MASKED_COMPARE( 0xfffff500, 0x0000b100 ) || /* CBNZ/CBZ      */
                                         MASKED_COMPARE( 0xfffff000, 0x0000d000 ) || /* Bc Label (T1) */
-                                        MASKED_COMPARE( 0xf8009000, 0xf0009000 ) || /* Bc Label (T4) */
-                                        MASKED_COMPARE( 0xf800C000, 0xf0008000 )    /* Bc Label (T3) */
+                                        MASKED_COMPARE( 0xf800d000, 0xf0009000 ) || /* Bc Label (T4) */
+                                        ( MASKED_COMPARE( 0xf800d000, 0xf0008000 ) &&
+                                          ( !( MASKED_COMPARE( 0x03800000, 0x03800000 ) ) ) ) /* Bc Label (T3) (Excludes AL condition ) */
                             )
                             {
-                                if ( _getDest( sourceEntry->assy[sourceEntry->assyLines].assy, &sourceEntry->assy[sourceEntry->assyLines].jumpdest ) )
-                                {
-                                    sourceEntry->assy[sourceEntry->assyLines].isJump = true;
-                                }
-                                else
+                                sourceEntry->assy[sourceEntry->assyLines].isJump = true;
+
+                                if ( !_getDest( sourceEntry->assy[sourceEntry->assyLines].assy, &sourceEntry->assy[sourceEntry->assyLines].jumpdest ) )
                                 {
                                     GTPIP( "Failed to get jump destination for text %s " EOL, sourceEntry->assy[sourceEntry->assyLines].assy );
                                 }

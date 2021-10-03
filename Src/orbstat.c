@@ -171,26 +171,29 @@ static void _handleSW( struct RunTime *r )
                     r->CDState = CD_waitsrc;
                 }
 
-                /* Time is encoded in lowest two octets ...accomodate rollover */
-                uint32_t t = m->value & 0xFFFF;
-
-                if ( t < _r.oldt )
+                if ( r->CDState != CD_waitinout )
                 {
-                    r->highOrdert++;
-                }
+                    /* Time is encoded in lowest three octets ...accomodate rollover */
+                    uint32_t t = m->value & 0xFFFFFF;
 
-                r->oldt = t;
-                r->tcount = ( _r.highOrdert << 16 ) | t;
+                    if ( t < _r.oldt )
+                    {
+                        r->highOrdert++;
+                    }
 
-                /* Finally, if we're not sampling, then start sampling */
-                if ( !r->sampling )
-                {
-                    genericsReport( V_WARN, "Sampling" EOL );
-                    /* Fill in a time to start from */
-                    r->starttime     = genericsTimestampmS();
-                    r->intervalBytes = 0;
-                    r->starttcount   = r->tcount;
-                    r->sampling      = true;
+                    r->oldt = t;
+                    r->tcount = ( _r.highOrdert << 24 ) | t;
+
+                    /* Finally, if we're not sampling, then start sampling */
+                    if ( !r->sampling )
+                    {
+                        genericsReport( V_WARN, "Sampling" EOL );
+                        /* Fill in a time to start from */
+                        r->starttime     = genericsTimestampmS();
+                        r->intervalBytes = 0;
+                        r->starttcount   = r->tcount;
+                        r->sampling      = true;
+                    }
                 }
 
                 break;
@@ -215,7 +218,9 @@ static void _handleSW( struct RunTime *r )
                     }
                     else
                     {
-                        genericsExit( -1, "No symbol for address %08x" EOL, addr );
+                        genericsReport( V_ERROR, "No symbol for address %08x" EOL, addr );
+                        r->CDState = CD_waitinout;
+                        return;
                     }
 
                     HASH_ADD_INT( r->insthead, addr, ( r->from ) );
@@ -244,10 +249,17 @@ static void _handleSW( struct RunTime *r )
                     }
                     else
                     {
-                        genericsExit( -1, "No symbol for address %08x" EOL, addr );
+                        genericsReport( V_ERROR, "No symbol for address %08x" EOL, addr );
+                        r->CDState = CD_waitinout;
+                        return;
                     }
 
                     HASH_ADD_INT( r->insthead, addr, ( r->to ) );
+                }
+
+                if ( r->from->addr > 0xfffffff0 )
+                {
+                    printf( "%s" EOL, SymbolFunction( r->s, r->to->functionindex ) );
                 }
 
                 r->to->count++;

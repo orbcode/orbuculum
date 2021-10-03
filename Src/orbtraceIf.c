@@ -111,6 +111,31 @@ static int _compareFunc( const void *vd1, const void *vd2 )
     return d1->pid - d2->pid;
 }
 // ====================================================================================================
+uint16_t _getInterface( struct OrbtraceIf *o, char intType )
+
+{
+    struct libusb_config_descriptor *config;
+    int iface = -1;
+
+    if ( ( libusb_get_active_config_descriptor( o->dev, &config ) ) >= 0 )
+    {
+        for ( int if_num = 0; if_num < config->bNumInterfaces; if_num++ )
+        {
+            const struct libusb_interface_descriptor *i = &config->interface[if_num].altsetting[0];
+
+            if ( ( i->bInterfaceClass == 0xff ) && ( i->bInterfaceSubClass == intType ) )
+            {
+                iface = i->bInterfaceNumber;
+                libusb_free_config_descriptor( config );
+                break;
+            }
+        }
+    }
+
+    return iface;
+}
+
+// ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
 int OrbtraceIfValidateVoltage( struct OrbtraceIf *o, int vmv )
@@ -185,7 +210,7 @@ int OrbtraceIfGetDeviceList( struct OrbtraceIf *o, char *sn )
 
     if ( o->list )
     {
-        libusb_free_device_list( o->list, 1 );
+        libusb_free_device_list( o->list, true );
     }
 
     int count = libusb_get_device_list( o->context, &o->list );
@@ -257,16 +282,43 @@ bool OrbtraceIfOpenDevice( struct OrbtraceIf *o, unsigned int entry )
 
 {
     assert( entry < o->numDevices );
+    o->dev = o->list[ o->device[entry].devIndex];
 
-    if ( libusb_open( o->list[entry], &o->handle ) )
+    if ( libusb_open( o->dev, &o->handle ) )
     {
         o->handle = NULL;
         return false;
     }
 
+    /* Clear down the device list */
+    libusb_free_device_list( o->list, true );
     o->type = o->device[entry].type;
     return true;
 }
+// ====================================================================================================
+#include <stdio.h>
+bool OrbtraceIfSetTraceWidth( struct OrbtraceIf *o, int width )
+
+{
+    uint16_t d = ( width != 4 ) ? width : 3;
+
+    if ( ( d < 1 ) || ( d > 3 ) )
+    {
+        return false;
+    }
+
+    uint16_t w = _getInterface( o, 'T' );
+
+    if ( w < 0 )
+    {
+        printf( "Failed\n" );
+        return false;
+    }
+
+    libusb_control_transfer( o->handle, 0x41, 0x01, d, w, NULL, 0, 0 );
+    return true;
+}
+
 // ====================================================================================================
 void OrbtraceIfCloseDevice( struct OrbtraceIf *o )
 
@@ -279,5 +331,6 @@ void OrbtraceIfCloseDevice( struct OrbtraceIf *o )
     libusb_close( o->handle );
     o->handle = NULL;
     o->type = NULL;
+    o->dev = NULL;
 }
 // ====================================================================================================

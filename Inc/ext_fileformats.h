@@ -26,6 +26,7 @@ struct execEntryHash
 {
     /* The address in the memory map of the target */
     uint32_t addr;
+    uint32_t codes;
 
     /* Counter at assembly and source line levels */
     uint64_t count;                      /* Instruction level count */
@@ -42,6 +43,7 @@ struct execEntryHash
     uint32_t fileindex;                  /* File index (from symbols.c) */
     uint32_t functionindex;              /* Function index (from symbols.c) */
     uint32_t line;                       /* Line number in identified file */
+    const char *assyText;                /* Assembly line text */
 
     /* Hash handle to make construct hashable */
     UT_hash_handle hh;
@@ -60,16 +62,16 @@ struct subcall
 {
     struct subcallSig sig;              /* Calling and called side record, forming an index entry */
 
-    struct execEntryHash *srch;         /* Calling side */
-    struct execEntryHash *dsth;         /* Called side */
-
-    /* Housekeeping */
+    /* Accounting */
     uint64_t myCost;                   /* Inclusive cost of this call */
     uint64_t count;                    /* Number of executions of this call */
-    uint64_t inTicks;                  /* Tick count at point of entry to this routine */
 
     /* Hash handle to make construct hashable */
     UT_hash_handle hh;
+
+    /* From name and to name, (scratchpad used for output) */
+    struct nameEntry *fn;
+    struct nameEntry *tn;
 };
 
 

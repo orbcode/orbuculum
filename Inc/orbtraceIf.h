@@ -80,6 +80,9 @@ int OrbtraceIfGetDeviceList( struct OrbtraceIf *o, char *sn );
 bool OrbtraceIfOpenDevice( struct OrbtraceIf *o, unsigned int entry );
 void OrbtraceIfCloseDevice( struct OrbtraceIf *o );
 
+/* Device manipulation */
+bool OrbtraceIfSetTraceWidth( struct OrbtraceIf *o, int width );
+
 /* Device context control */
 struct OrbtraceIf *OrbtraceIfCreateContext( void );
 void OrbtraceIfDestroyContext( struct OrbtraceIf *o );

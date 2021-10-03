@@ -7,6 +7,8 @@
  */
 
 #include <stdio.h>
+#include <assert.h>
+
 #include "ext_fileformats.h"
 
 #define HANDLE_MASK         (0xFFFFFF)   /* cachegrind cannot cope with large file handle numbers */
@@ -26,7 +28,7 @@ static int _inst_sort_fn( const void *a, const void *b )
     return ( int )( ( ( struct execEntryHash * )a )->addr ) - ( int )( ( ( struct execEntryHash * )b )->addr );
 }
 // ====================================================================================================
-static int _calls_src_sort_fn( const void *a, const void *b )
+static int _calls_src_sort_addr( const void *a, const void *b )
 
 /* Sort instructions by called from address */
 
@@ -41,7 +43,7 @@ static int _calls_src_sort_fn( const void *a, const void *b )
     return ( int )( ( ( struct subcall * )a )->sig.dst ) - ( int )( ( ( struct subcall * )b )->sig.dst );
 }
 // ====================================================================================================
-static int _calls_dst_sort_fn( const void *a, const void *b )
+static int _calls_dst_sort_addr( const void *a, const void *b )
 
 /* Sort instructions by called to address */
 
@@ -55,7 +57,96 @@ static int _calls_dst_sort_fn( const void *a, const void *b )
 
     return ( int )( ( ( struct subcall * )a )->sig.src ) - ( int )( ( ( struct subcall * )b )->sig.src );
 }
+// ====================================================================================================
+static int _calls_src_sort_fn( const void *a, const void *b )
 
+/* Sort instructions by called from address */
+
+{
+    int i;
+
+    if ( ( i = ( int )( ( ( struct subcall * )a )->fn->functionindex ) - ( int )( ( ( struct subcall * )b )->fn->functionindex ) ) )
+    {
+        return i;
+    }
+
+    return ( int )( ( ( struct subcall * )a )->tn->functionindex ) - ( int )( ( ( struct subcall * )b )->tn->functionindex );
+}
+// ====================================================================================================
+static int _calls_dst_sort_fn( const void *a, const void *b )
+
+/* Sort instructions by called to address */
+
+{
+    int i;
+
+    if ( ( i = ( int )( ( ( struct subcall * )a )->tn->functionindex ) - ( int )( ( ( struct subcall * )b )->tn->functionindex ) ) )
+    {
+        return i;
+    }
+
+    return ( int )( ( ( struct subcall * )a )->fn->functionindex ) - ( int )( ( ( struct subcall * )b )->fn->functionindex );
+}
+// ====================================================================================================
+static void _annotateGraph( struct subcall **subcallList, struct SymbolSet *ss, struct nameEntry **nel )
+
+{
+    uint32_t nameCount = 0;
+    struct subcall *s, *p;
+    struct nameEntry n;
+
+    /* Shouldn't enter here with any names already allocated */
+    assert( *nel == 0 );
+
+    /* First handle from side */
+    HASH_SORT( ( *subcallList ), _calls_src_sort_addr );
+    s = ( *subcallList );
+    p = NULL;
+
+    while ( s )
+    {
+        SymbolLookup( ss, s->sig.src, &n );
+
+        if ( ( !p ) || ( n.fileindex != p->fn->fileindex ) || ( n.functionindex != p->fn->functionindex ) )
+        {
+            /* Either we have no names, or it changed...in either case, store this name */
+            *nel = ( struct nameEntry * )realloc( *nel, sizeof( struct nameEntry ) * ( nameCount + 1 ) );
+            memcpy( &( ( *nel )[nameCount++] ), &n, sizeof( struct nameEntry ) );
+        }
+
+        s->fn = &( ( *nel )[nameCount - 1] );
+        p = s;
+        s = s->hh.next;
+    }
+
+    /* Now do destination side */
+    HASH_SORT( ( *subcallList ), _calls_dst_sort_addr );
+    s = ( *subcallList );
+    p = NULL;
+
+    while ( s )
+    {
+        SymbolLookup( ss, s->sig.dst, &n );
+
+        if ( ( !p ) || ( n.fileindex != p->tn->fileindex ) || ( n.functionindex != p->tn->functionindex ) )
+        {
+            /* Either we have no names, or it changed...in either case, store this name */
+            *nel = ( struct nameEntry * )realloc( *nel, sizeof( struct nameEntry ) * ( nameCount + 1 ) );
+            memcpy( &( ( *nel )[nameCount++] ), &n, sizeof( struct nameEntry ) );
+        }
+
+        s->tn = &( ( *nel )[nameCount - 1] );
+        p = s;
+        s = s->hh.next;
+    }
+}
+// ====================================================================================================
+static void _clearAnnotation( struct nameEntry **nel )
+
+{
+    free( *nel );
+    *nel = NULL;
+}
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
@@ -75,83 +166,25 @@ bool ext_ff_outputDot( char *dotfile, struct subcall *subcallList, struct Symbol
 
 {
     FILE *c;
-    uint32_t functionidx, dfunctionidx, fileidx;
     uint64_t cnt;
     struct subcall *s;
+    struct subcall *p;
+    struct nameEntry *nel = NULL;
 
     if ( !dotfile )
     {
         return false;
     }
 
+    _annotateGraph( &subcallList, ss, &nel );
+
     /* Sort according to addresses visited. */
 
     c = fopen( dotfile, "w" );
-    fprintf( c, "digraph calls\n{\n  overlap=false; splines=true; size=\"7.75,10.25\"; orientation=portrait; sep=0.1; nodesep=0.1;\n" );
+    fprintf( c, "graph calls\n{\n  overlap=scale; splines=true; size=\"7.75,10.25\"; orientation=portrait; sep=0.1; nodesep=1;\n" );
 
-    /* firstly write out the nodes in each subgraph - dest side clustered */
-    HASH_SORT( subcallList, _calls_dst_sort_fn );
-    s = subcallList;
-
-    while ( s )
-    {
-        if ( s->dsth->fileindex != INTERRUPT )
-        {
-            fprintf( c, "  subgraph \"cluster_%s\"\n  {\n    label=\"%s\";\n    bgcolor=lightgrey;\n", SymbolFilename( ss, s->dsth->fileindex ), SymbolFilename( ss, s->dsth->fileindex ) );
-            fileidx = s->dsth->fileindex;
-
-            while ( s && ( fileidx == s->dsth->fileindex ) )
-            {
-                /* Now output each function in the subgraph */
-                fprintf( c, "    %s [style=filled, fillcolor=white];\n", SymbolFunction( ss, s->dsth->functionindex )  );
-                functionidx = s->dsth->functionindex;
-
-                /* Spin forwards until the function name _or_ filename changes */
-                while ( ( s ) && ( functionidx == s->dsth->functionindex ) && ( fileidx == s->dsth->fileindex ) )
-                {
-                    s = s->hh.next;
-                }
-            }
-        }
-        else
-        {
-            s = s->hh.next;
-        }
-
-        fprintf( c, "  }\n\n" );
-    }
-
-    /* now write out the nodes in each subgraph - source side clustered */
     HASH_SORT( subcallList, _calls_src_sort_fn );
     s = subcallList;
-
-    while ( s )
-    {
-        fprintf( c, "  subgraph \"cluster_%s\"\n  {\n    label=\"%s\";\n    bgcolor=lightgrey;\n", SymbolFilename( ss, s->srch->fileindex ), SymbolFilename( ss, s->srch->fileindex ) );
-        fileidx = s->srch->fileindex;
-
-        while ( s && ( fileidx == s->srch->fileindex ) )
-        {
-            if ( s->srch->fileindex != INTERRUPT )
-            {
-                /* Now output each function in the subgraph */
-                fprintf( c, "    %s [style=filled, fillcolor=white];\n", SymbolFunction( ss, s->srch->functionindex )  );
-                functionidx = s->srch->functionindex;
-
-                /* Spin forwards until the function name _or_ filename changes */
-                while ( ( s ) && ( functionidx == s->srch->functionindex ) && ( fileidx == s->srch->fileindex ) )
-                {
-                    s = s->hh.next;
-                }
-            }
-            else
-            {
-                s = s->hh.next;
-            }
-        }
-
-        fprintf( c, "  }\n\n" );
-    }
 
     /* Now go through and label the arrows... */
 
@@ -159,23 +192,24 @@ bool ext_ff_outputDot( char *dotfile, struct subcall *subcallList, struct Symbol
 
     while ( s )
     {
-        functionidx = s->srch->functionindex;
-        dfunctionidx = s->dsth->functionindex;
-        cnt = s->count;
-        s = s->hh.next;
+        /* Cluster all calls within the same from/to pair */
+        cnt = 0;
+        p = s;
 
-        while ( ( s ) && ( functionidx == s->srch->functionindex ) && ( dfunctionidx == s->dsth->functionindex ) )
+        while ( ( s ) && ( p->fn->functionindex == s->fn->functionindex ) && ( p->tn->functionindex == s->tn->functionindex ) )
         {
             cnt += s->count;
             s = s->hh.next;
         }
 
-        fprintf( c, "    %s -> ", SymbolFunction( ss, functionidx ) );
-        fprintf( c, "%s [label=%" PRIu64 ", weight=0.1];\n", SymbolFunction( ss, dfunctionidx ), cnt );
+        fprintf( c, "    \"\n(%s)\n%s\n%08x\n\" -- ", SymbolFilename( ss, p->fn->fileindex ), SymbolFunction( ss, p->fn->functionindex ), p->fn->addr );
+        fprintf( c, "\"\n(%s)\n%s\n%08x\n\" [label=%" PRIu64 ", weight=%" PRIu64 " ];\n", SymbolFilename( ss, p->tn->fileindex ), SymbolFunction( ss, p->tn->functionindex ), p->tn->addr, cnt, cnt );
     }
 
     fprintf( c, "}\n" );
     fclose( c );
+
+    _clearAnnotation( &nel );
     return true;
 }
 // ====================================================================================================
@@ -194,6 +228,7 @@ bool ext_ff_outputProfile( char *profile, char *elffile, char *deleteMaterial, b
     uint32_t prevfn   = NO_FUNCTION;
     uint32_t prevaddr = NO_FUNCTION;
     uint32_t prevline = NO_LINE;
+    struct nameEntry *nel = NULL;
     char *e = elffile;
     char *d = deleteMaterial;
     FILE *c;
@@ -203,6 +238,7 @@ bool ext_ff_outputProfile( char *profile, char *elffile, char *deleteMaterial, b
         return false;
     }
 
+    _annotateGraph( &subcallList, ss, &nel );
 
     c = fopen( profile, "w" );
     fprintf( c, "# callgrind format\n" );
@@ -304,28 +340,28 @@ bool ext_ff_outputProfile( char *profile, char *elffile, char *deleteMaterial, b
     while ( s )
     {
         /* Now publish the call destination. By definition is is known, so can be shortformed */
-        if ( prevfile != s->srch->fileindex )
+        if ( prevfile != s->fn->fileindex )
         {
-            fprintf( c, "fl=(%u)\n", s->srch->fileindex & HANDLE_MASK );
-            prevfile = s->srch->fileindex;
+            fprintf( c, "fl=(%u)\n", s->fn->fileindex & HANDLE_MASK );
+            prevfile = s->fn->fileindex;
         }
 
-        if ( prevfn != s->srch->functionindex )
+        if ( prevfn != s->fn->functionindex )
         {
-            fprintf( c, "fn=(%u)\n", s->srch->functionindex & HANDLE_MASK );
-            prevfn = s->srch->functionindex;
+            fprintf( c, "fn=(%u)\n", s->fn->functionindex & HANDLE_MASK );
+            prevfn = s->fn->functionindex;
         }
 
-        fprintf( c, "cfl=(%d)\ncfn=(%d)\n", s->dsth->fileindex, s->dsth->functionindex );
-        fprintf( c, "calls=%" PRIu64 " 0x%08x %d\n", s->count, s->sig.dst, s->dsth->line );
+        fprintf( c, "cfl=(%d)\ncfn=(%d)\n", s->tn->fileindex, s->tn->functionindex );
+        fprintf( c, "calls=%" PRIu64 " 0x%08x %d\n", s->count, s->sig.dst, s->tn->line );
 
         if ( includeVisits )
         {
-            fprintf( c, "0x%08x %d %" PRIu64 " %" PRIu64 "\n", s->sig.src, s->srch->line, s->myCost, s->count );
+            fprintf( c, "0x%08x %d %" PRIu64 " %" PRIu64 "\n", s->sig.src, s->fn->line, s->myCost, s->count );
         }
         else
         {
-            fprintf( c, "0x%08x %d %" PRIu64 "\n", s->sig.src, s->srch->line, s->myCost );
+            fprintf( c, "0x%08x %d %" PRIu64 "\n", s->sig.src, s->fn->line, s->myCost );
         }
 
         s = s->hh.next;
@@ -333,6 +369,7 @@ bool ext_ff_outputProfile( char *profile, char *elffile, char *deleteMaterial, b
 
     fclose( c );
 
+    _clearAnnotation( &nel );
     return true;
 }
 // ====================================================================================================

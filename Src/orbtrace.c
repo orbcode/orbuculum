@@ -24,7 +24,7 @@
 #define MAX(a,b) (((a)>(b))?(a):(b))
 
 /* Record for options, either defaults or from command line */
-struct
+struct Options
 {
     char *sn;                 /* Any part of serial number to differentiate probe */
     char *qQuery;             /* V/I Parameters to query from probe */
@@ -41,7 +41,7 @@ struct
     bool unlock;              /* Unlock device */
     bool lock;                /* Lock device */
     int setCount;             /* Number of device changes to be processed */
-} options =
+} _options =
 {
     .traceWidth = DONTSET,
     .brightness = DONTSET,
@@ -49,13 +49,20 @@ struct
     .TRefmv = DONTSET
 };
 
-struct
+struct RunTime
 {
     /* Link to the connected Orbtrace device */
     struct OrbtraceIf *dev;
 
     bool      ending;                                                  /* Flag indicating app is terminating */
-} _r;
+    int ndevices;
+    int seldevice;
+
+    struct Options *options;
+} _r =
+{
+    .options = &_options
+};
 
 // ====================================================================================================
 // ====================================================================================================
@@ -94,25 +101,25 @@ void _printHelp( char *progName )
     genericsPrintf( "       -W: Reset all NVRAM parameters to default values" EOL );
 }
 // ====================================================================================================
-static bool _checkVoltages( struct OrbtraceIf *o )
+static bool _checkVoltages( struct RunTime *r )
 
 {
-    if ( ( options.TRefmv != DONTSET ) && ( 0 == OrbtraceIfValidateVoltage( o, options.TRefmv ) ) )
+    if ( ( r->options->TRefmv != DONTSET ) && ( 0 == OrbtraceIfValidateVoltage( r->dev, r->options->TRefmv ) ) )
     {
-        genericsReport( V_ERROR, "Illegal voltage specified for TRef (%d.%03dV)" EOL, options.TRefmv / 1000, options.TRefmv % 1000 );
+        genericsReport( V_ERROR, "Illegal voltage specified for TRef (%d.%03dV)" EOL, r->options->TRefmv / 1000, r->options->TRefmv % 1000 );
         return false;
     }
 
-    if ( ( options.TPwrmv != DONTSET ) && ( 0 == OrbtraceIfValidateVoltage( o, options.TPwrmv ) ) )
+    if ( ( r->options->TPwrmv != DONTSET ) && ( 0 == OrbtraceIfValidateVoltage( r->dev, r->options->TPwrmv ) ) )
     {
-        genericsReport( V_ERROR, "Illegal voltage specified for TPwr (%d.%03dV)" EOL, options.TPwrmv / 1000, options.TPwrmv % 1000 );
+        genericsReport( V_ERROR, "Illegal voltage specified for TPwr (%d.%03dV)" EOL, r->options->TPwrmv / 1000, r->options->TPwrmv % 1000 );
         return false;
     }
 
     return true;
 }
 // ====================================================================================================
-int _processOptions( int argc, char *argv[] )
+int _processOptions( struct RunTime *r, int argc, char *argv[]  )
 
 {
     int c;
@@ -123,13 +130,13 @@ int _processOptions( int argc, char *argv[] )
         {
             // ------------------------------------
             case 'b': /* Brightness */
-                options.brightness = atoi( optarg );
-                options.setCount++;
+                r->options->brightness = atoi( optarg );
+                r->options->setCount++;
                 break;
 
             // ------------------------------------
             case 'F': /* Input filename */
-                options.forceVoltage = true;
+                r->options->forceVoltage = true;
                 break;
 
             // ------------------------------------
@@ -139,56 +146,56 @@ int _processOptions( int argc, char *argv[] )
 
             // ------------------------------------
             case 'j': /* Force output in JSON */
-                options.opJSON = true;
+                r->options->opJSON = true;
                 break;
 
             // ------------------------------------
             case 'l': /* List connected devices */
-                options.listDevices = true;
+                r->options->listDevices = true;
                 break;
 
             // ------------------------------------
             case 'L': /* Lock device */
-                options.lock = true;
-                options.setCount++;
+                r->options->lock = true;
+                r->options->setCount++;
                 break;
 
             // ------------------------------------
             case 'n':
-                options.nick = optarg;
-                options.setCount++;
+                r->options->nick = optarg;
+                r->options->setCount++;
                 break;
 
             // ------------------------------------
             case 'o':
-                options.traceWidth = atoi( optarg );
-                options.setCount++;
+                r->options->traceWidth = atoi( optarg );
+                r->options->setCount++;
                 break;
 
             // ------------------------------------
             case 'p':
                 voltage = atof( optarg );
-                options.TPwrmv = ( int )( ( voltage + 0.0005F ) * 1000 );
-                options.setCount++;
+                r->options->TPwrmv = ( int )( ( voltage + 0.0005F ) * 1000 );
+                r->options->setCount++;
                 break;
 
             // ------------------------------------
             case 'r':
                 voltage = atof( optarg );
-                options.TRefmv = ( int )( ( voltage + 0.0005F ) * 1000 );
-                options.setCount++;
+                r->options->TRefmv = ( int )( ( voltage + 0.0005F ) * 1000 );
+                r->options->setCount++;
                 break;
 
             // ------------------------------------
 
             case 's':
-                options.sn = optarg;
+                r->options->sn = optarg;
                 break;
 
             // ------------------------------------
             case 'U': /* Unlock device */
-                options.unlock = true;
-                options.setCount++;
+                r->options->unlock = true;
+                r->options->setCount++;
                 break;
 
             // ------------------------------------
@@ -198,13 +205,13 @@ int _processOptions( int argc, char *argv[] )
 
             // ------------------------------------
             case 'w': /* Write parameters to NVRAM */
-                options.writeParams = true;
+                r->options->writeParams = true;
                 break;
 
             // ------------------------------------
             case 'W': /* Reset parameters in NVRAM */
-                options.resetParams = true;
-                options.setCount++;
+                r->options->resetParams = true;
+                r->options->setCount++;
                 break;
 
             // ------------------------------------
@@ -228,36 +235,36 @@ int _processOptions( int argc, char *argv[] )
         }
 
     /* Test parameters for sanity */
-    if ( options.setCount )
+    if ( r->options->setCount )
     {
-        if ( options.resetParams )
+        if ( r->options->resetParams )
         {
             genericsReport( V_ERROR, "Cannot set a parameter while reseting all parameters" EOL );
             return false;
         }
 
-        if ( options.listDevices )
+        if ( r->options->listDevices )
         {
             genericsReport( V_ERROR, "Cannot list devices while setting a parameter" EOL );
             return false;
         }
     }
 
-    if ( ( options.traceWidth != DONTSET ) &&
-            ( options.traceWidth != 1 ) &&
-            ( options.traceWidth != 2 ) &&
-            ( options.traceWidth == 4 ) )
+    if ( ( r->options->traceWidth != DONTSET ) &&
+            ( r->options->traceWidth != 1 ) &&
+            ( r->options->traceWidth != 2 ) &&
+            ( r->options->traceWidth != 4 ) )
     {
         genericsReport( V_ERROR, "Orbtrace interface illegal port width" EOL );
         return false;
     }
 
-    if ( !_checkVoltages( NULL ) )
+    if ( !_checkVoltages( r ) )
     {
         return false;
     }
 
-    if ( ( options.brightness != DONTSET ) && ( ( options.brightness < 0 ) || ( options.brightness > 255 ) ) )
+    if ( ( r->options->brightness != DONTSET ) && ( ( r->options->brightness < 0 ) || ( r->options->brightness > 255 ) ) )
     {
         genericsReport( V_ERROR, "Brightness setting out of range" EOL );
         return false;
@@ -275,20 +282,20 @@ static void _doExit( void )
     _r.ending = true;
 }
 // ====================================================================================================
-static int _selectDevice( struct OrbtraceIf *o, int ndevices, bool listOnly )
+static int _selectDevice( struct RunTime *r, bool listOnly )
 
 {
     int descWidth = 0;
     int selection = 0;
 
-    if ( ( !listOnly ) && ( ndevices == 1 ) )
+    if ( ( !listOnly ) && ( r->ndevices == 1 ) )
     {
-        return ndevices - 1;
+        return r->ndevices - 1;
     }
 
-    for ( int i = 0; i < ndevices; i++ )
+    for ( int i = 0; i < r->ndevices; i++ )
     {
-        int l = MAX( 11, strlen( OrbtraceIfGetManufacturer( o, i ) ) + strlen( OrbtraceIfGetProduct( o, i ) ) ) + MAX( 6, strlen( OrbtraceIfGetSN( o, i ) ) );
+        int l = MAX( 11, strlen( OrbtraceIfGetManufacturer( r->dev, i ) ) + strlen( OrbtraceIfGetProduct( r->dev, i ) ) ) + MAX( 6, strlen( OrbtraceIfGetSN( r->dev, i ) ) );
 
         if ( l > descWidth )
         {
@@ -321,21 +328,21 @@ static int _selectDevice( struct OrbtraceIf *o, int ndevices, bool listOnly )
 
     fprintf( stdout, EOL );
 
-    for ( int i = 0; i < ndevices; i++ )
+    for ( int i = 0; i < r->ndevices; i++ )
     {
-        int thisWidth = strlen( OrbtraceIfGetManufacturer( o, i ) ) + strlen( OrbtraceIfGetProduct( o, i ) ) + 1;
-        printf( "%2i | %s %s", i + 1, OrbtraceIfGetManufacturer( o, i ), OrbtraceIfGetProduct( o, i ) );
+        int thisWidth = strlen( OrbtraceIfGetManufacturer( r->dev, i ) ) + strlen( OrbtraceIfGetProduct( r->dev, i ) ) + 1;
+        printf( "%2i | %s %s", i + 1, OrbtraceIfGetManufacturer( r->dev, i ), OrbtraceIfGetProduct( r->dev, i ) );
 
         for ( int j = thisWidth; j < descWidth; j++ )
         {
             fprintf( stdout, " " );
         }
 
-        fprintf( stdout, "| %s" EOL, OrbtraceIfGetSN( o, i ) );
+        fprintf( stdout, "| %s" EOL, OrbtraceIfGetSN( r->dev, i ) );
     }
 
     if ( !listOnly )
-        while ( ( selection < 1 ) || ( selection > ndevices ) )
+        while ( ( selection < 1 ) || ( selection > r->ndevices ) )
         {
             fprintf( stdout, EOL "Selection>" );
             scanf( "%d", &selection );
@@ -345,10 +352,22 @@ static int _selectDevice( struct OrbtraceIf *o, int ndevices, bool listOnly )
 }
 
 // ====================================================================================================
-static void _performActions( struct OrbtraceIf *o )
+static void _performActions( struct RunTime *r )
 
 {
+    if ( r->options->traceWidth != DONTSET )
+    {
+        genericsReport( V_INFO, "Setting port width to %d" EOL, r->options->traceWidth );
+    }
 
+    if ( OrbtraceIfSetTraceWidth( r->dev, r->options->traceWidth ) )
+    {
+        genericsReport( V_INFO, "OK" EOL );
+    }
+    else
+    {
+        genericsReport( V_INFO, "Failed" EOL );
+    }
 }
 // ====================================================================================================
 int main( int argc, char *argv[] )
@@ -356,7 +375,7 @@ int main( int argc, char *argv[] )
 {
     int selection = 0;
 
-    if ( !_processOptions( argc, argv ) )
+    if ( !_processOptions( &_r, argc, argv ) )
     {
         /* processOptions generates its own error messages */
         genericsExit( -1, "" EOL );
@@ -371,36 +390,43 @@ int main( int argc, char *argv[] )
         genericsExit( -1, "Failed to establish Int handler" EOL );
     }
 
-    struct OrbtraceIf *o = OrbtraceIfCreateContext();
+    _r.dev = OrbtraceIfCreateContext();
 
-    assert( o );
+    assert( _r.dev );
 
-    int ndevices = OrbtraceIfGetDeviceList( o, options.sn );
+    _r.ndevices = OrbtraceIfGetDeviceList( _r.dev, _r.options->sn );
 
-    /* Allow option to choose between devices if there's more than one found */
-    selection = _selectDevice( o, ndevices, options.listDevices );
-
-    if ( options.setCount )
+    if ( !_r.ndevices )
     {
-        genericsReport( V_INFO, "Got device [%s %s, S/N %s]" EOL,
-                        OrbtraceIfGetManufacturer( o, selection ),
-                        OrbtraceIfGetProduct( o, selection ),
-                        OrbtraceIfGetSN( o, selection ) );
+        genericsReport( V_ERROR, "No devices found" EOL );
+    }
+    else
+    {
+        /* Allow option to choose between devices if there's more than one found */
+        _r.seldevice = _selectDevice( &_r, _r.options->listDevices );
 
-        if ( !OrbtraceIfOpenDevice( o, selection ) )
+        if ( _r.options->setCount )
         {
-            genericsExit( -1, "Couldn't open device" EOL );
+            genericsReport( V_INFO, "Got device [%s %s, S/N %s]" EOL,
+                            OrbtraceIfGetManufacturer( _r.dev, selection ),
+                            OrbtraceIfGetProduct( _r.dev, selection ),
+                            OrbtraceIfGetSN( _r.dev, selection ) );
+
+            if ( !OrbtraceIfOpenDevice( _r.dev, _r.seldevice ) )
+            {
+                genericsExit( -1, "Couldn't open device" EOL );
+            }
+
+            /* Check voltages again now we know what interface we're connected to */
+            if ( !_checkVoltages( &_r ) )
+            {
+                genericsExit( -2, "Specified interface voltage check failed" EOL );
+            }
+
+            _performActions( &_r );
         }
 
-        /* Check voltages again now we know what interface we're connected to */
-        if ( !_checkVoltages( o ) )
-        {
-            genericsExit( -2, "Specified interface voltage check failed" EOL );
-        }
-
-        _performActions( o );
-
-        OrbtraceIfCloseDevice( o );
+        OrbtraceIfCloseDevice( _r.dev );
     }
 }
 // ====================================================================================================
