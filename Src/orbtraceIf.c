@@ -41,24 +41,24 @@ static void _flushDeviceList( struct OrbtraceIf *o )
 {
     for ( size_t i = 0; i < o->numDevices; i++ )
     {
-        if ( o->device[i].sn )
+        if ( o->devices[i].sn )
         {
-            free( o->device[i].sn );
+            free( o->devices[i].sn );
         }
 
-        if ( o->device[i].manufacturer )
+        if ( o->devices[i].manufacturer )
         {
-            free( o->device[i].manufacturer );
+            free( o->devices[i].manufacturer );
         }
 
-        if ( o->device[i].product )
+        if ( o->devices[i].product )
         {
-            free( o->device[i].product );
+            free( o->devices[i].product );
         }
     }
 
     o->numDevices = 0;
-    o->device = NULL;
+    o->devices = NULL;
 }
 // ====================================================================================================
 static int _strcmpint( char *s1, char *s2 )
@@ -115,7 +115,7 @@ uint16_t _getInterface( struct OrbtraceIf *o, char intType )
 
 {
     struct libusb_config_descriptor *config;
-    int iface = -1;
+    int iface = NO_INTERFACE;
 
     if ( ( libusb_get_active_config_descriptor( o->dev, &config ) ) >= 0 )
     {
@@ -134,7 +134,6 @@ uint16_t _getInterface( struct OrbtraceIf *o, char intType )
 
     return iface;
 }
-
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
@@ -144,14 +143,14 @@ int OrbtraceIfValidateVoltage( struct OrbtraceIf *o, int vmv )
 
 {
     /* If we don't have specific interface to reference use generic values */
-    if ( ( !o ) || ( !o->type ) )
+    if ( ( !o ) || ( !o->dev ) )
     {
         return ( ( vmv >= MIN_GENERIC_VOLTAGE_MV ) && ( vmv <= ( MAX_GENERIC_VOLTAGE_MV + MAX_VOLTAGE_DIFF_MV ) ) ) ? vmv : 0;
     }
     else
     {
         /* We do have an interface identified, so use its values for match-checking */
-        int *mv = o->type->voltageListmv;
+        int *mv = o->devices[OrbtraceIfGetActiveDevnum( o )].type->voltageListmv;
 
         while ( ( *mv ) && ( *mv <= vmv ) )
         {
@@ -166,7 +165,6 @@ struct OrbtraceIf *OrbtraceIfCreateContext( void )
 
 {
     struct OrbtraceIf *o = ( struct OrbtraceIf * )calloc( 1, sizeof( struct OrbtraceIf ) );
-
 
     if ( libusb_init( &o->context ) < 0 )
     {
@@ -205,6 +203,11 @@ int OrbtraceIfGetDeviceList( struct OrbtraceIf *o, char *sn )
     char tfrString[MAX_USB_DESC_LEN];
     struct OrbtraceIfDevice *d;
 
+    assert( o );
+
+    /* Close any active device */
+    OrbtraceIfCloseDevice( o );
+
     /* Flush out any old scans we might be holding */
     _flushDeviceList( o );
 
@@ -217,9 +220,9 @@ int OrbtraceIfGetDeviceList( struct OrbtraceIf *o, char *sn )
 
     for ( size_t i = 0; i < count; i++ )
     {
-        libusb_device *device = o->list[i];
+        o->dev = o->list[i];
         struct libusb_device_descriptor desc = { 0 };
-        libusb_get_device_descriptor( device, &desc );
+        libusb_get_device_descriptor( o->dev, &desc );
 
         /* Loop through known devices to see if this one is one we recognise */
         for ( y = 0; ( ( _validDevices[y].vid ) &&
@@ -229,16 +232,17 @@ int OrbtraceIfGetDeviceList( struct OrbtraceIf *o, char *sn )
         if ( _validDevices[y].vid )
         {
             /* We'll store this match for access later */
-            o->device = realloc( o->device, ( o->numDevices + 1 ) * sizeof( struct OrbtraceIfDevice ) );
-            d = &o->device[o->numDevices];
+            o->devices = realloc( o->devices, ( o->numDevices + 1 ) * sizeof( struct OrbtraceIfDevice ) );
+            d = &o->devices[o->numDevices];
             o->numDevices++;
             memset( d, 0, sizeof( struct OrbtraceIfDevice ) );
 
-            /* Store what type this interface is */
-            d->type = &_validDevices[y];
-
             if ( !libusb_open( o->list[i], &o->handle ) )
             {
+                d->type = &_validDevices[y];
+                d->powerIf = _getInterface( o, 'P' );
+                d->traceIf = _getInterface( o, 'T' );
+
                 if ( desc.iSerialNumber )
                 {
                     libusb_get_string_descriptor_ascii( o->handle, desc.iSerialNumber, ( unsigned char * )tfrString, MAX_USB_DESC_LEN );
@@ -273,7 +277,7 @@ int OrbtraceIfGetDeviceList( struct OrbtraceIf *o, char *sn )
     }
 
     /* Now sort matching devices into defined order, so they're always the same way up */
-    qsort( o->device, o->numDevices, sizeof( struct OrbtraceIfDevice ), _compareFunc );
+    qsort( o->devices, o->numDevices, sizeof( struct OrbtraceIfDevice ), _compareFunc );
 
     return o->numDevices;
 }
@@ -281,18 +285,21 @@ int OrbtraceIfGetDeviceList( struct OrbtraceIf *o, char *sn )
 bool OrbtraceIfOpenDevice( struct OrbtraceIf *o, unsigned int entry )
 
 {
-    assert( entry < o->numDevices );
-    o->dev = o->list[ o->device[entry].devIndex];
+    if ( entry >= o->numDevices )
+    {
+        return false;
+    }
+
+    o->dev = o->list[ o->devices[entry].devIndex];
 
     if ( libusb_open( o->dev, &o->handle ) )
     {
+        o->dev = NULL;
         o->handle = NULL;
         return false;
     }
 
-    /* Clear down the device list */
-    libusb_free_device_list( o->list, true );
-    o->type = o->device[entry].type;
+    o->activeDevice = entry;
     return true;
 }
 // ====================================================================================================
@@ -302,23 +309,15 @@ bool OrbtraceIfSetTraceWidth( struct OrbtraceIf *o, int width )
 {
     uint16_t d = ( width != 4 ) ? width : 3;
 
-    if ( ( d < 1 ) || ( d > 3 ) )
+    if ( ( ( d < 1 ) || ( d > 3 ) ) || ( OrbtraceIfGetTraceIF( o, OrbtraceIfGetActiveDevnum( o ) ) == NO_INTERFACE ) || ( !o->handle ) )
     {
         return false;
     }
 
-    uint16_t w = _getInterface( o, 'T' );
-
-    if ( w < 0 )
-    {
-        printf( "Failed\n" );
-        return false;
-    }
-
-    libusb_control_transfer( o->handle, 0x41, 0x01, d, w, NULL, 0, 0 );
+    printf( "Sending libusb_control_transfer( %p, %02x, %02x, %d, %d, %p, %d, %d )\n", o->handle, 0x41, 0x01, d, OrbtraceIfGetTraceIF( o, OrbtraceIfGetActiveDevnum( o ) ), NULL, 0, 0 );
+    libusb_control_transfer( o->handle, 0x41, 0x01, d, OrbtraceIfGetTraceIF( o, OrbtraceIfGetActiveDevnum( o ) ), NULL, 0, 0 );
     return true;
 }
-
 // ====================================================================================================
 void OrbtraceIfCloseDevice( struct OrbtraceIf *o )
 
@@ -329,8 +328,8 @@ void OrbtraceIfCloseDevice( struct OrbtraceIf *o )
     }
 
     libusb_close( o->handle );
+    o->activeDevice = NO_DEVICE;
     o->handle = NULL;
-    o->type = NULL;
     o->dev = NULL;
 }
 // ====================================================================================================

@@ -395,6 +395,7 @@ int main( int argc, char *argv[] )
     assert( _r.dev );
 
     _r.ndevices = OrbtraceIfGetDeviceList( _r.dev, _r.options->sn );
+    usleep( 500000 );
 
     if ( !_r.ndevices )
     {

@@ -28,6 +28,9 @@
 extern "C" {
 #endif
 
+#define NO_INTERFACE (-1)
+#define NO_DEVICE    (-1)
+
 struct OrbtraceInterfaceType
 {
     int vid;
@@ -42,37 +45,51 @@ struct OrbtraceIfDevice
     char *product;
     int vid;
     int pid;
+    int traceIf;
+    int powerIf;
     size_t devIndex;
     const struct OrbtraceInterfaceType *type;
 };
 
 struct OrbtraceIf
 {
+    int activeDevice;                            /* Number in the list of devices of the active device */
     libusb_device_handle *handle;
-    libusb_device *dev;
-    libusb_device **list;
-    libusb_context *context;
+    libusb_device *dev;                          /* usb handle for currently active device (or NULL for non active) */
+    libusb_device **list;                        /* List of available usbdevices */
+    libusb_context *context;                     /* Any active context */
 
-    const struct OrbtraceInterfaceType *type;    /* Type of interface currently connected */
     int numDevices;                              /* Number of matching devices found */
-    struct OrbtraceIfDevice *device;             /* List of matching devices found */
+    struct OrbtraceIfDevice *devices;            /* List of matching devices found */
 };
 // ====================================================================================================
 
 int OrbtraceIfValidateVoltage( struct OrbtraceIf *o, int vmv );
 
 /* Device access */
-inline char *OrbtraceIfGetManufacturer( struct OrbtraceIf *o, int e )
+static inline char *OrbtraceIfGetManufacturer( struct OrbtraceIf *o, unsigned int e )
 {
-    return ( ( e < o->numDevices ) && ( o->device[e].manufacturer ) ) ? o->device[e].manufacturer : "";
+    return ( ( e < o->numDevices ) && ( o->devices[e].manufacturer ) ) ? o->devices[e].manufacturer : "";
 }
-inline char *OrbtraceIfGetProduct( struct OrbtraceIf *o, int e )
+static inline char *OrbtraceIfGetProduct( struct OrbtraceIf *o, unsigned int e )
 {
-    return ( ( e < o->numDevices ) && ( o->device[e].product ) ) ? o->device[e].product : "";
+    return ( ( e < o->numDevices ) && ( o->devices[e].product ) ) ? o->devices[e].product : "";
 }
-inline char *OrbtraceIfGetSN( struct OrbtraceIf *o, int e )
+static inline char *OrbtraceIfGetSN( struct OrbtraceIf *o, unsigned int e )
 {
-    return ( ( e < o->numDevices ) && ( o->device[e].sn ) ) ? o->device[e].sn : "";
+    return ( ( e < o->numDevices ) && ( o->devices[e].sn ) ) ? o->devices[e].sn : "";
+}
+static inline int OrbtraceIfGetTraceIF( struct OrbtraceIf *o, unsigned int e )
+{
+    return ( ( e < o->numDevices ) ? ( o->devices[e].traceIf ) : NO_INTERFACE );
+}
+static inline int OrbtraceIfGetPowerIF( struct OrbtraceIf *o, unsigned int e )
+{
+    return ( ( e < o->numDevices ) ? ( o->devices[e].powerIf ) : NO_INTERFACE );
+}
+static inline int OrbtraceIfGetActiveDevnum( struct OrbtraceIf *o )
+{
+    return o->activeDevice;
 }
 
 /* Device selection management */
