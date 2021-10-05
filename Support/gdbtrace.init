@@ -136,8 +136,9 @@ define startETM
   # Allow access to device
   set *($ETMBASE+0xfb0) = 0xc5acce55
 
-  # Enter configuration mode
-  set *($ETMBASE) |= (1<<10)
+  # Enter configuration mode (write twice to be sure we reached it)
+  set *($ETMBASE) = (1<<10)
+  set *($ETMBASE) = (1<<10)
 
   # Set busID 2
   set *($ETMBASE+0x200) = 2
