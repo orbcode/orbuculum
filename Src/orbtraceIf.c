@@ -14,19 +14,22 @@
 /* List of device VID/PID pairs this library works with */
 static const struct OrbtraceInterfaceType _validDevices[] =
 {
-    {
-        0x1209, 0x3443, ( int [] )
-        {
-            900, 1000, 1050, 1100, 1200, 1250, 1350, 1500, 1670, 1800, 1900, 2000, 2100, 2200, 2300, 2400, 2500, 2600, 2700, 2800,
-            2900, 3000, 3100, 3200, 3300, 3400, 3500, 3600, 4000, 4100, 4200, 4350, 5000, 0
-        }
-    },
-    { 0, 0, NULL }
+    { 0x1209, 0x3443 },
+    { 0,      0      }
 };
 
 #define MIN_GENERIC_VOLTAGE_MV (900)
 #define MAX_GENERIC_VOLTAGE_MV (5000)
 #define MAX_VOLTAGE_DIFF_MV    (10)
+
+
+#define RQ_CLASS       (0x41)
+/* Commands for Trace Endpoint */
+#define RQ_SET_TWIDTH  (1)
+
+/* Commands for Power Endpoint */
+#define RQ_SET_ENABLE  (1)
+#define RQ_SET_VOLTAGE (2)
 
 /* Maximum descriptor length from USB specification */
 #define MAX_USB_DESC_LEN (256)
@@ -142,23 +145,7 @@ int OrbtraceIfValidateVoltage( struct OrbtraceIf *o, int vmv )
 /* Return matching voltage or zero if none can be found */
 
 {
-    /* If we don't have specific interface to reference use generic values */
-    if ( ( !o ) || ( !o->dev ) )
-    {
-        return ( ( vmv >= MIN_GENERIC_VOLTAGE_MV ) && ( vmv <= ( MAX_GENERIC_VOLTAGE_MV + MAX_VOLTAGE_DIFF_MV ) ) ) ? vmv : 0;
-    }
-    else
-    {
-        /* We do have an interface identified, so use its values for match-checking */
-        int *mv = o->devices[OrbtraceIfGetActiveDevnum( o )].type->voltageListmv;
-
-        while ( ( *mv ) && ( *mv <= vmv ) )
-        {
-            mv++;
-        }
-
-        return ( ( vmv - * ( mv - 1 ) ) <= MAX_VOLTAGE_DIFF_MV ) ? *( mv - 1 ) : 0;
-    }
+    return ( ( vmv >= MIN_GENERIC_VOLTAGE_MV ) && ( vmv <= ( MAX_GENERIC_VOLTAGE_MV + MAX_VOLTAGE_DIFF_MV ) ) ) ? vmv : 0;
 }
 // ====================================================================================================
 struct OrbtraceIf *OrbtraceIfCreateContext( void )
@@ -239,7 +226,6 @@ int OrbtraceIfGetDeviceList( struct OrbtraceIf *o, char *sn )
 
             if ( !libusb_open( o->list[i], &o->handle ) )
             {
-                d->type = &_validDevices[y];
                 d->powerIf = _getInterface( o, 'P' );
                 d->traceIf = _getInterface( o, 'T' );
 
@@ -303,7 +289,6 @@ bool OrbtraceIfOpenDevice( struct OrbtraceIf *o, unsigned int entry )
     return true;
 }
 // ====================================================================================================
-#include <stdio.h>
 bool OrbtraceIfSetTraceWidth( struct OrbtraceIf *o, int width )
 
 {
@@ -314,9 +299,33 @@ bool OrbtraceIfSetTraceWidth( struct OrbtraceIf *o, int width )
         return false;
     }
 
-    printf( "Sending libusb_control_transfer( %p, %02x, %02x, %d, %d, %p, %d, %d )\n", o->handle, 0x41, 0x01, d, OrbtraceIfGetTraceIF( o, OrbtraceIfGetActiveDevnum( o ) ), NULL, 0, 0 );
-    libusb_control_transfer( o->handle, 0x41, 0x01, d, OrbtraceIfGetTraceIF( o, OrbtraceIfGetActiveDevnum( o ) ), NULL, 0, 0 );
-    return true;
+    return ( libusb_control_transfer( o->handle, RQ_CLASS, RQ_SET_TWIDTH, d,
+                                      OrbtraceIfGetTraceIF( o, OrbtraceIfGetActiveDevnum( o ) ), NULL, 0, 0 ) >= 0 );
+}
+// ====================================================================================================
+bool OrbtraceIfVoltage( struct OrbtraceIf *o, enum Channel ch, int voltage )
+
+{
+    if ( ( ch >= CH_MAX ) || !OrbtraceIfValidateVoltage( o, voltage ) )
+    {
+        return false;
+    }
+
+    return ( libusb_control_transfer( o->handle, RQ_CLASS, RQ_SET_VOLTAGE, voltage,
+                                      ( ch << 8 ) | OrbtraceIfGetPowerIF( o, OrbtraceIfGetActiveDevnum( o ) ), NULL, 0, 0 ) >= 0 );
+}
+// ====================================================================================================
+bool OrbtraceIfSetVoltageEn( struct OrbtraceIf *o, enum Channel ch, bool isOn )
+
+{
+    if ( ( ch >= CH_MAX ) && ( ch != CH_ALL ) )
+    {
+        return false;
+    }
+
+
+    return ( libusb_control_transfer( o->handle, RQ_CLASS, RQ_SET_ENABLE, isOn,
+                                      ( ch << 8 ) | OrbtraceIfGetPowerIF( o, OrbtraceIfGetActiveDevnum( o ) ), NULL, 0, 0 ) >= 0 );
 }
 // ====================================================================================================
 void OrbtraceIfCloseDevice( struct OrbtraceIf *o )

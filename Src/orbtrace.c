@@ -19,46 +19,42 @@
 
 #include "orbtraceIf.h"
 
-#define DONTSET (-1)
 #define MIN(a,b) (((a)<(b))?(a):(b))
 #define MAX(a,b) (((a)>(b))?(a):(b))
 
 /* Record for options, either defaults or from command line */
 struct Options
 {
+    /* Probe config */
     char *sn;                 /* Any part of serial number to differentiate probe */
-    char *qQuery;             /* V/I Parameters to query from probe */
     char *nick;               /* Nickname for device */
     int brightness;           /* Brightness of OP LEDs */
+
+    /* Trace settings */
     int traceWidth;           /* Width to be used for communication */
-    bool forceVoltage;        /* Force application of voltage */
     bool opJSON;              /* Set output to JSON */
-    bool listDevices;         /* List devices connected to system */
+
+    /* Power settings */
+    bool forceVoltage;        /* Force application of voltage */
     int TPwrmv;               /* Target power setting in mv */
     int TRefmv;               /* Target voltage setting in mv */
-    bool writeParams;         /* Write specified parameters to NVRAM */
-    bool resetParams;         /* Reset all parameters in NVRAM */
-    bool unlock;              /* Unlock device */
-    bool lock;                /* Lock device */
-    int setCount;             /* Number of device changes to be processed */
-} _options =
-{
-    .traceWidth = DONTSET,
-    .brightness = DONTSET,
-    .TPwrmv = DONTSET,
-    .TRefmv = DONTSET
-};
+    bool TPwrEN;              /* If to enable/disable TPwr */
+    bool TRefEN;              /* If to enable/disable TRef */
+} _options;
+
+enum Actions { ACTION_BRIGHTNESS, ACTION_ENCHANGE_VTREF, ACTION_ENCHANGE_VTPWR, ACTION_LIST_DEVICES,
+               ACTION_LOCKDEVICE, ACTION_SETNICK, ACTION_VCHANGE_VTREF, ACTION_VCHANGE_VTPWR, ACTION_SN,
+               ACTION_UNLOCK, ACTION_WRITE_PARAMS, ACTION_READ_PARAMS, ACTION_RESET_PARAMS, ACTION_SET_TRACEWIDTH
+             };
 
 struct RunTime
 {
-    /* Link to the connected Orbtrace device */
-    struct OrbtraceIf *dev;
+    struct OrbtraceIf *dev;     /* Link to the connected Orbtrace device */
 
-    bool      ending;                                                  /* Flag indicating app is terminating */
-    int ndevices;
-    int seldevice;
-
-    struct Options *options;
+    bool     ending;            /* Flag indicating app is terminating */
+    int      ndevices;          /* Number of devices found connected that match search spec */
+    uint64_t actions;           /* Actions to be performed */
+    struct Options *options;    /* Runtime command line options */
 } _r =
 {
     .options = &_options
@@ -71,46 +67,100 @@ struct RunTime
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
+static void _set_action( struct RunTime *r, int x )
+
+/* Set up an action flag */
+
+{
+    r->actions |= ( 1 << x );
+}
+// ====================================================================================================
+static void _clr_action( struct RunTime *r, int x )
+
+/* Clear an action flag */
+
+{
+    r->actions &= ~( 1 << x );
+}
+// ====================================================================================================
+static bool _tst_action( struct RunTime *r, int x )
+
+/* Query an action flag */
+
+{
+    return ( 0 != ( r->actions & ( 1 << x ) ) );
+}
+// ====================================================================================================
+static bool _tcl_action( struct RunTime *r, int x )
+
+/* Query and then clear an action flag */
+
+{
+    if ( !_tst_action( r, x ) )
+    {
+        return false;
+    }
+    else
+    {
+        _clr_action( r, x );
+        return true;
+    }
+}
+// ====================================================================================================
+static int _num_actions( struct RunTime *r )
+
+/* Return how many actions flags are set */
+
+{
+    return ( __builtin_popcount( r->actions ) );
+}
+
+// ====================================================================================================
 static void _intHandler( int sig )
+
+/* Signal handler for CTRL-C */
 
 {
     /* CTRL-C exit is not an error... */
     exit( 0 );
 }
 // ====================================================================================================
-void _printHelp( char *progName )
+static void _printHelp( char *progName )
 
 {
     genericsPrintf( "Usage: %s [options]" EOL, progName );
-    genericsPrintf( "       -b: <Brightness> Set default brightness of output leds" EOL );
-    genericsPrintf( "       -f: <filename> Take input from specified file" EOL );
+    genericsPrintf( "      *-b: <Brightness> Set default brightness of output leds" EOL );
+    genericsPrintf( "       -e: <Ch>,<On> Enable or Disable power. Ch=0 for TRef, Ch=1 for TPwr, Ch=99 for all" EOL );
+    genericsPrintf( "      *-F: Force voltage setting" EOL );
     genericsPrintf( "       -h: This help" EOL );
-    genericsPrintf( "       -j: Format output in JSON" EOL );
+    genericsPrintf( "      *-j: Format output in JSON" EOL );
     genericsPrintf( "       -l: Show all OrbTrace devices attached to system" EOL );
-    genericsPrintf( "       -L: Lock device (prevent further changes)" EOL );
-    genericsPrintf( "       -n: <Nick> Specify nickname for adaptor (8 chars max)" EOL );
+    genericsPrintf( "      *-L: Lock device (prevent further changes)" EOL );
+    genericsPrintf( "      *-n: <Nick> Specify nickname for adaptor (8 chars max)" EOL );
     genericsPrintf( "       -o: <num> Specify 1, 2 or 4 bits trace width" EOL );
-    genericsPrintf( "       -q: Query all data from connected device" EOL );
-    genericsPrintf( "       -Q: Query specified data from connected device (pPrR VPwr/IPwr/VRef/IRef)" EOL );
-    genericsPrintf( "       -p: <Voltage> Set TPwr voltage (0=Off)" EOL );
-    genericsPrintf( "       -r: <Voltage> Set TRef voltage (0=Passive)" EOL );
+    genericsPrintf( "      *-q: Query all data from connected device" EOL );
+    genericsPrintf( "      *-Q: Query specified data from connected device (pPrR VPwr/IPwr/VRef/IRef)" EOL );
+    genericsPrintf( "      *-p: <Ch>,<Voltage> Set voltage in V, Ch=0 for TRef, Ch=1 for TPwr" EOL );
     genericsPrintf( "       -s: <Serial> any part of serial number to differentiate specific OrbTrace device" EOL );
-    genericsPrintf( "       -U: Unlock device (allow changes, default state)" EOL );
+    genericsPrintf( "      *-U: Unlock device (allow changes, default state)" EOL );
     genericsPrintf( "       -v: <level> Verbose mode 0(errors)..3(debug)" EOL );
-    genericsPrintf( "       -w: Write parameters specified on command line to NVRAM" EOL );
-    genericsPrintf( "       -W: Reset all NVRAM parameters to default values" EOL );
+    genericsPrintf( "      *-w: Write parameters specified on command line to NVRAM" EOL );
+    genericsPrintf( "      *-W: Reset all NVRAM parameters to default values" EOL );
+    genericsPrintf( EOL "Actions marked * are not yet implemented" EOL );
 }
 // ====================================================================================================
 static bool _checkVoltages( struct RunTime *r )
 
+/* Check that voltages, if requested, are sensible */
+
 {
-    if ( ( r->options->TRefmv != DONTSET ) && ( 0 == OrbtraceIfValidateVoltage( r->dev, r->options->TRefmv ) ) )
+    if ( _tst_action( r, ACTION_VCHANGE_VTREF ) && ( 0 == OrbtraceIfValidateVoltage( r->dev, r->options->TRefmv ) ) )
     {
         genericsReport( V_ERROR, "Illegal voltage specified for TRef (%d.%03dV)" EOL, r->options->TRefmv / 1000, r->options->TRefmv % 1000 );
         return false;
     }
 
-    if ( ( r->options->TPwrmv != DONTSET ) && ( 0 == OrbtraceIfValidateVoltage( r->dev, r->options->TPwrmv ) ) )
+    if ( _tst_action( r, ACTION_VCHANGE_VTPWR ) && ( 0 == OrbtraceIfValidateVoltage( r->dev, r->options->TPwrmv ) ) )
     {
         genericsReport( V_ERROR, "Illegal voltage specified for TPwr (%d.%03dV)" EOL, r->options->TPwrmv / 1000, r->options->TPwrmv % 1000 );
         return false;
@@ -119,23 +169,60 @@ static bool _checkVoltages( struct RunTime *r )
     return true;
 }
 // ====================================================================================================
-int _processOptions( struct RunTime *r, int argc, char *argv[]  )
+static int _processOptions( struct RunTime *r, int argc, char *argv[]  )
+
+/* Process command line options into options and actions records */
 
 {
     int c;
     float voltage;
+    int channel;
+    char *a;
 
-    while ( ( c = getopt ( argc, argv, "b:f:hlLn:o:qQ:p:r:s:Uv:wW" ) ) != -1 )
+    while ( ( c = getopt ( argc, argv, "b:e:f:hlLn:o:qQ:p:s:Uv:wW" ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
             case 'b': /* Brightness */
                 r->options->brightness = atoi( optarg );
-                r->options->setCount++;
+                _set_action( r, ACTION_BRIGHTNESS );
                 break;
 
             // ------------------------------------
-            case 'F': /* Input filename */
+            case 'e':
+                channel = atoi( optarg );
+                a = optarg;
+
+                while ( ( *a ) && ( *a != ',' ) )
+                {
+                    a++;
+                }
+
+                if ( *a == ',' )
+                {
+                    a++;
+
+                    if ( channel == CH_VTREF )
+                    {
+                        r->options->TRefEN = ( *a == '1' );
+                        _set_action( r, ACTION_ENCHANGE_VTREF );
+                        break;
+                    }
+
+                    if ( channel == CH_VTPWR )
+                    {
+                        r->options->TPwrEN = ( *a == '1' );
+                        _set_action( r, ACTION_ENCHANGE_VTPWR );
+                        break;
+                    }
+                }
+
+                genericsReport( V_ERROR,"Badly formatted enable" EOL);
+                return false;
+
+
+            // ------------------------------------
+            case 'F': /* Force voltage */
                 r->options->forceVoltage = true;
                 break;
 
@@ -151,51 +238,69 @@ int _processOptions( struct RunTime *r, int argc, char *argv[]  )
 
             // ------------------------------------
             case 'l': /* List connected devices */
-                r->options->listDevices = true;
+                _set_action( r, ACTION_LIST_DEVICES );
                 break;
 
             // ------------------------------------
             case 'L': /* Lock device */
-                r->options->lock = true;
-                r->options->setCount++;
+                _set_action( r, ACTION_LOCKDEVICE );
                 break;
 
             // ------------------------------------
-            case 'n':
+            case 'n': /* Set nickname */
                 r->options->nick = optarg;
-                r->options->setCount++;
+                _set_action( r, ACTION_SETNICK );
                 break;
 
             // ------------------------------------
-            case 'o':
+            case 'o': /* Set tracewidth */
                 r->options->traceWidth = atoi( optarg );
-                r->options->setCount++;
+                _set_action( r, ACTION_SET_TRACEWIDTH );
                 break;
 
             // ------------------------------------
-            case 'p':
-                voltage = atof( optarg );
-                r->options->TPwrmv = ( int )( ( voltage + 0.0005F ) * 1000 );
-                r->options->setCount++;
-                break;
+            case 'p': /* Set power */
+                channel = atoi( optarg );
+                a = optarg;
+
+                while ( ( *a ) && ( *a != ',' ) )
+                {
+                    a++;
+                }
+
+                if ( *a == ',' )
+                {
+                    a++;
+                    voltage = atof( a );
+
+                    if ( channel == CH_VTREF )
+                    {
+                        r->options->TRefmv = ( int )( ( voltage + 0.0005F ) * 1000 );
+                        _set_action( r, ACTION_VCHANGE_VTREF );
+                        break;
+                    }
+
+                    if ( channel == CH_VTPWR )
+                    {
+                        r->options->TPwrmv = ( int )( ( voltage + 0.0005F ) * 1000 );
+                        _set_action( r, ACTION_VCHANGE_VTPWR );
+                        break;
+                    }
+                }
+
+                genericsReport( V_ERROR,"Badly formatted power statement" EOL);
+                return false;
 
             // ------------------------------------
-            case 'r':
-                voltage = atof( optarg );
-                r->options->TRefmv = ( int )( ( voltage + 0.0005F ) * 1000 );
-                r->options->setCount++;
-                break;
 
-            // ------------------------------------
-
-            case 's':
+            case 's': /* Set serial number */
                 r->options->sn = optarg;
+                _set_action( r, ACTION_SN );
                 break;
 
             // ------------------------------------
             case 'U': /* Unlock device */
-                r->options->unlock = true;
-                r->options->setCount++;
+                _set_action( r, ACTION_UNLOCK );
                 break;
 
             // ------------------------------------
@@ -205,13 +310,12 @@ int _processOptions( struct RunTime *r, int argc, char *argv[]  )
 
             // ------------------------------------
             case 'w': /* Write parameters to NVRAM */
-                r->options->writeParams = true;
+                _set_action( r, ACTION_WRITE_PARAMS );
                 break;
 
             // ------------------------------------
             case 'W': /* Reset parameters in NVRAM */
-                r->options->resetParams = true;
-                r->options->setCount++;
+                _set_action( r, ACTION_RESET_PARAMS );
                 break;
 
             // ------------------------------------
@@ -235,22 +339,19 @@ int _processOptions( struct RunTime *r, int argc, char *argv[]  )
         }
 
     /* Test parameters for sanity */
-    if ( r->options->setCount )
+    if ( _tst_action( r, ACTION_RESET_PARAMS ) && ( _num_actions( r ) > 1 ) )
     {
-        if ( r->options->resetParams )
-        {
-            genericsReport( V_ERROR, "Cannot set a parameter while reseting all parameters" EOL );
-            return false;
-        }
-
-        if ( r->options->listDevices )
-        {
-            genericsReport( V_ERROR, "Cannot list devices while setting a parameter" EOL );
-            return false;
-        }
+        genericsReport( V_ERROR, "Resetting parameters is an exclusive operation" EOL );
+        return false;
     }
 
-    if ( ( r->options->traceWidth != DONTSET ) &&
+    if ( _tst_action( r, ACTION_LIST_DEVICES ) && ( _num_actions( r ) > 1 ) )
+    {
+        genericsReport( V_ERROR, "Listing devices is an exclusive operation" EOL );
+        return false;
+    }
+
+    if ( ( _tst_action( r, ACTION_SET_TRACEWIDTH ) ) &&
             ( r->options->traceWidth != 1 ) &&
             ( r->options->traceWidth != 2 ) &&
             ( r->options->traceWidth != 4 ) )
@@ -259,12 +360,7 @@ int _processOptions( struct RunTime *r, int argc, char *argv[]  )
         return false;
     }
 
-    if ( !_checkVoltages( r ) )
-    {
-        return false;
-    }
-
-    if ( ( r->options->brightness != DONTSET ) && ( ( r->options->brightness < 0 ) || ( r->options->brightness > 255 ) ) )
+    if ( _tst_action( r, ACTION_BRIGHTNESS ) && ( ( r->options->brightness < 0 ) || ( r->options->brightness > 255 ) ) )
     {
         genericsReport( V_ERROR, "Brightness setting out of range" EOL );
         return false;
@@ -354,19 +450,122 @@ static int _selectDevice( struct RunTime *r, bool listOnly )
 // ====================================================================================================
 static void _performActions( struct RunTime *r )
 
+/* Whatever we were asked to do, do it */
+
 {
-    if ( r->options->traceWidth != DONTSET )
+    // -----------------------------------------------------------------------------------
+    if ( _tst_action( r, ACTION_UNLOCK ) )
     {
-        genericsReport( V_INFO, "Setting port width to %d" EOL, r->options->traceWidth );
     }
 
-    if ( OrbtraceIfSetTraceWidth( r->dev, r->options->traceWidth ) )
+    // -----------------------------------------------------------------------------------
+    if ( _tst_action( r, ACTION_RESET_PARAMS ) )
     {
-        genericsReport( V_INFO, "OK" EOL );
     }
-    else
+
+    // -----------------------------------------------------------------------------------
+    if ( _tst_action( r, ACTION_BRIGHTNESS ) )
     {
-        genericsReport( V_INFO, "Failed" EOL );
+    }
+
+    // -----------------------------------------------------------------------------------
+    if ( _tst_action( r, ACTION_SN ) )
+    {
+    }
+
+    // -----------------------------------------------------------------------------------
+    if ( _tst_action( r, ACTION_READ_PARAMS ) )
+    {
+    }
+
+    // -----------------------------------------------------------------------------------
+    if ( _tst_action( r, ACTION_SETNICK ) )
+    {
+    }
+
+    // -----------------------------------------------------------------------------------
+    if ( _tcl_action( r, ACTION_VCHANGE_VTREF ) )
+    {
+        genericsReport( V_INFO, "Setting VTRef %d.%03dV : ", r->options->TRefmv / 1000, r->options->TRefmv % 1000 );
+
+        if ( OrbtraceIfVoltage( r->dev, CH_VTREF, r->options->TRefmv ) )
+        {
+            genericsReport( V_INFO, "OK" EOL );
+        }
+        else
+        {
+            genericsReport( V_INFO, "Failed" EOL );
+        }
+    }
+
+    // -----------------------------------------------------------------------------------
+    if ( _tcl_action( r, ACTION_VCHANGE_VTPWR ) )
+    {
+        genericsReport( V_INFO, "Setting VTPwr %d.%03dV : ", r->options->TPwrmv / 1000, r->options->TPwrmv % 1000 );
+
+        if ( OrbtraceIfVoltage( r->dev, CH_VTPWR, r->options->TPwrmv ) )
+        {
+            genericsReport( V_INFO, "OK" EOL );
+        }
+        else
+        {
+            genericsReport( V_INFO, "Failed" EOL );
+        }
+    }
+
+    // -----------------------------------------------------------------------------------
+    if ( _tcl_action( r, ACTION_SET_TRACEWIDTH ) )
+    {
+        genericsReport( V_INFO, "Setting port width to %d" EOL, r->options->traceWidth );
+
+        if ( OrbtraceIfSetTraceWidth( r->dev, r->options->traceWidth ) )
+        {
+            genericsReport( V_INFO, "OK" EOL );
+        }
+        else
+        {
+            genericsReport( V_INFO, "Failed" EOL );
+        }
+    }
+
+    // -----------------------------------------------------------------------------------
+    if ( _tcl_action( r, ACTION_ENCHANGE_VTREF ) )
+    {
+        genericsReport( V_INFO, "VTRef %s : ", r->options->TRefEN ? "On" : "Off" );
+
+        if ( OrbtraceIfSetVoltageEn( r->dev, CH_VTREF, r->options->TRefEN ) )
+        {
+            genericsReport( V_INFO, "OK" EOL );
+        }
+        else
+        {
+            genericsReport( V_INFO, "Failed" EOL );
+        }
+    }
+
+    // -----------------------------------------------------------------------------------
+    if ( _tcl_action( r, ACTION_ENCHANGE_VTPWR ) )
+    {
+        genericsReport( V_INFO, "VTPwr %s : ", r->options->TPwrEN ? "On" : "Off" );
+
+        if ( OrbtraceIfSetVoltageEn( r->dev, CH_VTPWR, r->options->TPwrEN ) )
+        {
+            genericsReport( V_INFO, "OK" EOL );
+        }
+        else
+        {
+            genericsReport( V_INFO, "Failed" EOL );
+        }
+    }
+
+    // -----------------------------------------------------------------------------------
+    if ( _tst_action( r, ACTION_WRITE_PARAMS ) )
+    {
+    }
+
+    // -----------------------------------------------------------------------------------
+    if ( _tst_action( r, ACTION_LOCKDEVICE ) )
+    {
     }
 }
 // ====================================================================================================
@@ -395,7 +594,6 @@ int main( int argc, char *argv[] )
     assert( _r.dev );
 
     _r.ndevices = OrbtraceIfGetDeviceList( _r.dev, _r.options->sn );
-    usleep( 500000 );
 
     if ( !_r.ndevices )
     {
@@ -404,21 +602,21 @@ int main( int argc, char *argv[] )
     else
     {
         /* Allow option to choose between devices if there's more than one found */
-        _r.seldevice = _selectDevice( &_r, _r.options->listDevices );
+        int seldevice = _selectDevice( &_r, _tcl_action ( &_r, ACTION_LIST_DEVICES ) );
 
-        if ( _r.options->setCount )
+        if ( _num_actions( &_r ) )
         {
             genericsReport( V_INFO, "Got device [%s %s, S/N %s]" EOL,
                             OrbtraceIfGetManufacturer( _r.dev, selection ),
                             OrbtraceIfGetProduct( _r.dev, selection ),
                             OrbtraceIfGetSN( _r.dev, selection ) );
 
-            if ( !OrbtraceIfOpenDevice( _r.dev, _r.seldevice ) )
+            if ( !OrbtraceIfOpenDevice( _r.dev, seldevice ) )
             {
                 genericsExit( -1, "Couldn't open device" EOL );
             }
 
-            /* Check voltages again now we know what interface we're connected to */
+            /* Check voltages now we know what interface we're connected to */
             if ( !_checkVoltages( &_r ) )
             {
                 genericsExit( -2, "Specified interface voltage check failed" EOL );

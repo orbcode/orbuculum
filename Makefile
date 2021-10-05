@@ -77,8 +77,6 @@ SFILES =
 OLOC = ofiles
 
 ifdef OSX
-#INCLUDE_PATHS += -I/usr/local/include/libusb-1.0 -I/usr/local/opt/binutils/include/libiberty -I/usr/local/opt/binutils/include
-#LDLIBS = -L. -lpthread -L/usr/local/lib -lusb-1.0 -ldl -lintl -L/usr/local/opt/binutils/lib -liberty -L$(OLOC) -l$(ORBLIB)
 INCLUDE_PATHS += -I/usr/local/include/libusb-1.0
 LDLIBS = -L. -L/usr/local/lib -lusb-1.0 -ldl -lncurses -lpthread -lintl -L$(OLOC) -l$(ORBLIB)
 else

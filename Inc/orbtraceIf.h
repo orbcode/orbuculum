@@ -31,11 +31,12 @@ extern "C" {
 #define NO_INTERFACE (-1)
 #define NO_DEVICE    (-1)
 
+enum Channel {CH_VTREF, CH_VTPWR, CH_MAX, CH_ALL = 0xff};
+
 struct OrbtraceInterfaceType
 {
     int vid;
     int pid;
-    int *voltageListmv;
 };
 
 struct OrbtraceIfDevice
@@ -99,6 +100,8 @@ void OrbtraceIfCloseDevice( struct OrbtraceIf *o );
 
 /* Device manipulation */
 bool OrbtraceIfSetTraceWidth( struct OrbtraceIf *o, int width );
+bool OrbtraceIfVoltage( struct OrbtraceIf *o, enum Channel ch, int voltage );
+bool OrbtraceIfSetVoltageEn( struct OrbtraceIf *o, enum Channel ch, bool isOn );
 
 /* Device context control */
 struct OrbtraceIf *OrbtraceIfCreateContext( void );
