@@ -44,7 +44,8 @@ struct Options
 
 enum Actions { ACTION_BRIGHTNESS, ACTION_ENCHANGE_VTREF, ACTION_ENCHANGE_VTPWR, ACTION_LIST_DEVICES,
                ACTION_LOCKDEVICE, ACTION_SETNICK, ACTION_VCHANGE_VTREF, ACTION_VCHANGE_VTPWR, ACTION_SN,
-               ACTION_UNLOCK, ACTION_WRITE_PARAMS, ACTION_READ_PARAMS, ACTION_RESET_PARAMS, ACTION_SET_TRACEWIDTH
+               ACTION_UNLOCK, ACTION_WRITE_PARAMS, ACTION_READ_PARAMS, ACTION_RESET_PARAMS, ACTION_SET_TRACEWIDTH,
+               ACTION_ENCHANGE_ALL
              };
 
 struct RunTime
@@ -130,7 +131,7 @@ static void _printHelp( char *progName )
 {
     genericsPrintf( "Usage: %s [options]" EOL, progName );
     genericsPrintf( "      *-b: <Brightness> Set default brightness of output leds" EOL );
-    genericsPrintf( "       -e: <Ch>,<On> Enable or Disable power. Ch=0 for TRef, Ch=1 for TPwr, Ch=99 for all" EOL );
+    genericsPrintf( "       -e: <Ch>,<On> Enable or Disable power. Ch is vtref, vtpwr or all" EOL );
     genericsPrintf( "      *-F: Force voltage setting" EOL );
     genericsPrintf( "       -h: This help" EOL );
     genericsPrintf( "      *-j: Format output in JSON" EOL );
@@ -140,7 +141,7 @@ static void _printHelp( char *progName )
     genericsPrintf( "       -o: <num> Specify 1, 2 or 4 bits trace width" EOL );
     genericsPrintf( "      *-q: Query all data from connected device" EOL );
     genericsPrintf( "      *-Q: Query specified data from connected device (pPrR VPwr/IPwr/VRef/IRef)" EOL );
-    genericsPrintf( "      *-p: <Ch>,<Voltage> Set voltage in V, Ch=0 for TRef, Ch=1 for TPwr" EOL );
+    genericsPrintf( "      *-p: <Ch>,<Voltage> Set voltage in V, Ch is vtref or vtpwr" EOL );
     genericsPrintf( "       -s: <Serial> any part of serial number to differentiate specific OrbTrace device" EOL );
     genericsPrintf( "      *-U: Unlock device (allow changes, default state)" EOL );
     genericsPrintf( "       -v: <level> Verbose mode 0(errors)..3(debug)" EOL );
@@ -177,6 +178,7 @@ static int _processOptions( struct RunTime *r, int argc, char *argv[]  )
     int c;
     float voltage;
     int channel;
+    bool action;
     char *a;
 
     while ( ( c = getopt ( argc, argv, "b:e:f:hlLn:o:qQ:p:s:Uv:wW" ) ) != -1 )
@@ -190,7 +192,7 @@ static int _processOptions( struct RunTime *r, int argc, char *argv[]  )
 
             // ------------------------------------
             case 'e':
-                channel = atoi( optarg );
+                channel = OrbtraceIfNameToChannel( optarg );
                 a = optarg;
 
                 while ( ( *a ) && ( *a != ',' ) )
@@ -198,28 +200,38 @@ static int _processOptions( struct RunTime *r, int argc, char *argv[]  )
                     a++;
                 }
 
-                if ( *a == ',' )
+                if ( ( *a == ',' ) || ( channel != CH_NONE ) )
                 {
                     a++;
+                    action = ( ( *a == '1' ) || ( !strcasecmp( "on", a ) ) );
 
-                    if ( channel == CH_VTREF )
+                    if ( action || ( *a == '0' ) || ( !strcasecmp( "off", a ) ) )
                     {
-                        r->options->TRefEN = ( *a == '1' );
-                        _set_action( r, ACTION_ENCHANGE_VTREF );
-                        break;
-                    }
+                        if ( channel == CH_VTREF )
+                        {
+                            r->options->TRefEN = action;
+                            _set_action( r, ACTION_ENCHANGE_VTREF );
+                            break;
+                        }
 
-                    if ( channel == CH_VTPWR )
-                    {
-                        r->options->TPwrEN = ( *a == '1' );
-                        _set_action( r, ACTION_ENCHANGE_VTPWR );
-                        break;
+                        if ( channel == CH_VTPWR )
+                        {
+                            r->options->TPwrEN = action;
+                            _set_action( r, ACTION_ENCHANGE_VTPWR );
+                            break;
+                        }
+
+                        if ( channel == CH_ALL )
+                        {
+                            r->options->TPwrEN = r->options->TRefEN = action;
+                            _set_action( r, ACTION_ENCHANGE_ALL );
+                            break;
+                        }
                     }
                 }
 
-                genericsReport( V_ERROR,"Badly formatted enable" EOL);
+                genericsReport( V_ERROR, "Badly formatted enable" EOL );
                 return false;
-
 
             // ------------------------------------
             case 'F': /* Force voltage */
@@ -260,7 +272,7 @@ static int _processOptions( struct RunTime *r, int argc, char *argv[]  )
 
             // ------------------------------------
             case 'p': /* Set power */
-                channel = atoi( optarg );
+                channel = OrbtraceIfNameToChannel( optarg );
                 a = optarg;
 
                 while ( ( *a ) && ( *a != ',' ) )
@@ -268,7 +280,7 @@ static int _processOptions( struct RunTime *r, int argc, char *argv[]  )
                     a++;
                 }
 
-                if ( *a == ',' )
+                if ( ( *a == ',' ) && ( channel != CH_NONE ) )
                 {
                     a++;
                     voltage = atof( a );
@@ -288,7 +300,7 @@ static int _processOptions( struct RunTime *r, int argc, char *argv[]  )
                     }
                 }
 
-                genericsReport( V_ERROR,"Badly formatted power statement" EOL);
+                genericsReport( V_ERROR, "Badly formatted power statement" EOL );
                 return false;
 
             // ------------------------------------
@@ -534,6 +546,21 @@ static void _performActions( struct RunTime *r )
         genericsReport( V_INFO, "VTRef %s : ", r->options->TRefEN ? "On" : "Off" );
 
         if ( OrbtraceIfSetVoltageEn( r->dev, CH_VTREF, r->options->TRefEN ) )
+        {
+            genericsReport( V_INFO, "OK" EOL );
+        }
+        else
+        {
+            genericsReport( V_INFO, "Failed" EOL );
+        }
+    }
+
+    // -----------------------------------------------------------------------------------
+    if ( _tcl_action( r, ACTION_ENCHANGE_ALL ) )
+    {
+        genericsReport( V_INFO, "All Channels %s : ", r->options->TRefEN ? "On" : "Off" );
+
+        if ( OrbtraceIfSetVoltageEn( r->dev, CH_ALL, r->options->TRefEN ) )
         {
             genericsReport( V_INFO, "OK" EOL );
         }

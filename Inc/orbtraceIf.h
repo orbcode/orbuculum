@@ -31,7 +31,12 @@ extern "C" {
 #define NO_INTERFACE (-1)
 #define NO_DEVICE    (-1)
 
-enum Channel {CH_VTREF, CH_VTPWR, CH_MAX, CH_ALL = 0xff};
+enum Channel {CH_VTREF, CH_VTPWR, CH_MAX, CH_NONE, CH_ALL = 0xff};
+#define  POWERNAMES      \
+    { "vtpwr", CH_VTPWR }, \
+    { "vtref", CH_VTREF }, \
+    { "all"  , CH_ALL   }, \
+    { NULL   , CH_NONE  }  \
 
 struct OrbtraceInterfaceType
 {
@@ -97,6 +102,7 @@ static inline int OrbtraceIfGetActiveDevnum( struct OrbtraceIf *o )
 int OrbtraceIfGetDeviceList( struct OrbtraceIf *o, char *sn );
 bool OrbtraceIfOpenDevice( struct OrbtraceIf *o, unsigned int entry );
 void OrbtraceIfCloseDevice( struct OrbtraceIf *o );
+enum Channel OrbtraceIfNameToChannel( char *x );
 
 /* Device manipulation */
 bool OrbtraceIfSetTraceWidth( struct OrbtraceIf *o, int width );

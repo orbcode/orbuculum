@@ -9,6 +9,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <assert.h>
+#include <ctype.h>
 #include "orbtraceIf.h"
 
 /* List of device VID/PID pairs this library works with */
@@ -33,6 +34,16 @@ static const struct OrbtraceInterfaceType _validDevices[] =
 
 /* Maximum descriptor length from USB specification */
 #define MAX_USB_DESC_LEN (256)
+
+static const struct
+{
+    const char *name;
+    const int num;
+} _powerNames[] =
+{
+    POWERNAMES
+};
+
 
 // ====================================================================================================
 // ====================================================================================================
@@ -301,6 +312,28 @@ bool OrbtraceIfSetTraceWidth( struct OrbtraceIf *o, int width )
 
     return ( libusb_control_transfer( o->handle, RQ_CLASS, RQ_SET_TWIDTH, d,
                                       OrbtraceIfGetTraceIF( o, OrbtraceIfGetActiveDevnum( o ) ), NULL, 0, 0 ) >= 0 );
+}
+// ====================================================================================================
+enum Channel OrbtraceIfNameToChannel( char *x )
+
+/* Turn case insensitive text name to channel number. Can be terminated with NULL or a ',' */
+
+{
+    int j;
+
+    for ( int i = 0; _powerNames[i].name; i++ )
+    {
+        char *y = x;
+
+        for ( j = 0; _powerNames[i].name[j] && _powerNames[i].name[j] == tolower( *y++ ); j++ );
+
+        if ( ( ( !*y ) || ( *y == ',' ) ) && ( !_powerNames[i].name[j] ) )
+        {
+            return _powerNames[i].num;
+        }
+    }
+
+    return CH_NONE;
 }
 // ====================================================================================================
 bool OrbtraceIfVoltage( struct OrbtraceIf *o, enum Channel ch, int voltage )
