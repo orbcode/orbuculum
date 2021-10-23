@@ -3,6 +3,12 @@
 * `orbtop` - works
 * `orbuculum` - builds, serial feeder works, others - untested
 
+# Building distributable ZIP for Windows
+* Target `dist_win_zip` generates `ofiles/orbuculum_win.zip` which contains Orbuculum executables along with required DLL files.
+* Build-time dependencies
+    * MinGW `ldd` utility which is used to discover required DLLs
+    * `zip` command to create ZIP file
+
 # Windows-related changes
 * Add `WSAStartup` at startup
 * Use `send` and `recv` to handle sockets (instead of `read` and `write`)

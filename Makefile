@@ -296,4 +296,22 @@ print-%:
 pretty:
 	$(Q)-$(ASTYLE) --options=config/astyle.conf "Inc/*.h" "Src/*.c"
 
+.PHONY: dist_win_zip
+
+dist_win_zip:
+	-@echo "Building Windows distributable"
+	mkdir -p $(OLOC)/dist_win
+	cp $(OLOC)/$(ORBUCULUM) $(OLOC)/dist_win
+	cp $(OLOC)/$(ORBCAT) $(OLOC)/dist_win
+	cp $(OLOC)/$(ORBTOP) $(OLOC)/dist_win
+
+	-@echo "Copy dependencies"
+	$(Q)ldd $(OLOC)/$(ORBUCULUM)  | grep -vi System32 | gawk '{ print $$3 }' | xargs -rt cp -t $(OLOC)/dist_win
+	$(Q)ldd $(OLOC)/$(ORBCAT)  | grep -vi System32 | gawk '{ print $$3 }' | xargs -rt cp -t $(OLOC)/dist_win
+	$(Q)ldd $(OLOC)/$(ORBTOP)  | grep -vi System32 | gawk '{ print $$3 }' | xargs -rt cp -t $(OLOC)/dist_win
+
+	-@echo "Creating archive $(OLOC)/orbuculum_win.zip"
+	$(Q)(cd $(OLOC)/dist_win && zip ../orbuculum_win.zip *)
+
+
 -include $(PDEPS)
