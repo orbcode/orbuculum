@@ -23,6 +23,9 @@ NRF;
   enableNRF52TRACE : Start TRACE on NRF52 (not nrf52833 or nrf52840) pins
   enableNRF53TRACE : Start TRACE on NRF53* pins
 
+EFR32MG12;
+  enableEFR32MG12SWO : Start SWO on EFR32MG12 pins
+  
 All;
   prepareSWO      : Prepare SWO output in specified format
   startETM        : Start ETM output on channel 2
@@ -71,6 +74,7 @@ set $CPU_IMXRT102X=1
 set $CPU_STM32=2
 set $CPU_IMXRT106X=1
 set $CPU_NRF=3
+set $CPU_EFR32=4
 
 # Legacy fixups...lets avoid upsetting anyone too much
 
@@ -119,6 +123,9 @@ set $NRF_P0_S=0x50842500
 set $NRF_SPU_S=0x50003000
 end
 
+define _setAddressesEFR32MG12
+# Locations in the memory map for interesting things on EFR32
+end
 
 # ====================================================================
 
@@ -393,6 +400,41 @@ end
 document enableSAMD5XSWD
 enableSAMD5XSWD Configure output pin on SAM5X for SWO use.
 end
+
+# ====================================================================
+define enableEFR32MG12SWO
+
+  _setAddressesEFR32MG12
+  # Store the CPU we are using
+  set $CPU=$CPU_EFR32
+
+  # Enable the GPIO clock (HFBUSCLKEN0)
+  # CMU->HFBUSCLKEN0 |= CMU_HFBUSCLKEN0_GPIO
+  set *0x400E40B0 |= (1<<3) 
+  
+  # Enable Trace Clocks (CMU_OSCENCMD_AUXHFRCOEN)
+  # CMU->OSCENCMD = CMU_OSCENCMD_AUXHFRCOEN
+  set *0x400E4060 = (1<<4) 
+
+  # Enable SWO Output 
+  # GPIO->ROUTEPEN |= GPIO_ROUTEPEN_SWVPEN
+  set *0x4000A440 |= (1<<4) 
+
+  # Route SWO to correct pin (GPIO->ROUTELOC0=0/_GPIO_ROUTELOC0_SWVLOC_MASK=3/BSP_TRACE_SWO_LOCATION=0)
+  # GPIO->ROUTELOC0 = (GPIO->ROUTELOC0 & ~(_GPIO_ROUTELOC0_SWVLOC_MASK)) | BSP_TRACE_SWO_LOCATION
+  set *0x4000A444 = 0 
+  
+  # Configure GPIO Port F, Pin 2 for output
+  # GPIO->P[5].MODEL &= ~(_GPIO_P_MODEL_MODE2_MASK);
+  # GPIO->P[5].MODEL |= GPIO_P_MODEL_MODE2_PUSHPULL;
+  set *0x4000A0F4 &= ~(0xF00)
+  set *0x4000A0F4 |= (4 << 8)
+end
+document enableEFR32MG12SWO
+enableEFR32MG12SWO Configure output pin on EFR32MG12 for SWO use.
+end
+
+
 # ====================================================================
 # Enable CORTEX TRACE on preconfigured pins
 define _doTRACE
