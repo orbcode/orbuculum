@@ -49,7 +49,7 @@ struct
     char *server;
 
     char *file;                                          /* File host connection */
-    bool fileTerminate;                                  /* Terminate when file read isn't successful */
+    bool endTerminate;                                  /* Terminate when file/socket "ends" */
 } options = {.forceITMSync = true, .tpiuChannel = 1, .port = NWCLIENT_SERVER_PORT, .server = "localhost"};
 
 struct
@@ -336,7 +336,7 @@ void _printHelp( char *progName )
 {
     fprintf( stdout, "Usage: %s [options]" EOL, progName );
     fprintf( stdout, "      -c: <Number>,<Format> of channel to add into output stream (repeat per channel)" EOL );
-    fprintf( stdout, "      -e: When reading from file, terminate at end of file rather than waiting for further input" EOL );
+    fprintf( stdout, "      -e: Terminate when the file/socket ends/is closed, or attempt to wait for more / reconnect" EOL );
     fprintf( stdout, "      -f: <filename> Take input from specified file" EOL );
     fprintf( stdout, "      -h: This help" EOL );
     fprintf( stdout, "      -n: Enforce sync requirement for ITM (i.e. ITM needsd to issue syncs)" EOL );
@@ -364,7 +364,7 @@ int _processOptions( int argc, char *argv[] )
 
             // ------------------------------------
             case 'e':
-                options.fileTerminate = true;
+                options.endTerminate = true;
                 break;
 
             // ------------------------------------
@@ -476,7 +476,7 @@ int _processOptions( int argc, char *argv[] )
 
         genericsReport( V_INFO, "Input File : %s", options.file );
 
-        if ( options.fileTerminate )
+        if ( options.endTerminate )
         {
             genericsReport( V_INFO, " (Terminate on exhaustion)" EOL );
         }
@@ -526,7 +526,7 @@ int fileFeeder( void )
 
         if ( !t )
         {
-            if ( options.fileTerminate )
+            if ( options.endTerminate )
             {
                 break;
             }
@@ -546,7 +546,7 @@ int fileFeeder( void )
         }
     }
 
-    if ( !options.fileTerminate )
+    if ( !options.endTerminate )
     {
         genericsReport( V_INFO, "File read error" EOL );
     }
@@ -556,7 +556,7 @@ int fileFeeder( void )
 }
 
 // ====================================================================================================
-int main( int argc, char *argv[] )
+int socketFeeder( void )
 
 {
     int sockfd;
@@ -566,15 +566,6 @@ int main( int argc, char *argv[] )
     ssize_t t;
     int flag = 1;
 
-    if ( !_processOptions( argc, argv ) )
-    {
-        exit( -1 );
-    }
-
-    /* Reset the TPIU handler before we start */
-    TPIUDecoderInit( &_r.t );
-    ITMDecoderInit( &_r.i, options.forceITMSync );
-
     sockfd = socket( AF_INET, SOCK_STREAM, 0 );
     setsockopt( sockfd, SOL_SOCKET, SO_REUSEPORT, &flag, sizeof( flag ) );
 
@@ -582,11 +573,6 @@ int main( int argc, char *argv[] )
     {
         genericsReport( V_ERROR, "Error creating socket" EOL );
         return -1;
-    }
-
-    if ( options.file )
-    {
-        exit( fileFeeder() );
     }
 
     /* Now open the network connection */
@@ -627,5 +613,32 @@ int main( int argc, char *argv[] )
 
     close( sockfd );
     return -2;
+}
+
+// ====================================================================================================
+int main( int argc, char *argv[] )
+
+{
+    if ( !_processOptions( argc, argv ) )
+    {
+        exit( -1 );
+    }
+
+    /* Reset the TPIU handler before we start */
+    TPIUDecoderInit( &_r.t );
+    ITMDecoderInit( &_r.i, options.forceITMSync );
+
+    if ( options.file )
+    {
+        exit( fileFeeder() );
+    }
+
+    do {
+	    int rc = socketFeeder();
+	    // TODO - make logging of failures/reconnections "nicer" based on rc?
+	    (void)rc;
+	    // tradeoff to re-attach "promptly" vs CPU spinning and log spam
+	    usleep(100*1000);
+    } while (!options.endTerminate);
 }
 // ====================================================================================================
