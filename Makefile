@@ -215,7 +215,7 @@ get_version:
 
 $(OLOC)/%.o : %.c
 	$(Q)mkdir -p $(basename $@)
-	$(call cmd, \$(CC) -c $(CFLAGS) -MMD -o $@ $< ,\
+	$(call cmd, \$(CC) -c $(CFLAGS) -MMD -MP -o $@ $< ,\
 	Compiling $<)
 
 build: $(ORBUCULUM) $(ORBFIFO) $(ORBCAT) $(ORBTOP) $(ORBDUMP) $(ORBMORTEM) $(ORBPROFILE) $(ORBTRACE) #$(ORBSTAT)

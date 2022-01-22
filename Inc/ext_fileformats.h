@@ -57,21 +57,27 @@ struct subcallSig
     uint32_t dst;                       /* Where the call is to */
 };
 
+struct subcallAccount
+{
+    struct subcallSig sig;
+    uint64_t inTicks;
+    bool tailChained;
+};
+
 /* Processed subcalls from routine to routine */
 struct subcall
 {
     struct subcallSig sig;              /* Calling and called side record, forming an index entry */
 
-    /* Accounting */
+    struct execEntryHash *srch;         /* Calling side */
+    struct execEntryHash *dsth;         /* Called side */
+
+    /* Housekeeping */
     uint64_t myCost;                   /* Inclusive cost of this call */
     uint64_t count;                    /* Number of executions of this call */
 
     /* Hash handle to make construct hashable */
     UT_hash_handle hh;
-
-    /* From name and to name, (scratchpad used for output) */
-    struct nameEntry *fn;
-    struct nameEntry *tn;
 };
 
 

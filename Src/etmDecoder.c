@@ -42,6 +42,12 @@ enum ETMDecoderPumpEvent
 static char *_protoNames[] = {ETM_PROTO_NAME_LIST};
 #endif
 
+// ====================================================================================================
+static void _stateChange( struct ETMDecoder *i, enum ETMchanges c )
+{
+    i->cpu.changeRecord |= ( 1 << c );
+}
+// ====================================================================================================
 static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB cb, void *d )
 
 /* Pump next byte into the protocol decoder */
@@ -74,8 +80,6 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
 
             // -----------------------------------------------------
             case ETM_IDLE:
-                /* Start off by making sure entire received packet changes are 0'ed */
-                cpu->changeRecord = 0;
 
                 // *************************************************
                 // ************** BRANCH PACKET ********************
@@ -103,7 +107,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                     i->byteCount = 1;
                     C = c & 0x80;
                     X = false;
-                    cpu->changeRecord |= ( 1 << EV_CH_ADDRESS );
+                    _stateChange( i, EV_CH_ADDRESS );
 
                     newState = ( i->usingAltAddrEncode ) ? ETM_COLLECT_BA_ALT_FORMAT : ETM_COLLECT_BA_STD_FORMAT;
                     goto terminateAddrByte;
@@ -143,7 +147,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                     /* We won't start reporting data until a valid ISYNC has been received */
                     if ( !i->rxedISYNC )
                     {
-                        retVal = ETM_EV_SYNCED;
+                        i->cpu.changeRecord = 0;
                         i->rxedISYNC = true;
                     }
 
@@ -166,7 +170,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                 if ( c == 0b00001100 )
                 {
                     genericsReport( V_DEBUG, "TRIGGER " EOL );
-                    cpu->changeRecord |= ( 1 << EV_CH_TRIGGER );
+                    _stateChange( i, EV_CH_TRIGGER );
                     retVal = ETM_EV_MSG_RXED;
                     break;
                 }
@@ -191,7 +195,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
 
                     if ( ( c & ( 1 << 2 ) ) != 0 )
                     {
-                        cpu->changeRecord |= ( 1 << EV_CH_CLOCKSPEED );
+                        _stateChange( i, EV_CH_CLOCKSPEED );
                     }
 
                     i->byteCount = 0;
@@ -224,7 +228,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                 if ( c == 0b01110110 )
                 {
                     genericsReport( V_DEBUG, "EXCEPT-EXIT " EOL );
-                    cpu->changeRecord |= ( 1 << EV_CH_EX_EXIT );
+                    _stateChange( i, EV_CH_EX_EXIT );
                     retVal = ETM_EV_MSG_RXED;
                     break;
                 }
@@ -236,7 +240,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                 {
                     /* Note this is only used on CPUs with data tracing */
                     genericsReport( V_DEBUG, "EXCEPT-ENTRY " EOL );
-                    cpu->changeRecord |= ( 1 << EV_CH_EX_ENTRY );
+                    _stateChange( i, EV_CH_EX_ENTRY );
                     retVal = ETM_EV_MSG_RXED;
                     break;
                 }
@@ -246,7 +250,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                 // *************************************************
                 if ( ( c & 0b10000001 ) == 0b10000000 )
                 {
-                    genericsReport( V_DEBUG, "P " EOL );
+                    genericsReport( V_DEBUG, "PHdr " EOL );
 
                     if ( !i->cycleAccurate )
                     {
@@ -259,7 +263,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
 
                             /* Put a 1 in each element of disposition if was executed */
                             cpu->disposition = ( 1 << cpu->eatoms ) - 1;
-                            cpu->changeRecord |= ( 1 << EV_CH_ENATOMS );
+                            _stateChange( i, EV_CH_ENATOMS );
                             retVal = ETM_EV_MSG_RXED;
                             break;
                         }
@@ -273,7 +277,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                             cpu->disposition = ( ( c & ( 1 << 3 ) ) == 0 ) |
                                                ( ( ( c & ( 1 << 2 ) ) == 0 ) << 1 );
 
-                            cpu->changeRecord |= ( 1 << EV_CH_ENATOMS );
+                            _stateChange( i, EV_CH_ENATOMS );
                             cpu->instCount += cpu->eatoms + cpu->natoms;
                             retVal = ETM_EV_MSG_RXED;
                             break;
@@ -289,8 +293,8 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                             cpu->watoms = 1;
                             cpu->instCount += cpu->watoms;
                             cpu->eatoms = cpu->natoms = 0;
-                            cpu->changeRecord |= ( 1 << EV_CH_ENATOMS );
-                            cpu->changeRecord |= ( 1 << EV_CH_WATOMS );
+                            _stateChange( i, EV_CH_ENATOMS );
+                            _stateChange( i, EV_CH_WATOMS );
                             retVal = ETM_EV_MSG_RXED;
                             break;
                         }
@@ -303,8 +307,8 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                             cpu->watoms = cpu->eatoms + cpu->natoms;
                             cpu->instCount += cpu->watoms;
                             cpu->disposition = ( 1 << cpu->eatoms ) - 1;
-                            cpu->changeRecord |= ( 1 << EV_CH_ENATOMS );
-                            cpu->changeRecord |= ( 1 << EV_CH_WATOMS );
+                            _stateChange( i, EV_CH_ENATOMS );
+                            _stateChange( i, EV_CH_WATOMS );
                             retVal = ETM_EV_MSG_RXED;
                             break;
                         }
@@ -317,8 +321,8 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                             cpu->watoms = 1;
                             cpu->instCount += cpu->watoms;
                             cpu->disposition = ( ( c & ( 1 << 3 ) ) != 0 ) | ( ( c & ( 1 << 2 ) ) != 0 );
-                            cpu->changeRecord |= ( 1 << EV_CH_ENATOMS );
-                            cpu->changeRecord |= ( 1 << EV_CH_WATOMS );
+                            _stateChange( i, EV_CH_ENATOMS );
+                            _stateChange( i, EV_CH_WATOMS );
                             retVal = ETM_EV_MSG_RXED;
                             break;
                         }
@@ -332,8 +336,8 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                             cpu->instCount += cpu->watoms;
                             /* Either 1 or 0 eatoms */
                             cpu->disposition = cpu->eatoms;
-                            cpu->changeRecord |= ( 1 << EV_CH_ENATOMS );
-                            cpu->changeRecord |= ( 1 << EV_CH_WATOMS );
+                            _stateChange( i, EV_CH_ENATOMS );
+                            _stateChange( i, EV_CH_WATOMS );
                             retVal = ETM_EV_MSG_RXED;
                             break;
                         }
@@ -347,8 +351,8 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
 
                             /* Either 1 or 0 eatoms */
                             cpu->disposition = cpu->eatoms;
-                            cpu->changeRecord |= ( 1 << EV_CH_ENATOMS );
-                            cpu->changeRecord |= ( 1 << EV_CH_WATOMS );
+                            _stateChange( i, EV_CH_ENATOMS );
+                            _stateChange( i, EV_CH_WATOMS );
                             retVal = ETM_EV_MSG_RXED;
                             break;
                         }
@@ -403,8 +407,8 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                     {
                         /* There is (legacy) exception information in here */
                         cpu->exception = ( c >> 4 ) & 0x07;
-                        cpu->changeRecord |= ( 1 << EV_CH_EXCEPTION );
-                        cpu->changeRecord |= ( ( c & 0x40 ) != 0 ) ? ( 1 << EV_CH_CANCELLED ) : 0;
+                        _stateChange( i, EV_CH_EXCEPTION );
+                        _stateChange( i, ( ( c & 0x40 ) != 0 ) ? EV_CH_CANCELLED : 0 );
                         newState = ETM_IDLE;
                         retVal = ETM_EV_MSG_RXED;
                         break;
@@ -421,7 +425,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                         /* This packet also contains exception information, so collect it */
                         i->byteCount = 0; /* Used as a flag of which byte of exception we're collecting */
                         cpu->resume = 0;
-                        cpu->changeRecord |= ( 1 << EV_CH_EX_ENTRY );
+                        _stateChange( i, EV_CH_EX_ENTRY );
                         newState = ETM_COLLECT_EXCEPTION;
                     }
                 }
@@ -436,16 +440,16 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                     if ( ( ( c & ( 1 << 0 ) ) != 0 ) != cpu->nonSecure )
                     {
                         cpu->nonSecure = ( ( c & ( 1 << 0 ) ) != 0 );
-                        cpu->changeRecord |= ( 1 << EV_CH_SECURE );
+                        _stateChange( i, EV_CH_SECURE );
                     }
 
                     cpu->exception = ( c >> 1 ) & 0x0f;
-                    cpu->changeRecord |= ( ( c & ( 1 << 5 ) ) != 0 ) ? ( 1 << EV_CH_CANCELLED ) : 0;
+                    _stateChange( i, ( ( c & ( 1 << 5 ) ) != 0 ) ? EV_CH_CANCELLED : 0 );
 
                     if ( cpu->altISA != ( ( c & ( 1 << 6 ) ) != 0 ) )
                     {
                         cpu->altISA = ( ( c & ( 1 << 6 ) ) != 0 );
-                        cpu->changeRecord |= ( 1 << EV_CH_ALTISA );
+                        _stateChange( i, EV_CH_ALTISA );
                     }
 
                     if ( c & 0x80 )
@@ -468,7 +472,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                         if ( cpu->hyp != ( ( c & ( 1 << 5 ) ) != 0 ) )
                         {
                             cpu->hyp = ( ( c & ( 1 << 5 ) ) != 0 );
-                            cpu->changeRecord |= ( 1 << EV_CH_HYP );
+                            _stateChange( i, EV_CH_HYP );
                         }
 
                         if ( !( c & 0x40 ) )
@@ -485,7 +489,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
 
                         if ( cpu->resume )
                         {
-                            cpu->changeRecord |= ( 1 << EV_CH_RESUME );
+                            _stateChange( i, EV_CH_RESUME );
                         }
 
                         /* Exception byte 2 is always the last one, return */
@@ -505,7 +509,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                 if ( cpu->vmid != c )
                 {
                     cpu->vmid = c;
-                    cpu->changeRecord |= ( 1 << EV_CH_VMID );
+                    _stateChange( i, EV_CH_VMID );
                 }
 
                 newState = ETM_IDLE;
@@ -532,7 +536,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                 {
                     newState = ETM_IDLE;
                     cpu->ts = i->tsConstruct;
-                    cpu->changeRecord |= ( 1 << EV_CH_TSTAMP );
+                    _stateChange( i, EV_CH_TSTAMP );
                     retVal = ETM_EV_MSG_RXED;
                 }
 
@@ -550,7 +554,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                 {
                     newState = ETM_IDLE;
                     cpu->cycleCount = i->cycleConstruct;
-                    cpu->changeRecord |= EV_CH_CYCLECOUNT;
+                    _stateChange( i, EV_CH_CYCLECOUNT );
                     retVal = ETM_EV_MSG_RXED;
                 }
 
@@ -570,7 +574,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                     if ( cpu->contextID != i->contextConstruct )
                     {
                         cpu->contextID = i->contextConstruct;
-                        cpu->changeRecord |= ( 1 << EV_CH_CONTEXTID );
+                        _stateChange( i, EV_CH_CONTEXTID );
                     }
 
                     retVal = ETM_EV_MSG_RXED;
@@ -611,7 +615,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                     if ( cpu->contextID != i->contextConstruct )
                     {
                         cpu->contextID = i->contextConstruct;
-                        cpu->changeRecord |= ( 1 << EV_CH_CONTEXTID );
+                        _stateChange( i, EV_CH_CONTEXTID );
                     }
 
                     newState = ETM_GET_INFOBYTE;
@@ -625,37 +629,37 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                 if ( ( ( c & 0x10000000 ) != 0 ) != cpu->isLSiP )
                 {
                     cpu->isLSiP = ( c & 0x10000000 ) != 0;
-                    cpu->changeRecord |= ( 1 << EV_CH_ISLSIP );
+                    _stateChange( i, EV_CH_ISLSIP );
                 }
 
                 if ( cpu->reason != ( ( c & 0x01100000 ) >> 5 ) )
                 {
                     cpu->reason    = ( c & 0x01100000 ) >> 5;
-                    cpu->changeRecord |= ( 1 << EV_CH_REASON );
+                    _stateChange( i, EV_CH_REASON );
                 }
 
                 if ( cpu->jazelle   != ( ( c & 0x00010000 ) != 0 ) )
                 {
                     cpu->jazelle   = ( c & 0x00010000 ) != 0;
-                    cpu->changeRecord |= ( 1 << EV_CH_JAZELLE );
+                    _stateChange( i, EV_CH_JAZELLE );
                 }
 
                 if ( cpu->nonSecure != ( ( c & 0x00001000 ) != 0 ) )
                 {
                     cpu->nonSecure = ( c & 0x00001000 ) != 0;
-                    cpu->changeRecord |= ( 1 << EV_CH_SECURE );
+                    _stateChange( i, EV_CH_SECURE );
                 }
 
                 if ( cpu->altISA != ( ( c & 0x00000100 ) != 0 ) )
                 {
                     cpu->altISA    = ( c & 0x00000100 ) != 0;
-                    cpu->changeRecord |= ( 1 << EV_CH_ALTISA );
+                    _stateChange( i, EV_CH_ALTISA );
                 }
 
                 if ( cpu->hyp != ( ( c & 0x00000010 ) != 0 ) )
                 {
                     cpu->hyp       = ( c & 0x00000010 ) != 0;
-                    cpu->changeRecord |= ( 1 << EV_CH_HYP );
+                    _stateChange( i, EV_CH_HYP );
                 }
 
                 i->byteCount = 0;
@@ -680,7 +684,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
 
                 if ( i->byteCount == 4 )
                 {
-                    cpu->changeRecord |= ( 1 << EV_CH_ADDRESS );
+                    _stateChange( i, EV_CH_ADDRESS );
 
                     if ( cpu->jazelle )
                     {
@@ -694,7 +698,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                         if ( ( i->addrConstruct & ( 1 << 0 ) ) ^ ( !cpu->thumb ) )
                         {
                             cpu->thumb     = ( c & 0x00000001 ) != 0;
-                            cpu->changeRecord |= ( 1 << EV_CH_THUMB );
+                            _stateChange( i, EV_CH_THUMB );
                         }
 
                         if ( i->addrConstruct & ( 1 << 0 ) )
@@ -719,7 +723,6 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                         newState = ETM_IDLE;
                         retVal = ETM_EV_MSG_RXED;
                     }
-
                 }
 
                 break;
@@ -737,7 +740,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                     cpu->cycleCount = i->cycleConstruct;
                     i->byteCount = i->contextBytes;
                     i->contextConstruct = 0;
-                    cpu->changeRecord |= ( 1 << EV_CH_CYCLECOUNT );
+                    _stateChange( i, EV_CH_CYCLECOUNT );
                     newState = i->contextBytes ? ETM_GET_CONTEXTBYTE : ETM_GET_INFOBYTE;
                     break;
                 }

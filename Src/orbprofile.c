@@ -41,7 +41,6 @@ struct _subcallAccount
 {
     struct subcallSig sig;
     uint64_t inTicks;
-    bool tailChained;
 };
 
 
@@ -83,15 +82,14 @@ struct opConstruct
     struct execEntryHash *oldh;          /* The exec entry we're currently in (file, function, line, addr etc) */
     struct execEntryHash *inth;          /* Fake exec entry for an interrupt source */
     uint32_t workingAddr;                /* The address we're currently in */
-    uint32_t lastInstruction;            /* The last instruction carried out */
+    uint32_t nextAddr;                   /* The address we will next be accessing (if known) */
+    uint32_t lastfn;                     /* The function of the last instruction carried out */
 
     uint64_t firsttstamp;                /* First timestamp we recorded (that was valid) */
-    uint64_t lasttstamp;                 /* Last timestamp we recorded */
+    uint64_t lasttstamp;                 /* Last timestamp we recorded (that was valid) */
 
     bool isExceptReturn;                 /* Is this flagged as an exception return? */
     bool isException;                    /* Is this flagged as an exception? */
-    bool insCancelled;
-    bool lastWasReturn;                  /* Flag for the last instruction being a return, to restore the stack */
 };
 
 /* A block of received data */
@@ -119,7 +117,6 @@ struct RunTime
     /* Subroutine related info...the call stack and its length */
     struct _subcallAccount *substack;           /* Calls stack data */
     uint32_t substacklen;                       /* Calls stack length */
-    uint32_t lastsubstacklen;                   /* Last calls stack length (for rollback) */
 
     /* Stats about the run */
     int instCount;                              /* Number of instruction locations */
@@ -161,7 +158,7 @@ struct RunTime
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
-static void _callEvent( struct RunTime *r, uint32_t retAddr, uint32_t to,  bool isTailChained )
+static void _callEvent( struct RunTime *r, uint32_t retAddr, uint32_t to )
 
 /* This is a call or a return, manipulate stack tracking appropriately */
 
@@ -176,7 +173,6 @@ static void _callEvent( struct RunTime *r, uint32_t retAddr, uint32_t to,  bool 
     r->substack[r->substacklen].sig.src     = retAddr;
     r->substack[r->substacklen].sig.dst     = to;
     r->substack[r->substacklen].inTicks     = cpu->instCount;
-    r->substack[r->substacklen].tailChained = isTailChained;
 
     /* Find a record for this source/dest pair */
     HASH_FIND( hh, r->subhead, &r->substack[r->substacklen].sig, sizeof( struct subcallSig ), s );
@@ -196,14 +192,7 @@ static void _callEvent( struct RunTime *r, uint32_t retAddr, uint32_t to,  bool 
         putchar( ' ' );
     }
 
-    if ( to != NO_DESTADDRESS )
-    {
-        DBG_OUT( "%cINC:%3d %08x -> %08x" EOL, isTailChained ? '*' : ' ', r->substacklen, retAddr, to );
-    }
-    else
-    {
-        DBG_OUT( "%cINC:%3d %08x -> ", isTailChained ? '*' : ' ', r->substacklen, retAddr );
-    }
+    DBG_OUT( "INC:%3d %08x -> %08x" EOL, r->substacklen, retAddr, to );
 }
 // ====================================================================================================
 static void _returnEvent( struct RunTime *r, uint32_t to )
@@ -214,10 +203,6 @@ static void _returnEvent( struct RunTime *r, uint32_t to )
     struct ETMCPUState *cpu = ETMCPUState( &r->i );
     struct subcall *s;
     uint32_t orig = r->substacklen;
-
-    /* Push this substack length in case we need to restore it */
-    r->lastsubstacklen  = r->substacklen;
-    r->op.lastWasReturn = true;
 
     /* Cover the startup case that we happen to hit a return before a call */
     if ( !r->substack )
@@ -242,8 +227,7 @@ static void _returnEvent( struct RunTime *r, uint32_t to )
             putchar( ' ' );
         }
 
-        DBG_OUT( " DEC:%3d %08x%c " EOL, r->substacklen + 1, r->substack[r->substacklen].sig.src, r->substack[r->substacklen].tailChained ? '*' : ' ' );
-
+        DBG_OUT( " DEC:%3d %08x " EOL, r->substacklen + 1, r->substack[r->substacklen].sig.src );
         HASH_FIND( hh, r->subhead, &r->substack[r->substacklen].sig, sizeof( struct subcallSig ), s );
         assert( s );
 
@@ -253,33 +237,112 @@ static void _returnEvent( struct RunTime *r, uint32_t to )
     }
     while ( to != r->substack[r->substacklen].sig.src );
 
-
     /* Check function we popped back to matches where we think we should be */
     if ( to != r->substack[r->substacklen].sig.src )
     {
         for ( uint32_t ty = 0; ty < orig; ty++ )
         {
-            DBG_OUT( "%d:%08X%c ", ty, r->substack[ty].sig.src, r->substack[ty].tailChained ? '*' : ' ' );
+            DBG_OUT( "%d:%08X ", ty, r->substack[ty].sig.src );
         }
 
         DBG_OUT( "(wanted %08x, got %08x)" EOL, to, r->substack[r->substacklen].sig.src );
-
-        if ( r->substacklen )
-        {
-            exit( -1 );
-        }
     }
 }
 // ====================================================================================================
-static void _unreturnEvent( struct RunTime *r )
+static void _hashFindOrCreate( struct RunTime *r, uint32_t addr, struct execEntryHash **h )
+{
+    struct nameEntry n;
 
-/* We want to reverse the return we just did. Fortunately we don't de-allocate memory on returns so its */
-/* just a matter of restoring the indexes.                                                              */
+    HASH_FIND_INT( r->insthead, &addr, *h );
+
+    if ( !( *h ) )
+    {
+        /* We don't have this address captured yet, do it now */
+        if ( SymbolLookup( r->s, r->op.workingAddr, &n ) )
+        {
+            if ( n.assyLine == ASSY_NOT_FOUND )
+            {
+                genericsExit( -1, "No assembly for function at address %08x, %s" EOL, r->op.workingAddr, SymbolFunction( r->s, n.functionindex ) );
+            }
+
+            *h = calloc( 1, sizeof( struct execEntryHash ) );
+
+            ( *h )->addr          = r->op.workingAddr;
+            ( *h )->fileindex     = n.fileindex;
+            ( *h )->line          = n.line;
+            ( *h )->functionindex = n.functionindex;
+            ( *h )->isJump        = n.assy[n.assyLine].isJump;
+            ( *h )->isSubCall     = n.assy[n.assyLine].isSubCall;
+            ( *h )->isReturn      = n.assy[n.assyLine].isReturn;
+            ( *h )->jumpdest      = n.assy[n.assyLine].jumpdest;
+            ( *h )->is4Byte       = n.assy[n.assyLine].is4Byte;
+            ( *h )->codes         = n.assy[n.assyLine].codes;
+            ( *h )->assyText      = n.assy[n.assyLine].lineText;
+        }
+        else
+        {
+            genericsExit( -1, "No symbol for address %08x" EOL, r->op.workingAddr );
+        }
+
+        HASH_ADD_INT( r->insthead, addr, ( *h ) );
+    }
+}
+// ====================================================================================================
+static void _handleInstruction( struct RunTime *r, bool actioned )
 
 {
-    r->substacklen = r->lastsubstacklen;
+    /* ------------------------------------------------------------------------------------*/
+    /* First Stage: Individual address visit accounting.                                   */
+    /* Let's find the local hash record for this address, or create it if it doesn't exist */
+    /* ------------------------------------------------------------------------------------*/
+
+    r->op.oldh = r->op.h;
+    _hashFindOrCreate( r, r->op.workingAddr, &r->op.h );
+
+    //    if ( r->op.oldh ) DBG_OUT( "%4d,%4d %4d %s%s%c %s", r->op.h->functionindex, ( r->op.h ? r->op.oldh->functionindex : 0 ),  r->op.h->fileindex,
+    //                               ( r->op.h->isJump ) ? "J" : " ", ( r->op.h->isSubCall ) ? "S" : r->op.h->isReturn ? "R" : " ", ( actioned ) ? ( r->op.h->is4Byte ? 'X' : 'x' ) : '-',
+    //                               r->op.h->assyText );
+
+    /* OK, by hook or by crook we've got an address entry now, so increment the number of executions */
+    r->op.h->count++;
+
+    /* If source postion changed then update source code line visitation counts too */
+    if ( ( r->op.oldh ) && ( ( r->op.h->line != r->op.oldh->line ) || ( r->op.h->functionindex != r->op.oldh->functionindex ) ) )
+    {
+        r->op.h->scount++;
+    }
+
+    /* If this is a computable destination then action it */
+    if ( ( actioned ) && ( ( r->op.h->isJump ) || ( r->op.h->isSubCall ) ) )
+    {
+        /* Take this call ... note that the jumpdest may not be known at this point */
+        r->op.workingAddr = r->op.h->jumpdest;
+    }
+    else
+    {
+        /* If it wasn't a jump or subroutine then increment the address */
+        r->op.workingAddr += ( r->op.h->is4Byte ) ? 4 : 2;
+    }
 }
 
+// ====================================================================================================
+static void _checkJumps( struct RunTime *r )
+
+{
+    if ( r->op.h )
+    {
+
+      if ( ( ETMStateChanged( &r->i, EV_CH_EX_EXIT ) ) || ( r->op.h->isReturn ) )
+        {
+            _returnEvent( r, r->op.workingAddr );
+        }
+
+        if ( r->op.h->isSubCall )
+        {
+            _callEvent( r, r->op.h->addr + ( ( r->op.h->is4Byte ) ? 4 : 2 ), r->op.workingAddr );
+        }
+    }
+}
 // ====================================================================================================
 static void _etmCB( void *d )
 
@@ -288,20 +351,24 @@ static void _etmCB( void *d )
 {
     struct RunTime *r       = ( struct RunTime * )d;
     struct ETMCPUState *cpu = ETMCPUState( &r->i );
-    uint32_t incAddr        = 0;
-    uint32_t disposition    = 0;
-    struct nameEntry n;
+    static uint32_t incAddr        = 0;
+    static uint32_t disposition    = 0;
 
     /* This routine gets called when valid data are available */
     /* if these are the first data, then reset counters etc.  */
-
     if ( !r->sampling )
     {
         r->op.firsttstamp = cpu->instCount;
         genericsReport( V_INFO, "Sampling" EOL );
         /* Fill in a time to start from */
         r->starttime = genericsTimestampmS();
-        r->sampling  = true;
+
+        if ( ETMStateChanged( &r->i, EV_CH_ADDRESS ) )
+        {
+            r->op.workingAddr = cpu->addr;
+            printf( "Got initial address %08x" EOL, r->op.workingAddr );
+            r->sampling  = true;
+        }
 
         /* Create false entry for an interrupt source */
         r->op.inth = calloc( 1, sizeof( struct execEntryHash ) );
@@ -312,172 +379,68 @@ static void _etmCB( void *d )
         r->op.inth->functionindex = INTERRUPT;
         HASH_ADD_INT( r->insthead, addr, r->op.inth );
     }
+    r->op.lasttstamp = cpu->instCount;
 
-    /* Deal with changes introduced by this event ========================= */
-    /* If this is going to be an exception or return     */
-    /* from one then there's special handling to be done */
-    r->op.isException    |= ETMStateChanged( &r->i, EV_CH_EX_ENTRY );
-    r->op.isExceptReturn |= ETMStateChanged( &r->i, EV_CH_EX_EXIT );
-    r->op.insCancelled   |= ETMStateChanged( &r->i, EV_CH_CANCELLED );
-
-    if ( ETMStateChanged( &r->i, EV_CH_ADDRESS ) )
-    {
-        r->op.workingAddr = cpu->addr;
-        printf( "(%08x)" EOL, cpu->addr );
-    }
+    /* Pull changes introduced by this event ============================== */
 
     if ( ETMStateChanged( &r->i, EV_CH_ENATOMS ) )
     {
+        /* We are going to execute some instructions. Check if the last of the old batch of    */
+        /* instructions was cancelled and, if it wasn't and it's still outstanding, action it. */
+        if ( ETMStateChanged( &r->i, EV_CH_CANCELLED ) )
+        {
+            printf( "CANCELLED" EOL );
+        }
+        else
+        {
+            if ( incAddr )
+            {
+                printf( "***" EOL );
+                _handleInstruction( r, disposition & 1 );
+
+                if ( ( r->op.h->isJump ) || ( r->op.h->isSubCall ) || ( r->op.h->isReturn ) )
+                  {
+                    if ( ETMStateChanged( &r->i, EV_CH_ADDRESS ) )
+                      {
+                        printf("New addr %08x" EOL,cpu->addr);
+                        r->op.workingAddr = cpu->addr;
+                      }
+
+                    _checkJumps( r );
+                  }
+            }
+        }
+
+        if ( ETMStateChanged( &r->i, EV_CH_ADDRESS ) )
+          {
+            if ( ETMStateChanged( &r->i, EV_CH_EX_ENTRY ))
+              {
+                printf("INTERRUPT!!" EOL);
+                _callEvent( r, r->op.workingAddr, cpu->addr );
+              }
+
+            r->op.workingAddr = cpu->addr;
+            printf( "A:%08x" EOL, cpu->addr );
+        }
+
+        /* ================================================ */
+        /* OK, now collect the next iterations worth of fun */
+        /* ================================================ */
         incAddr     = cpu->eatoms + cpu->natoms;
         disposition = cpu->disposition;
-    }
+        printf( "E:%d N:%d" EOL, cpu->eatoms, cpu->natoms );
 
-    if ( r->op.insCancelled )
-    {
-        /* Instruction was cancelled, run this one through instead */
-        //incAddr     = 1;
-        //disposition = 1;
-        if ( r->op.lastWasReturn )
+        /* Action those changes, except the last one */
+        while ( incAddr > 1 )
         {
-            _unreturnEvent( r );
-            printf( "Unreturning event" EOL );
-            //r->op.workingAddr = r->op.lastInstruction;
+            incAddr--;
+            _handleInstruction( r, disposition & 1 );
+            _checkJumps( r );
+            disposition >>= 1;
         }
-    }
-
-    /* Action those changes =============================================== */
-    while ( incAddr )
-    {
-        if ( r->op.isException )
-        {
-            DBG_OUT( "EXCEPTION" EOL );
-        }
-
-        if ( r->op.insCancelled )
-        {
-            DBG_OUT( "INS CANCELLED" EOL );
-        }
-
-        incAddr--;
-
-        /* ------------------------------------------------------------------------------------*/
-        /* First Stage: Individual address visit accounting.                                   */
-        /* Let's find the local hash record for this address, or create it if it doesn't exist */
-        /* ------------------------------------------------------------------------------------*/
-        HASH_FIND_INT( r->insthead, &r->op.workingAddr, r->op.h );
-
-        if ( !r->op.h )
-        {
-            /* We don't have this address captured yet, do it now */
-            if ( SymbolLookup( r->s, r->op.workingAddr, &n ) )
-            {
-                if ( n.assyLine == ASSY_NOT_FOUND )
-                {
-                    genericsExit( -1, "No assembly for function at address %08x, %s" EOL, r->op.workingAddr, SymbolFunction( r->s, n.functionindex ) );
-                }
-
-                r->op.h = calloc( 1, sizeof( struct execEntryHash ) );
-
-                r->op.h->addr          = r->op.workingAddr;
-                r->op.h->fileindex     = n.fileindex;
-                r->op.h->line          = n.line;
-                r->op.h->functionindex = n.functionindex;
-                r->op.h->isJump        = n.assy[n.assyLine].isJump;
-                r->op.h->isSubCall     = n.assy[n.assyLine].isSubCall;
-                r->op.h->isReturn      = n.assy[n.assyLine].isReturn;
-                r->op.h->jumpdest      = n.assy[n.assyLine].jumpdest;
-                r->op.h->is4Byte       = n.assy[n.assyLine].is4Byte;
-                r->op.h->codes         = n.assy[n.assyLine].codes;
-                r->op.h->assyText      = n.assy[n.assyLine].lineText;
-                r->op.h->count         = r->op.h->scount = 0;
-            }
-            else
-            {
-                genericsExit( -1, "No symbol for address %08x" EOL, r->op.workingAddr );
-            }
-
-            HASH_ADD_INT( r->insthead, addr, r->op.h );
-        }
-
-        if ( r->op.oldh ) DBG_OUT( "%4d,%4d %4d %s%s%c %s", r->op.h->functionindex, ( r->op.h ? r->op.oldh->functionindex : 0 ),  r->op.h->fileindex,
-                                       ( r->op.h->isJump ) ? "J" : " ", ( r->op.h->isSubCall ) ? "S" : r->op.h->isReturn ? "R" : " ", ( disposition & 1 ) ? ( r->op.h->is4Byte ? 'X' : 'x' ) : '-',
-                                       r->op.h->assyText );
-
-        /* OK, by hook or by crook we've got an address entry now, so increment the number of executions */
-        r->op.h->count++;
-
-        /* If source postion changed then update source code line visitation counts too */
-        if ( ( !r->op.oldh ) || ( r->op.h->line != r->op.oldh->line ) || ( r->op.h->functionindex != r->op.oldh->functionindex ) )
-        {
-            r->op.h->scount++;
-        }
-
-        /* ---------------------------------------------------------------------------------------------------*/
-        /* Second stage: Handle calls between functions. These are flagged via isSubCall/isException with the */
-        /* End flagged by matching isReturn/isExceptReturn statements.                                        */
-        /* ---------------------------------------------------------------------------------------------------*/
-
-        /* If we have moved routine then this is either a call or a return. Use heuristics to figure out which */
-        /* Note that filename may change because of inlining. This will only fail when a routine inlines       */
-        /* another routine with the same name, which cannot happen cos they would be sharing namespace.        */
-
-        if ( ( r->op.oldh && r->op.oldh->isReturn ) || r->op.isExceptReturn )
-        {
-            _returnEvent( r, r->op.workingAddr );
-            r->op.isExceptReturn = false;
-        }
-
-        if ( ( disposition & 1 ) && r->op.h->isSubCall )
-        {
-            _callEvent( r, r->op.workingAddr + ( r->op.insCancelled ? 0 : ( r->op.h->is4Byte ? 4 : 2 ) ), r->op.h->jumpdest, !( r->op.oldh->isSubCall || r->op.isException ) );
-        }
-
-        if ( r->op.isException )
-        {
-            /* By the time we know it's an exception we've already jumped, so that's the dest address */
-            _callEvent( r, r->op.lastInstruction, INTERRUPT, true );
-            _callEvent( r, INTERRUPT, r->op.workingAddr, !( r->op.oldh->isSubCall || r->op.isException ) );
-        }
-
-        /* --------------------------------------------------------- */
-        /* Record details of this instruction ready for the next one */
-        /* --------------------------------------------------------- */
-        r->op.oldh                = r->op.h;
-        r->op.lasttstamp       = cpu->instCount;
-        r->op.isException      = false;
-        r->op.insCancelled     = false;
-        r->op.lastWasReturn    = false;
-
-        /* ----------------------------------- */
-        /* ...and move to the next instruction */
-        /* ----------------------------------- */
-        if ( disposition & 1 )
-        {
-            if ( r->op.h->isSubCall )
-            {
-                /* Take this call */
-                r->op.workingAddr = r->op.h->jumpdest;
-                //                    DBG_OUT( "SUB %08X" EOL, r->op.h->jumpdest );
-                disposition >>= 1;
-                continue;
-            }
-
-            if ( r->op.h->isJump )
-            {
-                /* This is a fixed jump that _was_ taken, so update working address */
-                r->op.workingAddr = r->op.h->jumpdest;
-                //                    DBG_OUT( "JUMP %08X" EOL, r->op.h->jumpdest );
-                disposition >>= 1;
-                continue;
-            }
-        }
-
-        /* If it wasn't a jump or subroutine then increment the address */
-        r->op.lastInstruction = r->op.workingAddr;
-        r->op.workingAddr += ( r->op.h->is4Byte ) ? 4 : 2;
-        disposition >>= 1;
     }
 }
+
 // ====================================================================================================
 static void _intHandler( int sig )
 
@@ -893,28 +856,34 @@ int main( int argc, char *argv[] )
 
     if ( HASH_COUNT( _r.subhead ) )
     {
-        if ( ext_ff_outputDot( _r.options->dotfile, _r.subhead, _r.s ) )
+      if ( ext_ff_outputDot( _r.options->dotfile, _r.subhead, _r.s ) )
         {
             genericsReport( V_INFO, "Output DOT" EOL );
         }
         else
         {
-            genericsExit( -1, "Failed to output DOT" EOL );
+          if ( _r.options->dotfile )
+            {
+              genericsExit( -1, "Failed to output DOT" EOL );
+            }
         }
 
-        if ( ext_ff_outputProfile( _r.options->profile, _r.options->elffile,
+      if ( ext_ff_outputProfile( _r.options->profile, _r.options->elffile,
                                    _r.options->truncateDeleteMaterial ? _r.options->deleteMaterial : NULL,
                                    true,
                                    _r.op.lasttstamp - _r.op.firsttstamp,
                                    _r.insthead,
                                    _r.subhead,
-                                   _r.s ) )
+                                                          _r.s ) )
         {
             genericsReport( V_INFO, "Output Profile" EOL );
         }
         else
         {
-            genericsExit( -1, "Failed to output profile" EOL );
+          if ( _r.options->profile )
+            {
+              genericsExit( -1, "Failed to output profile" EOL );
+            }
         }
     }
 
