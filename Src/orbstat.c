@@ -491,7 +491,6 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
     int c;
 
     while ( ( c = getopt ( argc, argv, "Dd:Ee:f:g:hI:n:s:Tt:v:y:z:" ) ) != -1 )
-
         switch ( c )
         {
             // ------------------------------------
