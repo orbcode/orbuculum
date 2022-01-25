@@ -75,6 +75,7 @@ struct subcall
     /* Housekeeping */
     uint64_t myCost;                   /* Inclusive cost of this call */
     uint64_t count;                    /* Number of executions of this call */
+    uint64_t inTicks;
 
     /* Hash handle to make construct hashable */
     UT_hash_handle hh;
