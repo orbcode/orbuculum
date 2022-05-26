@@ -510,18 +510,29 @@ configured to stream parallel trace info (clue; the `startETM` option).
 The command line options of note are;
 
  `-a`: Use alternate address encoding. Select this if decodes don't seem to arrive correctly. You can discover if you need this option by using the `describeETM` command inside the debugger.
+ 
  `-b [Length]`: Set length of post-mortem buffer, in KBytes (Default 32 KBytes)
+ 
  `-c [command]`: Set command line for external editor (0.000000 = filename, % = line). A few examples are;
+ 
      *  emacs; `-c emacs "+%l %f"`
      * codium/VSCode: `-c codium  -g "%f:%l"`
      * eclipse: `-c eclipse "%f:%l"`
+     
  `-D`: Switch off C++ symbol demangling
+ 
  `-d [String]`: Material to delete off front of filenames
+ 
  `-e [ElfFile]`: to use for symbols and source
+ 
  `-E`: When reading from file, terminate at end of file rather than waiting for further input
+ 
  `-f [filename]`: Take input from specified file rather than live from a probe (useful for ETB decode)
+ 
  `-s [Server:Port]: to use
- `-t [channel]`: Use TPIU to strip TPIU on specfied channel (normally best to let `orbuculum` handle this.
+ 
+ `-t [channel]`: Use TPIU to strip TPIU on specfied channel (normally best to let `orbuculum` handle this
+ 
 
 Once it's running you will receive an indication at the lower right of the screen that it's capturing data. Hitting <H> will hold the capture and it will decode whatever
 is currently in the buffer. More usefully, if the capture stream is lost (e.g. because of debugger entry) then it will auto-hold and decode the buffer, showing you the
