@@ -665,7 +665,7 @@ static void _usb_callback( struct libusb_transfer *t )
 /* For the USB case the ringbuffer isn't used .. packets are sent directly from this callback */
 
 {
-    if ( t->status == LIBUSB_TRANSFER_COMPLETED )
+  if ( t->status == LIBUSB_TRANSFER_COMPLETED && (t->actual_length > 0))
     {
         _r.intervalBytes += t->actual_length;
 

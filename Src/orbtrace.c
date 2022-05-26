@@ -506,7 +506,7 @@ static void _performActions( struct RunTime *r )
         }
         else
         {
-            genericsReport( V_INFO, "Failed" EOL );
+            genericsReport( V_ERROR, "Failed" EOL );
         }
     }
 
@@ -521,7 +521,7 @@ static void _performActions( struct RunTime *r )
         }
         else
         {
-            genericsReport( V_INFO, "Failed" EOL );
+            genericsReport( V_ERROR, "Failed" EOL );
         }
     }
 
