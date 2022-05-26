@@ -4,7 +4,7 @@
 
 * Latest Changes:
 
-This is the development branch for V1.20. The work on the FPGA (orbtrace) has now been moved into its own separate repository as it's grown considerably and really needs its own identity. History for orbtrace until the split point is maintained here for provenance purposes, but new work is now done over in the new location.
+This is the development branch for V1.20. ORBTrace (the FPGA trace interface) has now been moved into its own separate repository as it's grown considerably and really needs its own identity. History for orbtrace until the split point is maintained here for provenance purposes, but new work is now done over in the new location.
 
 The CHANGES file now tells you what's been done when.
 
@@ -14,14 +14,13 @@ An Orbuculum is a Crystal Ball, used for seeing things that would
  be otherwise invisible. A  nodding reference to (the) BlackMagic
  (debug probe), BMP.
 
-You can find information about using this suite on the Embedded Rambling
-blog at http://shadetail.com/.
+You can find information about using this suite at [Orbcode](https://www.orbcode.org).
 
-*This program is back in development after far too long away. A new fpga-based trace device is now operational. Functional fixes will continue to be made on main.*
+* ORBTrace Mini is now available for debug and realtime tracing. Go to Orbcode for more info *.
 
-For the current development status you will need to use the `Devel` branch.
+For the current development status you will need to use the `Devel` branch. Fixes are made on main and Devel.
 
-The code is in daily use now and small issues are patched as they are found. The software runs on both Linux and OSX and the whole suite is working OK on most workloads. Any bugs found now will be treated as high priority issues. Functional enhancements will also be folded in as time permits. A contribution offering a build for windows would be gratefully received!
+The code is in daily use now and small issues are patched as they are found. The software runs on both Linux and OSX and the whole suite is working OK on most workloads. Any bugs found now will be treated as high priority issues. Functional enhancements will also be folded in as time permits. A contribution offering a build for windows is in progress but isn't yet available.
 
 What is it?
 ===========
@@ -46,6 +45,8 @@ connect the rest of the suite to that directly, without using the orbuculum mux 
 * orbcat: A simple cat utility for ITM channel data.
 
 * orbdump: A utility for dumping raw SWO data to a file for post-processing.
+
+* orbmortem: A post mortem analysis tool (needs parallel trace data).
 
 * orbtop: A top utility to see what's actually going on with your target. It can also
 provide dot and gnuplot source data for perty graphics.
@@ -73,7 +74,7 @@ interface. The Orbuculum suite tools don't care if the data
 originates from a RZ or NRZ port, SWO or TRACE, or at what speed....that's all the job
 of the interface.
 
-At the present time Orbuculum supports ten devices for collecting trace
+At the present time Orbuculum supports eleven devices for collecting trace
 from the target;
 
 * the Black Magic Debug Probe (BMP)
@@ -86,18 +87,25 @@ from the target;
 * The ECPIX-5 ECP5 Breakout Board for parallel trace
 * Anything capable of saving the raw SWO data to a file
 * Anything capable of offering SWO on a TCP port
+* ORBTrace Mini
 
 Information about using each individual interface can be found in the
-docs directory. gdb setup files for each device type can be found in the `Support` directory.
+docs directory. gdb setup files for each device type can be found in the `Support` directory. You'll find
+example get-you-going applications in the [Orbmule](https://github.com/orbcode/orbmule) repository including
+`gdbinit` scripts for OpenOCD, pyOCD and Blackmagic Probe Hosted.
 
 When using SWO Orbuculum can use, or bypass, the TPIU. The TPIU adds (a small amount of) overhead
 to the datastream, but provides better synchronisation if there is corruption
 on the link. To include the TPIU in decode stack, provide the -t
 option on the command line. If you don't provide it, and the ITM decoder sees
 TPIU syncs in the datastream, it will complain and barf out. This is deliberate
-after I spent two days trying to find an obscure bug 'cos I'd left the `-t` option off...
+after I spent two days trying to find an obscure bug 'cos I'd left the `-t` option off. You can have multiple
+channels to the `-t` option, which is useful when you've got debug data in one source and
+trace data in another.
 
-Beware that in parallel trace the TPIU is mandatory, so therefore so is the -t option.
+Beware that in parallel trace the TPIU is mandatory, so therefore so is the -t option. It can be stripped either
+by individual applications or the `orbuculum` mux. When its stripped by the mux the data are made available on
+consecutive TCP/IP ports...so `-t 1,2` would put stream 1 data out over TCP port 3443 and stream 2 over 3444, by default.
 
 When in NRZ mode the SWO data rate that comes out of the chip _must_
 match the rate that the debugger expects. On the BMP speeds of
@@ -241,7 +249,7 @@ to run orbuculum would be;
 >ofiles/orbuculum -m 100
 
 In this case, because no source options were provided on the command line, input
-will be taken from a Blackmagic probe USB SWO feed.
+will be taken from a Blackmagic probe USB SWO feed, or from an ORBTrace mini if it can find one.
 It will start the daemon with a monitor reporting interval of 100mS.  Orbuculum exposes TCP port 3443 to which
 network clients can connect. This port delivers raw TPIU frames to any
 client that is connected (such as orbcat, orbfifo or orbtop).
@@ -270,6 +278,8 @@ For `orbuculum`, the specific command line options of note are;
   `-p [serialPort]`: to use. If not specified then the program defaults to Blackmagic probe.
 
   `-s [address]:[port]`: Set address for explicit TCP Source connection, (default none:2332).
+
+  `-t x,y,...`: Remove TPIU formatting and issue streams x, y etc over incrementing IP port numbers.
 
 
 Orbfifo
@@ -491,11 +501,33 @@ given in terms of 'ticks', and the number of cpu cycles that correspond to a tic
 is set by ```ITMTSPrescale```. You will also need to set ```dwtTraceException`` and
 ```ITMTSEna``` to be able to use this output mode.
 
+Orbmortem
+=========
 
-Using the ice40HX8K board
-=========================
+To use orbmortem you must be using a parallel trace source such as ORBTrace Mini, and it must be
+configured to stream parallel trace info (clue; the `startETM` option).
 
-This information has been moved to the readme in the orbtrace directory.
+The command line options of note are;
+
+ `-a`: Use alternate address encoding. Select this if decodes don't seem to arrive correctly. You can discover if you need this option by using the `describeETM` command inside the debugger.
+ `-b [Length]`: Set length of post-mortem buffer, in KBytes (Default 32 KBytes)
+ `-c [command]`: Set command line for external editor (0.000000 = filename, % = line). A few examples are;
+     *  emacs; `-c emacs "+%l %f"`
+     * codium/VSCode: `-c codium  -g "%f:%l"`
+     * eclipse: `-c eclipse "%f:%l"`
+ `-D`: Switch off C++ symbol demangling
+ `-d [String]`: Material to delete off front of filenames
+ `-e [ElfFile]`: to use for symbols and source
+ `-E`: When reading from file, terminate at end of file rather than waiting for further input
+ `-f [filename]`: Take input from specified file rather than live from a probe (useful for ETB decode)
+ `-s [Server:Port]: to use
+ `-t [channel]`: Use TPIU to strip TPIU on specfied channel (normally best to let `orbuculum` handle this.
+
+Once it's running you will receive an indication at the lower right of the screen that it's capturing data. Hitting <H> will hold the capture and it will decode whatever
+is currently in the buffer. More usefully, if the capture stream is lost (e.g. because of debugger entry) then it will auto-hold and decode the buffer, showing you the
+last instructions executed. You can use the arrow keys to move around this buffer and dive into individual source files. Hit the `?` key for a quick overview of
+available commands.
+
 
 Reliability
 ===========
