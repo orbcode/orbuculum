@@ -169,7 +169,7 @@ static void _outputHelp( struct SIOInstance *sio )
     wprintw( sio->outputWindow, "  CTRL-S: Search forwards, CTRL-S again for next match" EOL );
     wprintw( sio->outputWindow, EOL "  Use PgUp/PgDown/Home/End and the arrow keys to move around the sample buffer" EOL );
     wprintw( sio->outputWindow, "  Shift-PgUp and Shift-PgDown move more quickly" EOL );
-    wprintw( sio->outputWindow, EOL "       <?> again to leave this help screeh." EOL );
+    wprintw( sio->outputWindow, EOL "       <?> again to leave this help screen." EOL );
 }
 // ====================================================================================================
 static bool _onDisplay( struct SIOInstance *sio, int32_t lineNum )
