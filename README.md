@@ -16,7 +16,7 @@ An Orbuculum is a Crystal Ball, used for seeing things that would
 
 You can find information about using this suite at [Orbcode](https://www.orbcode.org).
 
-* ORBTrace Mini is now available for debug and realtime tracing. Go to Orbcode for more info *.
+*** ORBTrace Mini is now available for debug and realtime tracing. Go to [Orbcode](https://www.orbcode.org) for more info. ***
 
 For the current development status you will need to use the `Devel` branch. Fixes are made on main and Devel.
 
@@ -100,7 +100,7 @@ on the link. To include the TPIU in decode stack, provide the -t
 option on the command line. If you don't provide it, and the ITM decoder sees
 TPIU syncs in the datastream, it will complain and barf out. This is deliberate
 after I spent two days trying to find an obscure bug 'cos I'd left the `-t` option off. You can have multiple
-channels to the `-t` option, which is useful when you've got debug data in one source and
+channels to the `-t` option, which is useful when you've got debug data in one stream and
 trace data in another.
 
 Beware that in parallel trace the TPIU is mandatory, so therefore so is the -t option. It can be stripped either
@@ -115,7 +115,8 @@ the gdb session with the 'monitor traceswo xxxx' command. For a TTL
 Serial device its set by the Orbuculum command line.  Segger devices
 can normally work faster, but no experimentation has yet been done to
 find their max limits, which are probably it's dependent on the specific JLink
-you are using. JLink-Pro and JTrace devices appear to work up to 50MHz. YMMV.
+you are using. JLink-Pro and JTrace devices appear to work up to 50MHz. YMMV. We haven't
+really found the limits of ORBTrace Mini yet.
 
 Configuring the Target
 ======================
@@ -129,7 +130,7 @@ in the support directory will eventually rust...only use it for guidance.
 
 In the support directory you will find a script `gdbtrace.init` which contains a
 set of setup macros for the SWO functionality. Full details of how to set up these
-various registers are available from https://static.docs.arm.com/ddi0403/e/DDI0403E_B_armv7m_arm.pdf and
+various registers are available from [Arm](https://static.docs.arm.com/ddi0403/e/DDI0403E_B_armv7m_arm.pdf) and
 you've got various options for the type of output generated, its frequency and it's content.
 
 Using these macros means you do not need to change your program code to be able to use
@@ -198,7 +199,9 @@ replace them with the following;
     enableSTM32TRACE                         <---- Switch on parallel trace on the STM32
     prepareTRACE 4                           <---- Set up the TPIU for 4 bit output (or 2 or 1)
 
-...be careful to set the trace width to be the same as what you've configured on the FPGA.
+...be careful to set the trace width to be the same as what you've configured on the FPGA. While
+we're here it's worth mentioning the `startETM` command too, that outputs tracing data. That is
+needed for `orbmortem`.
 
 Building on Linux
 =================
@@ -265,7 +268,8 @@ it.  Orbuculum does _not_ require gdb to be running, but you may need a
 gdb session to start the output.  BMP needs traceswo to be turned on
 at the command line before it capture data from the port, for example.
 
-*Command Line Options*
+Command Line Options
+====================
 
 For `orbuculum`, the specific command line options of note are;
 
@@ -283,7 +287,7 @@ For `orbuculum`, the specific command line options of note are;
 
 
 Orbfifo
-=======
+-------
 
 The easiest way to use the output from orbuculum is with one of the utilities
 such as orbfifo. This creates a set of fifos or permanent files in a given
@@ -367,7 +371,7 @@ The command line options are;
   `-w [path]` : Enable filewriter functionality with output in specified directory (disabled by default).
 
 Orbcat
-======
+------
 
 orbcat is a simple utility that connects to orbuculum over the network and
 outputs data from various ITM HW and SW channels that it finds.  This
@@ -408,7 +412,7 @@ options for orbcat are;
  `-v`: Verbose mode.
 
 Orbtop
-======
+------
 
 Orbtop connects to orbuculum over the network and
 samples the Program Counter to identify where the program is spending its time. By default
@@ -502,7 +506,7 @@ is set by ```ITMTSPrescale```. You will also need to set ```dwtTraceException`` 
 ```ITMTSEna``` to be able to use this output mode.
 
 Orbmortem
-=========
+---------
 
 To use orbmortem you must be using a parallel trace source such as ORBTrace Mini, and it must be
 configured to stream parallel trace info (clue; the `startETM` option).
@@ -534,10 +538,7 @@ The command line options of note are;
  `-t [channel]`: Use TPIU to strip TPIU on specfied channel (normally best to let `orbuculum` handle this
  
 
-Once it's running you will receive an indication at the lower right of the screen that it's capturing data. Hitting <H> will hold the capture and it will decode whatever
-is currently in the buffer. More usefully, if the capture stream is lost (e.g. because of debugger entry) then it will auto-hold and decode the buffer, showing you the
-last instructions executed. You can use the arrow keys to move around this buffer and dive into individual source files. Hit the `?` key for a quick overview of
-available commands.
+Once it's running you will receive an indication at the lower right of the screen that it's capturing data. Hitting `H` will hold the capture and it will decode whatever is currently in the buffer. More usefully, if the capture stream is lost (e.g. because of debugger entry) then it will auto-hold and decode the buffer, showing you the last instructions executed. You can use the arrow keys to move around this buffer and dive into individual source files. Hit the `?` key for a quick overview of available commands.
 
 
 Reliability
