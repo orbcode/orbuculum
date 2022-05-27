@@ -4,7 +4,7 @@
 
 * Latest Changes:
 
-This is the development branch for V1.20. ORBTrace (the FPGA trace interface) has now been moved into its own separate repository as it's grown considerably and really needs its own identity. History for orbtrace until the split point is maintained here for provenance purposes, but new work is now done over in the new location.
+This is the development branch for V2.00 which includes parallel trace support as well as all the SWO goodness that Orbuculum has always offered. ORBTrace (the FPGA trace interface) has now been moved into its own separate repository as it's grown considerably and really needs its own identity. History for orbtrace until the split point is maintained here for provenance purposes, but new work is now done over in the new location.
 
 The CHANGES file now tells you what's been done when.
 
@@ -515,9 +515,9 @@ The command line options of note are;
  
  `-c [command]`: Set command line for external editor (0.000000 = filename, % = line). A few examples are;
  
-     *  emacs; `-c emacs "+%l %f"`
-     * codium/VSCode: `-c codium  -g "%f:%l"`
-     * eclipse: `-c eclipse "%f:%l"`
+     * emacs; `-c emacs "+%l %f"`
+     * codium/VSCode; `-c codium  -g "%f:%l"`
+     * eclipse; `-c eclipse "%f:%l"`
      
  `-D`: Switch off C++ symbol demangling
  
@@ -529,7 +529,7 @@ The command line options of note are;
  
  `-f [filename]`: Take input from specified file rather than live from a probe (useful for ETB decode)
  
- `-s [Server:Port]: to use
+ `-s [Server:Port]`: to use
  
  `-t [channel]`: Use TPIU to strip TPIU on specfied channel (normally best to let `orbuculum` handle this
  

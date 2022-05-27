@@ -35,7 +35,7 @@
 #define MAX_TAGS            (10)        /* How many tags we will allow */
 
 #define INTERVAL_TIME_MS    (1000)      /* Intervaltime between acculumator resets */
-#define HANG_TIME_MS        (490)       /* Time without a packet after which we dump the buffer */
+#define HANG_TIME_MS        (990)       /* Time without a packet after which we dump the buffer */
 #define TICK_TIME_MS        (100)       /* Time intervals for screen updates and keypress check */
 
 /* Record for options, either defaults or from command line */
@@ -124,8 +124,8 @@ struct RunTime
 /* For opening the editor (Shift-Right-Arrow) the following command lines work for a few editors;
  *
  * emacs; -c "emacs +%l %f"
- * codium: -c "codium  -g %f:%l"
- * eclipse: -c "eclipse %f:%l"
+ * codium; -c "codium  -g %f:%l"
+ * eclipse; -c "eclipse %f:%l"
  */
 
 // ====================================================================================================
@@ -162,6 +162,7 @@ static void _printHelp( struct RunTime *r )
     genericsPrintf( "       -t <channel>: Use TPIU to strip TPIU on specfied channel" EOL );
     genericsPrintf( "       -v: <level> Verbose mode 0(errors)..3(debug)" EOL );
     genericsPrintf( EOL "(Will connect one port higher than that set in -s when TPIU is not used)" EOL );
+    genericsPrintf( EOL "(this will automatically select the second output stream from orb TPIU.)" EOL );
     genericsPrintf( EOL "Environment Variables;" EOL );
     genericsPrintf( "  OBJDUMP: to use non-standard obbdump binary" EOL );
 }
@@ -359,16 +360,13 @@ static void _processBlock( struct RunTime *r )
                                         r->held = true;
                                         return;
                                     }
-                                }
-                                else
-                                {
-                                    r->wp = nwp;
+                                    else
+                                    {
+                                        r->rp = ( r->rp + 1 ) % r->options->buflen;
+                                    }
                                 }
 
-                                if ( r->wp == r->rp )
-                                {
-                                    r->rp++;
-                                }
+                                r->wp = nwp;
                             }
                         }
                     }
@@ -389,16 +387,13 @@ static void _processBlock( struct RunTime *r )
                         r->held = true;
                         return;
                     }
-                }
-                else
-                {
-                    r->wp = nwp;
+                    else
+                    {
+                        r->rp = ( r->rp + 1 ) % r->options->buflen;
+                    }
                 }
 
-                if ( r->wp == r->rp )
-                {
-                    r->rp++;
-                }
+                r->wp = nwp;
             }
         }
     }
@@ -425,6 +420,12 @@ static void _flushBuffer( struct RunTime *r )
     free( r->opText );
     r->opText = NULL;
     r->numLines = 0;
+
+    /* ...and the file/line references */
+    r->op.currentLine = NO_LINE;
+    r->op.currentFileindex = NO_FILE;
+    r->op.currentFunctionindex = NO_FUNCTION;
+    r->op.workingAddr = NO_DESTADDRESS;
 }
 // ====================================================================================================
 static void _appendToOPBuffer( struct RunTime *r, int32_t lineno, enum LineType lt, const char *fmt, ... )
@@ -592,34 +593,34 @@ static void _etmCB( void *d )
                 r->op.currentLine = n.line - n.linesInBlock + 1;
                 *construct = 0;
 
-                while ( *v )
-                {
-                    /* In buffer output NL/CR are treated as end of string, so this is safe */
-                    /* with these buffers that can span multiple lines. Split into separate ones. */
-                    _appendRefToOPBuffer( r, r->op.currentLine++, LT_SOURCE, v );
-
-                    /* Move to the CR/NL or EOL on this line */
-                    while ( ( *v ) && ( *v != '\r' ) && ( *v != '\n' ) )
+                if ( v ) while ( *v )
                     {
-                        v++;
-                    }
+                        /* In buffer output NL/CR are treated as end of string, so this is safe */
+                        /* with these buffers that can span multiple lines. Split into separate ones. */
+                        _appendRefToOPBuffer( r, r->op.currentLine++, LT_SOURCE, v );
 
-                    if ( *v )
-                    {
-                        /* Found end of string or NL/CR...move past those */
-                        if ( ( ( *v == '\r' ) && ( *( v + 1 ) == '\n' ) ) ||
-                                ( ( *v == '\n' ) && ( *( v + 1 ) == '\r' ) )
-                           )
-                        {
-                            v += 2;
-                        }
-                        else
+                        /* Move to the CR/NL or EOL on this line */
+                        while ( ( *v ) && ( *v != '\r' ) && ( *v != '\n' ) )
                         {
                             v++;
                         }
-                    }
 
-                }
+                        if ( *v )
+                        {
+                            /* Found end of string or NL/CR...move past those */
+                            if ( ( ( *v == '\r' ) && ( *( v + 1 ) == '\n' ) ) ||
+                                    ( ( *v == '\n' ) && ( *( v + 1 ) == '\r' ) )
+                               )
+                            {
+                                v += 2;
+                            }
+                            else
+                            {
+                                v++;
+                            }
+                        }
+
+                    }
             }
 
             /* If this line has assembly then output it */
@@ -676,11 +677,17 @@ static void _dumpBuffer( struct RunTime *r )
     /* Pump the received messages through the ETM decoder, it will callback to _etmCB with complete sentences */
     int bytesAvailable = ( ( r->wp + r->options->buflen ) - r->rp ) % r->options->buflen;
 
+    /* If we've started wrapping (i.e. the rx ring buffer is full) then any guesses about sync status are invalid */
+    if ( bytesAvailable == r->options->buflen - 1 )
+    {
+        ETMDecoderForceSync( &r->i, false );
+    }
+
     if ( ( bytesAvailable + r->rp ) > r->options->buflen )
     {
         /* Buffer is wrapped - submit both parts */
         ETMDecoderPump( &r->i, &r->pmBuffer[r->rp], r->options->buflen - r->rp, _etmCB, r );
-        ETMDecoderPump( &r->i, &r->pmBuffer[0], r->rp, _etmCB, r );
+        ETMDecoderPump( &r->i, &r->pmBuffer[0], r->wp, _etmCB, r );
     }
     else
     {

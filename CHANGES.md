@@ -1,5 +1,8 @@
-Version 1.20 in Progress
+Version 2.00 in Progress
 
+* Various fixes in orbmortem for reliability and performance
+* Improve timing of orbuculum mux to ensure data get flushed to orbmortem on crash
+* Version bumped to 2.00 in Progress because of size and impact of changes
 * Addition of `orbprofile` for ETM profiling and integration with {k/q}cachegrind, see https://github.com/KDE/kcachegrind.
 * Addition of `orbmortem` for ETM/ETB post-mortem analysis.
 * Licenses updated to use SPDX identifiers...the license itself hasn't changed, we just lost a chunk of text at the head of every file, with the license now in the LICENSE file.

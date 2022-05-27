@@ -633,12 +633,14 @@ int main( int argc, char *argv[] )
         exit( fileFeeder() );
     }
 
-    do {
-	    int rc = socketFeeder();
-	    // TODO - make logging of failures/reconnections "nicer" based on rc?
-	    (void)rc;
-	    // tradeoff to re-attach "promptly" vs CPU spinning and log spam
-	    usleep(100*1000);
-    } while (!options.endTerminate);
+    do
+    {
+        int rc = socketFeeder();
+        // TODO - make logging of failures/reconnections "nicer" based on rc?
+        ( void )rc;
+        // tradeoff to re-attach "promptly" vs CPU spinning and log spam
+        usleep( 100 * 1000 );
+    }
+    while ( !options.endTerminate );
 }
 // ====================================================================================================

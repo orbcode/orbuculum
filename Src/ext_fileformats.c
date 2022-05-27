@@ -41,6 +41,7 @@ static int _calls_src_sort_fn( const void *a, const void *b )
     return ( int )( ( ( struct subcall * )a )->dsth->functionindex ) - ( int )( ( ( struct subcall * )b )->dsth->functionindex );
 }
 // ====================================================================================================
+#if 0 // Not used for now, but left here in case its useful later...
 static int _calls_dst_sort_fn( const void *a, const void *b )
 
 /* Sort instructions by called to address */
@@ -55,7 +56,7 @@ static int _calls_dst_sort_fn( const void *a, const void *b )
 
     return ( int )( ( ( struct subcall * )a )->srch->functionindex ) - ( int )( ( ( struct subcall * )b )->srch->functionindex );
 }
-
+#endif
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================

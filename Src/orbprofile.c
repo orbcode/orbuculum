@@ -332,7 +332,7 @@ static void _checkJumps( struct RunTime *r )
     if ( r->op.h )
     {
 
-      if ( ( ETMStateChanged( &r->i, EV_CH_EX_EXIT ) ) || ( r->op.h->isReturn ) )
+        if ( ( ETMStateChanged( &r->i, EV_CH_EX_EXIT ) ) || ( r->op.h->isReturn ) )
         {
             _returnEvent( r, r->op.workingAddr );
         }
@@ -379,6 +379,7 @@ static void _etmCB( void *d )
         r->op.inth->functionindex = INTERRUPT;
         HASH_ADD_INT( r->insthead, addr, r->op.inth );
     }
+
     r->op.lasttstamp = cpu->instCount;
 
     /* Pull changes introduced by this event ============================== */
@@ -399,25 +400,25 @@ static void _etmCB( void *d )
                 _handleInstruction( r, disposition & 1 );
 
                 if ( ( r->op.h->isJump ) || ( r->op.h->isSubCall ) || ( r->op.h->isReturn ) )
-                  {
+                {
                     if ( ETMStateChanged( &r->i, EV_CH_ADDRESS ) )
-                      {
-                        printf("New addr %08x" EOL,cpu->addr);
+                    {
+                        printf( "New addr %08x" EOL, cpu->addr );
                         r->op.workingAddr = cpu->addr;
-                      }
+                    }
 
                     _checkJumps( r );
-                  }
+                }
             }
         }
 
         if ( ETMStateChanged( &r->i, EV_CH_ADDRESS ) )
-          {
-            if ( ETMStateChanged( &r->i, EV_CH_EX_ENTRY ))
-              {
-                printf("INTERRUPT!!" EOL);
+        {
+            if ( ETMStateChanged( &r->i, EV_CH_EX_ENTRY ) )
+            {
+                printf( "INTERRUPT!!" EOL );
                 _callEvent( r, r->op.workingAddr, cpu->addr );
-              }
+            }
 
             r->op.workingAddr = cpu->addr;
             printf( "A:%08x" EOL, cpu->addr );
@@ -856,33 +857,33 @@ int main( int argc, char *argv[] )
 
     if ( HASH_COUNT( _r.subhead ) )
     {
-      if ( ext_ff_outputDot( _r.options->dotfile, _r.subhead, _r.s ) )
+        if ( ext_ff_outputDot( _r.options->dotfile, _r.subhead, _r.s ) )
         {
             genericsReport( V_INFO, "Output DOT" EOL );
         }
         else
         {
-          if ( _r.options->dotfile )
+            if ( _r.options->dotfile )
             {
-              genericsExit( -1, "Failed to output DOT" EOL );
+                genericsExit( -1, "Failed to output DOT" EOL );
             }
         }
 
-      if ( ext_ff_outputProfile( _r.options->profile, _r.options->elffile,
+        if ( ext_ff_outputProfile( _r.options->profile, _r.options->elffile,
                                    _r.options->truncateDeleteMaterial ? _r.options->deleteMaterial : NULL,
                                    true,
                                    _r.op.lasttstamp - _r.op.firsttstamp,
                                    _r.insthead,
                                    _r.subhead,
-                                                          _r.s ) )
+                                   _r.s ) )
         {
             genericsReport( V_INFO, "Output Profile" EOL );
         }
         else
         {
-          if ( _r.options->profile )
+            if ( _r.options->profile )
             {
-              genericsExit( -1, "Failed to output profile" EOL );
+                genericsExit( -1, "Failed to output profile" EOL );
             }
         }
     }

@@ -1,13 +1,14 @@
 # Build configuration
 VERBOSE?=0
-DEBUG=1
+#DEBUG=1
 SCREEN_HANDLING=1
+#MAKE_EXPERIMENTAL=1
 
 # Set your preferred screen colours here, or create a new palette by copying the file to a new one
 SCREEN_PALETTE="uicolours_default.h"
 #SCREEN_PALETTE="uicolours_mono.h"
 
-CFLAGS=-DVERSION="\"1.20InProgress\""
+CFLAGS=-DVERSION="\"2.00Solidifying\""
 
 CROSS_COMPILE=
 # Output Files
@@ -20,8 +21,12 @@ ORBDUMP   = orbdump
 ORBSTAT   = orbstat
 ORBMORTEM = orbmortem
 ORBPROFILE= orbprofile
-ORBTRACE  = orbtrace
 
+ifdef MAKE_EXPERIMENTAL
+ORBTRACE  = orbtrace
+else
+ORBTRACE  =
+endif
 ##########################################################################
 # Check Host OS
 ##########################################################################

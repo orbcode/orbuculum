@@ -71,6 +71,12 @@ static const struct deviceList
 /* How many transfer buffers from the source to allocate */
 #define NUM_RAW_BLOCKS (10)
 
+/* What time spread to defer them over (less than orbmortem timeout) */
+#define BLOCK_TOTAL_SPREAD (400)
+
+/* Interval between blocks for timeouts */
+#define BLOCK_TIMEOUT_INTERVAL_MS (BLOCK_TOTAL_SPREAD/NUM_RAW_BLOCKS)
+
 /* Record for options, either defaults or from command line */
 struct Options
 {
@@ -665,7 +671,7 @@ static void _usb_callback( struct libusb_transfer *t )
 /* For the USB case the ringbuffer isn't used .. packets are sent directly from this callback */
 
 {
-  if ( t->status == LIBUSB_TRANSFER_COMPLETED && (t->actual_length > 0))
+    if ( t->status == LIBUSB_TRANSFER_COMPLETED && ( t->actual_length > 0 ) )
     {
         _r.intervalBytes += t->actual_length;
 
@@ -812,7 +818,7 @@ int usbFeeder( struct RunTime *r )
                                         TRANSFER_SIZE,
                                         _usb_callback,
                                         &r->rawBlock[t].usbtfr,
-                                        1000 + 100 * t
+                                        BLOCK_TIMEOUT_INTERVAL_MS * ( t + 1 )
                                       );
 
             libusb_submit_transfer( r->rawBlock[t].usbtfr );

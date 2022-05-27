@@ -824,6 +824,8 @@ void ETMDecoderForceSync( struct ETMDecoder *i, bool isSynced )
         if ( !isSynced )
         {
             i->stats.lostSyncCount++;
+            i->asyncCount = 0;
+            i->rxedISYNC = false;
             i->p = ETM_UNSYNCED;
         }
     }
