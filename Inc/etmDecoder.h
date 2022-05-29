@@ -11,6 +11,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include "generics.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -169,7 +170,7 @@ struct ETMDecoderStats *ETMDecoderGetStats( struct ETMDecoder *i );
 
 void ETMDecodeUsingAltAddrEncode( struct ETMDecoder *i, bool usingAltAddrEncodeSet );
 
-void ETMDecoderPump( struct ETMDecoder *i, uint8_t *buf, int len, etmDecodeCB cb, void *d );
+void ETMDecoderPump( struct ETMDecoder *i, uint8_t *buf, int len, etmDecodeCB cb, genericsReportCB report, void *d );
 
 void ETMDecoderInit( struct ETMDecoder *i, bool usingAltAddrEncodeSet );
 // ====================================================================================================

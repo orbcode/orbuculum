@@ -62,6 +62,7 @@ extern "C" {
 // ====================================================================================================
 enum verbLevel {V_ERROR, V_WARN, V_INFO, V_DEBUG, V_MAX_VERBLEVEL};
 
+typedef void ( *genericsReportCB )( enum verbLevel l, const char *fmt, ... );
 
 char *genericsEscape( char *str );
 char *genericsUnescape( char *str );

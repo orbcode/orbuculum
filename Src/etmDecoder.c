@@ -12,14 +12,7 @@
 #include <string.h>
 #include "etmDecoder.h"
 #include "msgDecoder.h"
-
-// Define this to get transitions printed out
-#ifdef DEBUG
-    #include <stdio.h>
-    #include "generics.h"
-#else
-    #define genericsReport(x...)
-#endif
+#include "generics.h"
 
 /* Events from the process of pumping bytes through the ETM decoder */
 enum ETMDecoderPumpEvent
@@ -38,9 +31,8 @@ enum ETMDecoderPumpEvent
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
-#ifdef DEBUG
+
 static char *_protoNames[] = {ETM_PROTO_NAME_LIST};
-#endif
 
 // ====================================================================================================
 static void _stateChange( struct ETMDecoder *i, enum ETMchanges c )
@@ -48,7 +40,7 @@ static void _stateChange( struct ETMDecoder *i, enum ETMchanges c )
     i->cpu.changeRecord |= ( 1 << c );
 }
 // ====================================================================================================
-static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB cb, void *d )
+static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB cb, genericsReportCB report, void *d )
 
 /* Pump next byte into the protocol decoder */
 
@@ -66,6 +58,11 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
     /* Perform A-Sync accumulation check */
     if ( ( i->asyncCount >= 5 ) && ( c == 0x80 ) )
     {
+        if ( report )
+        {
+            report( V_DEBUG, "A-Sync Accumulation complete" EOL );
+        }
+
         newState = ETM_IDLE;
     }
     else
@@ -86,7 +83,10 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                 // *************************************************
                 if ( c & 0b1 )
                 {
-                    genericsReport( V_DEBUG, "BRANCH " );
+                    if ( report )
+                    {
+                        report( V_DEBUG, "BRANCH " );
+                    }
 
                     /* The lowest order 6 bits of address info... */
                     switch ( cpu->addrMode )
@@ -126,7 +126,11 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                 // *************************************************
                 if ( c == 0b00000100 )
                 {
-                    genericsReport( V_DEBUG, "CYCCNT " EOL );
+                    if ( report )
+                    {
+                        report( V_DEBUG, "CYCCNT " EOL );
+                    }
+
                     i->byteCount = 0;
                     i->cycleConstruct = 0;
                     newState = ETM_GET_CYCLECOUNT;
@@ -138,7 +142,11 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                 // *************************************************
                 if ( c == 0b00001000 ) /* Normal ISYNC */
                 {
-                    genericsReport( V_DEBUG, "Normal ISYNC " EOL );
+                    if ( report )
+                    {
+                        report( V_DEBUG, "Normal ISYNC " EOL );
+                    }
+
                     /* Collect either the context or the Info Byte next */
                     i->byteCount = 0;
                     i->contextConstruct = 0;
@@ -147,6 +155,11 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                     /* We won't start reporting data until a valid ISYNC has been received */
                     if ( !i->rxedISYNC )
                     {
+                        if ( report )
+                        {
+                            report( V_DEBUG, "Initial ISYNC" );
+                        }
+
                         i->cpu.changeRecord = 0;
                         i->rxedISYNC = true;
                     }
@@ -156,7 +169,11 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
 
                 if ( c == 0b01110000 ) /* ISYNC with Cycle Count */
                 {
-                    genericsReport( V_DEBUG, "ISYNC+CYCCNT " EOL );
+                    if ( report )
+                    {
+                        report( V_DEBUG, "ISYNC+CYCCNT " EOL );
+                    }
+
                     /* Collect the cycle count next */
                     i->byteCount = 0;
                     i->cycleConstruct = 0;
@@ -169,7 +186,11 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                 // *************************************************
                 if ( c == 0b00001100 )
                 {
-                    genericsReport( V_DEBUG, "TRIGGER " EOL );
+                    if ( report )
+                    {
+                        report( V_DEBUG, "TRIGGER " EOL );
+                    }
+
                     _stateChange( i, EV_CH_TRIGGER );
                     retVal = ETM_EV_MSG_RXED;
                     break;
@@ -180,7 +201,11 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                 // *************************************************
                 if ( c == 0b00111100 )
                 {
-                    genericsReport( V_DEBUG, "VMID " EOL );
+                    if ( report )
+                    {
+                        report( V_DEBUG, "VMID " EOL );
+                    }
+
                     newState = ETM_GET_VMID;
                     break;
                 }
@@ -190,7 +215,11 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                 // *************************************************
                 if ( ( c & 0b11111011 ) == 0b01000010 )
                 {
-                    genericsReport( V_DEBUG, "TS " EOL );
+                    if ( report )
+                    {
+                        report( V_DEBUG, "TS " EOL );
+                    }
+
                     newState = ETM_GET_TSTAMP;
 
                     if ( ( c & ( 1 << 2 ) ) != 0 )
@@ -207,6 +236,11 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                 // *************************************************
                 if ( c == 0b01100110 )
                 {
+                    if ( report )
+                    {
+                        report( V_DEBUG, "Ignore Packet" EOL );
+                    }
+
                     break;
                 }
 
@@ -215,7 +249,11 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                 // *************************************************
                 if ( c == 0b01101110 )
                 {
-                    genericsReport( V_DEBUG, "CONTEXTID " EOL );
+                    if ( report )
+                    {
+                        report( V_DEBUG, "CONTEXTID " EOL );
+                    }
+
                     newState = ETM_GET_CONTEXTID;
                     cpu->contextID = 0;
                     i->byteCount = 0;
@@ -227,7 +265,11 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                 // *************************************************
                 if ( c == 0b01110110 )
                 {
-                    genericsReport( V_DEBUG, "EXCEPT-EXIT " EOL );
+                    if ( report )
+                    {
+                        report( V_DEBUG, "EXCEPT-EXIT " EOL );
+                    }
+
                     _stateChange( i, EV_CH_EX_EXIT );
                     retVal = ETM_EV_MSG_RXED;
                     break;
@@ -239,7 +281,11 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                 if ( c == 0b01111110 )
                 {
                     /* Note this is only used on CPUs with data tracing */
-                    genericsReport( V_DEBUG, "EXCEPT-ENTRY " EOL );
+                    if ( report )
+                    {
+                        report( V_DEBUG, "EXCEPT-ENTRY " EOL );
+                    }
+
                     _stateChange( i, EV_CH_EX_ENTRY );
                     retVal = ETM_EV_MSG_RXED;
                     break;
@@ -250,8 +296,6 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                 // *************************************************
                 if ( ( c & 0b10000001 ) == 0b10000000 )
                 {
-                    genericsReport( V_DEBUG, "PHdr " EOL );
-
                     if ( !i->cycleAccurate )
                     {
                         if ( ( c & 0b10000011 ) == 0b10000000 )
@@ -265,6 +309,12 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                             cpu->disposition = ( 1 << cpu->eatoms ) - 1;
                             _stateChange( i, EV_CH_ENATOMS );
                             retVal = ETM_EV_MSG_RXED;
+
+                            if ( report )
+                            {
+                                report( V_DEBUG, "PHdr FMT1 (E=%d, N=%d)" EOL, cpu->eatoms, cpu->natoms );
+                            }
+
                             break;
                         }
 
@@ -280,10 +330,19 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                             _stateChange( i, EV_CH_ENATOMS );
                             cpu->instCount += cpu->eatoms + cpu->natoms;
                             retVal = ETM_EV_MSG_RXED;
+
+                            if ( report )
+                            {
+                                report( V_DEBUG, "PHdr FMT2 (E=%d, N=%d)" EOL, cpu->eatoms, cpu->natoms );
+                            }
+
                             break;
                         }
 
-                        genericsReport( V_ERROR, "Unprocessed P-Header (%02X)" EOL, c );
+                        if ( report )
+                        {
+                            report( V_ERROR, "Unprocessed P-Header (%02X)" EOL, c );
+                        }
                     }
                     else
                     {
@@ -296,6 +355,12 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                             _stateChange( i, EV_CH_ENATOMS );
                             _stateChange( i, EV_CH_WATOMS );
                             retVal = ETM_EV_MSG_RXED;
+
+                            if ( report )
+                            {
+                                report( V_DEBUG, "CA PHdr FMT0 (W=%d)" EOL, cpu->watoms );
+                            }
+
                             break;
                         }
 
@@ -310,6 +375,12 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                             _stateChange( i, EV_CH_ENATOMS );
                             _stateChange( i, EV_CH_WATOMS );
                             retVal = ETM_EV_MSG_RXED;
+
+                            if ( report )
+                            {
+                                report( V_DEBUG, "CA PHdr FMT1 (E=%d, N=%d)" EOL, cpu->eatoms, cpu->natoms );
+                            }
+
                             break;
                         }
 
@@ -324,6 +395,12 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                             _stateChange( i, EV_CH_ENATOMS );
                             _stateChange( i, EV_CH_WATOMS );
                             retVal = ETM_EV_MSG_RXED;
+
+                            if ( report )
+                            {
+                                report( V_DEBUG, "CA PHdr FMT2 (E=%d, N=%d, W=1)" EOL, cpu->eatoms, cpu->natoms );
+                            }
+
                             break;
                         }
 
@@ -339,6 +416,12 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                             _stateChange( i, EV_CH_ENATOMS );
                             _stateChange( i, EV_CH_WATOMS );
                             retVal = ETM_EV_MSG_RXED;
+
+                            if ( report )
+                            {
+                                report( V_DEBUG, "CA PHdr FMT3 (E=%d, N=%d W=%d)" EOL, cpu->eatoms, cpu->natoms, cpu->watoms );
+                            }
+
                             break;
                         }
 
@@ -354,10 +437,19 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                             _stateChange( i, EV_CH_ENATOMS );
                             _stateChange( i, EV_CH_WATOMS );
                             retVal = ETM_EV_MSG_RXED;
+
+                            if ( report )
+                            {
+                                report( V_DEBUG, "CA PHdr FMT4 (E=%d, N=%d W=%d)" EOL, cpu->eatoms, cpu->natoms, cpu->watoms );
+                            }
+
                             break;
                         }
 
-                        genericsReport( V_ERROR, "Unprocessed Cycle-accurate P-Header (%02X)" EOL, c );
+                        if ( report )
+                        {
+                            report( V_ERROR, "Unprocessed Cycle-accurate P-Header (%02X)" EOL, c );
+                        }
                     }
 
                     break;
@@ -411,6 +503,12 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                         _stateChange( i, ( ( c & 0x40 ) != 0 ) ? EV_CH_CANCELLED : 0 );
                         newState = ETM_IDLE;
                         retVal = ETM_EV_MSG_RXED;
+
+                        if ( report )
+                        {
+                            report( V_DEBUG, "Branch to %08x with exception %d" EOL, cpu->addr, cpu->exception );
+                        }
+
                         break;
                     }
 
@@ -419,6 +517,11 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                         /* This packet is complete, so can return it */
                         newState = ETM_IDLE;
                         retVal = ETM_EV_MSG_RXED;
+
+                        if ( report )
+                        {
+                            report( V_DEBUG, "Branch to %08x" EOL, cpu->addr );
+                        }
                     }
                     else
                     {
@@ -458,6 +561,11 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                     }
                     else
                     {
+                        if ( report )
+                        {
+                            report( V_ERROR, "Exception jump (%d) to 0x%08x" EOL, cpu->exception, cpu->addr );
+                        }
+
                         newState = ETM_IDLE;
                         retVal = ETM_EV_MSG_RXED;
                     }
@@ -478,6 +586,11 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                         if ( !( c & 0x40 ) )
                         {
                             /* There will not be another one along, return idle */
+                            if ( report )
+                            {
+                                report( V_ERROR, "Exception jump (%d) to 0x%08x" EOL, cpu->exception, cpu->addr );
+                            }
+
                             newState = ETM_IDLE;
                             retVal = ETM_EV_MSG_RXED;
                         }
@@ -493,6 +606,11 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                         }
 
                         /* Exception byte 2 is always the last one, return */
+
+                        if ( report )
+                        {
+                            report( V_ERROR, "Exception jump %s(%d) to 0x%08x" EOL, cpu->resume ? "with resume " : "", cpu->exception, cpu->addr );
+                        }
 
                         newState = ETM_IDLE;
                         retVal = ETM_EV_MSG_RXED;
@@ -510,6 +628,11 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                 {
                     cpu->vmid = c;
                     _stateChange( i, EV_CH_VMID );
+                }
+
+                if ( report )
+                {
+                    report( V_ERROR, "VMID Set to (%d)" EOL, cpu->vmid );
                 }
 
                 newState = ETM_IDLE;
@@ -537,6 +660,12 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                     newState = ETM_IDLE;
                     cpu->ts = i->tsConstruct;
                     _stateChange( i, EV_CH_TSTAMP );
+
+                    if ( report )
+                    {
+                        report( V_ERROR, "CPU Timestamp %d" EOL, cpu->ts );
+                    }
+
                     retVal = ETM_EV_MSG_RXED;
                 }
 
@@ -555,6 +684,12 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                     newState = ETM_IDLE;
                     cpu->cycleCount = i->cycleConstruct;
                     _stateChange( i, EV_CH_CYCLECOUNT );
+
+                    if ( report )
+                    {
+                        report( V_ERROR, "Cyclecount %d" EOL, cpu->cycleCount );
+                    }
+
                     retVal = ETM_EV_MSG_RXED;
                 }
 
@@ -575,6 +710,11 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                     {
                         cpu->contextID = i->contextConstruct;
                         _stateChange( i, EV_CH_CONTEXTID );
+                    }
+
+                    if ( report )
+                    {
+                        report( V_ERROR, "CPU ContextID %d" EOL, cpu->contextID );
                     }
 
                     retVal = ETM_EV_MSG_RXED;
@@ -666,6 +806,11 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
 
                 if ( i->dataOnlyMode )
                 {
+                    if ( report )
+                    {
+                        report( V_ERROR, "ISYNC in dataOnlyMode" EOL );
+                    }
+
                     retVal = ETM_EV_MSG_RXED;
                     newState = ETM_IDLE;
                 }
@@ -720,6 +865,11 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                     }
                     else
                     {
+                        if ( report )
+                        {
+                            report( V_ERROR, "ISYNC with IADDRESS 0x%08x" EOL, cpu->addr );
+                        }
+
                         newState = ETM_IDLE;
                         retVal = ETM_EV_MSG_RXED;
                     }
@@ -754,8 +904,8 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
 
     if ( i->p != ETM_UNSYNCED )
     {
-        genericsReport( V_DEBUG, "%02x:%s --> %s %s(%d)", c, ( i->p == ETM_IDLE ) ? _protoNames[i->p] : "", _protoNames[newState],
-                        ( ( newState == ETM_IDLE ) ? ( ( retVal == ETM_EV_NONE ) ? "!!!" : "OK" ) : " : " ), retVal );
+        if ( report ) report( V_DEBUG, "%02x:%s --> %s %s(%d)", c, ( i->p == ETM_IDLE ) ? _protoNames[i->p] : "", _protoNames[newState],
+                                  ( ( newState == ETM_IDLE ) ? ( ( retVal == ETM_EV_NONE ) ? "!!!" : "OK" ) : " : " ), retVal );
     }
 
     i->p = newState;
@@ -831,12 +981,12 @@ void ETMDecoderForceSync( struct ETMDecoder *i, bool isSynced )
     }
 }
 // ====================================================================================================
-void ETMDecoderPump( struct ETMDecoder *i, uint8_t *buf, int len, etmDecodeCB cb, void *d )
+void ETMDecoderPump( struct ETMDecoder *i, uint8_t *buf, int len, etmDecodeCB cb, genericsReportCB report, void *d )
 
 {
     while ( len-- )
     {
-        _ETMDecoderPumpAction( i, *buf++, cb, d );
+        _ETMDecoderPumpAction( i, *buf++, cb, report, d );
     }
 }
 // ====================================================================================================

@@ -469,6 +469,20 @@ static void _appendRefToOPBuffer( struct RunTime *r, int32_t lineno, enum LineTy
     r->numLines++;
 }
 // ====================================================================================================
+static void _etmReport( enum verbLevel l, const char *fmt, ... )
+
+/* Debug reporting stream */
+
+{
+    static char op[SCRATCH_STRING_LEN];
+
+    va_list va;
+    va_start( va, fmt );
+    vsnprintf( op, SCRATCH_STRING_LEN, fmt, va );
+    va_end( va );
+    _appendToOPBuffer( &_r, _r.op.currentLine, LT_DEBUG, op );
+}
+// ====================================================================================================
 static void _etmCB( void *d )
 
 /* Callback function for when valid ETM decode is detected */
@@ -628,7 +642,12 @@ static void _etmCB( void *d )
             {
                 _appendRefToOPBuffer( r, r->op.currentLine, ( disposition & 1 ) ? LT_ASSEMBLY : LT_NASSEMBLY, n.assy[n.assyLine].lineText );
 
-                if ( ( n.assy[n.assyLine].isJump ) && ( disposition & 1 ) )
+                if ( n.assy[n.assyLine].isJump || n.assy[n.assyLine].isSubCall )
+                {
+                    _appendToOPBuffer( r, r->op.currentLine, LT_DEBUG, "%sTAKEN %s", ( disposition & 1 ) ? "" : "NOT ", n.assy[n.assyLine].isJump ? "JUMP" : "SUBCALL"  );
+                }
+
+                if ( ( n.assy[n.assyLine].isJump || n.assy[n.assyLine].isSubCall ) && ( disposition & 1 ) )
                 {
                     /* This is a fixed jump that _was_ taken, so update working address */
                     r->op.workingAddr = n.assy[n.assyLine].jumpdest;
@@ -686,13 +705,13 @@ static void _dumpBuffer( struct RunTime *r )
     if ( ( bytesAvailable + r->rp ) > r->options->buflen )
     {
         /* Buffer is wrapped - submit both parts */
-        ETMDecoderPump( &r->i, &r->pmBuffer[r->rp], r->options->buflen - r->rp, _etmCB, r );
-        ETMDecoderPump( &r->i, &r->pmBuffer[0], r->wp, _etmCB, r );
+        ETMDecoderPump( &r->i, &r->pmBuffer[r->rp], r->options->buflen - r->rp, _etmCB, _etmReport, r );
+        ETMDecoderPump( &r->i, &r->pmBuffer[0], r->rp, _etmCB, _etmReport, r );
     }
     else
     {
         /* Buffer is not wrapped */
-        ETMDecoderPump( &r->i, &r->pmBuffer[r->rp], bytesAvailable, _etmCB, r );
+        ETMDecoderPump( &r->i, &r->pmBuffer[r->rp], bytesAvailable, _etmCB, _etmReport, r );
     }
 
     /* Submit this constructed buffer for display */
@@ -1033,7 +1052,7 @@ int main( int argc, char *argv[] )
     atexit( _doExit );
 
     /* Create a screen and interaction handler */
-    _r.sio = SIOsetup( _r.progName, _r.options->elffile );
+    _r.sio = SIOsetup( _r.progName, _r.options->elffile, ( _r.options->file != NULL ) );
 
     /* Fill in a time to start from */
     lastTime = lastTTime = lastTSTime = genericsTimestampmS();
@@ -1109,6 +1128,7 @@ int main( int argc, char *argv[] )
         }
         else
         {
+
             if ( ( sourcefd = open( _r.options->file, O_RDONLY ) ) < 0 )
             {
                 genericsExit( sourcefd, "Can't open file %s" EOL, _r.options->file );
@@ -1126,9 +1146,14 @@ int main( int argc, char *argv[] )
             tv.tv_sec = 0;
             tv.tv_usec  = 10000;
 
-            FD_SET( sourcefd, &readfds );
+            if ( sourcefd )
+            {
+                FD_SET( sourcefd, &readfds );
+            }
+
             FD_SET( STDIN_FILENO, &readfds );
-            r = select( sourcefd + 1, &readfds, NULL, NULL, &tv );
+
+            r = select( sourcefd ? sourcefd + 1 : STDIN_FILENO + 1, &readfds, NULL, NULL, &tv );
 
             if ( r < 0 )
             {
@@ -1136,15 +1161,16 @@ int main( int argc, char *argv[] )
                 break;
             }
 
-            if ( FD_ISSET( sourcefd, &readfds ) )
+            if ( sourcefd && FD_ISSET( sourcefd, &readfds ) )
             {
                 /* We always read the data, even if we're held, to keep the socket alive */
                 _r.rawBlock.fillLevel = read( sourcefd, _r.rawBlock.buffer, TRANSFER_SIZE );
 
-                if ( _r.rawBlock.fillLevel <= 0 )
+                if ( ( _r.rawBlock.fillLevel <= 0 ) && _r.options->file )
                 {
-                    /* We are at EOF (Probably the descriptor closed) */
-                    break;
+                    /* Read from file is complete, remove fd */
+                    close( sourcefd );
+                    sourcefd = 0;
                 }
 
                 if ( !_r.held )
@@ -1159,26 +1185,34 @@ int main( int argc, char *argv[] )
             switch ( SIOHandler( _r.sio, ( genericsTimestampmS() - lastTTime ) > TICK_TIME_MS, _r.oldintervalBytes ) )
             {
                 case SIO_EV_HOLD:
-                    _r.held = !_r.held;
-
-                    if ( !_r.held )
+                    if ( !_r.options->file )
                     {
-                        _r.wp = _r.rp = 0;
+                        _r.held = !_r.held;
 
-                        if ( _r.diving )
+                        if ( !_r.held )
                         {
-                            _doFilesurface( &_r );
+                            _r.wp = _r.rp = 0;
+
+                            if ( _r.diving )
+                            {
+                                _doFilesurface( &_r );
+                            }
+
+                            _flushBuffer( &_r );
                         }
 
-                        _flushBuffer( &_r );
+                        /* Flag held status to the UI */
+                        SIOheld( _r.sio, _r.held );
                     }
 
-                    /* Flag held status to the UI */
-                    SIOheld( _r.sio, _r.held );
                     break;
 
                 case SIO_EV_SAVE:
-                    _doSave( &_r );
+                    if ( _r.options->file )
+                    {
+                        _doSave( &_r );
+                    }
+
                     break;
 
                 case SIO_EV_DIVE:
@@ -1211,8 +1245,10 @@ int main( int argc, char *argv[] )
                 lastTTime = genericsTimestampmS();
             }
 
-            /* Deal with possible timeout on sampling */
-            if ( ( ( genericsTimestampmS() - lastTime ) > HANG_TIME_MS ) && ( !_r.numLines ) &&  ( _r.wp != _r.rp ) )
+            /* Deal with possible timeout on sampling, or if this is a read-from-file */
+            if ( ( !_r.numLines ) &&
+                    ( _r.options->file || ( ( ( genericsTimestampmS() - lastTime ) > HANG_TIME_MS ) && ( _r.wp != _r.rp ) ) )
+               )
             {
                 _dumpBuffer( &_r );
                 _r.held = true;
@@ -1232,7 +1268,10 @@ int main( int argc, char *argv[] )
         /* End of main loop ... we get here because something forced us out              */
         /* ----------------------------------------------------------------------------- */
 
-        close( sourcefd );
+        if ( sourcefd )
+        {
+            close( sourcefd );
+        }
 
         if ( _r.options->file )
         {

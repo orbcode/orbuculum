@@ -657,7 +657,7 @@ static void *_processBlocks( void *params )
 
 #endif
             /* Pump all of the data through the protocol handler */
-            ETMDecoderPump( &r->i, r->rawBlock[r->rp].buffer, r->rawBlock[r->rp].fillLevel, _etmCB, &_r );
+            ETMDecoderPump( &r->i, r->rawBlock[r->rp].buffer, r->rawBlock[r->rp].fillLevel, _etmCB, genericsReport, &_r );
 
             r->rp = ( r->rp + 1 ) % NUM_RAW_BLOCKS;
         }

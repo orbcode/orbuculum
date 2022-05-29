@@ -27,7 +27,7 @@ struct SIOInstance;
 enum SIOEvent { SIO_EV_NONE, SIO_EV_HOLD, SIO_EV_QUIT, SIO_EV_SAVE, SIO_EV_CONSUMED, SIO_EV_SURFACE, SIO_EV_DIVE, SIO_EV_FOPEN };
 
 /* Types of line (each with their own display mechanism & colours */
-enum LineType { LT_SOURCE, LT_ASSEMBLY, LT_NASSEMBLY, LT_MU_SOURCE, LT_EVENT, LT_LABEL, LT_FILE  };
+enum LineType { LT_SOURCE, LT_ASSEMBLY, LT_NASSEMBLY, LT_MU_SOURCE, LT_EVENT, LT_LABEL, LT_FILE, LT_DEBUG  };
 
 /* Definition for a single line...collections of these are what get displayed */
 struct line
@@ -49,7 +49,7 @@ void SIOheld( struct SIOInstance *sio, bool isHeld );
 enum SIOEvent SIOHandler( struct SIOInstance *sio, bool isTick, uint64_t oldintervalBytes );
 
 void SIOterminate( struct SIOInstance *sio );
-struct SIOInstance *SIOsetup( const char *progname, const char *elffile );
+struct SIOInstance *SIOsetup( const char *progname, const char *elffile, bool isFile );
 // ====================================================================================================
 
 #ifdef __cplusplus

@@ -16,7 +16,7 @@
 #include "sio.h"
 
 /* Colours for output */
-enum CP { CP_NONE, CP_EVENT, CP_NORMAL, CP_FILEFUNCTION, CP_LINENO, CP_EXECASSY, CP_NEXECASSY, CP_BASELINE, CP_BASELINETEXT, CP_SEARCH };
+enum CP { CP_NONE, CP_EVENT, CP_NORMAL, CP_FILEFUNCTION, CP_LINENO, CP_EXECASSY, CP_NEXECASSY, CP_BASELINE, CP_BASELINETEXT, CP_SEARCH, CP_DEBUG };
 
 /* Search types */
 enum SRCH { SRCH_OFF, SRCH_FORWARDS, SRCH_BACKWARDS };
@@ -67,6 +67,8 @@ struct SIOInstance
     bool amDiving;                      /* Indicator that we're in a diving buffer */
     bool outputtingHelp;                /* Output help window */
     bool enteringMark;                  /* Set if we are in the process of marking a location */
+    bool outputDebug;                   /* Output debug tagged lines */
+    bool isFile;                        /* Indicator that we're reading from a file */
 
     const char *progName;
     const char *elffile;
@@ -178,11 +180,18 @@ static bool _onDisplay( struct SIOInstance *sio, int32_t lineNum )
 
 {
     return !(
+                       /* Debug line and not in debug mode */
+                       ( ( ( *sio->opText )[lineNum].lt == LT_DEBUG ) && ( !sio->outputDebug ) ) ||
+
+                       /* Label or Assembly line and in Source Mode */
                        ( ( sio->displayMode == DISP_SRC )  &&
                          ( ( ( *sio->opText )[lineNum].lt == LT_LABEL ) ||
                            ( ( *sio->opText )[lineNum].lt == LT_ASSEMBLY ) ||
                            ( ( *sio->opText )[lineNum].lt == LT_NASSEMBLY ) ) ) ||
-                       ( ( sio->displayMode == DISP_ASSY ) &&  ( ( *sio->opText )[lineNum].lt == LT_SOURCE ) )
+
+                       /* Source Line and in Assembly Mode */
+                       ( ( sio->displayMode == DISP_ASSY ) &&
+                         ( ( *sio->opText )[lineNum].lt == LT_SOURCE ) )
            );
 }
 // ====================================================================================================
@@ -540,6 +549,10 @@ static bool _displayLine( struct SIOInstance *sio, int32_t lineNum, int32_t scre
             wattrset( sio->outputWindow, ( highlight ? A_STANDOUT : 0 ) | COLOR_PAIR( CP_NEXECASSY ) );
             break;
 
+        case LT_DEBUG:
+            wattrset( sio->outputWindow, ( highlight ? A_STANDOUT : 0 ) | COLOR_PAIR( CP_DEBUG ) );
+            break;
+
         default:
             wattrset( sio->outputWindow, ( highlight ? A_STANDOUT : 0 ) | COLOR_PAIR( CP_NORMAL ) );
             break;
@@ -660,9 +673,9 @@ static void _outputStatus( struct SIOInstance *sio, uint64_t oldintervalBytes )
 
     if ( !sio->amDiving )
     {
-        mvwprintw( sio->statusWindow, 0, 64, " %s ", ( char *[] )
+        mvwprintw( sio->statusWindow, 0, 44, " %s%s", ( char *[] )
         {"Mixed", "Source", "Assembly"
-        }[sio->displayMode] );
+        }[sio->displayMode], sio->outputDebug ? "+Debug " : " " );
     }
     else
     {
@@ -672,29 +685,36 @@ static void _outputStatus( struct SIOInstance *sio, uint64_t oldintervalBytes )
 
     wattrset( sio->statusWindow, A_BOLD | COLOR_PAIR( CP_BASELINETEXT ) );
 
-    if ( !sio->held )
+    if ( sio->isFile )
     {
-        if ( oldintervalBytes )
-        {
-            if ( oldintervalBytes < 9999 )
-            {
-                mvwprintw( sio->statusWindow, 1, COLS - 38, "%ld Bps (~%ld Ips)", oldintervalBytes, ( oldintervalBytes * 8 ) / 11 );
-            }
-            else if ( oldintervalBytes < 9999999 )
-            {
-                mvwprintw( sio->statusWindow, 1, COLS - 38, "%ld KBps (~%ld KIps)", oldintervalBytes / 1000, oldintervalBytes * 8 / 1120 );
-            }
-            else
-            {
-                mvwprintw( sio->statusWindow, 1, COLS - 38, "%ld MBps (~%ld MIps)", oldintervalBytes / 1000000, ( oldintervalBytes * 8 ) / 1120000 );
-            }
-        }
-
-        mvwprintw( sio->statusWindow, 1, COLS - 11, oldintervalBytes ? "Capturing" : "  Waiting" );
+        mvwprintw( sio->statusWindow, 1, COLS - 12, "From file" );
     }
     else
     {
-        mvwprintw( sio->statusWindow, 1, COLS - 6, "Hold" );
+        if ( !sio->held )
+        {
+            if ( oldintervalBytes )
+            {
+                if ( oldintervalBytes < 9999 )
+                {
+                    mvwprintw( sio->statusWindow, 1, COLS - 38, "%ld Bps (~%ld Ips)", oldintervalBytes, ( oldintervalBytes * 8 ) / 11 );
+                }
+                else if ( oldintervalBytes < 9999999 )
+                {
+                    mvwprintw( sio->statusWindow, 1, COLS - 38, "%ld KBps (~%ld KIps)", oldintervalBytes / 1000, oldintervalBytes * 8 / 1120 );
+                }
+                else
+                {
+                    mvwprintw( sio->statusWindow, 1, COLS - 38, "%ld MBps (~%ld MIps)", oldintervalBytes / 1000000, ( oldintervalBytes * 8 ) / 1120000 );
+                }
+            }
+
+            mvwprintw( sio->statusWindow, 1, COLS - 11, oldintervalBytes ? "Capturing" : "  Waiting" );
+        }
+        else
+        {
+            mvwprintw( sio->statusWindow, 1, COLS - 6, "Hold" );
+        }
     }
 
     if ( !sio->warnTimeout )
@@ -811,7 +831,7 @@ static void _updateWindows( struct SIOInstance *sio, bool isTick, bool isKey, ui
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
-struct SIOInstance *SIOsetup( const char *progname, const char *elffile )
+struct SIOInstance *SIOsetup( const char *progname, const char *elffile, bool isFile )
 
 {
     struct SIOInstance *sio;
@@ -821,6 +841,7 @@ struct SIOInstance *SIOsetup( const char *progname, const char *elffile )
     sio->searchString = ( char * )calloc( 2, sizeof( char ) );
     sio->progName = progname;
     sio->elffile = elffile;
+    sio->isFile  = isFile;
 
     initscr();
     sio->lines = LINES;
@@ -837,6 +858,7 @@ struct SIOInstance *SIOsetup( const char *progname, const char *elffile )
         init_pair( CP_BASELINE, COLOR_BLUE, COLOR_BLACK );
         init_pair( CP_BASELINETEXT, COLOR_YELLOW, COLOR_BLACK );
         init_pair( CP_SEARCH, COLOR_GREEN, COLOR_BLACK );
+        init_pair( CP_DEBUG, COLOR_MAGENTA, COLOR_BLACK );
     }
 
     sio->outputWindow = newwin( OUTPUT_WINDOW_L, OUTPUT_WINDOW_W, 0, 0 );
@@ -970,6 +992,13 @@ enum SIOEvent SIOHandler( struct SIOInstance *sio, bool isTick, uint64_t oldinte
                     mvwin( sio->statusWindow, OUTPUT_WINDOW_L, 0 );
                     op = SIO_EV_CONSUMED;
                     isTick = true;
+                    SIOrequestRefresh( sio );
+                    break;
+
+                case '^':
+                    op = SIO_EV_CONSUMED;
+                    isTick = true;
+                    sio->outputDebug = !sio->outputDebug;
                     SIOrequestRefresh( sio );
                     break;
 
