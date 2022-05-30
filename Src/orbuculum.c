@@ -69,10 +69,10 @@ static const struct deviceList
 //#define DUMP_BLOCK
 
 /* How many transfer buffers from the source to allocate */
-#define NUM_RAW_BLOCKS (10)
+#define NUM_RAW_BLOCKS (3)
 
 /* What time spread to defer them over (less than orbmortem timeout) */
-#define BLOCK_TOTAL_SPREAD (400)
+#define BLOCK_TOTAL_SPREAD (100)
 
 /* Interval between blocks for timeouts */
 #define BLOCK_TIMEOUT_INTERVAL_MS (BLOCK_TOTAL_SPREAD/NUM_RAW_BLOCKS)
@@ -246,6 +246,16 @@ static int _setSerialConfig ( int f, speed_t speed )
     return 0;
 }
 #endif
+// ====================================================================================================
+static void _doExit( void )
+
+{
+    _r.ending = true;
+
+    nwclientShutdown( _r.n );
+    /* Give them a bit of time, then we're leaving anyway */
+    usleep( 200 );
+}
 // ====================================================================================================
 void _printHelp( char *progName )
 
@@ -499,12 +509,14 @@ void *_checkInterval( void *params )
         {
             struct TPIUCommsStats *c = TPIUGetCommsStats( &r->t );
 
+            /* For now we don't transmit this...
             genericsPrintf( C_RESET " LEDS: %s%s%s%s" C_RESET " Frames: "C_DATA "%u" C_RESET,
                             c->leds & 1 ? C_DATA_IND "d" : C_RESET "-",
                             c->leds & 2 ? C_TX_IND "t" : C_RESET "-",
                             c->leds & 0x20 ? C_OVF_IND "O" : C_RESET "-",
                             c->leds & 0x80 ? C_HB_IND "h" : C_RESET "-",
                             c->totalFrames );
+            */
 
             genericsReport( V_INFO, " Pending:%5d Lost:%5d",
                             c->pendingCount,
@@ -671,7 +683,8 @@ static void _usb_callback( struct libusb_transfer *t )
 /* For the USB case the ringbuffer isn't used .. packets are sent directly from this callback */
 
 {
-    if ( t->status == LIBUSB_TRANSFER_COMPLETED && ( t->actual_length > 0 ) )
+    /* Whatever the status that comes back, there may be data... */
+    if ( t->actual_length > 0 )
     {
         _r.intervalBytes += t->actual_length;
 
@@ -821,12 +834,24 @@ int usbFeeder( struct RunTime *r )
                                         BLOCK_TIMEOUT_INTERVAL_MS * ( t + 1 )
                                       );
 
-            libusb_submit_transfer( r->rawBlock[t].usbtfr );
+            int ret = libusb_submit_transfer( r->rawBlock[t].usbtfr );
+
+            if ( ret )
+            {
+                genericsReport( V_ERROR, "Error submitting USB requests %d" EOL, ret );
+                _doExit();
+            }
         }
 
         while ( !r->ending )
         {
-            libusb_handle_events_completed( NULL, ( int * )&r->ending );
+            int ret = libusb_handle_events_completed( NULL, ( int * )&r->ending );
+
+            if ( ret )
+            {
+                genericsReport( V_ERROR, "Error waiting for USB requests to complete %d" EOL, ret );
+                _doExit();
+            }
         }
 
         libusb_close( handle );
@@ -1011,16 +1036,6 @@ int fileFeeder( struct RunTime *r )
 
     close( r->f );
     return true;
-}
-// ====================================================================================================
-static void _doExit( void )
-
-{
-    _r.ending = true;
-
-    nwclientShutdown( _r.n );
-    /* Give them a bit of time, then we're leaving anyway */
-    usleep( 200 );
 }
 // ====================================================================================================
 int main( int argc, char *argv[] )

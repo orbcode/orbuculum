@@ -35,7 +35,7 @@
 #define MAX_TAGS            (10)        /* How many tags we will allow */
 
 #define INTERVAL_TIME_MS    (1000)      /* Intervaltime between acculumator resets */
-#define HANG_TIME_MS        (990)       /* Time without a packet after which we dump the buffer */
+#define HANG_TIME_MS        (200)       /* Time without a packet after which we dump the buffer */
 #define TICK_TIME_MS        (100)       /* Time intervals for screen updates and keypress check */
 
 /* Record for options, either defaults or from command line */
@@ -696,8 +696,8 @@ static void _dumpBuffer( struct RunTime *r )
     /* Pump the received messages through the ETM decoder, it will callback to _etmCB with complete sentences */
     int bytesAvailable = ( ( r->wp + r->options->buflen ) - r->rp ) % r->options->buflen;
 
-    /* If we've started wrapping (i.e. the rx ring buffer is full) then any guesses about sync status are invalid */
-    if ( bytesAvailable == r->options->buflen - 1 )
+    /* If we started wrapping (i.e. the rx ring buffer got full) then any guesses about sync status are invalid */
+    if ( ( bytesAvailable == r->options->buflen - 1 ) && ( !r->singleShot ) )
     {
         ETMDecoderForceSync( &r->i, false );
     }
@@ -705,7 +705,7 @@ static void _dumpBuffer( struct RunTime *r )
     if ( ( bytesAvailable + r->rp ) > r->options->buflen )
     {
         /* Buffer is wrapped - submit both parts */
-        ETMDecoderPump( &r->i, &r->pmBuffer[r->rp], r->options->buflen - r->rp, _etmCB, _etmReport, r );
+        ETMDecoderPump( &r->i, &r->pmBuffer[r->rp], r->options->buflen - r->rp - 1, _etmCB, _etmReport, r );
         ETMDecoderPump( &r->i, &r->pmBuffer[0], r->rp, _etmCB, _etmReport, r );
     }
     else
