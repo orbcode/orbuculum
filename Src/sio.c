@@ -168,7 +168,7 @@ static void _outputHelp( struct SIOInstance *sio )
     wprintw( sio->outputWindow, "  CTRL-C: Quit the current task or the application" EOL );
     wprintw( sio->outputWindow, "  CTRL-L: Refresh the screen" EOL );
     wprintw( sio->outputWindow, "  CTRL-R: Search backwards, CTRL-R again for next match" EOL );
-    wprintw( sio->outputWindow, "  CTRL-S: Search forwards, CTRL-S again for next match" EOL );
+    wprintw( sio->outputWindow, "  CTRL-F: Search forwards, CTRL-F again for next match" EOL );
     wprintw( sio->outputWindow, EOL "  Use PgUp/PgDown/Home/End and the arrow keys to move around the sample buffer" EOL );
     wprintw( sio->outputWindow, "  Shift-PgUp and Shift-PgDown move more quickly" EOL );
     wprintw( sio->outputWindow, EOL "       <?> again to leave this help screen." EOL );
@@ -226,7 +226,7 @@ static enum SIOEvent _processRegularKeys( struct SIOInstance *sio )
             op = SIO_EV_CONSUMED;
             break;
 
-        case 19: /* ----------------------------- CTRL-S Search Forwards ------------------------- */
+        case 6:  /* ----------------------------- CTRL-F Search Forwards ------------------------- */
             sio->searchMode = SRCH_FORWARDS;
             *sio->searchString = 0;
             sio->searchOK = true;
@@ -428,7 +428,7 @@ static enum SIOEvent _processSearchKeys( struct SIOInstance *sio )
             op = SIO_EV_CONSUMED;
             break;
 
-        case 19: /* ----------------------------- CTRL-S Search Forwards ------------------------- */
+        case 6:  /* ----------------------------- CTRL-F Search Forwards ------------------------- */
             if ( !*sio->searchString )
             {
                 /* Try to re-instate old search */

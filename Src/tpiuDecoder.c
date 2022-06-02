@@ -139,10 +139,10 @@ void _decodeCommsStats( struct TPIUDecoder *t )
 /* Decode received communication stats into transfer buffer */
 
 {
-    t->commsStats.pendingCount = ( t->rxedPacket[1] << 8 ) | t->rxedPacket[2];
+    t->commsStats.pendingCount = ( t->rxedPacket[2] << 8 ) | t->rxedPacket[1];
     t->commsStats.leds         = t->rxedPacket[5];
-    t->commsStats.lostFrames   = ( t->rxedPacket[6] << 8 ) | t->rxedPacket[7];
-    t->commsStats.totalFrames  = ( t->rxedPacket[8] << 24 ) | ( t->rxedPacket[9] << 16 ) | ( t->rxedPacket[10] << 8 ) | ( t->rxedPacket[11] );
+    t->commsStats.lostFrames   = ( t->rxedPacket[7] << 8 ) | t->rxedPacket[6];
+    t->commsStats.totalFrames  = ( t->rxedPacket[11] << 24 ) | ( t->rxedPacket[10] << 16 ) | ( t->rxedPacket[9] << 8 ) | ( t->rxedPacket[8] );
 }
 // ====================================================================================================
 enum TPIUPumpEvent TPIUPump( struct TPIUDecoder *t, uint8_t d )

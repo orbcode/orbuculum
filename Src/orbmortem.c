@@ -54,7 +54,7 @@ struct Options
     int channel;                        /* When TPIU is in use, which channel to decode? */
     int port;                           /* Source information */
     char *server;
-    bool altAddr;                       /* Should alternate addressing be used? */
+    bool noAltAddr;                     /* Flag to *not* use alternate addressing */
     char *openFileCL;                   /* Command line for opening refernced file */
 
 } _options =
@@ -92,8 +92,11 @@ struct RunTime
     struct SymbolSet *s;                /* Symbols read from elf */
     bool     ending;                    /* Flag indicating app is terminating */
     bool     singleShot;                /* Flag indicating take a single buffer then stop */
-    uint64_t intervalBytes;             /* Number of bytes transferred in current interval */
-    uint64_t oldintervalBytes;          /* Number of bytes transferred previously */
+    uint64_t newTotalBytes;             /* Number of bytes of real data transferred in total */
+    uint64_t oldTotalBytes;             /* Old number of bytes of real data transferred in total */
+    uint64_t oldTotalIntervalBytes;     /* Number of bytes transferred in previous interval */
+    uint64_t oldTotalHangBytes;         /* Number of bytes transferred in previous hang interval */
+
     uint8_t *pmBuffer;                  /* The post-mortem buffer */
     int wp;                             /* Index pointers for ring buffer */
     int rp;
@@ -149,7 +152,7 @@ static void _printHelp( struct RunTime *r )
 
 {
     genericsPrintf( "Usage: %s [options]" EOL, r->progName );
-    genericsPrintf( "       -a: Use alternate address encoding" EOL );
+    genericsPrintf( "       -a: Do not use alternate address encoding" EOL );
     genericsPrintf( "       -b: <Length> Length of post-mortem buffer, in KBytes (Default %d KBytes)" EOL, DEFAULT_PM_BUFLEN_K );
     genericsPrintf( "       -c: <command> Command line for external editor (%f = filename, %l = line)" EOL );
     genericsPrintf( "       -D: Switch off C++ symbol demangling" EOL );
@@ -177,7 +180,7 @@ static int _processOptions( int argc, char *argv[], struct RunTime *r )
         {
             // ------------------------------------
             case 'a':
-                r->options->altAddr = true;
+                r->options->noAltAddr = true;
                 break;
 
             // ------------------------------------
@@ -309,9 +312,6 @@ static void _processBlock( struct RunTime *r )
 
     genericsReport( V_DEBUG, "RXED Packet of %d bytes" EOL, y );
 
-    /* Account for this reception */
-    r->intervalBytes += y;
-
     if ( y )
     {
 #ifdef DUMP_BLOCK
@@ -351,6 +351,7 @@ static void _processBlock( struct RunTime *r )
                             if ( r->options->channel == p.packet[g].s )
                             {
                                 r->pmBuffer[r->wp] = p.packet[g].d;
+                                r->newTotalBytes++;
                                 uint32_t nwp = ( r->wp + 1 ) % r->options->buflen;
 
                                 if ( nwp == r->rp )
@@ -375,6 +376,8 @@ static void _processBlock( struct RunTime *r )
         }
         else
         {
+            r->newTotalBytes += y;
+
             while ( y-- )
             {
                 r->pmBuffer[r->wp] = *c++;
@@ -498,6 +501,12 @@ static void _etmCB( void *d )
     /* Deal with changes introduced by this event ========================= */
     if ( ETMStateChanged( &r->i, EV_CH_ADDRESS ) )
     {
+        /* Make debug report if calculated and reported addresses differ. This is most useful for testing when exhaustive  */
+        /* address reporting is switched on. It will give 'false positives' for uncalculable instructions (e.g. bx lr) but */
+        /* it's a decent safety net to be sure the jump decoder is working correctly.                                      */
+        _appendToOPBuffer( r, r->op.currentLine, LT_DEBUG, "%sCommanded CPU Address change (Was:0x%08x Commanded:0x%08x)" EOL,
+                           ( r->op.workingAddr == cpu->addr ) ? "" : "***INCONSISTENT*** ", r->op.workingAddr, cpu->addr );
+
         r->op.workingAddr = cpu->addr;
     }
 
@@ -666,6 +675,7 @@ static void _etmCB( void *d )
         else
         {
             /* We didn't have a symbol for this address, so let's just assume a short instruction */
+            _appendRefToOPBuffer( r, r->op.currentLine, LT_DEBUG, "*** No Symbol found ***" EOL );
             r->op.workingAddr += 2;
         }
 
@@ -705,8 +715,8 @@ static void _dumpBuffer( struct RunTime *r )
     if ( ( bytesAvailable + r->rp ) > r->options->buflen )
     {
         /* Buffer is wrapped - submit both parts */
-        ETMDecoderPump( &r->i, &r->pmBuffer[r->rp], r->options->buflen - r->rp - 1, _etmCB, _etmReport, r );
-        ETMDecoderPump( &r->i, &r->pmBuffer[0], r->rp, _etmCB, _etmReport, r );
+        ETMDecoderPump( &r->i, &r->pmBuffer[r->rp], r->options->buflen - r->rp, _etmCB, _etmReport, r );
+        ETMDecoderPump( &r->i, &r->pmBuffer[0], r->wp, _etmCB, _etmReport, r );
     }
     else
     {
@@ -1034,7 +1044,7 @@ int main( int argc, char *argv[] )
     struct hostent *server;
     int flag = 1;
 
-    int32_t lastTime, lastTTime, lastTSTime;
+    int32_t lastTTime, lastTSTime, lastHTime;
     int r;
     struct timeval tv;
     fd_set readfds;
@@ -1055,7 +1065,7 @@ int main( int argc, char *argv[] )
     _r.sio = SIOsetup( _r.progName, _r.options->elffile, ( _r.options->file != NULL ) );
 
     /* Fill in a time to start from */
-    lastTime = lastTTime = lastTSTime = genericsTimestampmS();
+    lastHTime = lastTTime = lastTSTime = genericsTimestampmS();
 
     /* This ensures the atexit gets called */
     if ( SIG_ERR == signal( SIGINT, _intHandler ) )
@@ -1072,7 +1082,7 @@ int main( int argc, char *argv[] )
     /* Create the buffer memory */
     _r.pmBuffer = ( uint8_t * )calloc( 1, _r.options->buflen );
 
-    ETMDecoderInit( &_r.i, &_r.options->altAddr );
+    ETMDecoderInit( &_r.i, !( _r.options->noAltAddr ) );
 
     if ( _r.options->useTPIU )
     {
@@ -1108,7 +1118,7 @@ int main( int argc, char *argv[] )
 
             if ( !server )
             {
-                perror( "Cannot find host" );
+                perror( "Cannot find host" EOL );
                 return -EIO;
             }
 
@@ -1120,7 +1130,7 @@ int main( int argc, char *argv[] )
 
             if ( connect( sourcefd, ( struct sockaddr * ) &serv_addr, sizeof( serv_addr ) ) < 0 )
             {
-                perror( "Could not connect" );
+                /* This can happen when the feeder has gone missing... */
                 close( sourcefd );
                 usleep( 1000000 );
                 continue;
@@ -1135,7 +1145,7 @@ int main( int argc, char *argv[] )
             }
         }
 
-        FD_ZERO( &readfds );
+	FD_ZERO( &readfds );
 
         /* ----------------------------------------------------------------------------- */
         /* This is the main active loop...only break out of this when ending or on error */
@@ -1177,12 +1187,11 @@ int main( int argc, char *argv[] )
                 {
                     /* Pump all of the data through the protocol handler */
                     _processBlock( &_r );
-                    lastTime = genericsTimestampmS();
                 }
             }
 
             /* Update the outputs and deal with any keys that made it up this high */
-            switch ( SIOHandler( _r.sio, ( genericsTimestampmS() - lastTTime ) > TICK_TIME_MS, _r.oldintervalBytes ) )
+            switch ( SIOHandler( _r.sio, ( genericsTimestampmS() - lastTTime ) > TICK_TIME_MS, _r.oldTotalIntervalBytes ) )
             {
                 case SIO_EV_HOLD:
                     if ( !_r.options->file )
@@ -1239,15 +1248,15 @@ int main( int argc, char *argv[] )
                     break;
             }
 
-            /* Update the various timers that are running */
-            if ( ( genericsTimestampmS() - lastTTime ) > TICK_TIME_MS )
-            {
-                lastTTime = genericsTimestampmS();
-            }
+            /* Deal with possible timeout on sampling, or if this is a read-from-file that is finished */
+            if ( ( !_r.numLines )  &&
+                    (
+                                ( _r.options->file && !sourcefd ) ||
 
-            /* Deal with possible timeout on sampling, or if this is a read-from-file */
-            if ( ( !_r.numLines ) &&
-                    ( _r.options->file || ( ( ( genericsTimestampmS() - lastTime ) > HANG_TIME_MS ) && ( _r.wp != _r.rp ) ) )
+                                ( ( ( genericsTimestampmS() - lastHTime ) > HANG_TIME_MS ) &&
+				  ( _r.newTotalBytes - _r.oldTotalHangBytes == 0 ) &&
+				  ( _r.wp != _r.rp ) )
+                    )
                )
             {
                 _dumpBuffer( &_r );
@@ -1256,10 +1265,21 @@ int main( int argc, char *argv[] )
             }
 
             /* Update the intervals */
+            if ( ( genericsTimestampmS() - lastHTime ) > HANG_TIME_MS )
+            {
+                _r.oldTotalHangBytes = _r.newTotalBytes;
+                lastHTime = genericsTimestampmS();
+            }
+
+            if ( ( genericsTimestampmS() - lastTTime ) > TICK_TIME_MS )
+            {
+                lastTTime = genericsTimestampmS();
+            }
+
             if ( ( genericsTimestampmS() - lastTSTime ) > INTERVAL_TIME_MS )
             {
-                _r.oldintervalBytes = _r.intervalBytes;
-                _r.intervalBytes = 0;
+                _r.oldTotalIntervalBytes = _r.newTotalBytes - _r.oldTotalBytes;
+                _r.oldTotalBytes = _r.newTotalBytes;
                 lastTSTime = genericsTimestampmS();
             }
         }

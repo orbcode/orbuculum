@@ -15,6 +15,8 @@
 #include <arpa/inet.h>
 #include <assert.h>
 #include <strings.h>
+#include <stdio.h>
+#include <linux/tcp.h>
 #include "generics.h"
 #include "nwclient.h"
 
@@ -315,8 +317,6 @@ void nwclientShutdown( struct nwclientsHandle *h )
         return;
     }
 
-    struct nwClient *c = h->firstClient;
-
     /* Flag that we're ending */
     h->finish = true;
 
@@ -324,6 +324,8 @@ void nwclientShutdown( struct nwclientsHandle *h )
     {
         genericsExit( -1, "Failed to acquire mutex" EOL );
     }
+
+    struct nwClient *c = h->firstClient;
 
     /* Tell all the clients to terminate */
     while ( c )

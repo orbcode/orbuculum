@@ -76,6 +76,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                 break;
 
             // -----------------------------------------------------
+
             case ETM_IDLE:
 
                 // *************************************************
@@ -83,12 +84,8 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                 // *************************************************
                 if ( c & 0b1 )
                 {
-                    if ( report )
-                    {
-                        report( V_DEBUG, "BRANCH " );
-                    }
-
                     /* The lowest order 6 bits of address info... */
+
                     switch ( cpu->addrMode )
                     {
                         case ETM_ADDRMODE_ARM:
@@ -105,7 +102,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                     }
 
                     i->byteCount = 1;
-                    C = c & 0x80;
+                    C = ( c & 0x80 ) != 0;
                     X = false;
                     _stateChange( i, EV_CH_ADDRESS );
 
@@ -312,7 +309,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
 
                             if ( report )
                             {
-                                report( V_DEBUG, "PHdr FMT1 (E=%d, N=%d)" EOL, cpu->eatoms, cpu->natoms );
+                                report( V_DEBUG, "PHdr FMT1 (%02x E=%d, N=%d)" EOL, c, cpu->eatoms, cpu->natoms );
                             }
 
                             break;
@@ -466,9 +463,9 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                 C = c & 0x80;
                 /* This is a proper mess. Mask and collect bits according to address mode in use and */
                 /* if it's the last byte of the sequence */
-
                 mask = C ? 0x7f : 0x3f;
                 ofs = ( cpu->addrMode == ETM_ADDRMODE_ARM ) ? 1 : ( cpu->addrMode == ETM_ADDRMODE_THUMB ) ? 0 : -1;
+
 
                 i->addrConstruct = ( i->addrConstruct &   ~( mask << ( 7 * i->byteCount + ofs ) ) )
                                    | ( ( c & mask ) << ( 7 * i->byteCount + ofs ) );
@@ -488,6 +485,10 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                 X = ( i->byteCount == 5 ) && C;
                 goto terminateAddrByte;
 
+                // -----------------------------------------------------
+
+                /* For all cases, see if the address is complete, and process if so */
+                /* this is a continuation of ETM_COLLECT_BA_???_FORMAT.             */
             terminateAddrByte:
 
                 /* Check to see if this packet is complete, and encode to return if so */
@@ -849,7 +850,8 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                         if ( i->addrConstruct & ( 1 << 0 ) )
                         {
                             cpu->addrMode = ETM_ADDRMODE_THUMB;
-                            cpu->addr = i->addrConstruct & 0xFFFFFFFE;
+                            i->addrConstruct &= ~( 1 << 0 );
+                            cpu->addr = i->addrConstruct;
                         }
                         else
                         {
@@ -986,7 +988,7 @@ void ETMDecoderPump( struct ETMDecoder *i, uint8_t *buf, int len, etmDecodeCB cb
 {
     while ( len-- )
     {
-        _ETMDecoderPumpAction( i, *buf++, cb, report, d );
+        _ETMDecoderPumpAction( i, *( buf++ ), cb, report, d );
     }
 }
 // ====================================================================================================

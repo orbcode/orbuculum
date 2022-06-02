@@ -279,6 +279,8 @@ For `orbuculum`, the specific command line options of note are;
 
  `-m`: Monitor interval (in mS) for reporting on state of the link. If baudrate is specified (using `-a`) and is greater than 100bps then the percentage link occupancy is also reported.
 
+  `-o [filename]`: Record trace data locally. This is unfettered data directly from the source device, can be useful for replay purposes or other tool testing.
+  
   `-p [serialPort]`: to use. If not specified then the program defaults to Blackmagic probe.
 
   `-s [address]:[port]`: Set address for explicit TCP Source connection, (default none:2332).
@@ -513,7 +515,7 @@ configured to stream parallel trace info (clue; the `startETM` option).
 
 The command line options of note are;
 
- `-a`: Use alternate address encoding. Select this if decodes don't seem to arrive correctly. You can discover if you need this option by using the `describeETM` command inside the debugger.
+ `-a`: Don't use alternate address encoding. Select this if decodes don't seem to arrive correctly. You can discover if you need this option by using the `describeETM` command inside the debugger.
  
  `-b [Length]`: Set length of post-mortem buffer, in KBytes (Default 32 KBytes)
  

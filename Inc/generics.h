@@ -59,6 +59,7 @@ extern "C" {
 #define C_WHITE   "\033[1;37m"
 #define C_MONO    ""
 
+#define ALWAYS_INLINE inline __attribute__((always_inline))
 // ====================================================================================================
 enum verbLevel {V_ERROR, V_WARN, V_INFO, V_DEBUG, V_MAX_VERBLEVEL};
 

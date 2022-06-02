@@ -15,6 +15,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <strings.h>
+#include <string.h>
 #include <pthread.h>
 #if defined OSX
     #include <sys/ioctl.h>
@@ -92,6 +93,7 @@ struct Options
     uint32_t dataSpeed;                                  /* Effective data speed (can be less than link speed!) */
     char *file;                                          /* File host connection */
     bool fileTerminate;                                  /* Terminate when file read isn't successful */
+    char *outfile;                                       /* Output file for raw data dumping */
 
     uint32_t intervalReportTime;                         /* If we want interval reports about performance */
 
@@ -132,6 +134,7 @@ struct RunTime
     bool      ending;                                                        /* Flag indicating app is terminating */
     int f;                                                                   /* File handle to data source */
 
+    int opFileHandle;                                                         /* Handle if we're writing orb output locally */
     struct Options *options;                                                 /* Command line options (reference to above) */
 
     uint8_t wp;                                                              /* Read and write pointers into transfer buffers */
@@ -255,6 +258,11 @@ static void _doExit( void )
     nwclientShutdown( _r.n );
     /* Give them a bit of time, then we're leaving anyway */
     usleep( 200 );
+
+    if ( _r.opFileHandle )
+    {
+        close( _r.opFileHandle );
+    }
 }
 // ====================================================================================================
 void _printHelp( char *progName )
@@ -267,6 +275,7 @@ void _printHelp( char *progName )
     genericsPrintf( "       -h: This help" EOL );
     genericsPrintf( "       -l: <port> Listen port for the incoming connections (defaults to %d)" EOL, NWCLIENT_SERVER_PORT );
     genericsPrintf( "       -m: <interval> Output monitor information about the link at <interval>ms" EOL );
+    genericsPrintf( "       -o: <filename> to be used for dump file" EOL );
     genericsPrintf( "       -p: <serialPort> to use" EOL );
     genericsPrintf( "       -s: <Server>:<Port> to use" EOL );
     genericsPrintf( "       -t: <Channel , ...> Use TPIU channels (and strip TIPU framing from output flows)" EOL );
@@ -279,7 +288,7 @@ int _processOptions( int argc, char *argv[], struct RunTime *r )
     int c;
 #define DELIMITER ','
 
-    while ( ( c = getopt ( argc, argv, "a:ef:hl:m:np:s:t:v:" ) ) != -1 )
+    while ( ( c = getopt ( argc, argv, "a:ef:hl:m:no:p:s:t:v:" ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -314,6 +323,12 @@ int _processOptions( int argc, char *argv[], struct RunTime *r )
 
             case 'm':
                 r->options->intervalReportTime = atoi( optarg );
+                break;
+
+            // ------------------------------------
+
+            case 'o':
+                r->options->outfile = optarg;
                 break;
 
             // ------------------------------------
@@ -401,6 +416,11 @@ int _processOptions( int argc, char *argv[], struct RunTime *r )
     if ( r->options->dataSpeed )
     {
         genericsReport( V_INFO, "Max Data Rt    : %d bps" EOL, r->options->dataSpeed );
+    }
+
+    if ( r->options->outfile )
+    {
+        genericsReport( V_INFO, "Raw Output file: %s" EOL, r->options->outfile );
     }
 
     if ( r->options->seggerPort )
@@ -509,14 +529,12 @@ void *_checkInterval( void *params )
         {
             struct TPIUCommsStats *c = TPIUGetCommsStats( &r->t );
 
-            /* For now we don't transmit this...
             genericsPrintf( C_RESET " LEDS: %s%s%s%s" C_RESET " Frames: "C_DATA "%u" C_RESET,
                             c->leds & 1 ? C_DATA_IND "d" : C_RESET "-",
                             c->leds & 2 ? C_TX_IND "t" : C_RESET "-",
                             c->leds & 0x20 ? C_OVF_IND "O" : C_RESET "-",
                             c->leds & 0x80 ? C_HB_IND "h" : C_RESET "-",
                             c->totalFrames );
-            */
 
             genericsReport( V_INFO, " Pending:%5d Lost:%5d",
                             c->pendingCount,
@@ -657,6 +675,14 @@ static void *_processBlocks( void *params )
 
 #endif
 
+                if ( _r.opFileHandle )
+                {
+                    if ( write( _r.opFileHandle, r->rawBlock[r->rp].buffer, r->rawBlock[r->rp].fillLevel ) < 0 )
+                    {
+                        genericsExit( -3, "Writing to file failed" EOL );
+                    }
+                }
+
                 if ( r-> options->useTPIU )
                 {
                     /* Strip the TPIU framing from this input */
@@ -687,6 +713,15 @@ static void _usb_callback( struct libusb_transfer *t )
     if ( t->actual_length > 0 )
     {
         _r.intervalBytes += t->actual_length;
+
+        if ( _r.opFileHandle )
+        {
+            if ( write( _r.opFileHandle, t->buffer, t->actual_length ) < 0 )
+            {
+                genericsExit( -4, "Writing to file failed (%s)" EOL, strerror( errno ) );
+            }
+        }
+
 
         if ( _r.options->useTPIU )
         {
@@ -1122,6 +1157,17 @@ int main( int argc, char *argv[] )
 
     /* Now start the distribution task */
     pthread_create( &_r.processThread, NULL, &_processBlocks, &_r );
+
+    if ( _r.options->outfile )
+    {
+        _r.opFileHandle = open( _r.options->outfile, O_CREAT | O_TRUNC | O_WRONLY, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH );
+
+        if ( _r.opFileHandle < 0 )
+        {
+            genericsReport( V_ERROR, "Could not open output file for writing" EOL );
+            return -2;
+        }
+    }
 
     if ( _r.options->seggerPort )
     {

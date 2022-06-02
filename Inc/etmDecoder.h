@@ -73,7 +73,7 @@ enum ETMchanges
 // Messages out of the decoder
 // ============================================================================
 enum ETMDecoderMsgType { ETMDEC_MSG_NONE, ETM_BRANCH, ETMDEC_MSG_NUM_MSGS };
-enum Mode { ETM_ADDRMODE_ARM, ETM_ADDRMODE_THUMB, ETM_ADDRMODE_JAZELLE };
+enum Mode { ETM_ADDRMODE_THUMB, ETM_ADDRMODE_ARM, ETM_ADDRMODE_JAZELLE };
 enum Reason { ETM_REASON_PERIODIC, ETM_REASON_TRACEON, ETM_REASON_TRACEOVF, ETM_REASON_EXITDBG };
 
 /* ETM Decoder statistics */
@@ -156,11 +156,12 @@ void ETMDecoderForceSync( struct ETMDecoder *i, bool isSynced );
 void ETMDecoderZeroStats( struct ETMDecoder *i );
 bool ETMDecoderIsSynced( struct ETMDecoder *i );
 
-inline struct ETMCPUState *ETMCPUState( struct ETMDecoder *i )
+ALWAYS_INLINE struct ETMCPUState *ETMCPUState( struct ETMDecoder *i )
 {
     return &i->cpu;
 }
-inline bool ETMStateChanged( struct ETMDecoder *i, enum ETMchanges c )
+
+ALWAYS_INLINE bool ETMStateChanged( struct ETMDecoder *i, enum ETMchanges c )
 {
     bool r = ( i->cpu.changeRecord & ( 1 << c ) ) != 0;
     i->cpu.changeRecord &= ~( 1 << c );
