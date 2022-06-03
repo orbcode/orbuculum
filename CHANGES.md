@@ -15,6 +15,17 @@ Version 2.00 in Progress
 * (From V1.11) Fix depreciation warning with latest versions of libftdi
 * (From V1.11) Fix bitrot in documentation URL (master -> main transition, Jan Christoph Bernack)
 
+3rd June 2022 (Version 1.13)
+
+* Fix -v missing parameter
+* Allow orbcat sockets to reconnect on loss of connection
+* Add SAM5X SWO support
+* Prevent segfault in orbtop when elf changes
+* Fix assert when fpga has no data to deliver
+* Add pyocd to list of trace sources
+*Complete fix for specified length integers on 32 bit platforms (Rasbian support)
+* Compatability with languages other than C family (specifically Rust)
+
 23rd October 2020 (Version 1.10)
 
 * Replace `master` with `main`.

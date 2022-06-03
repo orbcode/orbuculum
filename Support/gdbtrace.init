@@ -386,8 +386,6 @@ enableSTM32SWO Configure output pin on STM32 for SWO use.
 end
 # ====================================================================
 define enableSAMD5XSWD
-
-  _setAddressesSAM
   # Enable peripheral channel clock on GCLK#0
   # GCLK->PHCTRL[47] = GCLK_PCHCTRL_GEN(0)
   set *(unsigned char *)0x40001D3C = 0

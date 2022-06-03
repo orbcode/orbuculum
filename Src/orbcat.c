@@ -50,6 +50,7 @@ struct
 
     char *file;                                          /* File host connection */
     bool endTerminate;                                  /* Terminate when file/socket "ends" */
+
 } options = {.forceITMSync = true, .tpiuChannel = 1, .port = NWCLIENT_SERVER_PORT, .server = "localhost"};
 
 struct
@@ -613,6 +614,7 @@ int socketFeeder( void )
 
     close( sockfd );
     return -2;
+
 }
 
 // ====================================================================================================
