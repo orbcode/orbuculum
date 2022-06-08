@@ -31,14 +31,18 @@ endif
 # Check Host OS
 ##########################################################################
 
-UNAME_S := $(shell uname -s)
-ifeq ($(UNAME_S),Linux)
-  CFLAGS += -DLINUX -D_GNU_SOURCE
-  LINUX=1
-endif
-ifeq ($(UNAME_S),Darwin)
-  CFLAGS += -DOSX
-  OSX=1
+ifeq ($(OS),Windows_NT)     # is Windows_NT on XP, 2000, 7, Vista, 10...
+    WINDOWS=1
+else
+    UNAME_S := $(shell uname -s)
+    ifeq ($(UNAME_S),Linux)
+        CFLAGS += -DLINUX -D_GNU_SOURCE
+        LINUX=1
+    endif
+    ifeq ($(UNAME_S),Darwin)
+        CFLAGS += -DOSX
+        OSX=1
+    endif
 endif
 
 ##########################################################################
@@ -89,6 +93,10 @@ INCLUDE_PATHS += -I/usr/local/include/libusb-1.0
 LDLIBS = -L. -L/usr/local/lib -lusb-1.0 -ldl -lncurses -L$(OLOC) -l$(ORBLIB)
 endif
 
+ifdef WINDOWS
+LDLIBS += -lWs2_32
+endif
+
 ifdef LINUX
 LDLIBS += -lpthread
 endif
@@ -112,7 +120,10 @@ else
 	ORBLIB_CFILES += $(App_DIR)/stream_file_posix.c
 endif
 
-ORBUCULUM_CFILES  = $(App_DIR)/$(ORBUCULUM).c $(App_DIR)/nwclient.c $(App_DIR)/serialFeeder_win32.c
+ORBUCULUM_CFILES  = $(App_DIR)/$(ORBUCULUM).c $(App_DIR)/nwclient.c
+ifdef WINDOWS
+ORBUCULUM_CFILES += $(App_DIR)/serialFeeder_win32.c
+endif
 ORBFIFO_CFILES    = $(App_DIR)/$(ORBFIFO).c $(App_DIR)/filewriter.c $(App_DIR)/itmfifos.c
 ORBCAT_CFILES     = $(App_DIR)/$(ORBCAT).c
 ORBTOP_CFILES     = $(App_DIR)/$(ORBTOP).c $(App_DIR)/symbols.c $(EXT)/cJSON.c

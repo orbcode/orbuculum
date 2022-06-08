@@ -18,6 +18,7 @@
     #include <netdb.h>
     #include <arpa/inet.h>
     #include <linux/tcp.h>
+    #include <string.h>
 #endif
 #include <assert.h>
 #include <strings.h>
@@ -169,7 +170,7 @@ static void *_listenTask( void *arg )
     #ifdef WIN32
     int clilen;
     #else
-    size_t clilen;
+    socklen_t clilen;
     #endif
     struct sockaddr_in cli_addr;
     int f[2];                               /* File descriptor set for pipe */
