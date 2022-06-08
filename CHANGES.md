@@ -9,11 +9,6 @@ Version 2.00 in Progress
 * Orbtrace split off into separate repository
 * Split of orbuculum into the network server (orbuculum) and the fifo server (orbfifo).
 * Extensive changes to support orbtrace
-* (From V1.12) Update gdbtrace.init to remove `with` syntax. This remains available in the `gdbinit_withwith.init` file, but that syntax breaks older versions of gdb.
-* (From V1.11) Fix building on OSX (Andrew Kohlsmith)
-* (From V1.11) Fix segfaults on 32-bit OSes
-* (From V1.11) Fix depreciation warning with latest versions of libftdi
-* (From V1.11) Fix bitrot in documentation URL (master -> main transition, Jan Christoph Bernack)
 
 3rd June 2022 (Version 1.13)
 
