@@ -1145,7 +1145,7 @@ int main( int argc, char *argv[] )
             }
         }
 
-	FD_ZERO( &readfds );
+        FD_ZERO( &readfds );
 
         /* ----------------------------------------------------------------------------- */
         /* This is the main active loop...only break out of this when ending or on error */
@@ -1254,8 +1254,8 @@ int main( int argc, char *argv[] )
                                 ( _r.options->file && !sourcefd ) ||
 
                                 ( ( ( genericsTimestampmS() - lastHTime ) > HANG_TIME_MS ) &&
-				  ( _r.newTotalBytes - _r.oldTotalHangBytes == 0 ) &&
-				  ( _r.wp != _r.rp ) )
+                                  ( _r.newTotalBytes - _r.oldTotalHangBytes == 0 ) &&
+                                  ( _r.wp != _r.rp ) )
                     )
                )
             {

@@ -72,11 +72,8 @@ static const struct deviceList
 /* How many transfer buffers from the source to allocate */
 #define NUM_RAW_BLOCKS (3)
 
-/* What time spread to defer them over (less than orbmortem timeout) */
-#define BLOCK_TOTAL_SPREAD (100)
-
-/* Interval between blocks for timeouts */
-#define BLOCK_TIMEOUT_INTERVAL_MS (BLOCK_TOTAL_SPREAD/NUM_RAW_BLOCKS)
+/* Interval between blocks for timeouts..smaller means smoother, but higher CPU load */
+#define BLOCK_TIMEOUT_INTERVAL_MS (20)
 
 /* Record for options, either defaults or from command line */
 struct Options
@@ -866,7 +863,7 @@ int usbFeeder( struct RunTime *r )
                                         TRANSFER_SIZE,
                                         _usb_callback,
                                         &r->rawBlock[t].usbtfr,
-                                        BLOCK_TIMEOUT_INTERVAL_MS * ( t + 1 )
+                                        BLOCK_TIMEOUT_INTERVAL_MS
                                       );
 
             int ret = libusb_submit_transfer( r->rawBlock[t].usbtfr );
