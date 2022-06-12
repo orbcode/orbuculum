@@ -73,7 +73,7 @@ static const struct deviceList
 #define NUM_RAW_BLOCKS (3)
 
 /* Interval between blocks for timeouts..smaller means smoother, but higher CPU load */
-#define BLOCK_TIMEOUT_INTERVAL_MS (20)
+#define BLOCK_TIMEOUT_INTERVAL_MS (50)
 
 /* Record for options, either defaults or from command line */
 struct Options
@@ -520,22 +520,6 @@ void *_checkInterval( void *params )
             /* Conversion to percentage done as a division to avoid overflow */
             uint32_t fullPercent = ( snapInterval * 100 ) / r->options->dataSpeed;
             genericsPrintf( "(" C_DATA " %3d%% " C_RESET "full)", ( fullPercent > 100 ) ? 100 : fullPercent );
-        }
-
-        if ( r->options->useTPIU )
-        {
-            struct TPIUCommsStats *c = TPIUGetCommsStats( &r->t );
-
-            genericsPrintf( C_RESET " LEDS: %s%s%s%s" C_RESET " Frames: "C_DATA "%u" C_RESET,
-                            c->leds & 1 ? C_DATA_IND "d" : C_RESET "-",
-                            c->leds & 2 ? C_TX_IND "t" : C_RESET "-",
-                            c->leds & 0x20 ? C_OVF_IND "O" : C_RESET "-",
-                            c->leds & 0x80 ? C_HB_IND "h" : C_RESET "-",
-                            c->totalFrames );
-
-            genericsReport( V_INFO, " Pending:%5d Lost:%5d",
-                            c->pendingCount,
-                            c->lostFrames );
         }
 
         genericsPrintf( C_RESET EOL );

@@ -1,5 +1,7 @@
-Version 2.00 in Progress
+Version 2.0.0 in Progress
 
+* Fix packet scheduling from orbuculum
+* Move to semantic numbering - 2.00 becomes 2.0.0. 
 * Various fixes in orbmortem for reliability and performance
 * Improve timing of orbuculum mux to ensure data get flushed to orbmortem on crash
 * Version bumped to 2.00 in Progress because of size and impact of changes

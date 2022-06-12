@@ -8,7 +8,7 @@ MAKE_EXPERIMENTAL=1
 SCREEN_PALETTE="uicolours_default.h"
 #SCREEN_PALETTE="uicolours_mono.h"
 
-CFLAGS=-DVERSION="\"2.00Solidifying\""
+CFLAGS=-DVERSION="\"2.0.0Beta2InProgress\""
 
 CROSS_COMPILE=
 # Output Files
