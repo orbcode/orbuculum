@@ -313,6 +313,11 @@ static int _processOptions( int argc, char *argv[], struct RunTime *r )
         genericsReport( V_INFO, "Protocol %s" EOL, TRACEprotocolString[r->options->protocol] );
     }
 
+    if ( ( r->options->protocol == TRACE_PROT_MTB ) && ( !r->options->file ) )
+    {
+        genericsExit( V_ERROR, "MTB only makes sense when input is from a file" EOL );
+    }
+
     if ( !r->options->elffile )
     {
         genericsExit( V_ERROR, "Elf File not specified" EOL );

@@ -535,6 +535,8 @@ The command line options of note are;
  
  `-f [filename]`: Take input from specified file rather than live from a probe (useful for ETB decode)
  
+ `-p [protocol]`: to use, where protocols are MTB or ETM35 (default). Note that MTB only makes sense from a file.
+ 
  `-s [Server:Port]`: to use
  
  `-t [channel]`: Use TPIU to strip TPIU on specfied channel (normally best to let `orbuculum` handle this
