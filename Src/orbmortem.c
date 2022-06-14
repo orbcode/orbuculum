@@ -530,8 +530,12 @@ static void _traceCB( void *d )
         /* Make debug report if calculated and reported addresses differ. This is most useful for testing when exhaustive  */
         /* address reporting is switched on. It will give 'false positives' for uncalculable instructions (e.g. bx lr) but */
         /* it's a decent safety net to be sure the jump decoder is working correctly.                                      */
-        _appendToOPBuffer( r, r->op.currentLine, LT_DEBUG, "%sCommanded CPU Address change (Was:0x%08x Commanded:0x%08x)" EOL,
-                           ( r->op.workingAddr == cpu->addr ) ? "" : "***INCONSISTENT*** ", r->op.workingAddr, cpu->addr );
+
+        if ( r->options->protocol != TRACE_PROT_MTB )
+        {
+            _appendToOPBuffer( r, r->op.currentLine, LT_DEBUG, "%sCommanded CPU Address change (Was:0x%08x Commanded:0x%08x)" EOL,
+                               ( r->op.workingAddr == cpu->addr ) ? "" : "***INCONSISTENT*** ", r->op.workingAddr, cpu->addr );
+        }
 
         r->op.workingAddr = cpu->addr;
     }
@@ -560,8 +564,15 @@ static void _traceCB( void *d )
 
     if ( TRACEStateChanged( &r->i, EV_CH_EX_ENTRY ) )
     {
-        _appendToOPBuffer( r, r->op.currentLine, LT_EVENT, "========== Exception Entry%s (%d at 0x%08x) ==========",
-                           TRACEStateChanged( &r->i, EV_CH_CANCELLED ) ? ", Last Instruction Cancelled" : "", cpu->exception, cpu->addr );
+        if ( r->options->protocol != TRACE_PROT_MTB )
+        {
+            _appendToOPBuffer( r, r->op.currentLine, LT_EVENT, "========== Exception Entry%s (%d at 0x%08x) ==========",
+                               TRACEStateChanged( &r->i, EV_CH_CANCELLED ) ? ", Last Instruction Cancelled" : "", cpu->exception, cpu->addr );
+        }
+        else
+        {
+            _appendToOPBuffer( r, r->op.currentLine, LT_EVENT, "========== Exception Entry ==========" );
+        }
     }
 
     if ( TRACEStateChanged( &r->i, EV_CH_EX_EXIT ) )
@@ -631,7 +642,7 @@ static void _traceCB( void *d )
 
     /* End of dealing with changes introduced by this event =============== */
 
-    while ( ( incAddr && !linearRun ) || ( r->op.workingAddr < targetAddr && linearRun ) )
+    while ( ( incAddr && !linearRun ) || ( ( r->op.workingAddr <= targetAddr ) && linearRun ) )
     {
         incAddr--;
 
@@ -686,17 +697,23 @@ static void _traceCB( void *d )
             /* If this line has assembly then output it */
             if ( n.assyLine != ASSY_NOT_FOUND )
             {
-                _appendRefToOPBuffer( r, r->op.currentLine, ( disposition & 1 ) ? LT_ASSEMBLY : LT_NASSEMBLY, n.assy[n.assyLine].lineText );
+                /* Instructions are executed based on disposition for ETM */
+                /* Everything except jumps are executed for MTB */
+                /* jumps are executed only if they are the last instruction in a run */
+                bool insExecuted = (  ( ( !linearRun ) & ( disposition & 1 ) ) ||
+                                      ( ( linearRun ) &&
+                                        ( ( ( r->op.workingAddr != targetAddr ) && ( !n.assy[n.assyLine].isJump ) && ( !n.assy[n.assyLine].isSubCall ) )  ||
+                                          ( r->op.workingAddr == targetAddr )
+                                        ) ) );
+
+                _appendRefToOPBuffer( r, r->op.currentLine, insExecuted ? LT_ASSEMBLY : LT_NASSEMBLY, n.assy[n.assyLine].lineText );
 
                 if ( n.assy[n.assyLine].isJump || n.assy[n.assyLine].isSubCall )
                 {
-                    _appendToOPBuffer( r, r->op.currentLine, LT_DEBUG, "%sTAKEN %s", ( disposition & 1 ) ? "" : "NOT ", n.assy[n.assyLine].isJump ? "JUMP" : "SUBCALL"  );
-                }
+                    _appendToOPBuffer( r, r->op.currentLine, LT_DEBUG, "%sTAKEN %s", insExecuted ? "" : "NOT ", n.assy[n.assyLine].isJump ? "JUMP" : "SUBCALL"  );
 
-                if ( ( n.assy[n.assyLine].isJump || n.assy[n.assyLine].isSubCall ) && ( disposition & 1 ) )
-                {
-                    /* This is a fixed jump that _was_ taken, so update working address */
-                    r->op.workingAddr = n.assy[n.assyLine].jumpdest;
+                    /* Update working address according to if jump was taken */
+                    r->op.workingAddr = insExecuted ? ( n.assy[n.assyLine].jumpdest ) : r->op.workingAddr + ( ( n.assy[n.assyLine].is4Byte ) ? 4 : 2 );
                 }
                 else
                 {
