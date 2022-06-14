@@ -7,6 +7,9 @@
 extern "C" {
 #endif
 
+#include <stdint.h>
+#include <stdbool.h>
+
 /* Do not change the order of existing message types! */
 enum MSGType
 {

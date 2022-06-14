@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 
 /*
- * ETM Decoder Module
- * ==================
+ * TRACE Decoder Module
+ * ====================
  *
  * Implementation of ITM/DWT decode according to the specification in Appendix D4
  * of the ARMv7-M Architecture Refrence Manual document available
@@ -10,18 +10,29 @@
  */
 
 #include <string.h>
-#include "etmDecoder.h"
+#include <assert.h>
 #include "msgDecoder.h"
+#include "traceDecoder.h"
 #include "generics.h"
 
-/* Events from the process of pumping bytes through the ETM decoder */
-enum ETMDecoderPumpEvent
+/* Events from the process of pumping bytes through the TRACE decoder */
+enum TRACEDecoderPumpEvent
 {
-    ETM_EV_NONE,
-    ETM_EV_UNSYNCED,
-    ETM_EV_SYNCED,
-    ETM_EV_ERROR,
-    ETM_EV_MSG_RXED
+    TRACE_EV_NONE,
+    TRACE_EV_UNSYNCED,
+    TRACE_EV_SYNCED,
+    TRACE_EV_ERROR,
+    TRACE_EV_MSG_RXED
+};
+
+const char *TRACEprotocolString[] =
+{
+    TRACEProtocolStringDEF
+};
+
+const char *protoStateName[] =
+{
+    TRACEprotoStateNamesDEF
 };
 
 // ====================================================================================================
@@ -32,15 +43,14 @@ enum ETMDecoderPumpEvent
 // ====================================================================================================
 // ====================================================================================================
 
-static char *_protoNames[] = {ETM_PROTO_NAME_LIST};
 
 // ====================================================================================================
-static void _stateChange( struct ETMDecoder *i, enum ETMchanges c )
+static void _stateChange( struct TRACEDecoder *i, enum TRACEchanges c )
 {
     i->cpu.changeRecord |= ( 1 << c );
 }
 // ====================================================================================================
-static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB cb, genericsReportCB report, void *d )
+static void _ETM35DecoderPumpAction( struct TRACEDecoder *i, uint8_t c, traceDecodeCB cb, genericsReportCB report, void *d )
 
 /* Pump next byte into the protocol decoder */
 
@@ -50,9 +60,9 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
     int8_t ofs;                           /* Offset for bits in address calculation */
     uint8_t mask;                         /* Mask for bits in address calculation */
 
-    enum ETMprotoState newState = i->p;
-    struct ETMCPUState *cpu = &i->cpu;
-    enum ETMDecoderPumpEvent retVal = ETM_EV_NONE;
+    enum TRACEprotoState newState = i->p;
+    struct TRACECPUState *cpu = &i->cpu;
+    enum TRACEDecoderPumpEvent retVal = TRACE_EV_NONE;
 
 
     /* Perform A-Sync accumulation check */
@@ -63,7 +73,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
             report( V_DEBUG, "A-Sync Accumulation complete" EOL );
         }
 
-        newState = ETM_IDLE;
+        newState = TRACE_IDLE;
     }
     else
     {
@@ -72,12 +82,12 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
         switch ( i->p )
         {
             // -----------------------------------------------------
-            case ETM_UNSYNCED:
+            case TRACE_UNSYNCED:
                 break;
 
             // -----------------------------------------------------
 
-            case ETM_IDLE:
+            case TRACE_IDLE:
 
                 // *************************************************
                 // ************** BRANCH PACKET ********************
@@ -88,15 +98,15 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
 
                     switch ( cpu->addrMode )
                     {
-                        case ETM_ADDRMODE_ARM:
+                        case TRACE_ADDRMODE_ARM:
                             i->addrConstruct = ( i->addrConstruct & ~( 0b11111100 ) ) | ( ( c & 0b01111110 ) << 1 );
                             break;
 
-                        case ETM_ADDRMODE_THUMB:
+                        case TRACE_ADDRMODE_THUMB:
                             i->addrConstruct = ( i->addrConstruct & ~( 0b01111111 ) ) | ( c & 0b01111110 );
                             break;
 
-                        case ETM_ADDRMODE_JAZELLE:
+                        case TRACE_ADDRMODE_JAZELLE:
                             i->addrConstruct = ( i->addrConstruct & ~( 0b00111111 ) ) | ( ( c & 0b01111110 ) >> 1 );
                             break;
                     }
@@ -106,7 +116,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                     X = false;
                     _stateChange( i, EV_CH_ADDRESS );
 
-                    newState = ( i->usingAltAddrEncode ) ? ETM_COLLECT_BA_ALT_FORMAT : ETM_COLLECT_BA_STD_FORMAT;
+                    newState = ( i->usingAltAddrEncode ) ? TRACE_COLLECT_BA_ALT_FORMAT : TRACE_COLLECT_BA_STD_FORMAT;
                     goto terminateAddrByte;
                 }
 
@@ -130,7 +140,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
 
                     i->byteCount = 0;
                     i->cycleConstruct = 0;
-                    newState = ETM_GET_CYCLECOUNT;
+                    newState = TRACE_GET_CYCLECOUNT;
                     break;
                 }
 
@@ -147,7 +157,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                     /* Collect either the context or the Info Byte next */
                     i->byteCount = 0;
                     i->contextConstruct = 0;
-                    newState = i->contextBytes ? ETM_GET_CONTEXTBYTE : ETM_GET_INFOBYTE;
+                    newState = i->contextBytes ? TRACE_GET_CONTEXTBYTE : TRACE_GET_INFOBYTE;
 
                     /* We won't start reporting data until a valid ISYNC has been received */
                     if ( !i->rxedISYNC )
@@ -174,7 +184,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                     /* Collect the cycle count next */
                     i->byteCount = 0;
                     i->cycleConstruct = 0;
-                    newState = ETM_GET_ICYCLECOUNT;
+                    newState = TRACE_GET_ICYCLECOUNT;
                     break;
                 }
 
@@ -189,7 +199,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                     }
 
                     _stateChange( i, EV_CH_TRIGGER );
-                    retVal = ETM_EV_MSG_RXED;
+                    retVal = TRACE_EV_MSG_RXED;
                     break;
                 }
 
@@ -203,7 +213,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                         report( V_DEBUG, "VMID " EOL );
                     }
 
-                    newState = ETM_GET_VMID;
+                    newState = TRACE_GET_VMID;
                     break;
                 }
 
@@ -217,7 +227,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                         report( V_DEBUG, "TS " EOL );
                     }
 
-                    newState = ETM_GET_TSTAMP;
+                    newState = TRACE_GET_TSTAMP;
 
                     if ( ( c & ( 1 << 2 ) ) != 0 )
                     {
@@ -251,7 +261,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                         report( V_DEBUG, "CONTEXTID " EOL );
                     }
 
-                    newState = ETM_GET_CONTEXTID;
+                    newState = TRACE_GET_CONTEXTID;
                     cpu->contextID = 0;
                     i->byteCount = 0;
                     break;
@@ -268,7 +278,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                     }
 
                     _stateChange( i, EV_CH_EX_EXIT );
-                    retVal = ETM_EV_MSG_RXED;
+                    retVal = TRACE_EV_MSG_RXED;
                     break;
                 }
 
@@ -284,7 +294,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                     }
 
                     _stateChange( i, EV_CH_EX_ENTRY );
-                    retVal = ETM_EV_MSG_RXED;
+                    retVal = TRACE_EV_MSG_RXED;
                     break;
                 }
 
@@ -305,7 +315,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                             /* Put a 1 in each element of disposition if was executed */
                             cpu->disposition = ( 1 << cpu->eatoms ) - 1;
                             _stateChange( i, EV_CH_ENATOMS );
-                            retVal = ETM_EV_MSG_RXED;
+                            retVal = TRACE_EV_MSG_RXED;
 
                             if ( report )
                             {
@@ -326,7 +336,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
 
                             _stateChange( i, EV_CH_ENATOMS );
                             cpu->instCount += cpu->eatoms + cpu->natoms;
-                            retVal = ETM_EV_MSG_RXED;
+                            retVal = TRACE_EV_MSG_RXED;
 
                             if ( report )
                             {
@@ -351,7 +361,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                             cpu->eatoms = cpu->natoms = 0;
                             _stateChange( i, EV_CH_ENATOMS );
                             _stateChange( i, EV_CH_WATOMS );
-                            retVal = ETM_EV_MSG_RXED;
+                            retVal = TRACE_EV_MSG_RXED;
 
                             if ( report )
                             {
@@ -371,7 +381,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                             cpu->disposition = ( 1 << cpu->eatoms ) - 1;
                             _stateChange( i, EV_CH_ENATOMS );
                             _stateChange( i, EV_CH_WATOMS );
-                            retVal = ETM_EV_MSG_RXED;
+                            retVal = TRACE_EV_MSG_RXED;
 
                             if ( report )
                             {
@@ -391,7 +401,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                             cpu->disposition = ( ( c & ( 1 << 3 ) ) != 0 ) | ( ( c & ( 1 << 2 ) ) != 0 );
                             _stateChange( i, EV_CH_ENATOMS );
                             _stateChange( i, EV_CH_WATOMS );
-                            retVal = ETM_EV_MSG_RXED;
+                            retVal = TRACE_EV_MSG_RXED;
 
                             if ( report )
                             {
@@ -412,7 +422,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                             cpu->disposition = cpu->eatoms;
                             _stateChange( i, EV_CH_ENATOMS );
                             _stateChange( i, EV_CH_WATOMS );
-                            retVal = ETM_EV_MSG_RXED;
+                            retVal = TRACE_EV_MSG_RXED;
 
                             if ( report )
                             {
@@ -433,7 +443,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                             cpu->disposition = cpu->eatoms;
                             _stateChange( i, EV_CH_ENATOMS );
                             _stateChange( i, EV_CH_WATOMS );
-                            retVal = ETM_EV_MSG_RXED;
+                            retVal = TRACE_EV_MSG_RXED;
 
                             if ( report )
                             {
@@ -459,12 +469,12 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
             // ADDRESS COLLECTION RELATED ACTIVITIES
             // -----------------------------------------------------
 
-            case ETM_COLLECT_BA_ALT_FORMAT: /* Collecting a branch address, alt format */
+            case TRACE_COLLECT_BA_ALT_FORMAT: /* Collecting a branch address, alt format */
                 C = c & 0x80;
                 /* This is a proper mess. Mask and collect bits according to address mode in use and */
                 /* if it's the last byte of the sequence */
                 mask = C ? 0x7f : 0x3f;
-                ofs = ( cpu->addrMode == ETM_ADDRMODE_ARM ) ? 1 : ( cpu->addrMode == ETM_ADDRMODE_THUMB ) ? 0 : -1;
+                ofs = ( cpu->addrMode == TRACE_ADDRMODE_ARM ) ? 1 : ( cpu->addrMode == TRACE_ADDRMODE_THUMB ) ? 0 : -1;
 
 
                 i->addrConstruct = ( i->addrConstruct &   ~( mask << ( 7 * i->byteCount + ofs ) ) )
@@ -476,9 +486,9 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
 
             // -----------------------------------------------------
 
-            case ETM_COLLECT_BA_STD_FORMAT: /* Collecting a branch address, standard format */
+            case TRACE_COLLECT_BA_STD_FORMAT: /* Collecting a branch address, standard format */
                 /* This will potentially collect too many bits, but that is OK */
-                ofs = ( cpu->addrMode == ETM_ADDRMODE_ARM ) ? 1 : ( cpu->addrMode == ETM_ADDRMODE_THUMB ) ? 0 : -1;
+                ofs = ( cpu->addrMode == TRACE_ADDRMODE_ARM ) ? 1 : ( cpu->addrMode == TRACE_ADDRMODE_THUMB ) ? 0 : -1;
                 i->addrConstruct = ( i->addrConstruct &  ~( 0x7F << ( ( 7 * i->byteCount ) + ofs ) ) ) | ( c & ( 0x7F <<  ( ( 7 * i->byteCount ) + ofs ) ) );
                 i->byteCount++;
                 C = ( i->byteCount < 5 ) ? c & 0x80 : c & 0x40;
@@ -488,7 +498,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                 // -----------------------------------------------------
 
                 /* For all cases, see if the address is complete, and process if so */
-                /* this is a continuation of ETM_COLLECT_BA_???_FORMAT.             */
+                /* this is a continuation of TRACE_COLLECT_BA_???_FORMAT.             */
             terminateAddrByte:
 
                 /* Check to see if this packet is complete, and encode to return if so */
@@ -496,14 +506,14 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                 {
                     cpu->addr = i->addrConstruct;
 
-                    if ( ( i->byteCount == 5 ) && ( cpu->addrMode == ETM_ADDRMODE_ARM ) && C )
+                    if ( ( i->byteCount == 5 ) && ( cpu->addrMode == TRACE_ADDRMODE_ARM ) && C )
                     {
                         /* There is (legacy) exception information in here */
                         cpu->exception = ( c >> 4 ) & 0x07;
                         _stateChange( i, EV_CH_EXCEPTION );
                         _stateChange( i, ( ( c & 0x40 ) != 0 ) ? EV_CH_CANCELLED : 0 );
-                        newState = ETM_IDLE;
-                        retVal = ETM_EV_MSG_RXED;
+                        newState = TRACE_IDLE;
+                        retVal = TRACE_EV_MSG_RXED;
 
                         if ( report )
                         {
@@ -516,8 +526,8 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                     if ( ( !C ) & ( !X ) )
                     {
                         /* This packet is complete, so can return it */
-                        newState = ETM_IDLE;
-                        retVal = ETM_EV_MSG_RXED;
+                        newState = TRACE_IDLE;
+                        retVal = TRACE_EV_MSG_RXED;
 
                         if ( report )
                         {
@@ -530,7 +540,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                         i->byteCount = 0; /* Used as a flag of which byte of exception we're collecting */
                         cpu->resume = 0;
                         _stateChange( i, EV_CH_EX_ENTRY );
-                        newState = ETM_COLLECT_EXCEPTION;
+                        newState = TRACE_COLLECT_EXCEPTION;
                     }
                 }
 
@@ -538,7 +548,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
 
             // -----------------------------------------------------
 
-            case ETM_COLLECT_EXCEPTION: /* Collecting exception information */
+            case TRACE_COLLECT_EXCEPTION: /* Collecting exception information */
                 if ( i->byteCount == 0 )
                 {
                     if ( ( ( c & ( 1 << 0 ) ) != 0 ) != cpu->nonSecure )
@@ -567,8 +577,8 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                             report( V_ERROR, "Exception jump (%d) to 0x%08x" EOL, cpu->exception, cpu->addr );
                         }
 
-                        newState = ETM_IDLE;
-                        retVal = ETM_EV_MSG_RXED;
+                        newState = TRACE_IDLE;
+                        retVal = TRACE_EV_MSG_RXED;
                     }
                 }
                 else
@@ -592,8 +602,8 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                                 report( V_ERROR, "Exception jump (%d) to 0x%08x" EOL, cpu->exception, cpu->addr );
                             }
 
-                            newState = ETM_IDLE;
-                            retVal = ETM_EV_MSG_RXED;
+                            newState = TRACE_IDLE;
+                            retVal = TRACE_EV_MSG_RXED;
                         }
                     }
                     else
@@ -613,8 +623,8 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                             report( V_ERROR, "Exception jump %s(%d) to 0x%08x" EOL, cpu->resume ? "with resume " : "", cpu->exception, cpu->addr );
                         }
 
-                        newState = ETM_IDLE;
-                        retVal = ETM_EV_MSG_RXED;
+                        newState = TRACE_IDLE;
+                        retVal = TRACE_EV_MSG_RXED;
                     }
                 }
 
@@ -624,7 +634,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
             // -----------------------------------------------------
             // VMID RELATED ACTIVITIES
             // -----------------------------------------------------
-            case ETM_GET_VMID: /* Collecting virtual machine ID */
+            case TRACE_GET_VMID: /* Collecting virtual machine ID */
                 if ( cpu->vmid != c )
                 {
                     cpu->vmid = c;
@@ -636,15 +646,15 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                     report( V_ERROR, "VMID Set to (%d)" EOL, cpu->vmid );
                 }
 
-                newState = ETM_IDLE;
-                retVal = ETM_EV_MSG_RXED;
+                newState = TRACE_IDLE;
+                retVal = TRACE_EV_MSG_RXED;
                 break;
 
             // -----------------------------------------------------
             // TIMESTAMP RELATED ACTIVITIES
             // -----------------------------------------------------
 
-            case ETM_GET_TSTAMP: /* Collecting current timestamp */
+            case TRACE_GET_TSTAMP: /* Collecting current timestamp */
                 if ( i->byteCount < 8 )
                 {
                     i->tsConstruct = ( i->tsConstruct & ( ~( 0x7F << i->byteCount ) ) ) | ( ( c & 0x7f ) << i->byteCount );
@@ -658,7 +668,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
 
                 if ( ( !( c & 0x80 ) ) || ( i->byteCount == 9 ) )
                 {
-                    newState = ETM_IDLE;
+                    newState = TRACE_IDLE;
                     cpu->ts = i->tsConstruct;
                     _stateChange( i, EV_CH_TSTAMP );
 
@@ -667,7 +677,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                         report( V_ERROR, "CPU Timestamp %d" EOL, cpu->ts );
                     }
 
-                    retVal = ETM_EV_MSG_RXED;
+                    retVal = TRACE_EV_MSG_RXED;
                 }
 
                 break;
@@ -676,13 +686,13 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
             // CYCLECOUNT RELATED ACTIVITIES
             // -----------------------------------------------------
 
-            case ETM_GET_CYCLECOUNT: /* Collecting cycle count as standalone packet */
+            case TRACE_GET_CYCLECOUNT: /* Collecting cycle count as standalone packet */
                 i->cycleConstruct = ( i->cycleConstruct & ~( 0x7f << ( ( i->byteCount ) * 7 ) ) ) | ( ( c & 0x7f ) << ( ( i->byteCount ) * 7 ) );
                 i->byteCount++;
 
                 if ( ( !( c & ( 1 << 7 ) ) ) || ( i->byteCount == 5 ) )
                 {
-                    newState = ETM_IDLE;
+                    newState = TRACE_IDLE;
                     cpu->cycleCount = i->cycleConstruct;
                     _stateChange( i, EV_CH_CYCLECOUNT );
 
@@ -691,7 +701,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                         report( V_ERROR, "Cyclecount %d" EOL, cpu->cycleCount );
                     }
 
-                    retVal = ETM_EV_MSG_RXED;
+                    retVal = TRACE_EV_MSG_RXED;
                 }
 
                 break;
@@ -701,7 +711,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
             // CONTEXTID RELATED ACTIVITIES
             // -----------------------------------------------------
 
-            case ETM_GET_CONTEXTID: /* Collecting contextID */
+            case TRACE_GET_CONTEXTID: /* Collecting contextID */
                 i->contextConstruct = i->contextConstruct + ( c << ( 8 * i->byteCount ) );
                 i->byteCount++;
 
@@ -718,8 +728,8 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                         report( V_ERROR, "CPU ContextID %d" EOL, cpu->contextID );
                     }
 
-                    retVal = ETM_EV_MSG_RXED;
-                    newState = ETM_IDLE;
+                    retVal = TRACE_EV_MSG_RXED;
+                    newState = TRACE_IDLE;
                 }
 
                 break;
@@ -729,25 +739,25 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
             // I-SYNC RELATED ACTIVITIES
             // -----------------------------------------------------
 
-            case ETM_WAIT_ISYNC:
+            case TRACE_WAIT_ISYNC:
                 if ( c == 0b00001000 )
                 {
                     if ( !i->rxedISYNC )
                     {
-                        retVal = ETM_EV_SYNCED;
+                        retVal = TRACE_EV_SYNCED;
                         i->rxedISYNC = true;
                     }
 
                     i->byteCount = i->contextBytes;
                     i->contextConstruct = 0;
-                    newState = i->contextBytes ? ETM_GET_CONTEXTBYTE : ETM_GET_INFOBYTE;
+                    newState = i->contextBytes ? TRACE_GET_CONTEXTBYTE : TRACE_GET_INFOBYTE;
                 }
 
                 break;
 
             // -----------------------------------------------------
 
-            case ETM_GET_CONTEXTBYTE: /* Collecting I-Sync contextID bytes */
+            case TRACE_GET_CONTEXTBYTE: /* Collecting I-Sync contextID bytes */
                 i->contextConstruct = i->contextConstruct + ( c << ( 8 * i->byteCount ) );
                 i->byteCount++;
 
@@ -759,14 +769,14 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                         _stateChange( i, EV_CH_CONTEXTID );
                     }
 
-                    newState = ETM_GET_INFOBYTE;
+                    newState = TRACE_GET_INFOBYTE;
                 }
 
                 break;
 
             // -----------------------------------------------------
 
-            case ETM_GET_INFOBYTE: /* Collecting I-Sync Information byte */
+            case TRACE_GET_INFOBYTE: /* Collecting I-Sync Information byte */
                 if ( ( ( c & 0x10000000 ) != 0 ) != cpu->isLSiP )
                 {
                     cpu->isLSiP = ( c & 0x10000000 ) != 0;
@@ -812,19 +822,19 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                         report( V_ERROR, "ISYNC in dataOnlyMode" EOL );
                     }
 
-                    retVal = ETM_EV_MSG_RXED;
-                    newState = ETM_IDLE;
+                    retVal = TRACE_EV_MSG_RXED;
+                    newState = TRACE_IDLE;
                 }
                 else
                 {
-                    newState = ETM_GET_IADDRESS;
+                    newState = TRACE_GET_IADDRESS;
                 }
 
                 break;
 
             // -----------------------------------------------------
 
-            case ETM_GET_IADDRESS: /* Collecting I-Sync Address bytes */
+            case TRACE_GET_IADDRESS: /* Collecting I-Sync Address bytes */
                 i->addrConstruct = ( i->addrConstruct & ( ~( 0xff << ( 8 * i->byteCount ) ) ) )  | ( c << ( 8 * i->byteCount ) ) ;
                 i->byteCount++;
 
@@ -836,7 +846,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                     {
                         /* This is Jazelle mode..can ignore the AltISA bit */
                         /* and bit 0 is bit 0 of the address */
-                        cpu->addrMode = ETM_ADDRMODE_JAZELLE;
+                        cpu->addrMode = TRACE_ADDRMODE_JAZELLE;
                         cpu->addr = i->addrConstruct;
                     }
                     else
@@ -849,13 +859,13 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
 
                         if ( i->addrConstruct & ( 1 << 0 ) )
                         {
-                            cpu->addrMode = ETM_ADDRMODE_THUMB;
+                            cpu->addrMode = TRACE_ADDRMODE_THUMB;
                             i->addrConstruct &= ~( 1 << 0 );
                             cpu->addr = i->addrConstruct;
                         }
                         else
                         {
-                            cpu->addrMode = ETM_ADDRMODE_ARM;
+                            cpu->addrMode = TRACE_ADDRMODE_ARM;
                             cpu->addr = i->addrConstruct & 0xFFFFFFFC;
                         }
                     }
@@ -863,7 +873,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                     if ( cpu->isLSiP )
                     {
                         /* If this is an LSiP packet we need to go get the address */
-                        newState = ( i->usingAltAddrEncode ) ? ETM_COLLECT_BA_ALT_FORMAT : ETM_COLLECT_BA_STD_FORMAT;
+                        newState = ( i->usingAltAddrEncode ) ? TRACE_COLLECT_BA_ALT_FORMAT : TRACE_COLLECT_BA_STD_FORMAT;
                     }
                     else
                     {
@@ -872,8 +882,8 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                             report( V_ERROR, "ISYNC with IADDRESS 0x%08x" EOL, cpu->addr );
                         }
 
-                        newState = ETM_IDLE;
-                        retVal = ETM_EV_MSG_RXED;
+                        newState = TRACE_IDLE;
+                        retVal = TRACE_EV_MSG_RXED;
                     }
                 }
 
@@ -881,7 +891,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
 
             // -----------------------------------------------------
 
-            case ETM_GET_ICYCLECOUNT: /* Collecting cycle count on front of ISYNC packet */
+            case TRACE_GET_ICYCLECOUNT: /* Collecting cycle count on front of ISYNC packet */
                 i->cycleConstruct = ( i->cycleConstruct & ~( 0x7f << ( ( i->byteCount ) * 7 ) ) ) | ( ( c & 0x7f ) << ( ( i->byteCount ) * 7 ) );
                 i->byteCount++;
 
@@ -893,7 +903,7 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
                     i->byteCount = i->contextBytes;
                     i->contextConstruct = 0;
                     _stateChange( i, EV_CH_CYCLECOUNT );
-                    newState = i->contextBytes ? ETM_GET_CONTEXTBYTE : ETM_GET_INFOBYTE;
+                    newState = i->contextBytes ? TRACE_GET_CONTEXTBYTE : TRACE_GET_INFOBYTE;
                     break;
                 }
 
@@ -904,18 +914,66 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
         }
     }
 
-    if ( i->p != ETM_UNSYNCED )
+    if ( i->p != TRACE_UNSYNCED )
     {
-        if ( report ) report( V_DEBUG, "%02x:%s --> %s %s(%d)", c, ( i->p == ETM_IDLE ) ? _protoNames[i->p] : "", _protoNames[newState],
-                                  ( ( newState == ETM_IDLE ) ? ( ( retVal == ETM_EV_NONE ) ? "!!!" : "OK" ) : " : " ), retVal );
+        if ( report ) report( V_DEBUG, "%02x:%s --> %s %s(%d)", c, ( i->p == TRACE_IDLE ) ? protoStateName[i->p] : "", protoStateName[newState],
+                                  ( ( newState == TRACE_IDLE ) ? ( ( retVal == TRACE_EV_NONE ) ? "!!!" : "OK" ) : " : " ), retVal );
     }
 
     i->p = newState;
 
-    if ( ( retVal != ETM_EV_NONE ) && ( i->rxedISYNC ) )
+    if ( ( retVal != TRACE_EV_NONE ) && ( i->rxedISYNC ) )
     {
         cb( d );
     }
+}
+// ====================================================================================================
+static void _MTBDecoderPumpAction( struct TRACEDecoder *i, uint32_t source, uint32_t dest, traceDecodeCB cb, genericsReportCB report, void *d )
+
+/* Pump next words through the protocol decoder */
+
+{
+    enum TRACEprotoState newState = i->p;
+    struct TRACECPUState *cpu = &i->cpu;
+    enum TRACEDecoderPumpEvent retVal = TRACE_EV_NONE;
+
+    switch ( i->p )
+    {
+        // -----------------------------------------------------
+        case TRACE_UNSYNCED:
+            /* For the first instruction we only have the destination */
+            cpu->nextAddr = dest;
+            newState = TRACE_IDLE;
+            break;
+
+        // -----------------------------------------------------
+
+        case TRACE_IDLE:
+            cpu->addr = cpu->nextAddr;
+            cpu->nextAddr = dest;
+            cpu->toAddr = source;
+            _stateChange( i, EV_CH_ADDRESS );
+            _stateChange( i, EV_CH_LINEAR );
+            retVal = TRACE_EV_MSG_RXED;
+            break;
+
+        // -----------------------------------------------------
+
+        default:
+            assert( false );
+            break;
+
+            // -----------------------------------------------------
+
+    }
+
+    //      if ( report ) report( V_DEBUG, "%s --> %s ", protoStateName[i->p], protoStateName[newState]);
+    if ( retVal != TRACE_EV_NONE )
+    {
+        cb( d );
+    }
+
+    i->p = newState;
 }
 // ====================================================================================================
 // ====================================================================================================
@@ -924,50 +982,77 @@ static void _ETMDecoderPumpAction( struct ETMDecoder *i, uint8_t c, etmDecodeCB 
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
-void ETMDecoderInit( struct ETMDecoder *i, bool usingAltAddrEncodeSet )
+void TRACEDecoderInit( struct TRACEDecoder *i, enum TRACEprotocol protocol, bool usingAltAddrEncodeSet )
 
-/* Reset a ETMDecoder instance */
+/* Reset a TRACEDecoder instance */
 
 {
-    memset( i, 0, sizeof( struct ETMDecoder ) );
-    ETMDecoderZeroStats( i );
-    ETMDecodeUsingAltAddrEncode( i, usingAltAddrEncodeSet );
+    memset( i, 0, sizeof( struct TRACEDecoder ) );
+    TRACEDecoderZeroStats( i );
+    TRACEDecodeUsingAltAddrEncode( i, usingAltAddrEncodeSet );
+    TRACEDecodeProtocol( i, protocol );
 }
 // ====================================================================================================
-void ETMDecodeUsingAltAddrEncode( struct ETMDecoder *i, bool usingAltAddrEncodeSet )
+void TRACEDecodeProtocol( struct TRACEDecoder *i, enum TRACEprotocol protocol )
 
 {
+    assert( protocol < TRACE_PROT_LIST_END );
+    assert( i );
+    i->protocol = protocol;
+}
+// ====================================================================================================
+void TRACEDecodeUsingAltAddrEncode( struct TRACEDecoder *i, bool usingAltAddrEncodeSet )
+
+{
+    assert( i );
     i->usingAltAddrEncode = usingAltAddrEncodeSet;
 }
 // ====================================================================================================
 
-void ETMDecoderZeroStats( struct ETMDecoder *i )
+void TRACEDecoderZeroStats( struct TRACEDecoder *i )
 
 {
-    memset( &i->stats, 0, sizeof( struct ETMDecoderStats ) );
+    assert( i );
+    memset( &i->stats, 0, sizeof( struct TRACEDecoderStats ) );
 }
 // ====================================================================================================
-bool ETMDecoderIsSynced( struct ETMDecoder *i )
+bool TRACEDecoderIsSynced( struct TRACEDecoder *i )
 
 {
-    return i->p != ETM_UNSYNCED;
+    assert( i );
+    return i->p != TRACE_UNSYNCED;
 }
 // ====================================================================================================
-struct ETMDecoderStats *ETMDecoderGetStats( struct ETMDecoder *i )
+struct TRACEDecoderStats *TRACEDecoderGetStats( struct TRACEDecoder *i )
 {
+    assert( i );
     return &i->stats;
 }
 // ====================================================================================================
-void ETMDecoderForceSync( struct ETMDecoder *i, bool isSynced )
+struct TRACECPUState *TRACECPUState( struct TRACEDecoder *i )
+{
+    return &i->cpu;
+}
+// ====================================================================================================
+bool TRACEStateChanged( struct TRACEDecoder *i, enum TRACEchanges c )
+{
+    bool r = ( i->cpu.changeRecord & ( 1 << c ) ) != 0;
+    i->cpu.changeRecord &= ~( 1 << c );
+    return r;
+}
+// ====================================================================================================
+void TRACEDecoderForceSync( struct TRACEDecoder *i, bool isSynced )
 
 /* Force the decoder into a specific sync state */
 
 {
-    if ( i->p == ETM_UNSYNCED )
+    assert( i );
+
+    if ( i->p == TRACE_UNSYNCED )
     {
         if ( isSynced )
         {
-            i->p = ETM_IDLE;
+            i->p = TRACE_IDLE;
             i->stats.syncCount++;
         }
     }
@@ -978,17 +1063,46 @@ void ETMDecoderForceSync( struct ETMDecoder *i, bool isSynced )
             i->stats.lostSyncCount++;
             i->asyncCount = 0;
             i->rxedISYNC = false;
-            i->p = ETM_UNSYNCED;
+            i->p = TRACE_UNSYNCED;
         }
     }
 }
 // ====================================================================================================
-void ETMDecoderPump( struct ETMDecoder *i, uint8_t *buf, int len, etmDecodeCB cb, genericsReportCB report, void *d )
+void TRACEDecoderPump( struct TRACEDecoder *i, uint8_t *buf, int len, traceDecodeCB cb, genericsReportCB report, void *d )
 
 {
-    while ( len-- )
+    assert( i );
+    assert( buf );
+    assert( cb );
+
+    /* len can arrive as 0 for the case of an unwrapped buffer */
+
+    switch ( i->protocol )
     {
-        _ETMDecoderPumpAction( i, *( buf++ ), cb, report, d );
+        case TRACE_PROT_ETM35:
+            while ( len-- )
+            {
+                /* ETM processes one octet at a time */
+                _ETM35DecoderPumpAction( i, *( buf++ ), cb, report, d );
+            }
+
+            break;
+
+        case TRACE_PROT_MTB:
+            while ( len > 7 )
+            {
+                /* MTB processes two words at a time...a from and to address */
+                /* (yes, that could be +1 on a uint32_t increment, but I prefer being explicit) */
+                _MTBDecoderPumpAction( i, *( uint32_t * )buf, *( uint32_t * )( buf + 4 ), cb, report, d );
+                buf += 8;
+                len -= 8;
+            }
+
+            break;
+
+        default:
+            assert( false );
+            break;
     }
 }
 // ====================================================================================================

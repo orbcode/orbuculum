@@ -1,6 +1,6 @@
 # Build configuration
 VERBOSE?=0
-#DEBUG=1
+DEBUG=1
 SCREEN_HANDLING=1
 MAKE_EXPERIMENTAL=1
 
@@ -104,7 +104,7 @@ endif
 # Main Files
 # ==========
 
-ORBLIB_CFILES = $(App_DIR)/itmDecoder.c $(App_DIR)/tpiuDecoder.c $(App_DIR)/msgDecoder.c $(App_DIR)/msgSeq.c $(App_DIR)/etmDecoder.c
+ORBLIB_CFILES = $(App_DIR)/itmDecoder.c $(App_DIR)/tpiuDecoder.c $(App_DIR)/msgDecoder.c $(App_DIR)/msgSeq.c $(App_DIR)/traceDecoder.c
 
 ORBUCULUM_CFILES  = $(App_DIR)/$(ORBUCULUM).c $(App_DIR)/nwclient.c
 ORBFIFO_CFILES    = $(App_DIR)/$(ORBFIFO).c $(App_DIR)/filewriter.c $(App_DIR)/itmfifos.c

@@ -1,13 +1,13 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 
 /*
- * ITM Decoder Module
- * ==================
+ * TRACE Decoder Module
+ * ====================
  *
  */
 
-#ifndef _ETM_DECODER_
-#define _ETM_DECODER_
+#ifndef _TRACE_DECODER_
+#define _TRACE_DECODER_
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -17,31 +17,20 @@
 extern "C" {
 #endif
 
-/* Internal states of the protocol machine */
-enum ETMprotoState
+/* Protocol format */
+enum TRACEprotocol
 {
-    ETM_UNSYNCED,
-    ETM_WAIT_ISYNC,
-    ETM_IDLE,
-    ETM_COLLECT_BA_STD_FORMAT,
-    ETM_COLLECT_BA_ALT_FORMAT,
-    ETM_COLLECT_EXCEPTION,
-    ETM_GET_CONTEXTBYTE,
-    ETM_GET_INFOBYTE,
-    ETM_GET_IADDRESS,
-    ETM_GET_ICYCLECOUNT,
-    ETM_GET_CYCLECOUNT,
-    ETM_GET_VMID,
-    ETM_GET_TSTAMP,
-    ETM_GET_CONTEXTID,
+    TRACE_PROT_LIST_START = 0,
+    TRACE_PROT_ETM35      = TRACE_PROT_LIST_START,
+    TRACE_PROT_MTB,
+    TRACE_PROT_LIST_END,
+    TRACE_PROT_NONE       = TRACE_PROT_LIST_END
 };
 
-/* Textual form of the above, for debugging */
-#define ETM_PROTO_NAME_LIST "UNSYNCED", "WAIT_ISYNC", "IDLE", "COLLECT_BA_STD", "COLLECT_BA_ALT", \
-    "COLLECT_EXCEPTION",  "WAIT_CONTEXTBYTE", "WAIT_INFOBYTE", "WAIT_IADDRESS", \
-    "WAIT_ICYCLECOUNT", "WAIT_CYCLECOUNT", "GET_VMID", "GET_TSTAMP", "GET_CONTEXTID"
+#define TRACEProtocolStringDEF "ETM3.5", "MTB", NULL
+extern const char *TRACEprotocolString[];
 
-enum ETMchanges
+enum TRACEchanges
 {
     EV_CH_EX_ENTRY,
     EV_CH_EX_EXIT,
@@ -64,33 +53,34 @@ enum ETMchanges
     EV_CH_JAZELLE,
     EV_CH_THUMB,
     EV_CH_ISLSIP,
+    EV_CH_LINEAR,
     EV_CH_NUM_CHANGES
 };
-
-
 
 // ============================================================================
 // Messages out of the decoder
 // ============================================================================
-enum ETMDecoderMsgType { ETMDEC_MSG_NONE, ETM_BRANCH, ETMDEC_MSG_NUM_MSGS };
-enum Mode { ETM_ADDRMODE_THUMB, ETM_ADDRMODE_ARM, ETM_ADDRMODE_JAZELLE };
-enum Reason { ETM_REASON_PERIODIC, ETM_REASON_TRACEON, ETM_REASON_TRACEOVF, ETM_REASON_EXITDBG };
+enum TRACEDecoderMsgType { TRACEDEC_MSG_NONE, TRACE_BRANCH, TRACEDEC_MSG_NUM_MSGS };
+enum Mode { TRACE_ADDRMODE_THUMB, TRACE_ADDRMODE_ARM, TRACE_ADDRMODE_JAZELLE };
+enum Reason { TRACE_REASON_PERIODIC, TRACE_REASON_TRACEON, TRACE_REASON_TRACEOVF, TRACE_REASON_EXITDBG };
 
-/* ETM Decoder statistics */
-struct ETMDecoderStats
+/* TRACE Decoder statistics */
+struct TRACEDecoderStats
 
 {
     uint32_t lostSyncCount;              /* Number of times sync has been lost */
     uint32_t syncCount;                  /* Number of times a sync event has been received */
 };
 
-struct ETMCPUState
+struct TRACECPUState
 {
     uint32_t changeRecord;               /* Record of what changed since last report */
 
     // Gross processor state...
     uint64_t ts;                         /* Latest timestamp */
     uint32_t addr;                       /* Latest fully computed address */
+    uint32_t toAddr;                     /* Address to run to in linear mode (MTB) */
+    uint32_t nextAddr;                   /* Next address to run from in linear mode (MTB) */
     enum Mode addrMode;                  /* What kind of addressing are we using at the moment? */
     uint32_t contextID;                  /* Currently executing context */
     uint8_t vmid;                        /* Current virtual machine ID */
@@ -117,19 +107,46 @@ struct ETMCPUState
     bool clockSpeedChanged;              /* CPU Clockspeed changed since last timestamp */
 };
 
+/* Internal states of the protocol machine */
+enum TRACEprotoState
+{
+    TRACE_UNSYNCED,
+    TRACE_WAIT_ISYNC,
+    TRACE_IDLE,
+    TRACE_COLLECT_BA_STD_FORMAT,
+    TRACE_COLLECT_BA_ALT_FORMAT,
+    TRACE_COLLECT_EXCEPTION,
+    TRACE_GET_CONTEXTBYTE,
+    TRACE_GET_INFOBYTE,
+    TRACE_GET_IADDRESS,
+    TRACE_GET_ICYCLECOUNT,
+    TRACE_GET_CYCLECOUNT,
+    TRACE_GET_VMID,
+    TRACE_GET_TSTAMP,
+    TRACE_GET_CONTEXTID
+};
+
+/* Textual form of the above, for debugging */
+#define TRACEprotoStateNamesDEF  "UNSYNCED",       "WAIT_ISYNC",        "IDLE",             "COLLECT_BA_STD",  \
+    "COLLECT_BA_ALT", "COLLECT_EXCEPTION", "WAIT_CONTEXTBYTE", "WAIT_INFOBYTE",   \
+    "WAIT_IADDRESS",  "WAIT_ICYCLECOUNT",  "WAIT_CYCLECOUNT",  "GET_VMID",        \
+    "GET_TSTAMP",     "GET_CONTEXTID"
+
+extern const char *protoStateName[];
 // ============================================================================
-// The ETM decoder state
+// The TRACE decoder state
 // ============================================================================
-struct ETMDecoder
+struct TRACEDecoder
 
 {
-    struct ETMDecoderStats stats;        /* Record of the statistics */
-    enum ETMprotoState p;                /* Current state of the receiver */
+    struct TRACEDecoderStats stats;      /* Record of the statistics */
+    enum TRACEprotoState p;              /* Current state of the receiver */
     bool rxedISYNC;                      /* Indicator that we're fully synced */
 
     /* Trace configuration */
     /* ------------------- */
-    bool usingAltAddrEncode;             /* Set if the new (ETM 3.4 onwards) addr formatting is used */
+    bool usingAltAddrEncode;             /* Set if the new (TRACE 3.4 onwards) addr formatting is used */
+    enum TRACEprotocol protocol;         /* What trace protocol are we using? */
     uint8_t contextBytes;                /* How many context bytes we're using */
     bool cycleAccurate;                  /* Using cycle accurate mode */
     bool dataOnlyMode;                   /* If we're only tracing data, not instructions */
@@ -146,34 +163,25 @@ struct ETMDecoder
 
     /* External resulutions of current CPU state */
     /* ----------------------------------------- */
-    struct ETMCPUState cpu;              /* Current state of the CPU */
+    struct TRACECPUState cpu;              /* Current state of the CPU */
 };
 
 // ====================================================================================================
-typedef void ( *etmDecodeCB )( void *d );
+typedef void ( *traceDecodeCB )( void *d );
 
-void ETMDecoderForceSync( struct ETMDecoder *i, bool isSynced );
-void ETMDecoderZeroStats( struct ETMDecoder *i );
-bool ETMDecoderIsSynced( struct ETMDecoder *i );
+void TRACEDecoderForceSync( struct TRACEDecoder *i, bool isSynced );
+void TRACEDecoderZeroStats( struct TRACEDecoder *i );
+bool TRACEDecoderIsSynced( struct TRACEDecoder *i );
+struct TRACECPUState *TRACECPUState( struct TRACEDecoder *i );
+bool TRACEStateChanged( struct TRACEDecoder *i, enum TRACEchanges c );
+struct TRACEDecoderStats *TRACEDecoderGetStats( struct TRACEDecoder *i );
+void TRACEDecodeUsingAltAddrEncode( struct TRACEDecoder *i, bool usingAltAddrEncodeSet );
 
-ALWAYS_INLINE struct ETMCPUState *ETMCPUState( struct ETMDecoder *i )
-{
-    return &i->cpu;
-}
+void TRACEDecodeProtocol( struct TRACEDecoder *i, enum TRACEprotocol protocol );
 
-ALWAYS_INLINE bool ETMStateChanged( struct ETMDecoder *i, enum ETMchanges c )
-{
-    bool r = ( i->cpu.changeRecord & ( 1 << c ) ) != 0;
-    i->cpu.changeRecord &= ~( 1 << c );
-    return r;
-}
-struct ETMDecoderStats *ETMDecoderGetStats( struct ETMDecoder *i );
+void TRACEDecoderPump( struct TRACEDecoder *i, uint8_t *buf, int len, traceDecodeCB cb, genericsReportCB report, void *d );
 
-void ETMDecodeUsingAltAddrEncode( struct ETMDecoder *i, bool usingAltAddrEncodeSet );
-
-void ETMDecoderPump( struct ETMDecoder *i, uint8_t *buf, int len, etmDecodeCB cb, genericsReportCB report, void *d );
-
-void ETMDecoderInit( struct ETMDecoder *i, bool usingAltAddrEncodeSet );
+void TRACEDecoderInit( struct TRACEDecoder *i, enum TRACEprotocol protocol, bool usingAltAddrEncodeSet );
 // ====================================================================================================
 #ifdef __cplusplus
 }

@@ -22,7 +22,7 @@
 #include "git_version_info.h"
 #include "generics.h"
 #include "nw.h"
-#include "etmDecoder.h"
+#include "traceDecoder.h"
 #include "tpiuDecoder.h"
 #include "symbols.h"
 #include "sio.h"
@@ -54,16 +54,18 @@ struct Options
     int channel;                        /* When TPIU is in use, which channel to decode? */
     int port;                           /* Source information */
     char *server;
+    enum TRACEprotocol protocol;        /* Encoding protocol to use */
     bool noAltAddr;                     /* Flag to *not* use alternate addressing */
     char *openFileCL;                   /* Command line for opening refernced file */
 
 } _options =
 {
-    .port = NWCLIENT_SERVER_PORT,
-    .server = REMOTE_SERVER,
+    .port     = NWCLIENT_SERVER_PORT,
+    .server   = REMOTE_SERVER,
     .demangle = true,
-    .channel = 2,
-    .buflen = DEFAULT_PM_BUFLEN_K * 1024
+    .protocol = TRACE_PROT_ETM35,
+    .channel  = 2,
+    .buflen   = DEFAULT_PM_BUFLEN_K * 1024
 };
 
 /* A block of received data */
@@ -85,7 +87,7 @@ struct opConstruct
 
 struct RunTime
 {
-    struct ETMDecoder i;
+    struct TRACEDecoder i;
     struct TPIUDecoder t;
 
     const char *progName;               /* Name by which this program was called */
@@ -161,6 +163,7 @@ static void _printHelp( struct RunTime *r )
     genericsPrintf( "       -E: When reading from file, terminate at end of file rather than waiting for further input" EOL );
     genericsPrintf( "       -f <filename>: Take input from specified file" EOL );
     genericsPrintf( "       -h: This help" EOL );
+    genericsPrintf( "       -p: {ETM35|MTB} trace protocol to use, default is ETM35" EOL );
     genericsPrintf( "       -s: <Server>:<Port> to use" EOL );
     genericsPrintf( "       -t <channel>: Use TPIU to strip TPIU on specfied channel" EOL );
     genericsPrintf( "       -v: <level> Verbose mode 0(errors)..3(debug)" EOL );
@@ -175,7 +178,7 @@ static int _processOptions( int argc, char *argv[], struct RunTime *r )
 {
     int c;
 
-    while ( ( c = getopt ( argc, argv, "ab:c:Dd:Ee:f:hs:t:v:" ) ) != -1 )
+    while ( ( c = getopt ( argc, argv, "ab:c:Dd:Ee:f:hp:s:t:v:" ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -225,6 +228,18 @@ static int _processOptions( int argc, char *argv[], struct RunTime *r )
             case 'h':
                 _printHelp( r );
                 return false;
+
+            // ------------------------------------
+
+            case 'p':
+
+                /* Index through protocol strings looking for match or end of list */
+                for ( r->options->protocol = TRACE_PROT_LIST_START;
+                        ( ( r->options->protocol != TRACE_PROT_LIST_END ) && strcasecmp( optarg, TRACEprotocolString[r->options->protocol] ) );
+                        r->options->protocol++ )
+                {}
+
+                break;
 
             // ------------------------------------
 
@@ -289,6 +304,15 @@ static int _processOptions( int argc, char *argv[], struct RunTime *r )
     /* ... and dump the config if we're being verbose */
     genericsReport( V_INFO, "%s V" VERSION " (Git %08X %s, Built " BUILD_DATE ")" EOL, argv[0], GIT_HASH, ( GIT_DIRTY ? "Dirty" : "Clean" ) );
 
+    if ( r->options->protocol >= TRACE_PROT_NONE )
+    {
+        genericsExit( V_ERROR, "Unrecognised decode protocol" EOL );
+    }
+    else
+    {
+        genericsReport( V_INFO, "Protocol %s" EOL, TRACEprotocolString[r->options->protocol] );
+    }
+
     if ( !r->options->elffile )
     {
         genericsExit( V_ERROR, "Elf File not specified" EOL );
@@ -345,7 +369,7 @@ static void _processBlock( struct RunTime *r )
                     }
                     else
                     {
-                        /* Iterate through the packet, putting bytes for ETM into the processing buffer */
+                        /* Iterate through the packet, putting bytes for TRACE into the processing buffer */
                         for ( uint32_t g = 0; g < p.len; g++ )
                         {
                             if ( r->options->channel == p.packet[g].s )
@@ -472,7 +496,7 @@ static void _appendRefToOPBuffer( struct RunTime *r, int32_t lineno, enum LineTy
     r->numLines++;
 }
 // ====================================================================================================
-static void _etmReport( enum verbLevel l, const char *fmt, ... )
+static void _traceReport( enum verbLevel l, const char *fmt, ... )
 
 /* Debug reporting stream */
 
@@ -486,20 +510,22 @@ static void _etmReport( enum verbLevel l, const char *fmt, ... )
     _appendToOPBuffer( &_r, _r.op.currentLine, LT_DEBUG, op );
 }
 // ====================================================================================================
-static void _etmCB( void *d )
+static void _traceCB( void *d )
 
-/* Callback function for when valid ETM decode is detected */
+/* Callback function for when valid TRACE decode is detected */
 
 {
     struct RunTime *r = ( struct RunTime * )d;
-    struct ETMCPUState *cpu = ETMCPUState( &r->i );
+    struct TRACECPUState *cpu = TRACECPUState( &r->i );
     char construct[SCRATCH_STRING_LEN];
     uint32_t incAddr = 0;
     struct nameEntry n;
     uint32_t disposition;
+    uint32_t targetAddr = 0; /* Just to avoid unitialised variable warning */
+    bool linearRun = false;
 
     /* Deal with changes introduced by this event ========================= */
-    if ( ETMStateChanged( &r->i, EV_CH_ADDRESS ) )
+    if ( TRACEStateChanged( &r->i, EV_CH_ADDRESS ) )
     {
         /* Make debug report if calculated and reported addresses differ. This is most useful for testing when exhaustive  */
         /* address reporting is switched on. It will give 'false positives' for uncalculable instructions (e.g. bx lr) but */
@@ -510,91 +536,102 @@ static void _etmCB( void *d )
         r->op.workingAddr = cpu->addr;
     }
 
-    if ( ETMStateChanged( &r->i, EV_CH_ENATOMS ) )
+    if ( TRACEStateChanged( &r->i, EV_CH_LINEAR ) )
+    {
+        /* Execute instructions from the marked starting location to the indicated finishing one (used by MTB) */
+        /* Disposition is all 1's because every instruction is executed. */
+        r->op.workingAddr = cpu->addr;
+        targetAddr        = cpu->toAddr;
+        linearRun         = true;
+        disposition       = 0xffffffff;
+        _appendToOPBuffer( r, r->op.currentLine, LT_DEBUG, "Linear run 0x%08x to 0x%08x" EOL, cpu->addr, cpu->toAddr );
+    }
+
+    if ( TRACEStateChanged( &r->i, EV_CH_ENATOMS ) )
     {
         incAddr = cpu->eatoms + cpu->natoms;
         disposition = cpu->disposition;
     }
 
-    if ( ETMStateChanged( &r->i, EV_CH_VMID ) )
+    if ( TRACEStateChanged( &r->i, EV_CH_VMID ) )
     {
         _appendToOPBuffer( r, r->op.currentLine, LT_EVENT, "*** VMID Set to %d", cpu->vmid );
     }
 
-    if ( ETMStateChanged( &r->i, EV_CH_EX_ENTRY ) )
+    if ( TRACEStateChanged( &r->i, EV_CH_EX_ENTRY ) )
     {
         _appendToOPBuffer( r, r->op.currentLine, LT_EVENT, "========== Exception Entry%s (%d at 0x%08x) ==========",
-                           ETMStateChanged( &r->i, EV_CH_CANCELLED ) ? ", Last Instruction Cancelled" : "", cpu->exception, cpu->addr );
+                           TRACEStateChanged( &r->i, EV_CH_CANCELLED ) ? ", Last Instruction Cancelled" : "", cpu->exception, cpu->addr );
     }
 
-    if ( ETMStateChanged( &r->i, EV_CH_EX_EXIT ) )
+    if ( TRACEStateChanged( &r->i, EV_CH_EX_EXIT ) )
     {
         _appendRefToOPBuffer( r, r->op.currentLine, LT_EVENT, "========== Exception Exit ==========" );
     }
 
-    if ( ETMStateChanged( &r->i, EV_CH_TSTAMP ) )
+    if ( TRACEStateChanged( &r->i, EV_CH_TSTAMP ) )
     {
         _appendToOPBuffer( r, r->op.currentLine, LT_EVENT, "*** Timestamp %ld", cpu->ts );
     }
 
-    if ( ETMStateChanged( &r->i, EV_CH_TRIGGER ) )
+    if ( TRACEStateChanged( &r->i, EV_CH_TRIGGER ) )
     {
         _appendRefToOPBuffer( r, r->op.currentLine, LT_EVENT, "*** Trigger" );
     }
 
-    if ( ETMStateChanged( &r->i, EV_CH_CLOCKSPEED ) )
+    if ( TRACEStateChanged( &r->i, EV_CH_CLOCKSPEED ) )
     {
         _appendRefToOPBuffer( r, r->op.currentLine, LT_EVENT, "*** Change Clockspeed" );
     }
 
-    if ( ETMStateChanged( &r->i, EV_CH_ISLSIP ) )
+    if ( TRACEStateChanged( &r->i, EV_CH_ISLSIP ) )
     {
         _appendRefToOPBuffer( r, r->op.currentLine, LT_EVENT, "*** ISLSIP Triggered" );
     }
 
-    if ( ETMStateChanged( &r->i, EV_CH_CYCLECOUNT ) )
+    if ( TRACEStateChanged( &r->i, EV_CH_CYCLECOUNT ) )
     {
         _appendToOPBuffer( r, r->op.currentLine, LT_EVENT, "(Cycle Count %d)", cpu->cycleCount );
     }
 
-    if ( ETMStateChanged( &r->i, EV_CH_VMID ) )
+    if ( TRACEStateChanged( &r->i, EV_CH_VMID ) )
     {
         _appendToOPBuffer( r, r->op.currentLine, LT_EVENT, "(VMID is now %d)", cpu->vmid );
     }
 
-    if ( ETMStateChanged( &r->i, EV_CH_CONTEXTID ) )
+    if ( TRACEStateChanged( &r->i, EV_CH_CONTEXTID ) )
     {
         _appendToOPBuffer( r, r->op.currentLine, LT_EVENT, "(Context ID is now %d)", cpu->contextID );
     }
 
-    if ( ETMStateChanged( &r->i, EV_CH_SECURE ) )
+    if ( TRACEStateChanged( &r->i, EV_CH_SECURE ) )
     {
         _appendToOPBuffer( r, r->op.currentLine, LT_EVENT, "(Non-Secure State is now %s)", cpu->nonSecure ? "True" : "False" );
     }
 
-    if ( ETMStateChanged( &r->i, EV_CH_ALTISA ) )
+    if ( TRACEStateChanged( &r->i, EV_CH_ALTISA ) )
     {
         _appendToOPBuffer( r, r->op.currentLine, LT_EVENT, "(Using AltISA  is now %s)", cpu->altISA ? "True" : "False" );
     }
 
-    if ( ETMStateChanged( &r->i, EV_CH_HYP ) )
+    if ( TRACEStateChanged( &r->i, EV_CH_HYP ) )
     {
         _appendToOPBuffer( r, r->op.currentLine,  LT_EVENT, "(Using Hypervisor is now %s)", cpu->hyp ? "True" : "False" );
     }
 
-    if ( ETMStateChanged( &r->i, EV_CH_JAZELLE ) )
+    if ( TRACEStateChanged( &r->i, EV_CH_JAZELLE ) )
     {
         _appendToOPBuffer( r, r->op.currentLine, LT_EVENT, "(Using Jazelle is now %s)", cpu->jazelle ? "True" : "False" );
     }
 
-    if ( ETMStateChanged( &r->i, EV_CH_THUMB ) )
+    if ( TRACEStateChanged( &r->i, EV_CH_THUMB ) )
     {
         _appendToOPBuffer( r, r->op.currentLine, LT_EVENT, "(Using Thumb is now %s)", cpu->thumb ? "True" : "False" );
     }
 
     /* End of dealing with changes introduced by this event =============== */
 
-    while ( incAddr )
+    while ( ( incAddr && !linearRun ) || ( r->op.workingAddr < targetAddr && linearRun ) )
     {
         incAddr--;
 
@@ -703,26 +740,20 @@ static void _dumpBuffer( struct RunTime *r )
         }
     }
 
-    /* Pump the received messages through the ETM decoder, it will callback to _etmCB with complete sentences */
+    /* Pump the received messages through the TRACE decoder, it will callback to _traceCB with complete sentences */
     int bytesAvailable = ( ( r->wp + r->options->buflen ) - r->rp ) % r->options->buflen;
 
     /* If we started wrapping (i.e. the rx ring buffer got full) then any guesses about sync status are invalid */
     if ( ( bytesAvailable == r->options->buflen - 1 ) && ( !r->singleShot ) )
     {
-        ETMDecoderForceSync( &r->i, false );
+        TRACEDecoderForceSync( &r->i, false );
     }
 
-    if ( ( bytesAvailable + r->rp ) > r->options->buflen )
-    {
-        /* Buffer is wrapped - submit both parts */
-        ETMDecoderPump( &r->i, &r->pmBuffer[r->rp], r->options->buflen - r->rp, _etmCB, _etmReport, r );
-        ETMDecoderPump( &r->i, &r->pmBuffer[0], r->wp, _etmCB, _etmReport, r );
-    }
-    else
-    {
-        /* Buffer is not wrapped */
-        ETMDecoderPump( &r->i, &r->pmBuffer[r->rp], bytesAvailable, _etmCB, _etmReport, r );
-    }
+    /* Two calls in case buffer is wrapped - submit both parts */
+    TRACEDecoderPump( &r->i, &r->pmBuffer[r->rp], r->options->buflen - r->rp, _traceCB, _traceReport, r );
+
+    /* The length of this second buffer can be 0 for case buffer is not wrapped */
+    TRACEDecoderPump( &r->i, &r->pmBuffer[0], r->wp, _traceCB, _traceReport, r );
 
     /* Submit this constructed buffer for display */
     SIOsetOutputBuffer( r->sio, r->numLines, r->numLines - 1, &r->opText, false );
@@ -946,7 +977,7 @@ static void _doFilesurface( struct RunTime *r )
     SIOsetOutputBuffer( r->sio, r->numLines, r->numLines - 1, &r->opText, false );
 }
 // ====================================================================================================
-static void _doSave( struct RunTime *r )
+static void _doSave( struct RunTime *r, bool includeDebug )
 
 /* Save buffer in both raw and processed formats */
 
@@ -989,6 +1020,12 @@ static void _doSave( struct RunTime *r )
     while ( w != r->numLines )
     {
         p = r->opText[w].buffer;
+
+        /* Skip debug lines unless specifically told to include them */
+        if ( ( r->opText[w].lt == LT_DEBUG ) && ( !includeDebug ) )
+        {
+            continue;
+        }
 
         if ( ( r->opText[w].lt == LT_SOURCE ) || ( r->opText[w].lt == LT_MU_SOURCE ) )
         {
@@ -1082,12 +1119,15 @@ int main( int argc, char *argv[] )
     /* Create the buffer memory */
     _r.pmBuffer = ( uint8_t * )calloc( 1, _r.options->buflen );
 
-    ETMDecoderInit( &_r.i, !( _r.options->noAltAddr ) );
+    TRACEDecoderInit( &_r.i, _r.options->protocol, !( _r.options->noAltAddr ) );
 
     if ( _r.options->useTPIU )
     {
         TPIUDecoderInit( &_r.t );
     }
+
+    /* Put a record of the protocol in use on screen */
+    SIOtagText( _r.sio, TRACEprotocolString[_r.options->protocol] );
 
     while ( !_r.ending )
     {
@@ -1219,7 +1259,7 @@ int main( int argc, char *argv[] )
                 case SIO_EV_SAVE:
                     if ( _r.options->file )
                     {
-                        _doSave( &_r );
+                        _doSave( &_r, false );
                     }
 
                     break;

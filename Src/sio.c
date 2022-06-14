@@ -11,6 +11,7 @@
 #include <string.h>
 #include <ncurses.h>
 #include <sys/ioctl.h>
+#include <assert.h>
 
 #include "generics.h"
 #include "sio.h"
@@ -69,6 +70,7 @@ struct SIOInstance
     bool enteringMark;                  /* Set if we are in the process of marking a location */
     bool outputDebug;                   /* Output debug tagged lines */
     bool isFile;                        /* Indicator that we're reading from a file */
+    const char *ttext;                  /* Tagline text (if any) */
 
     const char *progName;
     const char *elffile;
@@ -687,7 +689,7 @@ static void _outputStatus( struct SIOInstance *sio, uint64_t oldintervalBytes )
 
     if ( sio->isFile )
     {
-        mvwprintw( sio->statusWindow, 1, COLS - 12, "From file" );
+        mvwprintw( sio->statusWindow, 1, COLS - 13 - ( ( sio->ttext ) ? strlen( sio->ttext ) : 0 ), "%s From file", ( sio->ttext ) ? sio->ttext : "" );
     }
     else
     {
@@ -709,11 +711,13 @@ static void _outputStatus( struct SIOInstance *sio, uint64_t oldintervalBytes )
                 }
             }
 
-            mvwprintw( sio->statusWindow, 1, COLS - 11, oldintervalBytes ? "Capturing" : "  Waiting" );
+            mvwprintw( sio->statusWindow, 1, COLS - 11  - ( ( sio->ttext ) ? strlen( sio->ttext ) : 0 ), "%s %s",
+                       ( sio->ttext ) ? sio->ttext : "",
+                       oldintervalBytes ? "Capturing" : "  Waiting" );
         }
         else
         {
-            mvwprintw( sio->statusWindow, 1, COLS - 6, "Hold" );
+            mvwprintw( sio->statusWindow, 1, COLS - 6 - ( ( sio->ttext ) ? strlen( sio->ttext ) : 0 ), "%s Hold", ( ( sio->ttext ) ? sio->ttext : "" ) );
         }
     }
 
@@ -955,6 +959,16 @@ void SIOsetOutputBuffer( struct SIOInstance *sio, int32_t numLines, int32_t curr
     SIOrequestRefresh( sio );
 }
 // ====================================================================================================
+void SIOtagText ( struct SIOInstance *sio, const char *ttext )
+
+{
+    assert( sio );
+    sio->ttext = ttext;
+    SIOrequestRefresh( sio );
+}
+
+// ====================================================================================================
+
 enum SIOEvent SIOHandler( struct SIOInstance *sio, bool isTick, uint64_t oldintervalBytes )
 
 /* Top level to deal with all UI aspects */

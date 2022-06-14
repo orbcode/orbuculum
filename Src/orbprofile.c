@@ -22,7 +22,7 @@
 #include "git_version_info.h"
 #include "uthash.h"
 #include "generics.h"
-#include "etmDecoder.h"
+#include "traceDecoder.h"
 #include "symbols.h"
 #include "nw.h"
 #include "ext_fileformats.h"
@@ -63,6 +63,7 @@ struct Options                           /* Record for options, either defaults 
     bool noaltAddr;                      /* Dont use alternate addressing */
     bool useTPIU;                        /* Are we using TPIU, and stripping TPIU frames? */
     int  channel;                        /* When TPIU is in use, which channel to decode? */
+    enum TRACEprotocol protocol;         /* Encoding protocol to use */
 
     int  port;                           /* Source information for where to connect to */
     char *server;
@@ -72,10 +73,11 @@ struct Options                           /* Record for options, either defaults 
     .demangle       = true,
     .sampleDuration = DEFAULT_DURATION_MS,
     .port           = NWCLIENT_SERVER_PORT,
+    .protocol       = TRACE_PROT_ETM35,
     .server         = "localhost"
 };
 
-/* State of routine tracking, maintained across ETM callbacks to reconstruct program flow */
+/* State of routine tracking, maintained across TRACE callbacks to reconstruct program flow */
 struct opConstruct
 {
     struct execEntryHash *h;             /* The exec entry we were in last (file, function, line, addr etc) */
@@ -106,7 +108,7 @@ struct RunTime
     const char *progName;                       /* Name by which this program was called */
 
     /* Subsystem data support */
-    struct ETMDecoder i;
+    struct TRACEDecoder i;
     struct SymbolSet *s;                        /* Symbols read from elf */
 
     /* Calls related info */
@@ -163,7 +165,7 @@ static void _callEvent( struct RunTime *r, uint32_t retAddr, uint32_t to )
 /* This is a call or a return, manipulate stack tracking appropriately */
 
 {
-    struct ETMCPUState *cpu = ETMCPUState( &r->i );
+    struct TRACECPUState *cpu = TRACECPUState( &r->i );
     struct subcall *s;
 
     /* ...add it to the call stack */
@@ -200,7 +202,7 @@ static void _returnEvent( struct RunTime *r, uint32_t to )
 /* This is a return, manipulate stack tracking appropriately */
 
 {
-    struct ETMCPUState *cpu = ETMCPUState( &r->i );
+    struct TRACECPUState *cpu = TRACECPUState( &r->i );
     struct subcall *s;
     uint32_t orig = r->substacklen;
 
@@ -332,7 +334,7 @@ static void _checkJumps( struct RunTime *r )
     if ( r->op.h )
     {
 
-        if ( ( ETMStateChanged( &r->i, EV_CH_EX_EXIT ) ) || ( r->op.h->isReturn ) )
+        if ( ( TRACEStateChanged( &r->i, EV_CH_EX_EXIT ) ) || ( r->op.h->isReturn ) )
         {
             _returnEvent( r, r->op.workingAddr );
         }
@@ -344,13 +346,13 @@ static void _checkJumps( struct RunTime *r )
     }
 }
 // ====================================================================================================
-static void _etmCB( void *d )
+static void _traceCB( void *d )
 
-/* Callback function for when valid ETM decode is detected */
+/* Callback function for when valid TRACE decode is detected */
 
 {
     struct RunTime *r       = ( struct RunTime * )d;
-    struct ETMCPUState *cpu = ETMCPUState( &r->i );
+    struct TRACECPUState *cpu = TRACECPUState( &r->i );
     static uint32_t incAddr        = 0;
     static uint32_t disposition    = 0;
 
@@ -363,7 +365,7 @@ static void _etmCB( void *d )
         /* Fill in a time to start from */
         r->starttime = genericsTimestampmS();
 
-        if ( ETMStateChanged( &r->i, EV_CH_ADDRESS ) )
+        if ( TRACEStateChanged( &r->i, EV_CH_ADDRESS ) )
         {
             r->op.workingAddr = cpu->addr;
             printf( "Got initial address %08x" EOL, r->op.workingAddr );
@@ -384,11 +386,11 @@ static void _etmCB( void *d )
 
     /* Pull changes introduced by this event ============================== */
 
-    if ( ETMStateChanged( &r->i, EV_CH_ENATOMS ) )
+    if ( TRACEStateChanged( &r->i, EV_CH_ENATOMS ) )
     {
         /* We are going to execute some instructions. Check if the last of the old batch of    */
         /* instructions was cancelled and, if it wasn't and it's still outstanding, action it. */
-        if ( ETMStateChanged( &r->i, EV_CH_CANCELLED ) )
+        if ( TRACEStateChanged( &r->i, EV_CH_CANCELLED ) )
         {
             printf( "CANCELLED" EOL );
         }
@@ -401,7 +403,7 @@ static void _etmCB( void *d )
 
                 if ( ( r->op.h->isJump ) || ( r->op.h->isSubCall ) || ( r->op.h->isReturn ) )
                 {
-                    if ( ETMStateChanged( &r->i, EV_CH_ADDRESS ) )
+                    if ( TRACEStateChanged( &r->i, EV_CH_ADDRESS ) )
                     {
                         printf( "New addr %08x" EOL, cpu->addr );
                         r->op.workingAddr = cpu->addr;
@@ -412,9 +414,9 @@ static void _etmCB( void *d )
             }
         }
 
-        if ( ETMStateChanged( &r->i, EV_CH_ADDRESS ) )
+        if ( TRACEStateChanged( &r->i, EV_CH_ADDRESS ) )
         {
-            if ( ETMStateChanged( &r->i, EV_CH_EX_ENTRY ) )
+            if ( TRACEStateChanged( &r->i, EV_CH_EX_ENTRY ) )
             {
                 printf( "INTERRUPT!!" EOL );
                 _callEvent( r, r->op.workingAddr, cpu->addr );
@@ -463,6 +465,7 @@ static void _printHelp( struct RunTime *r )
     genericsPrintf( "       -f <filename>: Take input from specified file" EOL );
     genericsPrintf( "       -h: This help" EOL );
     genericsPrintf( "       -I <Interval>: Time to sample (in mS)" EOL );
+    genericsPrintf( "       -p: {ETM35|MTB} trace protocol to use, default is ETM35" EOL );
     genericsPrintf( "       -s: <Server>:<Port> to use" EOL );
     //genericsPrintf( "       -t <channel>: Use TPIU to strip TPIU on specfied channel (defaults to 2)" EOL );
     genericsPrintf( "       -T: truncate -d material off all references (i.e. make output relative)" EOL );
@@ -477,7 +480,7 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
 {
     int c;
 
-    while ( ( c = getopt ( argc, argv, "aDd:Ee:f:hI:s:Tv:y:z:" ) ) != -1 )
+    while ( ( c = getopt ( argc, argv, "aDd:Ee:f:hI:p:s:Tv:y:z:" ) ) != -1 )
 
         switch ( c )
         {
@@ -519,6 +522,18 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
             // ------------------------------------
             case 'I':
                 r->options->sampleDuration = atoi( optarg );
+                break;
+
+            // ------------------------------------
+
+            case 'p':
+
+                /* Index through protocol strings looking for match or end of list */
+                for ( r->options->protocol = TRACE_PROT_LIST_START;
+                        ( ( r->options->protocol != TRACE_PROT_LIST_END ) && strcasecmp( optarg, protoStateName[r->options->protocol] ) );
+                        r->options->protocol++ )
+                {}
+
                 break;
 
             // ------------------------------------
@@ -596,10 +611,17 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
         genericsExit( -2, "Illegal sample duration" EOL );
     }
 
+    if ( r->options->protocol >= TRACE_PROT_NONE )
+    {
+        genericsExit( V_ERROR, "Unrecognised decode protocol" EOL );
+    }
+
+
     genericsReport( V_INFO, "%s V" VERSION " (Git %08X %s, Built " BUILD_DATE ")" EOL, r->progName, GIT_HASH, ( GIT_DIRTY ? "Dirty" : "Clean" ) );
     genericsReport( V_INFO, "Server          : %s:%d" EOL, r->options->server, r->options->port );
     genericsReport( V_INFO, "Delete Material : %s" EOL, r->options->deleteMaterial ? r->options->deleteMaterial : "None" );
     genericsReport( V_INFO, "Elf File        : %s (%s Names)" EOL, r->options->elffile, r->options->truncateDeleteMaterial ? "Truncate" : "Don't Truncate" );
+    genericsReport( V_INFO, "Protocol        : %s" EOL, TRACEprotocolString[r->options->protocol] );
     genericsReport( V_INFO, "DOT file        : %s" EOL, r->options->dotfile ? r->options->dotfile : "None" );
     genericsReport( V_INFO, "Sample Duration : %d mS" EOL, r->options->sampleDuration );
 
@@ -657,7 +679,7 @@ static void *_processBlocks( void *params )
 
 #endif
             /* Pump all of the data through the protocol handler */
-            ETMDecoderPump( &r->i, r->rawBlock[r->rp].buffer, r->rawBlock[r->rp].fillLevel, _etmCB, genericsReport, &_r );
+            TRACEDecoderPump( &r->i, r->rawBlock[r->rp].buffer, r->rawBlock[r->rp].fillLevel, _traceCB, genericsReport, &_r );
 
             r->rp = ( r->rp + 1 ) % NUM_RAW_BLOCKS;
         }
@@ -702,7 +724,7 @@ int main( int argc, char *argv[] )
         genericsExit( -1, "Failed to ignore SIGPIPEs" EOL );
     }
 
-    ETMDecoderInit( &_r.i, !_r.options->noaltAddr );
+    TRACEDecoderInit( &_r.i, _r.i.protocol, !_r.options->noaltAddr );
 
     while ( !_r.ending )
     {

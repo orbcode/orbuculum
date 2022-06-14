@@ -45,7 +45,7 @@ void SIOsetOutputBuffer( struct SIOInstance *sio, int32_t numLines, int32_t curr
 void SIOalert( struct SIOInstance *sio, const char *msg );
 void SIOrequestRefresh( struct SIOInstance *sio );
 void SIOheld( struct SIOInstance *sio, bool isHeld );
-
+void SIOtagText ( struct SIOInstance *sio, const char *ttext );
 enum SIOEvent SIOHandler( struct SIOInstance *sio, bool isTick, uint64_t oldintervalBytes );
 
 void SIOterminate( struct SIOInstance *sio );
