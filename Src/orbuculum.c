@@ -356,7 +356,7 @@ void _printHelp( const char *const progName )
     genericsPrintf( "    -o, --output-file:  <filename> to be used for dump file" EOL );
     genericsPrintf( "    -p, --serial-port:  <serialPort> to use" EOL );
     genericsPrintf( "    -s, --server:       <Server>:<Port> to use" EOL );
-    genericsPrintf( "    -t, --tpiu:         <Channel , ...> Use TPIU channels (and strip TIPU framing from output flows)" EOL );
+    genericsPrintf( "    -t, --tpiu:         <Channel , ...> Use TPIU channels (and strip TPIU framing from output flows)" EOL );
     genericsPrintf( "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
     genericsPrintf( "    -V, --version:      Print version and exit" EOL );
 }
