@@ -358,9 +358,15 @@ void _printHelp( char *progName )
     genericsPrintf( "    -s, --server:       <Server>:<Port> to use" EOL );
     genericsPrintf( "    -t, --tpiu:         <Channel , ...> Use TPIU channels (and strip TIPU framing from output flows)" EOL );
     genericsPrintf( "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
+    genericsPrintf( "    -V, --version:      Print version and exit" EOL );
 }
 
 // ====================================================================================================
+void _printVersion( void )
+
+{
+    genericsPrintf( "oruculum version " GIT_DESCRIBE EOL );
+}
 // ====================================================================================================
 struct option longOptions[] =
 {
@@ -375,6 +381,7 @@ struct option longOptions[] =
     {"server", required_argument, NULL, 's'},
     {"tpiu", required_argument, NULL, 't'},
     {"verbose", required_argument, NULL, 'v'},
+    {"version", no_argument, NULL, 'V'},
     {NULL, no_argument, NULL, 0}
 };
 // ====================================================================================================
@@ -384,7 +391,7 @@ int _processOptions( int argc, char *argv[], struct RunTime *r )
     int c, optionIndex = 0;
 #define DELIMITER ','
 
-    while ( ( c = getopt_long ( argc, argv, "a:ef:hl:m:no:p:s:t:v:", longOptions, &optionIndex ) ) != -1 )
+    while ( ( c = getopt_long ( argc, argv, "a:ef:hVl:m:no:p:s:t:v:", longOptions, &optionIndex ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -407,6 +414,11 @@ int _processOptions( int argc, char *argv[], struct RunTime *r )
             // ------------------------------------
             case 'h':
                 _printHelp( argv[0] );
+                return false;
+
+            // ------------------------------------
+            case 'V':
+                _printVersion();
                 return false;
 
             // ------------------------------------
