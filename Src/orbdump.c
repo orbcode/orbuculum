@@ -166,7 +166,14 @@ void _printHelp( char *progName )
     fprintf( stdout, "    -s, --server:       <Server> to use" EOL );
     fprintf( stdout, "    -t, --tpiu:         <channel> Use TPIU decoder on specified channel, normally 1" EOL );
     fprintf( stdout, "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
+    fprintf( stdout, "    -V, --version:      Print version and exit" EOL );
     fprintf( stdout, "    -w, --sync-write:   Write syncronously to the output file after every packet" EOL );
+}
+// ====================================================================================================
+void _printVersion( void )
+
+{
+    genericsPrintf( "orbdump version " GIT_DESCRIBE EOL );
 }
 // ====================================================================================================
 struct option longOptions[] =
@@ -179,6 +186,7 @@ struct option longOptions[] =
     {"server", required_argument, NULL, 's'},
     {"tpiu", required_argument, NULL, 't'},
     {"verbose", required_argument, NULL, 'v'},
+    {"version", no_argument, NULL, 'V'},
     {"sync-write", no_argument, NULL, 'w'},
     {NULL, no_argument, NULL, 0}
 };
@@ -188,7 +196,7 @@ int _processOptions( int argc, char *argv[] )
 {
     int c, optionIndex = 0;
 
-    while ( ( c = getopt_long ( argc, argv, "hl:no:p:s:t:v:w", longOptions, &optionIndex ) ) != -1 )
+    while ( ( c = getopt_long ( argc, argv, "hVl:no:p:s:t:v:w", longOptions, &optionIndex ) ) != -1 )
         switch ( c )
         {
             case 'o':
@@ -227,6 +235,11 @@ int _processOptions( int argc, char *argv[] )
 
             case 'h':
                 _printHelp( argv[0] );
+                return false;
+
+            // ------------------------------------
+            case 'V':
+                _printVersion();
                 return false;
 
             case '?':
