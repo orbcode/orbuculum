@@ -362,7 +362,7 @@ struct option longOptions[] =
     {NULL, no_argument, NULL, 0}
 };
 // ====================================================================================================
-int _processOptions( int argc, char *argv[] )
+bool _processOptions( int argc, char *argv[] )
 
 {
     int c, optionIndex = 0;
