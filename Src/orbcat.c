@@ -339,6 +339,13 @@ void _printHelp( char *progName )
     fprintf( stdout, "    -s, --server:       <Server>:<Port> to use" EOL );
     fprintf( stdout, "    -t, --tpiu:         <channel>: Use TPIU decoder on specified channel (normally 1)" EOL );
     fprintf( stdout, "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
+    fprintf( stdout, "    -V, --version:      Print version and exit" EOL );
+}
+// ====================================================================================================
+void _printVersion( void )
+
+{
+    genericsPrintf( "orbcat version " GIT_DESCRIBE EOL );
 }
 // ====================================================================================================
 struct option longOptions[] =
@@ -351,6 +358,7 @@ struct option longOptions[] =
     {"server", required_argument, NULL, 's'},
     {"tpiu", required_argument, NULL, 't'},
     {"verbose", required_argument, NULL, 'v'},
+    {"version", no_argument, NULL, 'V'},
     {NULL, no_argument, NULL, 0}
 };
 // ====================================================================================================
@@ -363,12 +371,17 @@ int _processOptions( int argc, char *argv[] )
     char *chanIndex;
 #define DELIMITER ','
 
-    while ( ( c = getopt_long ( argc, argv, "c:ef:hns:t:v:", longOptions, &optionIndex ) ) != -1 )
+    while ( ( c = getopt_long ( argc, argv, "c:ef:hVns:t:v:", longOptions, &optionIndex ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
             case 'h':
                 _printHelp( argv[0] );
+                return false;
+
+            // ------------------------------------
+            case 'V':
+                _printVersion();
                 return false;
 
             // ------------------------------------
