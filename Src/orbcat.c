@@ -13,6 +13,7 @@
 #include <string.h>
 #include <assert.h>
 #include <inttypes.h>
+#include <getopt.h>
 
 #include "nw.h"
 #include "git_version_info.h"
@@ -330,26 +331,39 @@ void _printHelp( char *progName )
 
 {
     fprintf( stdout, "Usage: %s [options]" EOL, progName );
-    fprintf( stdout, "      -c: <Number>,<Format> of channel to add into output stream (repeat per channel)" EOL );
-    fprintf( stdout, "      -e: Terminate when the file/socket ends/is closed, or attempt to wait for more / reconnect" EOL );
-    fprintf( stdout, "      -f: <filename> Take input from specified file" EOL );
-    fprintf( stdout, "      -h: This help" EOL );
-    fprintf( stdout, "      -n: Enforce sync requirement for ITM (i.e. ITM needsd to issue syncs)" EOL );
-    fprintf( stdout, "      -s: <Server>:<Port> to use" EOL );
-    fprintf( stdout, "      -t <channel>: Use TPIU decoder on specified channel (normally 1)" EOL );
-    fprintf( stdout, "      -v: <level> Verbose mode 0(errors)..3(debug)" EOL );
+    fprintf( stdout, "    -c, --channel:      <Number>,<Format> of channel to add into output stream (repeat per channel)" EOL );
+    fprintf( stdout, "    -e, --eof:          Terminate when the file/socket ends/is closed, or attempt to wait for more / reconnect" EOL );
+    fprintf( stdout, "    -f, --input-file:   <filename> Take input from specified file" EOL );
+    fprintf( stdout, "    -h, --help:         This help" EOL );
+    fprintf( stdout, "    -n, --itm-sync:     Enforce sync requirement for ITM (i.e. ITM needsd to issue syncs)" EOL );
+    fprintf( stdout, "    -s, --server:       <Server>:<Port> to use" EOL );
+    fprintf( stdout, "    -t, --tpiu:         <channel>: Use TPIU decoder on specified channel (normally 1)" EOL );
+    fprintf( stdout, "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
 }
+// ====================================================================================================
+struct option longOptions[] =
+{
+    {"channel", required_argument, NULL, 'c'},
+    {"eof", no_argument, NULL, 'e'},
+    {"input-file", required_argument, NULL, 'f'},
+    {"help", no_argument, NULL, 'h'},
+    {"itm-sync", no_argument, NULL, 'n'},
+    {"server", required_argument, NULL, 's'},
+    {"tpiu", required_argument, NULL, 't'},
+    {"verbose", required_argument, NULL, 'v'},
+    {NULL, no_argument, NULL, 0}
+};
 // ====================================================================================================
 int _processOptions( int argc, char *argv[] )
 
 {
-    int c;
+    int c, optionIndex = 0;
     char *chanConfig;
     unsigned int chan;
     char *chanIndex;
 #define DELIMITER ','
 
-    while ( ( c = getopt ( argc, argv, "c:ef:hns:t:v:" ) ) != -1 )
+    while ( ( c = getopt_long ( argc, argv, "c:ef:hns:t:v:", longOptions, &optionIndex ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
