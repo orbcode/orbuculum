@@ -16,7 +16,6 @@
 #include <assert.h>
 #include <strings.h>
 #include <stdio.h>
-#include <linux/tcp.h>
 #include "generics.h"
 #include "nwclient.h"
 
