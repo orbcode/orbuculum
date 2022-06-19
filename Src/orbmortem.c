@@ -153,13 +153,13 @@ static void _printHelp( struct RunTime *r )
 
 {
     genericsPrintf( "Usage: %s [options]" EOL, r->progName );
-    genericsPrintf( "    -a, --alt-addr-enc: Do not use alternate address encoding" EOL );
+    genericsPrintf( "    -A, --alt-addr-enc: Do not use alternate address encoding" EOL );
     genericsPrintf( "    -b, --buffer-len:   <Length> Length of post-mortem buffer, in KBytes (Default %d KBytes)" EOL, DEFAULT_PM_BUFLEN_K );
-    genericsPrintf( "    -c, --editor-cmd:   <command> Command line for external editor (%f = filename, %l = line)" EOL );
+    genericsPrintf( "    -C, --editor-cmd:   <command> Command line for external editor (%f = filename, %l = line)" EOL );
     genericsPrintf( "    -D, --no-demangle:  Switch off C++ symbol demangling" EOL );
     genericsPrintf( "    -d, --del-prefix:   <String> Material to delete off the front of filenames" EOL );
-    genericsPrintf( "    -e, --elf-file:     <ElfFile> to use for symbols and source" EOL );
-    genericsPrintf( "    -E, --eof:          When reading from file, terminate at end of file rather than waiting for further input" EOL );
+    genericsPrintf( "    -E, --elf-file:     <ElfFile> to use for symbols and source" EOL );
+    genericsPrintf( "    -e, --eof:          When reading from file, terminate at end of file rather than waiting for further input" EOL );
     genericsPrintf( "    -f, --input-file:   <filename>: Take input from specified file" EOL );
     genericsPrintf( "    -h, --help:         This help" EOL );
     genericsPrintf( "    -O, --objdump-opts: <options> Options to pass directly to objdump" EOL );
@@ -175,13 +175,13 @@ static void _printHelp( struct RunTime *r )
 // ====================================================================================================
 struct option longOptions[] =
 {
-    {"alt-addr-enc", no_argument, NULL, 'a'},
+    {"alt-addr-enc", no_argument, NULL, 'A'},
     {"buffer-len", required_argument, NULL, 'b'},
-    {"editor-cmd", required_argument, NULL, 'c'},
+    {"editor-cmd", required_argument, NULL, 'C'},
     {"no-demangle", required_argument, NULL, 'D'},
     {"del-prefix", required_argument, NULL, 'd'},
-    {"elf-file", required_argument, NULL, 'e'},
-    {"eof", no_argument, NULL, 'E'},
+    {"elf-file", required_argument, NULL, 'E'},
+    {"eof", no_argument, NULL, 'e'},
     {"input-file", required_argument, NULL, 'f'},
     {"help", no_argument, NULL, 'h'},
     {"objdump-opts", required_argument, NULL, 'O'},
@@ -197,11 +197,11 @@ static int _processOptions( int argc, char *argv[], struct RunTime *r )
 {
     int c, optionIndex = 0;
 
-    while ( ( c = getopt_long ( argc, argv, "ab:c:Dd:Ee:f:hO:p:s:t:v:", longOptions, &optionIndex ) ) != -1 )
+    while ( ( c = getopt_long ( argc, argv, "Ab:C:Dd:eE:f:hO:p:s:t:v:", longOptions, &optionIndex ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
-            case 'a':
+            case 'A':
                 r->options->noAltAddr = true;
                 break;
 
@@ -211,7 +211,7 @@ static int _processOptions( int argc, char *argv[], struct RunTime *r )
                 break;
 
             // ------------------------------------
-            case 'c':
+            case 'C':
                 r->options->openFileCL = optarg;
                 break;
 
@@ -226,13 +226,13 @@ static int _processOptions( int argc, char *argv[], struct RunTime *r )
                 break;
 
             // ------------------------------------
-            case 'E':
+            case 'e':
                 r->options->fileTerminate = true;
                 break;
 
             // ------------------------------------
 
-            case 'e':
+            case 'E':
                 r->options->elffile = optarg;
                 break;
 
