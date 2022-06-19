@@ -76,7 +76,7 @@ static void _intHandler( int sig )
 static void _printHelp( char *progName )
 
 {
-    genericsPrintf( "Usage: %s [Options]" EOL, progName );
+    genericsPrintf( "Usage: %s [options]" EOL, progName );
     genericsPrintf( "    -b, --basedir:      <basedir> for channels" EOL );
     genericsPrintf( "    -c, --channel:      <Number>,<Name>,<Format> of channel to populate (repeat per channel)" EOL );
     genericsPrintf( "    -e, --eof:          When reading from file, terminate at end of file rather than waiting for further input" EOL );
@@ -85,7 +85,7 @@ static void _printHelp( char *progName )
     genericsPrintf( "    -P, --permanent:    Create permanent files rather than fifos" EOL );
     genericsPrintf( "    -t, --tpiu:         <channel> Use TPIU decoder on specified channel, normally 1" EOL );
     genericsPrintf( "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
-    genericsPrintf( "    -w, --writer-path:  <path> Enable filewriter functionality using specified base path" EOL );
+    genericsPrintf( "    -W, --writer-path:  <path> Enable filewriter functionality using specified base path" EOL );
 }
 // ====================================================================================================
 struct option longOptions[] =
@@ -98,7 +98,7 @@ struct option longOptions[] =
     {"permanent", no_argument, NULL, 'P'},
     {"tpiu", required_argument, NULL, 't'},
     {"verbose", required_argument, NULL, 'v'},
-    {"writer-path", required_argument, NULL, 'w'},
+    {"writer-path", required_argument, NULL, 'W'},
     {NULL, no_argument, NULL, 0}
 };
 // ====================================================================================================
@@ -166,7 +166,7 @@ static int _processOptions( int argc, char *argv[] )
 
             // ------------------------------------
 
-            case 'w':
+            case 'W':
                 options.filewriter = true;
                 options.fwbasedir = optarg;
                 break;
