@@ -704,6 +704,22 @@ static void _usb_callback( struct libusb_transfer *t )
             }
         }
 
+#ifdef DUMP_BLOCK
+	uint8_t *c = r->rawBlock[r->rp].buffer;
+	uint32_t y = r->rawBlock[r->rp].fillLevel;
+
+	fprintf( stderr, EOL );
+
+	while ( y-- )
+	  {
+	    fprintf( stderr, "%02X ", *c++ );
+
+	    if ( !( y % 16 ) )
+	      {
+		fprintf( stderr, EOL );
+	      }
+	  }
+#endif
 
         if ( _r.options->useTPIU )
         {

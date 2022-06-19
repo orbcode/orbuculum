@@ -76,17 +76,6 @@ set $CPU_IMXRT106X=1
 set $CPU_NRF=3
 set $CPU_EFR32=4
 
-# Legacy fixups...lets avoid upsetting anyone too much
-
-define enableSTM32SWD
-       echo enableSTM32SWD: This command has been replaced with enableSTM32SWO\n
-       quit
-end
-
-define prepareSWD
-       echo prepareSWD: This command has been replaced with prepareSWO\n
-       quit
-end
 # ====================================================================
 set $CDBBASE=0xE000EDF0
 set $DWTBASE=0xE0001000
