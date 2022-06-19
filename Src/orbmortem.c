@@ -149,10 +149,10 @@ static void _intHandler( int sig )
     exit( 0 );
 }
 // ====================================================================================================
-static void _printHelp( struct RunTime *r )
+static void _printHelp( const char *const progName )
 
 {
-    genericsPrintf( "Usage: %s [options]" EOL, r->progName );
+    genericsPrintf( "Usage: %s [options]" EOL, progName );
     genericsPrintf( "    -A, --alt-addr-enc: Do not use alternate address encoding" EOL );
     genericsPrintf( "    -b, --buffer-len:   <Length> Length of post-mortem buffer, in KBytes (Default %d KBytes)" EOL, DEFAULT_PM_BUFLEN_K );
     genericsPrintf( "    -C, --editor-cmd:   <command> Command line for external editor (%f = filename, %l = line)" EOL );
@@ -253,7 +253,7 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
             // ------------------------------------
 
             case 'h':
-                _printHelp( r );
+                _printHelp( r->progName );
                 return false;
 
             // ------------------------------------
