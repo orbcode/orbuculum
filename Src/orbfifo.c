@@ -85,7 +85,14 @@ static void _printHelp( char *progName )
     genericsPrintf( "    -P, --permanent:    Create permanent files rather than fifos" EOL );
     genericsPrintf( "    -t, --tpiu:         <channel> Use TPIU decoder on specified channel, normally 1" EOL );
     genericsPrintf( "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
+    genericsPrintf( "    -V, --version:      Print version and exit" EOL );
     genericsPrintf( "    -W, --writer-path:  <path> Enable filewriter functionality using specified base path" EOL );
+}
+// ====================================================================================================
+void _printVersion( void )
+
+{
+    genericsPrintf( "orbfifo version " GIT_DESCRIBE EOL );
 }
 // ====================================================================================================
 struct option longOptions[] =
@@ -98,6 +105,7 @@ struct option longOptions[] =
     {"permanent", no_argument, NULL, 'P'},
     {"tpiu", required_argument, NULL, 't'},
     {"verbose", required_argument, NULL, 'v'},
+    {"version", no_argument, NULL, 'V'},
     {"writer-path", required_argument, NULL, 'W'},
     {NULL, no_argument, NULL, 0}
 };
@@ -113,7 +121,7 @@ static int _processOptions( int argc, char *argv[] )
     uint chan;
     char *chanIndex;
 
-    while ( ( c = getopt_long ( argc, argv, "b:c:ef:hn:Pt:v:w:", longOptions, &optionIndex ) ) != -1 )
+    while ( ( c = getopt_long ( argc, argv, "b:c:ef:hVn:Pt:v:w:", longOptions, &optionIndex ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -137,6 +145,11 @@ static int _processOptions( int argc, char *argv[] )
 
             case 'h':
                 _printHelp( argv[0] );
+                return false;
+
+            // ------------------------------------
+            case 'V':
+                _printVersion();
                 return false;
 
             // ------------------------------------
