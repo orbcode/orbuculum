@@ -19,6 +19,7 @@
 #include <string.h>
 #include <assert.h>
 #include <signal.h>
+#include <getopt.h>
 
 #include "git_version_info.h"
 #include "generics.h"
@@ -76,21 +77,35 @@ static void _printHelp( char *progName )
 
 {
     genericsPrintf( "Usage: %s [Options]" EOL, progName );
-    genericsPrintf( "       -b <basedir> for channels" EOL );
-    genericsPrintf( "       -c <Number>,<Name>,<Format> of channel to populate (repeat per channel)" EOL );
-    genericsPrintf( "       -e When reading from file, terminate at end of file rather than waiting for further input" EOL );
-    genericsPrintf( "       -f <filename> Take input from specified file" EOL );
-    genericsPrintf( "       -h This help" EOL );
-    genericsPrintf( "       -P Create permanent files rather than fifos" EOL );
-    genericsPrintf( "       -t <channel> Use TPIU decoder on specified channel (normally 1)" EOL );
-    genericsPrintf( "       -v <level> Verbose mode 0(errors)..3(debug)" EOL );
-    genericsPrintf( "       -w <path> Enable filewriter functionality using specified base path" EOL );
+    genericsPrintf( "    -b, --basedir:      <basedir> for channels" EOL );
+    genericsPrintf( "    -c, --channel:      <Number>,<Name>,<Format> of channel to populate (repeat per channel)" EOL );
+    genericsPrintf( "    -e, --eof:          When reading from file, terminate at end of file rather than waiting for further input" EOL );
+    genericsPrintf( "    -f, --input-file:   <filename> Take input from specified file" EOL );
+    genericsPrintf( "    -h, --help:         This help" EOL );
+    genericsPrintf( "    -P, --permanent:    Create permanent files rather than fifos" EOL );
+    genericsPrintf( "    -t, --tpiu:         <channel> Use TPIU decoder on specified channel, normally 1" EOL );
+    genericsPrintf( "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
+    genericsPrintf( "    -w, --writer-path:  <path> Enable filewriter functionality using specified base path" EOL );
 }
+// ====================================================================================================
+struct option longOptions[] =
+{
+    {"basedir", required_argument, NULL, 'b'},
+    {"channel", required_argument, NULL, 'c'},
+    {"eof", no_argument, NULL, 'e'},
+    {"input-file", required_argument, NULL, 'f'},
+    {"help", no_argument, NULL, 'h'},
+    {"permanent", no_argument, NULL, 'P'},
+    {"tpiu", required_argument, NULL, 't'},
+    {"verbose", required_argument, NULL, 'v'},
+    {"writer-path", required_argument, NULL, 'w'},
+    {NULL, no_argument, NULL, 0}
+};
 // ====================================================================================================
 static int _processOptions( int argc, char *argv[] )
 
 {
-    int c;
+    int c, optionIndex = 0;
 #define DELIMITER ','
 
     char *chanConfig;
@@ -98,7 +113,7 @@ static int _processOptions( int argc, char *argv[] )
     uint chan;
     char *chanIndex;
 
-    while ( ( c = getopt ( argc, argv, "b:c:ef:hn:Pt:v:w:" ) ) != -1 )
+    while ( ( c = getopt_long ( argc, argv, "b:c:ef:hn:Pt:v:w:", longOptions, &optionIndex ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
