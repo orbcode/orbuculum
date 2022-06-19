@@ -200,7 +200,7 @@ struct option longOptions[] =
     {NULL, no_argument, NULL, 0}
 };
 // ====================================================================================================
-static int _processOptions( int argc, char *argv[], struct RunTime *r )
+static bool _processOptions( int argc, char *argv[], struct RunTime *r )
 
 {
     int c, optionIndex = 0;
