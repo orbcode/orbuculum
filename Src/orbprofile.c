@@ -468,9 +468,16 @@ static void _printHelp( struct RunTime *r )
     //genericsPrintf( "    -t, --tpiu:         <channel>: Use TPIU to strip TPIU on specfied channel (defaults to 2)" EOL );
     genericsPrintf( "    -T, --all-truncate: truncate -d material off all references (i.e. make output relative)" EOL );
     genericsPrintf( "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
+    genericsPrintf( "    -V, --version:      Print version and exit" EOL );
     genericsPrintf( "    -y, --graph-file:   <Filename> dotty filename for structured callgraph output" EOL );
     genericsPrintf( "    -z, --cache-file:   <Filename> profile filename for kcachegrind output" EOL );
     genericsPrintf( EOL "(Will connect one port higher than that set in -s when TPIU is not used)" EOL );
+}
+// ====================================================================================================
+void _printVersion( void )
+
+{
+    genericsPrintf( "orbprofile version " GIT_DESCRIBE EOL );
 }
 // ====================================================================================================
 struct option longOptions[] =
@@ -488,6 +495,7 @@ struct option longOptions[] =
     {"server", required_argument, NULL, 's'},
     {"all-truncate", no_argument, NULL, 'T'},
     {"verbose", required_argument, NULL, 'v'},
+    {"version", no_argument, NULL, 'V'},
     {"graph-file", required_argument, NULL, 'y'},
     {"cache-file", required_argument, NULL, 'z'},
     {NULL, no_argument, NULL, 0}
@@ -498,7 +506,7 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
 {
     int c, optionIndex = 0;
 
-    while ( ( c = getopt_long ( argc, argv, "ADd:eE:f:hI:O:p:s:Tv:y:z:", longOptions, &optionIndex ) ) != -1 )
+    while ( ( c = getopt_long ( argc, argv, "ADd:eE:f:hVI:O:p:s:Tv:y:z:", longOptions, &optionIndex ) ) != -1 )
 
         switch ( c )
         {
@@ -536,6 +544,11 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
             case 'h':
                 _printHelp( r );
                 exit( 0 );
+
+            // ------------------------------------
+            case 'V':
+                _printVersion();
+                return false;
 
             // ------------------------------------
             case 'I':
