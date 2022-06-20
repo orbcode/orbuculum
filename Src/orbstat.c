@@ -16,6 +16,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netdb.h>
+#include <getopt.h>
 
 #include "git_version_info.h"
 #include "uthash.h"
@@ -468,32 +469,53 @@ static void _printHelp( struct RunTime *r )
 
 {
     genericsPrintf( "Usage: %s [options]" EOL, r->progName );
-    genericsPrintf( "       -D: Switch off C++ symbol demangling" EOL );
-    genericsPrintf( "       -d: <String> Material to delete off front of filenames" EOL );
-    genericsPrintf( "       -E: When reading from file, terminate at end of file rather than waiting for further input" EOL );
-    genericsPrintf( "       -e: <ElfFile> to use for symbols" EOL );
-    genericsPrintf( "       -f <filename>: Take input from specified file" EOL );
-    genericsPrintf( "       -g: <TraceChannel> for trace output (default %d)" EOL, r->options->traceChannel );
-    genericsPrintf( "       -h: This help" EOL );
-    genericsPrintf( "       -I <Interval>: Time to sample (in mS)" EOL );
-    genericsPrintf( "       -n: Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
-    genericsPrintf( "       -O: <options> Options to pass directly to objdump" EOL );
-    genericsPrintf( "       -s: <Server>:<Port> to use" EOL );
-    genericsPrintf( "       -t <channel>: Use TPIU to strip TPIU on specfied channel (defaults to 1)" EOL );
-    genericsPrintf( "       -T: truncate -d material off all references (i.e. make output relative)" EOL );
-    genericsPrintf( "       -v: <level> Verbose mode 0(errors)..3(debug)" EOL );
-    genericsPrintf( "       -y: <Filename> dotty filename for structured callgraph output" EOL );
-    genericsPrintf( "       -z: <Filename> profile filename for kcachegrind output" EOL );
+    genericsPrintf( "    -D, --no-demangle:  Switch off C++ symbol demangling" EOL );
+    genericsPrintf( "    -d, --del-prefix:   <String> Material to delete off front of filenames" EOL );
+    genericsPrintf( "    -e, --elf-file:     <ElfFile> to use for symbols" EOL );
+    genericsPrintf( "    -E, --eof:          When reading from file, terminate at end of file rather than waiting for further input" EOL );
+    genericsPrintf( "    -f, --input-file:   <filename>: Take input from specified file" EOL );
+    genericsPrintf( "    -g, --trace-chn:    <TraceChannel> for trace output (default %d)" EOL, r->options->traceChannel );
+    genericsPrintf( "    -h, --help:         This help" EOL );
+    genericsPrintf( "    -I, --interval:     <Interval>: Time to sample (in mS)" EOL );
+    genericsPrintf( "    -n, --itm-sync:     Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
+    genericsPrintf( "    -O, --objdump-opts: <options> Options to pass directly to objdump" EOL );
+    genericsPrintf( "    -s, --server:       <Server>:<Port> to use" EOL );
+    genericsPrintf( "    -t, --tpiu:         <channel>: Use TPIU to strip TPIU on specfied channel (defaults to 1)" EOL );
+    genericsPrintf( "    -T, --all-truncate: truncate -d material off all references (i.e. make output relative)" EOL );
+    genericsPrintf( "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
+    genericsPrintf( "    -y, --graph-file:   <Filename> dotty filename for structured callgraph output" EOL );
+    genericsPrintf( "    -z, --cache-file:   <Filename> profile filename for kcachegrind output" EOL );
     genericsPrintf( EOL "(Will connect one port higher than that set in -s when TPIU is not used)" EOL );
 
 }
 // ====================================================================================================
+struct option longOptions[] =
+{
+    {"no-demangle", required_argument, NULL, 'D'},
+    {"del-prefix", required_argument, NULL, 'd'},
+    {"elf-file", required_argument, NULL, 'e'},
+    {"eof", no_argument, NULL, 'E'},
+    {"input-file", required_argument, NULL, 'f'},
+    {"trace-chn", required_argument, NULL, 'g'},
+    {"help", no_argument, NULL, 'h'},
+    {"interval", required_argument, NULL, 'I'},
+    {"itm-sync", no_argument, NULL, 'n'},
+    {"objdump-opts", required_argument, NULL, 'O'},
+    {"server", required_argument, NULL, 's'},
+    {"tpiu", required_argument, NULL, 't'},
+    {"all-truncate", no_argument, NULL, 'T'},
+    {"verbose", required_argument, NULL, 'v'},
+    {"graph-file", required_argument, NULL, 'y'},
+    {"cache-file", required_argument, NULL, 'z'},
+    {NULL, no_argument, NULL, 0}
+};
+// ====================================================================================================
 static bool _processOptions( int argc, char *argv[], struct RunTime *r )
 
 {
-    int c;
+    int c, optionIndex = 0;
 
-    while ( ( c = getopt ( argc, argv, "Dd:Ee:f:g:hI:n:O:s:Tt:v:y:z:" ) ) != -1 )
+    while ( ( c = getopt_long ( argc, argv, "Dd:Ee:f:g:hI:n:O:s:Tt:v:y:z:", longOptions, &optionIndex ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
