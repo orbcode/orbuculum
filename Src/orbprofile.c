@@ -454,11 +454,11 @@ static void _printHelp( struct RunTime *r )
 
 {
     genericsPrintf( "Usage: %s [options]" EOL, r->progName );
-    genericsPrintf( "    -a, --alt-addr-enc: Switch off alternate address decoding (on by default)" EOL );
+    genericsPrintf( "    -A, --alt-addr-enc: Switch off alternate address decoding (on by default)" EOL );
     genericsPrintf( "    -D, --no-demangle:  Switch off C++ symbol demangling" EOL );
     genericsPrintf( "    -d, --del-prefix:   <String> Material to delete off front of filenames" EOL );
-    genericsPrintf( "    -e, --elf-file:     <ElfFile> to use for symbols" EOL );
-    genericsPrintf( "    -E, --eof:          When reading from file, terminate at end of file rather than waiting for further input" EOL );
+    genericsPrintf( "    -E, --elf-file:     <ElfFile> to use for symbols" EOL );
+    genericsPrintf( "    -e, --eof:          When reading from file, terminate at end of file rather than waiting for further input" EOL );
     genericsPrintf( "    -f, --input-file:   Take input from specified file" EOL );
     genericsPrintf( "    -h, --help:         This help" EOL );
     genericsPrintf( "    -I, --interval:     <Interval> Time between samples (in ms)" EOL );
@@ -475,11 +475,11 @@ static void _printHelp( struct RunTime *r )
 // ====================================================================================================
 struct option longOptions[] =
 {
-    {"alt-addr-enc", no_argument, NULL, 'a'},
+    {"alt-addr-enc", no_argument, NULL, 'A'},
     {"no-demangle", required_argument, NULL, 'D'},
     {"del-prefix", required_argument, NULL, 'd'},
-    {"elf-file", required_argument, NULL, 'e'},
-    {"eof", no_argument, NULL, 'E'},
+    {"elf-file", required_argument, NULL, 'E'},
+    {"eof", no_argument, NULL, 'e'},
     {"input-file", required_argument, NULL, 'f'},
     {"help", no_argument, NULL, 'h'},
     {"interval", required_argument, NULL, 'I'},
@@ -498,12 +498,12 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
 {
     int c, optionIndex = 0;
 
-    while ( ( c = getopt_long ( argc, argv, "aDd:Ee:f:hI:O:p:s:Tv:y:z:", longOptions, &optionIndex ) ) != -1 )
+    while ( ( c = getopt_long ( argc, argv, "ADd:eE:f:hI:O:p:s:Tv:y:z:", longOptions, &optionIndex ) ) != -1 )
 
         switch ( c )
         {
             // ------------------------------------
-            case 'a':
+            case 'A':
                 r->options->noaltAddr = true;
                 break;
 
@@ -518,12 +518,12 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
                 break;
 
             // ------------------------------------
-            case 'E':
+            case 'e':
                 r->options->fileTerminate = true;
                 break;
 
             // ------------------------------------
-            case 'e':
+            case 'E':
                 r->options->elffile = optarg;
                 break;
 
