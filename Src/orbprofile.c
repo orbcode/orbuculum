@@ -450,10 +450,10 @@ static void _intHandler( int sig )
     exit( 0 );
 }
 // ====================================================================================================
-static void _printHelp( struct RunTime *r )
+static void _printHelp( const char *const progName )
 
 {
-    genericsPrintf( "Usage: %s [options]" EOL, r->progName );
+    genericsPrintf( "Usage: %s [options]" EOL, progName );
     genericsPrintf( "    -A, --alt-addr-enc: Switch off alternate address decoding (on by default)" EOL );
     genericsPrintf( "    -D, --no-demangle:  Switch off C++ symbol demangling" EOL );
     genericsPrintf( "    -d, --del-prefix:   <String> Material to delete off front of filenames" EOL );
@@ -542,7 +542,7 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
 
             // ------------------------------------
             case 'h':
-                _printHelp( r );
+                _printHelp( r->progName );
                 exit( 0 );
 
             // ------------------------------------
