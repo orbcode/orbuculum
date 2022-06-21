@@ -705,8 +705,8 @@ static void _usb_callback( struct libusb_transfer *t )
         }
 
 #ifdef DUMP_BLOCK
-	uint8_t *c = r->rawBlock[r->rp].buffer;
-	uint32_t y = r->rawBlock[r->rp].fillLevel;
+	uint8_t *c = t->buffer;
+	uint32_t y = t->actual_length;
 
 	fprintf( stderr, EOL );
 
