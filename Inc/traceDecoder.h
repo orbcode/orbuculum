@@ -54,6 +54,8 @@ enum TRACEchanges
     EV_CH_THUMB,
     EV_CH_ISLSIP,
     EV_CH_LINEAR,
+    EV_CH_TRACESTART,
+    EV_CH_TRACESTOP,
     EV_CH_NUM_CHANGES
 };
 

@@ -82,6 +82,7 @@ struct                                       /* Record for options, either defau
     char *deleteMaterial;                    /* Material to delete off filenames for target */
 
     char *elffile;                           /* Target program config */
+    char *odoptions;                         /* Options to pass directly to objdump */
 
     char *json;                              /* Output in JSON format rather than human readable, either '-' for screen or filename */
     char *outfile;                           /* File to output current information */
@@ -879,27 +880,28 @@ void _protocolPump( uint8_t c )
 void _printHelp( char *progName )
 
 {
-    fprintf( stdout, "Usage: %s [options]" EOL, progName );
-    fprintf( stdout, "       -c: <num> Cut screen output after number of lines" EOL );
-    fprintf( stdout, "       -d: <DeleteMaterial> to take off front of filenames" EOL );
-    fprintf( stdout, "       -D: Switch off C++ symbol demangling" EOL );
-    fprintf( stdout, "       -e: <ElfFile> to use for symbols" EOL );
-    fprintf( stdout, "       -E: Include exceptions in output report" EOL );
-    fprintf( stdout, "       -f: <filename> Take input from specified file" EOL );
-    fprintf( stdout, "       -g: <LogFile> append historic records to specified file" EOL );
-    fprintf( stdout, "       -h: This help" EOL );
-    fprintf( stdout, "       -I: <interval> Display interval in milliseconds (defaults to %d mS)" EOL, TOP_UPDATE_INTERVAL );
-    fprintf( stdout, "       -j: <filename> Output to file in JSON format (or screen if <filename> is '-')" EOL );
-    fprintf( stdout, "       -l: Aggregate per line rather than per function" EOL );
-    fprintf( stdout, "       -n: Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
-    fprintf( stdout, "       -o: <filename> to be used for output live file" EOL );
-    fprintf( stdout, "       -r: <routines> to record in live file (default %d routines)" EOL, options.maxRoutines );
-    fprintf( stdout, "       -R: Report filenames as part of function discriminator" EOL );
-    fprintf( stdout, "       -s: <Server>:<Port> to use" EOL );
-    fprintf( stdout, "       -t: <channel> Use TPIU decoder on specified channel" EOL );
-    fprintf( stdout, "       -v: <level> Verbose mode 0(errors)..3(debug)" EOL );
-    fprintf( stdout, EOL "Environment Variables;" EOL );
-    fprintf( stdout, "  OBJDUMP: to use non-standard obbdump binary" EOL );
+    genericsPrintf( "Usage: %s [options]" EOL, progName );
+    genericsPrintf( "       -c: <num> Cut screen output after number of lines" EOL );
+    genericsPrintf( "       -d: <DeleteMaterial> to take off front of filenames" EOL );
+    genericsPrintf( "       -D: Switch off C++ symbol demangling" EOL );
+    genericsPrintf( "       -e: <ElfFile> to use for symbols" EOL );
+    genericsPrintf( "       -E: Include exceptions in output report" EOL );
+    genericsPrintf( "       -f: <filename> Take input from specified file" EOL );
+    genericsPrintf( "       -g: <LogFile> append historic records to specified file" EOL );
+    genericsPrintf( "       -h: This help" EOL );
+    genericsPrintf( "       -I: <interval> Display interval in milliseconds (defaults to %d mS)" EOL, TOP_UPDATE_INTERVAL );
+    genericsPrintf( "       -j: <filename> Output to file in JSON format (or screen if <filename> is '-')" EOL );
+    genericsPrintf( "       -l: Aggregate per line rather than per function" EOL );
+    genericsPrintf( "       -n: Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
+    genericsPrintf( "       -o: <filename> to be used for output live file" EOL );
+    genericsPrintf( "       -O: <options> Options to pass directly to objdump" EOL );
+    genericsPrintf( "       -r: <routines> to record in live file (default %d routines)" EOL, options.maxRoutines );
+    genericsPrintf( "       -R: Report filenames as part of function discriminator" EOL );
+    genericsPrintf( "       -s: <Server>:<Port> to use" EOL );
+    genericsPrintf( "       -t: <channel> Use TPIU decoder on specified channel" EOL );
+    genericsPrintf( "       -v: <level> Verbose mode 0(errors)..3(debug)" EOL );
+    genericsPrintf( EOL "Environment Variables;" EOL );
+    genericsPrintf( "  OBJDUMP: to use non-standard obbdump binary" EOL );
 }
 // ====================================================================================================
 int _processOptions( int argc, char *argv[] )
@@ -907,7 +909,7 @@ int _processOptions( int argc, char *argv[] )
 {
     int c;
 
-    while ( ( c = getopt ( argc, argv, "c:d:DEe:f:g:hI:j:lm:no:r:Rs:t:v:" ) ) != -1 )
+    while ( ( c = getopt ( argc, argv, "c:d:DEe:f:g:hI:j:lm:nO:o:r:Rs:t:v:" ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -974,6 +976,12 @@ int _processOptions( int argc, char *argv[] )
             // ------------------------------------
             case 'o':
                 options.outfile = optarg;
+                break;
+
+            // ------------------------------------
+
+            case 'O':
+                options.odoptions = optarg;
                 break;
 
             // ------------------------------------
@@ -1071,6 +1079,7 @@ int _processOptions( int argc, char *argv[] )
     genericsReport( V_INFO, "C++ Demangle     : %s" EOL, options.demangle ? "true" : "false" );
     genericsReport( V_INFO, "Display Interval : %d mS" EOL, options.displayInterval );
     genericsReport( V_INFO, "Log File         : %s" EOL, options.logfile ? options.logfile : "None" );
+    genericsReport( V_INFO, "Objdump options  : %s" EOL, options.odoptions ? options.odoptions : "None" );
 
     if ( options.useTPIU )
     {
@@ -1255,7 +1264,7 @@ int main( int argc, char *argv[] )
                 /* Make sure old references are invalidated */
                 _flushHash();
 
-                if ( !( _r.s = SymbolSetCreate( options.elffile, options.deleteMaterial, options.demangle, false, false ) ) )
+                if ( !( _r.s = SymbolSetCreate( options.elffile, options.deleteMaterial, options.demangle, false, false, options.odoptions ) ) )
                 {
                     genericsReport( V_ERROR, "Could not read symbols" EOL );
                     usleep( 1000000 );

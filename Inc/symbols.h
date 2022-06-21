@@ -84,7 +84,7 @@ struct SymbolSet
 {
     char *elfFile;                         /* File containing structure info */
     char *deleteMaterial;                  /* Material to strip off filenames */
-
+    char *odoptions;                       /* Any options to pass directly to objdump */
     struct stat st;
 
     /* For memory saving and speedup... */
@@ -118,8 +118,8 @@ struct nameEntry
 };
 
 // ====================================================================================================
-struct SymbolSet *SymbolSetCreate( const char *filename, const char *deleteMaterial, bool demanglecpp, bool recordSource, bool recordAssy );
-
+struct SymbolSet *SymbolSetCreate( const char *filename, const char *deleteMaterial, bool demanglecpp,
+                                   bool recordSource, bool recordAssy, const char *objdumpOptions );
 void SymbolSetDelete( struct SymbolSet **s );
 bool SymbolSetValid( struct SymbolSet **s, char *filename );
 const char *SymbolFilename( struct SymbolSet *s, uint32_t index );

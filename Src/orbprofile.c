@@ -55,6 +55,7 @@ struct Options                           /* Record for options, either defaults 
     bool truncateDeleteMaterial;         /* Do we want this material totally removing from file references? */
 
     char *elffile;                       /* Target program config */
+    char *odoptions;                     /* Options to pass directly to objdump */
 
     char *dotfile;                       /* File to output dot information */
     char *profile;                       /* File to output profile information */
@@ -465,6 +466,7 @@ static void _printHelp( struct RunTime *r )
     genericsPrintf( "       -f <filename>: Take input from specified file" EOL );
     genericsPrintf( "       -h: This help" EOL );
     genericsPrintf( "       -I <Interval>: Time to sample (in mS)" EOL );
+    genericsPrintf( "       -O: <options> Options to pass directly to objdump" EOL );
     genericsPrintf( "       -p: {ETM35|MTB} trace protocol to use, default is ETM35" EOL );
     genericsPrintf( "       -s: <Server>:<Port> to use" EOL );
     //genericsPrintf( "       -t <channel>: Use TPIU to strip TPIU on specfied channel (defaults to 2)" EOL );
@@ -480,7 +482,7 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
 {
     int c;
 
-    while ( ( c = getopt ( argc, argv, "aDd:Ee:f:hI:p:s:Tv:y:z:" ) ) != -1 )
+    while ( ( c = getopt ( argc, argv, "aDd:Ee:f:hI:O:p:s:Tv:y:z:" ) ) != -1 )
 
         switch ( c )
         {
@@ -522,6 +524,12 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
             // ------------------------------------
             case 'I':
                 r->options->sampleDuration = atoi( optarg );
+                break;
+
+            // ------------------------------------
+
+            case 'O':
+                r->options->odoptions = optarg;
                 break;
 
             // ------------------------------------
@@ -621,6 +629,7 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
     genericsReport( V_INFO, "Server          : %s:%d" EOL, r->options->server, r->options->port );
     genericsReport( V_INFO, "Delete Material : %s" EOL, r->options->deleteMaterial ? r->options->deleteMaterial : "None" );
     genericsReport( V_INFO, "Elf File        : %s (%s Names)" EOL, r->options->elffile, r->options->truncateDeleteMaterial ? "Truncate" : "Don't Truncate" );
+    genericsReport( V_INFO, "Objdump options : %s" EOL, r->options->odoptions ? r->options->odoptions : "None" );
     genericsReport( V_INFO, "Protocol        : %s" EOL, TRACEprotocolString[r->options->protocol] );
     genericsReport( V_INFO, "DOT file        : %s" EOL, r->options->dotfile ? r->options->dotfile : "None" );
     genericsReport( V_INFO, "Sample Duration : %d mS" EOL, r->options->sampleDuration );
@@ -784,7 +793,7 @@ int main( int argc, char *argv[] )
         /* We need symbols constantly while running ... lets get them */
         if ( !SymbolSetValid( &_r.s, _r.options->elffile ) )
         {
-            if ( !( _r.s = SymbolSetCreate( _r.options->elffile, _r.options->deleteMaterial, _r.options->demangle, true, true ) ) )
+            if ( !( _r.s = SymbolSetCreate( _r.options->elffile, _r.options->deleteMaterial, _r.options->demangle, true, true, _r.options->odoptions ) ) )
             {
                 genericsExit( -1, "Elf file or symbols in it not found" EOL );
             }

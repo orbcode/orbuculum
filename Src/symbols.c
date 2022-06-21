@@ -275,6 +275,12 @@ static enum LineType _getLineType( char *sourceLine, char *p1, char *p2, char *p
         return LT_FILEANDLINE;
     }
 
+    /* Alternative form for Windows; If it contains Drive:text:num then it's a file and line */
+    if ( 3 == sscanf( sourceLine, "%2c%[^:]:%[0-9]", p1, &p1[2], p2 ) )
+    {
+        return LT_FILEANDLINE;
+    }
+
     /* If it contains nothing other than newline then its a newline */
     if ( ( *sourceLine == '\n' ) || ( *sourceLine == '\r' ) )
     {
@@ -335,11 +341,11 @@ static bool _getTargetProgramInfo( struct SymbolSet *s )
 
     if ( getenv( OBJENVNAME ) )
     {
-        snprintf( commandLine, MAX_LINE_LEN, "%s -Sl%s --source-comment=" SOURCE_INDICATOR " %s", getenv( OBJENVNAME ),  s->demanglecpp ? " -C" : "", s->elfFile );
+        snprintf( commandLine, MAX_LINE_LEN, "%s -Sl%s --source-comment=" SOURCE_INDICATOR " %s %s", getenv( OBJENVNAME ),  s->demanglecpp ? " -C" : "", s->elfFile, s->odoptions );
     }
     else
     {
-        snprintf( commandLine, MAX_LINE_LEN, OBJDUMP " -Sl%s --source-comment=" SOURCE_INDICATOR " %s",  s->demanglecpp ? " -C" : "", s->elfFile );
+        snprintf( commandLine, MAX_LINE_LEN, OBJDUMP " -Sl%s --source-comment=" SOURCE_INDICATOR " %s %s",  s->demanglecpp ? " -C" : "", s->elfFile, s->odoptions );
     }
 
     f = popen( commandLine, "r" );
@@ -819,6 +825,11 @@ void SymbolSetDelete( struct SymbolSet **s )
             free( ( *s )->deleteMaterial );
         }
 
+        if ( ( *s )->odoptions )
+        {
+            free( ( *s )->odoptions );
+        }
+
         free( *s );
         *s = NULL;
     }
@@ -860,13 +871,14 @@ bool SymbolSetValid( struct SymbolSet **s, char *filename )
     }
 }
 // ====================================================================================================
-struct SymbolSet *SymbolSetCreate( const char *filename, const char *deleteMaterial, bool demanglecpp, bool recordSource, bool recordAssy )
+struct SymbolSet *SymbolSetCreate( const char *filename, const char *deleteMaterial, bool demanglecpp, bool recordSource, bool recordAssy, const char *objdumpOptions )
 
 /* Create new symbol set by reading from elf file, if it's there and stable */
 
 {
     struct stat statbuf, newstatbuf;
     struct SymbolSet *s = ( struct SymbolSet * )calloc( sizeof( struct SymbolSet ), 1 );
+    s->odoptions        = strdup( objdumpOptions ? objdumpOptions : "" );
     s->elfFile          = strdup( filename );
     s->deleteMaterial   = strdup( deleteMaterial ? deleteMaterial : "" );
     s->recordSource     = recordSource;

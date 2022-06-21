@@ -52,6 +52,7 @@ struct Options                           /* Record for options, either defaults 
     bool truncateDeleteMaterial;         /* Do we want this material totally removing from file references? */
 
     char *elffile;                       /* Target program config */
+    char *odoptions;                     /* Options to pass directly to objdump */
 
     int traceChannel;                    /* ITM Channel used for trace */
     int fileChannel;                     /* ITM Channel used for file output */
@@ -475,6 +476,7 @@ static void _printHelp( struct RunTime *r )
     genericsPrintf( "       -h: This help" EOL );
     genericsPrintf( "       -I <Interval>: Time to sample (in mS)" EOL );
     genericsPrintf( "       -n: Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
+    genericsPrintf( "       -O: <options> Options to pass directly to objdump" EOL );
     genericsPrintf( "       -s: <Server>:<Port> to use" EOL );
     genericsPrintf( "       -t <channel>: Use TPIU to strip TPIU on specfied channel (defaults to 1)" EOL );
     genericsPrintf( "       -T: truncate -d material off all references (i.e. make output relative)" EOL );
@@ -490,7 +492,7 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
 {
     int c;
 
-    while ( ( c = getopt ( argc, argv, "Dd:Ee:f:g:hI:n:s:Tt:v:y:z:" ) ) != -1 )
+    while ( ( c = getopt ( argc, argv, "Dd:Ee:f:g:hI:n:O:s:Tt:v:y:z:" ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -536,6 +538,12 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
             // ------------------------------------
             case 'n':
                 r->options->forceITMSync = false;
+                break;
+
+            // ------------------------------------
+
+            case 'O':
+                r->options->odoptions = optarg;
                 break;
 
             // ------------------------------------
@@ -629,7 +637,7 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
     genericsReport( V_INFO, "ForceSync       : %s" EOL, r->options->forceITMSync ? "true" : "false" );
     genericsReport( V_INFO, "Trace Channel   : %d" EOL, r->options->traceChannel );
     genericsReport( V_INFO, "Sample Duration : %d mS" EOL, r->options->sampleDuration );
-
+    genericsReport( V_INFO, "Objdump options  : %s" EOL, r->options->odoptions ? r->options->odoptions : "None" );
     return true;
 }
 // ====================================================================================================
@@ -742,7 +750,7 @@ int main( int argc, char *argv[] )
         /* We need symbols constantly while running ... check they are current */
         if ( !SymbolSetValid( &_r.s, _r.options->elffile ) )
         {
-            if ( !( _r.s = SymbolSetCreate( _r.options->elffile, _r.options->deleteMaterial, _r.options->demangle, true, true ) ) )
+            if ( !( _r.s = SymbolSetCreate( _r.options->elffile, _r.options->deleteMaterial, _r.options->demangle, true, true, _r.options->odoptions ) ) )
             {
                 genericsExit( -1, "Elf file or symbols in it not found" EOL );
             }

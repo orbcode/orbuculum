@@ -48,6 +48,7 @@ struct Options
     bool demangle;                      /* Indicator that C++ should be demangled */
 
     char *elffile;                      /* File to use for symbols etc. */
+    char *odoptions;                    /* Options to pass directly to objdump */
 
     int buflen;                         /* Length of post-mortem buffer, in bytes */
     bool useTPIU;                       /* Are we using TPIU, and stripping TPIU frames? */
@@ -163,6 +164,7 @@ static void _printHelp( struct RunTime *r )
     genericsPrintf( "       -E: When reading from file, terminate at end of file rather than waiting for further input" EOL );
     genericsPrintf( "       -f <filename>: Take input from specified file" EOL );
     genericsPrintf( "       -h: This help" EOL );
+    genericsPrintf( "       -O: <options> Options to pass directly to objdump" EOL );
     genericsPrintf( "       -p: {ETM35|MTB} trace protocol to use, default is ETM35" EOL );
     genericsPrintf( "       -s: <Server>:<Port> to use" EOL );
     genericsPrintf( "       -t <channel>: Use TPIU to strip TPIU on specfied channel" EOL );
@@ -178,7 +180,7 @@ static int _processOptions( int argc, char *argv[], struct RunTime *r )
 {
     int c;
 
-    while ( ( c = getopt ( argc, argv, "ab:c:Dd:Ee:f:hp:s:t:v:" ) ) != -1 )
+    while ( ( c = getopt ( argc, argv, "ab:c:Dd:Ee:f:hO:p:s:t:v:" ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -231,6 +233,11 @@ static int _processOptions( int argc, char *argv[], struct RunTime *r )
 
             // ------------------------------------
 
+            case 'O':
+                r->options->odoptions = optarg;
+                break;
+
+            // ------------------------------------
             case 'p':
 
                 /* Index through protocol strings looking for match or end of list */
@@ -751,7 +758,7 @@ static void _dumpBuffer( struct RunTime *r )
 
     if ( !SymbolSetValid( &r->s, r->options->elffile ) )
     {
-        if ( !( r->s = SymbolSetCreate( r->options->elffile, r->options->deleteMaterial, r->options->demangle, true, true ) ) )
+        if ( !( r->s = SymbolSetCreate( r->options->elffile, r->options->deleteMaterial, r->options->demangle, true, true, r->options->odoptions ) ) )
         {
             genericsReport( V_ERROR, "Elf file or symbols in it not found" EOL );
             return;
@@ -830,6 +837,20 @@ static bool _currentFileAndLine( struct RunTime *r, char **file, int32_t *l )
     return true;
 }
 // ====================================================================================================
+static bool _fileExists( char *fileToOpen )
+
+{
+    FILE *f = fopen( fileToOpen, "r" );
+
+    if ( !f )
+    {
+        return false;
+    }
+
+    fclose( f );
+    return true;
+}
+// ====================================================================================================
 static void _openFileCommand( struct RunTime *r, int32_t line, char *fileToOpen )
 
 {
@@ -838,6 +859,10 @@ static void _openFileCommand( struct RunTime *r, int32_t line, char *fileToOpen 
     char *b = construct;
 
     /* We now have the filename and line number that we're targetting...go collect this file */
+    if ( !a )
+    {
+        return;
+    }
 
     while ( *a )
     {
@@ -888,7 +913,6 @@ static void _openFileBuffer( struct RunTime *r, int32_t line, char *fileToOpen )
 
     if ( !f )
     {
-        SIOalert( r->sio, "Couldn't open file" );
         return;
     }
 
@@ -967,13 +991,18 @@ static void _doFileOpen( struct RunTime *r, bool isDive )
     /* Now create filename including stripped material if need be */
     snprintf( construct, SCRATCH_STRING_LEN, "%s%s", r->options->deleteMaterial ? r->options->deleteMaterial : "", filename );
 
-    if ( isDive )
+    /* Try full path first, and filename if path doesn't work */
+    if ( _fileExists( construct ) )
     {
-        _openFileBuffer( r, lineNo, construct );
+        isDive ? _openFileBuffer( r, lineNo, construct ) : _openFileCommand( r, lineNo, construct );
+    }
+    else if ( _fileExists( filename ) )
+    {
+        isDive ? _openFileBuffer( r, lineNo, filename ) : _openFileCommand( r, lineNo, filename );
     }
     else
     {
-        _openFileCommand( r, lineNo, construct );
+        SIOalert( r->sio, "Couldn't open file" );
     }
 
     free( filename );

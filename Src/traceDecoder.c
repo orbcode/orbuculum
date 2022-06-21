@@ -943,7 +943,7 @@ static void _MTBDecoderPumpAction( struct TRACEDecoder *i, uint32_t source, uint
 
         case TRACE_UNSYNCED:
             /* For the first instruction we only have the destination */
-            cpu->nextAddr = dest;
+            cpu->nextAddr = dest & 0xFFFFFFFE;
             newState = TRACE_IDLE;
             break;
 
@@ -954,7 +954,7 @@ static void _MTBDecoderPumpAction( struct TRACEDecoder *i, uint32_t source, uint
             if ( source > 0xfffffff0 )
             {
                 /* This is some form of exception */
-                cpu->nextAddr = dest;
+                cpu->nextAddr = dest & 0xFFFFFFFE;
                 cpu->exception = 0; /* We don't known exception cause on a M0 */
                 retVal = TRACE_EV_MSG_RXED;
                 _stateChange( i, EV_CH_EX_ENTRY );
@@ -962,8 +962,8 @@ static void _MTBDecoderPumpAction( struct TRACEDecoder *i, uint32_t source, uint
             else
             {
                 cpu->addr = cpu->nextAddr;
-                cpu->nextAddr = dest;
-                cpu->toAddr = source;
+                cpu->nextAddr = dest & 0xFFFFFFFE;
+                cpu->toAddr = source & 0xFFFFFFFE;
                 _stateChange( i, EV_CH_ADDRESS );
                 _stateChange( i, EV_CH_LINEAR );
                 retVal = TRACE_EV_MSG_RXED;
