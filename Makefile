@@ -90,7 +90,7 @@ INCLUDE_PATHS += -I/usr/local/include/libusb-1.0
 LDLIBS = -L. -L/usr/local/lib -lusb-1.0 -ldl -lncurses -lpthread -lintl -L$(OLOC) -l$(ORBLIB)
 else
 INCLUDE_PATHS += -I/usr/local/include/libusb-1.0
-LDLIBS = -L. -L/usr/local/lib -lusb-1.0 -ldl -lncurses -L$(OLOC) -l$(ORBLIB)
+LDLIBS = -L. -L/usr/local/lib -lusb-1.0 -lncurses -L$(OLOC) -l$(ORBLIB)
 endif
 
 ifdef WINDOWS
@@ -98,7 +98,7 @@ LDLIBS += -lWs2_32
 endif
 
 ifdef LINUX
-LDLIBS += -lpthread
+LDLIBS += -lpthread -ldl
 endif
 
 ##########################################################################
