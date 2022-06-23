@@ -537,6 +537,11 @@ static void _traceCB( void *d )
     bool linearRun = false;
 
     /* Deal with changes introduced by this event ========================= */
+    if ( TRACEStateChanged( &r->i, EV_CH_TRACESTART ) )
+    {
+        _appendRefToOPBuffer( r, r->op.currentLine, LT_EVENT, "========== TRACE START EVENT ==========" );
+    }
+
     if ( TRACEStateChanged( &r->i, EV_CH_ADDRESS ) )
     {
         /* Make debug report if calculated and reported addresses differ. This is most useful for testing when exhaustive  */

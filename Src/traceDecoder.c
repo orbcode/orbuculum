@@ -937,38 +937,51 @@ static void _MTBDecoderPumpAction( struct TRACEDecoder *i, uint32_t source, uint
     struct TRACECPUState *cpu = &i->cpu;
     enum TRACEDecoderPumpEvent retVal = TRACE_EV_NONE;
 
+    if ( report )
+    {
+        report( V_ERROR, "[From 0x%08x to 0x%08x]" EOL, source, dest );
+    }
+
     switch ( i->p )
     {
         // -----------------------------------------------------
 
         case TRACE_UNSYNCED:
             /* For the first instruction we only have the destination */
-            cpu->nextAddr = dest & 0xFFFFFFFE;
+            /* but we code the exception indication into here so we know we arrived via an exception */
+            cpu->nextAddr = ( dest & 0xFFFFFFFE ) | ( source & 1 );
+
+            /* If the low bit of dest was set then this is a start of trace event */
+            if ( dest & 1 )
+            {
+                _stateChange( i, EV_CH_TRACESTART );
+            }
+
             newState = TRACE_IDLE;
             break;
 
         // -----------------------------------------------------
 
         case TRACE_IDLE:
-
-            if ( source > 0xfffffff0 )
+            if ( cpu->nextAddr & 1 )
             {
-                /* This is some form of exception */
-                cpu->nextAddr = dest & 0xFFFFFFFE;
-                cpu->exception = 0; /* We don't known exception cause on a M0 */
-                retVal = TRACE_EV_MSG_RXED;
+                /* If low bit of nextAddr is set then we got here via an exception */
                 _stateChange( i, EV_CH_EX_ENTRY );
             }
-            else
+
+            /* If low bit of dest is set then this is a start of trace */
+            if ( dest & 1 )
             {
-                cpu->addr = cpu->nextAddr;
-                cpu->nextAddr = dest & 0xFFFFFFFE;
-                cpu->toAddr = source & 0xFFFFFFFE;
-                _stateChange( i, EV_CH_ADDRESS );
-                _stateChange( i, EV_CH_LINEAR );
-                retVal = TRACE_EV_MSG_RXED;
+                _stateChange( i, EV_CH_TRACESTART );
             }
 
+            cpu->addr = cpu->nextAddr & 0xFFFFFFFE;
+            cpu->nextAddr = ( dest & 0xFFFFFFFE ) | ( source & 1 );
+            cpu->toAddr = source & 0xFFFFFFFE;
+            cpu->exception = 0; /* We don't known exception cause on a M0 */
+            _stateChange( i, EV_CH_ADDRESS );
+            _stateChange( i, EV_CH_LINEAR );
+            retVal = TRACE_EV_MSG_RXED;
             break;
 
         // -----------------------------------------------------
@@ -981,7 +994,6 @@ static void _MTBDecoderPumpAction( struct TRACEDecoder *i, uint32_t source, uint
 
     }
 
-    //      if ( report ) report( V_DEBUG, "%s --> %s ", protoStateName[i->p], protoStateName[newState]);
     if ( retVal != TRACE_EV_NONE )
     {
         cb( d );
