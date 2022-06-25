@@ -27,6 +27,7 @@
 #include "symbols.h"
 #include "msgSeq.h"
 #include "nw.h"
+#include "dataStream.h"
 
 #define CUTOFF              (10)             /* Default cutoff at 0.1% */
 #define TOP_UPDATE_INTERVAL (1000)           /* Interval between each on screen update */
@@ -1092,6 +1093,20 @@ int _processOptions( int argc, char *argv[] )
 
     return OK;
 }
+
+
+static struct DataStream* openDataStream()
+{
+    if(options.file != NULL)
+    {
+        return dataStreamCreateFile(options.file);
+    }
+    else
+    {
+        return dataStreamCreateSocket(options.server, options.port);
+    }
+}
+
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
@@ -1102,9 +1117,6 @@ int _processOptions( int argc, char *argv[] )
 int main( int argc, char *argv[] )
 
 {
-    int sourcefd;
-    struct sockaddr_in serv_addr;
-    struct hostent *server;
     uint8_t cbw[TRANSFER_SIZE];
     int64_t lastTime;
 
@@ -1113,12 +1125,10 @@ int main( int argc, char *argv[] )
     uint32_t reportLines = 0;
     struct reportLine *report;
 
-    ssize_t t;
-    int flag = 1;
-    int r;
     int64_t remainTime;
     struct timeval tv;
-    fd_set readfds;
+    enum ReceiveResult receiveResult = RECEIVE_RESULT_OK;
+    size_t receivedSize = 0;
 
     /* Fill in a time to start from */
     lastTime = _timestamp();
@@ -1158,63 +1168,13 @@ int main( int argc, char *argv[] )
 
     while ( 1 )
     {
-        if ( !options.file )
+        struct DataStream* stream = openDataStream();
+
+        if(stream == NULL)
         {
-            /* Get the socket open */
-            sourcefd = socket( AF_INET, SOCK_STREAM, 0 );
-            setsockopt( sourcefd, SOL_SOCKET, SO_REUSEPORT, &flag, sizeof( flag ) );
-
-            if ( sourcefd < 0 )
-            {
-                perror( "Error creating socket\n" );
-                return -EIO;
-            }
-
-            if ( setsockopt( sourcefd, SOL_SOCKET, SO_REUSEADDR, &( int )
-        {
-            1
-        }, sizeof( int ) ) < 0 )
-            {
-                perror( "setsockopt(SO_REUSEADDR) failed" );
-                return -EIO;
-            }
-
-            /* Now open the network connection */
-            bzero( ( char * ) &serv_addr, sizeof( serv_addr ) );
-            server = gethostbyname( options.server );
-
-            if ( !server )
-            {
-                perror( "Cannot find host" );
-                return -EIO;
-            }
-
-            serv_addr.sin_family = AF_INET;
-            bcopy( ( char * )server->h_addr,
-                   ( char * )&serv_addr.sin_addr.s_addr,
-                   server->h_length );
-            serv_addr.sin_port = htons( options.port );
-
-            if ( connect( sourcefd, ( struct sockaddr * ) &serv_addr, sizeof( serv_addr ) ) < 0 )
-            {
-                if ( ( !options.json ) || ( options.json[0] != '-' ) )
-                {
-                    fprintf( stdout, CLEAR_SCREEN EOL );
-                }
-
-                perror( "Could not connect" );
-                close( sourcefd );
-                usleep( 1000000 );
-                continue;
-            }
-        }
-        else
-        {
-            if ( ( sourcefd = open( options.file, O_RDONLY ) ) < 0 )
-            {
-                genericsExit( sourcefd, "Can't open file %s" EOL, options.file );
-            }
-
+            genericsReport( V_ERROR, "Failed to open data stream" EOL );
+            usleep(500 * 1000);
+            continue;
         }
 
         if ( ( !options.json ) || ( options.json[0] != '-' ) )
@@ -1230,33 +1190,29 @@ int main( int argc, char *argv[] )
         while ( 1 )
         {
             remainTime = ( ( lastTime + options.displayInterval - _timestamp() ) * 1000 ) - 500;
-            r = t = 0;
 
             if ( remainTime > 0 )
             {
                 tv.tv_sec = remainTime / 1000000;
                 tv.tv_usec  = remainTime % 1000000;
 
-                FD_ZERO( &readfds );
-                FD_SET( sourcefd, &readfds );
-                r = select( sourcefd + 1, &readfds, NULL, NULL, &tv );
+                receiveResult = stream->receive(stream, cbw, TRANSFER_SIZE, &tv, &receivedSize);
+            }
+            else
+            {
+                receiveResult = RECEIVE_RESULT_OK;
+                receivedSize = 0;
             }
 
-            if ( r < 0 )
+            if(receiveResult == RECEIVE_RESULT_ERROR)
             {
-                /* Something went wrong in the select */
+                /* Something went wrong in the receive */
                 break;
             }
 
-            if ( r > 0 )
+            if(receiveResult == RECEIVE_RESULT_EOF)
             {
-                t = read( sourcefd, cbw, TRANSFER_SIZE );
-
-                if ( t <= 0 )
-                {
-                    /* We are at EOF (Probably the descriptor closed) */
-                    break;
-                }
+                /* We are at EOF, hopefully next loop will get more data. */
             }
 
             if ( !SymbolSetValid( &_r.s, options.elffile ) )
@@ -1279,13 +1235,13 @@ int main( int argc, char *argv[] )
             /* Pump all of the data through the protocol handler */
             uint8_t *c = cbw;
 
-            while ( t-- )
+            while ( receivedSize-- )
             {
                 _protocolPump( *c++ );
             }
 
             /* See if its time to post-process it */
-            if ( r <= 0 )
+            if ( receiveResult == RECEIVE_RESULT_TIMEOUT || remainTime <= 0)
             {
                 /* Create the report that we will output */
                 total = _consolodateReport( &report, &reportLines );
@@ -1328,7 +1284,8 @@ int main( int argc, char *argv[] )
             }
         }
 
-        close( sourcefd );
+        stream->close(stream);
+        free(stream);
     }
 
     if ( ( !ITMDecoderGetStats( &_r.i )->tpiuSyncCount ) )

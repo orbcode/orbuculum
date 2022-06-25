@@ -8,17 +8,11 @@
 
 #include <stdlib.h>
 #include <unistd.h>
-#include <fcntl.h>
 #include <ctype.h>
-#include <sys/types.h>
-#include <sys/stat.h>
 #include <stdio.h>
 #include <string.h>
 #include <assert.h>
 #include <inttypes.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <netdb.h>
 
 #include "nw.h"
 #include "git_version_info.h"
@@ -26,7 +20,7 @@
 #include "tpiuDecoder.h"
 #include "itmDecoder.h"
 #include "msgDecoder.h"
-
+#include "dataStream.h"
 #define NUM_CHANNELS  32
 #define HW_CHANNEL    (NUM_CHANNELS)      /* Make the hardware fifo on the end of the software ones */
 
@@ -510,116 +504,56 @@ int _processOptions( int argc, char *argv[] )
 }
 // ====================================================================================================
 
-int fileFeeder( void )
-
+static struct DataStream* tryOpenDataStream()
 {
-    int f;
-    unsigned char cbw[TRANSFER_SIZE];
-    ssize_t t;
-
-    if ( ( f = open( options.file, O_RDONLY ) ) < 0 )
+    if(options.file != NULL)
     {
-        genericsExit( -4, "Can't open file %s" EOL, options.file );
+        return dataStreamCreateFile(options.file);
     }
-
-    while ( ( t = read( f, cbw, TRANSFER_SIZE ) ) >= 0 )
+    else
     {
+        return dataStreamCreateSocket(options.server, options.port);
+    }
+}
 
-        if ( !t )
+static void feedDataStream(struct DataStream* stream)
+{
+    unsigned char cbw[TRANSFER_SIZE];
+
+    while(true)
+    {
+        size_t receivedSize;
+        enum ReceiveResult result = stream->receive(stream, cbw, TRANSFER_SIZE, NULL, &receivedSize);
+
+        if(result != RECEIVE_RESULT_OK)
         {
-            if ( options.endTerminate )
+            if(result == RECEIVE_RESULT_EOF && options.endTerminate)
+            {
+                return;
+            }
+            else if (result == RECEIVE_RESULT_ERROR)
             {
                 break;
             }
             else
             {
-                // Just spin for a while to avoid clogging the CPU
                 usleep( 100000 );
-                continue;
             }
         }
 
         unsigned char *c = cbw;
 
-        while ( t-- )
-        {
-            _protocolPump( *c++ );
-        }
-    }
-
-    if ( !options.endTerminate )
-    {
-        genericsReport( V_INFO, "File read error" EOL );
-    }
-
-    close( f );
-    return true;
-}
-
-// ====================================================================================================
-int socketFeeder( void )
-
-{
-    int sockfd;
-    struct sockaddr_in serv_addr;
-    struct hostent *server;
-    unsigned char cbw[TRANSFER_SIZE];
-    ssize_t t;
-    int flag = 1;
-
-    sockfd = socket( AF_INET, SOCK_STREAM, 0 );
-    setsockopt( sockfd, SOL_SOCKET, SO_REUSEPORT, &flag, sizeof( flag ) );
-
-    if ( sockfd < 0 )
-    {
-        genericsReport( V_ERROR, "Error creating socket" EOL );
-        return -1;
-    }
-
-    /* Now open the network connection */
-    bzero( ( char * ) &serv_addr, sizeof( serv_addr ) );
-    server = gethostbyname( options.server );
-
-    if ( !server )
-    {
-        genericsReport( V_ERROR, "Cannot find host" EOL );
-        return -1;
-    }
-
-    serv_addr.sin_family = AF_INET;
-    bcopy( ( char * )server->h_addr,
-           ( char * )&serv_addr.sin_addr.s_addr,
-           server->h_length );
-    serv_addr.sin_port = htons( options.port );
-
-    if ( connect( sockfd, ( struct sockaddr * ) &serv_addr, sizeof( serv_addr ) ) < 0 )
-    {
-        genericsReport( V_ERROR, "Could not connect" EOL );
-        return -1;
-    }
-
-    while ( ( t = read( sockfd, cbw, TRANSFER_SIZE ) ) > 0 )
-    {
-        unsigned char *c = cbw;
-
-        while ( t-- )
+        while ( receivedSize-- )
         {
             _protocolPump( *c++ );
         }
 
         fflush( stdout );
     }
-
-    genericsReport( V_ERROR, "Read failed" EOL );
-
-    close( sockfd );
-    return -2;
-
 }
 
 // ====================================================================================================
 int main( int argc, char *argv[] )
-
 {
     if ( !_processOptions( argc, argv ) )
     {
@@ -630,19 +564,49 @@ int main( int argc, char *argv[] )
     TPIUDecoderInit( &_r.t );
     ITMDecoderInit( &_r.i, options.forceITMSync );
 
-    if ( options.file )
+    while(true)
     {
-        exit( fileFeeder() );
-    }
+        struct DataStream* stream = NULL;
+        while(true)
+        {
+            stream = tryOpenDataStream();
 
-    do
-    {
-        int rc = socketFeeder();
-        // TODO - make logging of failures/reconnections "nicer" based on rc?
-        ( void )rc;
-        // tradeoff to re-attach "promptly" vs CPU spinning and log spam
-        usleep( 100 * 1000 );
+            if(stream != NULL)
+            {
+                break;
+            }
+
+            genericsReport( V_ERROR, "Failed to open data stream" EOL );
+
+            if(options.endTerminate)
+            {
+                break;
+            }
+            else
+            {
+                usleep( 500 * 1000 );
+            }
+        }
+
+        if(stream == NULL)
+        {
+            break;
+        }
+
+        feedDataStream(stream);
+
+        stream->close(stream);
+        free(stream);
+
+        if(options.endTerminate)
+        {
+            break;
+        }
+        else
+        {
+            usleep( 100000 );
+        }
     }
-    while ( !options.endTerminate );
+    
 }
 // ====================================================================================================

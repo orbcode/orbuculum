@@ -50,7 +50,14 @@ static enum ReceiveResult socketStreamReceive(struct DataStream* stream, void* b
         return RECEIVE_RESULT_TIMEOUT;
     }
 
-    *receivedSize = recv(self->socket, buffer, bufferSize, 0);
+    ssize_t result = recv(self->socket, buffer, bufferSize, 0);
+    if(result <= 0)
+    {
+        // report connection broken as error
+        return RECEIVE_RESULT_ERROR; 
+    }
+
+    *receivedSize = result;
     return RECEIVE_RESULT_OK;
 }
 
