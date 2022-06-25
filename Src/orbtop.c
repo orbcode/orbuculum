@@ -27,7 +27,7 @@
 #include "symbols.h"
 #include "msgSeq.h"
 #include "nw.h"
-#include "dataStream.h"
+#include "stream.h"
 
 #define CUTOFF              (10)             /* Default cutoff at 0.1% */
 #define TOP_UPDATE_INTERVAL (1000)           /* Interval between each on screen update */
@@ -1093,17 +1093,17 @@ int _processOptions( int argc, char *argv[] )
 
     return OK;
 }
+// ====================================================================================================
 
-
-static struct DataStream* openDataStream()
+static struct Stream *_openStream()
 {
-    if(options.file != NULL)
+    if ( options.file != NULL )
     {
-        return dataStreamCreateFile(options.file);
+        return streamCreateFile( options.file );
     }
     else
     {
-        return dataStreamCreateSocket(options.server, options.port);
+        return streamCreateSocket( options.server, options.port );
     }
 }
 
@@ -1168,12 +1168,12 @@ int main( int argc, char *argv[] )
 
     while ( 1 )
     {
-        struct DataStream* stream = openDataStream();
+        struct Stream *stream = _openStream();
 
-        if(stream == NULL)
+        if ( stream == NULL )
         {
             genericsReport( V_ERROR, "Failed to open data stream" EOL );
-            usleep(500 * 1000);
+            usleep( 500 * 1000 );
             continue;
         }
 
@@ -1196,7 +1196,7 @@ int main( int argc, char *argv[] )
                 tv.tv_sec = remainTime / 1000000;
                 tv.tv_usec  = remainTime % 1000000;
 
-                receiveResult = stream->receive(stream, cbw, TRANSFER_SIZE, &tv, &receivedSize);
+                receiveResult = stream->receive( stream, cbw, TRANSFER_SIZE, &tv, &receivedSize );
             }
             else
             {
@@ -1204,13 +1204,13 @@ int main( int argc, char *argv[] )
                 receivedSize = 0;
             }
 
-            if(receiveResult == RECEIVE_RESULT_ERROR)
+            if ( receiveResult == RECEIVE_RESULT_ERROR )
             {
                 /* Something went wrong in the receive */
                 break;
             }
 
-            if(receiveResult == RECEIVE_RESULT_EOF)
+            if ( receiveResult == RECEIVE_RESULT_EOF )
             {
                 /* We are at EOF, hopefully next loop will get more data. */
             }
@@ -1241,7 +1241,7 @@ int main( int argc, char *argv[] )
             }
 
             /* See if its time to post-process it */
-            if ( receiveResult == RECEIVE_RESULT_TIMEOUT || remainTime <= 0)
+            if ( receiveResult == RECEIVE_RESULT_TIMEOUT || remainTime <= 0 )
             {
                 /* Create the report that we will output */
                 total = _consolodateReport( &report, &reportLines );
@@ -1284,8 +1284,8 @@ int main( int argc, char *argv[] )
             }
         }
 
-        stream->close(stream);
-        free(stream);
+        stream->close( stream );
+        free( stream );
     }
 
     if ( ( !ITMDecoderGetStats( &_r.i )->tpiuSyncCount ) )

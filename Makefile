@@ -105,11 +105,11 @@ endif
 # ==========
 
 ORBLIB_CFILES = $(App_DIR)/itmDecoder.c $(App_DIR)/tpiuDecoder.c $(App_DIR)/msgDecoder.c $(App_DIR)/msgSeq.c $(App_DIR)/traceDecoder.c
-ORBLIB_CFILES = $(App_DIR)/itmDecoder.c $(App_DIR)/tpiuDecoder.c $(App_DIR)/msgDecoder.c $(App_DIR)/msgSeq.c $(App_DIR)/traceDecoder.c $(App_DIR)/dataStream_socket.c 
+ORBLIB_CFILES = $(App_DIR)/itmDecoder.c $(App_DIR)/tpiuDecoder.c $(App_DIR)/msgDecoder.c $(App_DIR)/msgSeq.c $(App_DIR)/traceDecoder.c $(App_DIR)/stream_socket.c 
 
 ifdef WINDOWS
 else
-	ORBLIB_CFILES += $(App_DIR)/dataStream_file_posix.c
+	ORBLIB_CFILES += $(App_DIR)/stream_file_posix.c
 endif
 
 ORBUCULUM_CFILES  = $(App_DIR)/$(ORBUCULUM).c $(App_DIR)/nwclient.c

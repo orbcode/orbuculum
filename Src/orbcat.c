@@ -20,7 +20,7 @@
 #include "tpiuDecoder.h"
 #include "itmDecoder.h"
 #include "msgDecoder.h"
-#include "dataStream.h"
+#include "stream.h"
 #define NUM_CHANNELS  32
 #define HW_CHANNEL    (NUM_CHANNELS)      /* Make the hardware fifo on the end of the software ones */
 
@@ -504,34 +504,35 @@ int _processOptions( int argc, char *argv[] )
 }
 // ====================================================================================================
 
-static struct DataStream* tryOpenDataStream()
+static struct Stream *_tryOpenStream()
 {
-    if(options.file != NULL)
+    if ( options.file != NULL )
     {
-        return dataStreamCreateFile(options.file);
+        return streamCreateFile( options.file );
     }
     else
     {
-        return dataStreamCreateSocket(options.server, options.port);
+        return streamCreateSocket( options.server, options.port );
     }
 }
+// ====================================================================================================
 
-static void feedDataStream(struct DataStream* stream)
+static void _feedStream( struct Stream *stream )
 {
     unsigned char cbw[TRANSFER_SIZE];
 
-    while(true)
+    while ( true )
     {
         size_t receivedSize;
-        enum ReceiveResult result = stream->receive(stream, cbw, TRANSFER_SIZE, NULL, &receivedSize);
+        enum ReceiveResult result = stream->receive( stream, cbw, TRANSFER_SIZE, NULL, &receivedSize );
 
-        if(result != RECEIVE_RESULT_OK)
+        if ( result != RECEIVE_RESULT_OK )
         {
-            if(result == RECEIVE_RESULT_EOF && options.endTerminate)
+            if ( result == RECEIVE_RESULT_EOF && options.endTerminate )
             {
                 return;
             }
-            else if (result == RECEIVE_RESULT_ERROR)
+            else if ( result == RECEIVE_RESULT_ERROR )
             {
                 break;
             }
@@ -564,21 +565,22 @@ int main( int argc, char *argv[] )
     TPIUDecoderInit( &_r.t );
     ITMDecoderInit( &_r.i, options.forceITMSync );
 
-    while(true)
+    while ( true )
     {
-        struct DataStream* stream = NULL;
-        while(true)
-        {
-            stream = tryOpenDataStream();
+        struct Stream *stream = NULL;
 
-            if(stream != NULL)
+        while ( true )
+        {
+            stream = _tryOpenStream();
+
+            if ( stream != NULL )
             {
                 break;
             }
 
             genericsReport( V_ERROR, "Failed to open data stream" EOL );
 
-            if(options.endTerminate)
+            if ( options.endTerminate )
             {
                 break;
             }
@@ -588,17 +590,17 @@ int main( int argc, char *argv[] )
             }
         }
 
-        if(stream == NULL)
+        if ( stream == NULL )
         {
             break;
         }
 
-        feedDataStream(stream);
+        _feedStream( stream );
 
-        stream->close(stream);
-        free(stream);
+        stream->close( stream );
+        free( stream );
 
-        if(options.endTerminate)
+        if ( options.endTerminate )
         {
             break;
         }
@@ -607,6 +609,6 @@ int main( int argc, char *argv[] )
             usleep( 100000 );
         }
     }
-    
+
 }
 // ====================================================================================================
