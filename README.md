@@ -236,6 +236,10 @@ export LDFLAGS="-L/usr/local/opt/binutils/lib"
 export CPPFLAGS="-I/usr/local/opt/binutils/include"
 ```
 
+You can also see notes under [Issue #63](https://github.com/orbcode/orbuculum/issues/63) from Gasman2014 about building on a M1
+mac. You need to watch out for Homebrew binutils...on a M1 Mac you must use the Apple binutils or you will get linker errors. All
+you need to do is move the homebrew binutils out of the way while you do the build....no big deal when you know about it.
+
 
 Using
 =====
