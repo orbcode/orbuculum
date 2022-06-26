@@ -856,6 +856,9 @@ bool SymbolSetValid( struct SymbolSet **s, char *filename )
 #ifdef OSX
             ( memcmp( &n.st_mtimespec, &( ( *s )->st.st_mtimespec ), sizeof( struct timespec ) ) ) ||
             ( memcmp( &n.st_ctimespec, &( ( *s )->st.st_ctimespec ), sizeof( struct timespec ) ) )
+#elif WIN32
+            ( memcmp( &n.st_mtime, &( ( *s )->st.st_mtime ), sizeof( n.st_mtime ) ) ) ||
+            ( memcmp( &n.st_ctime, &( ( *s )->st.st_ctime ), sizeof( n.st_ctime ) ) )
 #else
             ( memcmp( &n.st_mtim, &( ( *s )->st.st_mtim ), sizeof( struct timespec ) ) ) ||
             ( memcmp( &n.st_ctim, &( ( *s )->st.st_ctim ), sizeof( struct timespec ) ) )
@@ -904,6 +907,9 @@ struct SymbolSet *SymbolSetCreate( const char *filename, const char *deleteMater
 #ifdef OSX
                         ( memcmp( &statbuf.st_mtimespec, &newstatbuf.st_mtimespec, sizeof( struct timespec ) ) ) ||
                         ( memcmp( &statbuf.st_ctimespec, &newstatbuf.st_ctimespec, sizeof( struct timespec ) ) )
+#elif WIN32
+                        ( memcmp( &statbuf.st_mtime, &newstatbuf.st_mtime, sizeof( statbuf.st_mtime ) ) ) ||
+                        ( memcmp( &statbuf.st_ctime, &newstatbuf.st_ctime, sizeof( statbuf.st_ctime ) ) )
 #else
                         ( memcmp( &statbuf.st_mtim, &newstatbuf.st_mtim, sizeof( struct timespec ) ) ) ||
                         ( memcmp( &statbuf.st_ctim, &newstatbuf.st_ctim, sizeof( struct timespec ) ) )

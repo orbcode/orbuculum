@@ -13,9 +13,6 @@
 #include <stdio.h>
 #include <assert.h>
 #include <inttypes.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <netdb.h>
 
 #include "cJSON.h"
 #include "generics.h"
