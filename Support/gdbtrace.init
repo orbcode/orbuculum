@@ -264,8 +264,8 @@ define prepareSWO
     set $speed = $speed*2
   end
 
-  # Output bits at speed dependent on system clock speed (floats to avoid round-down)
-  set *($TPIUBASE+0x10) = (int)((((float)$clockspeed)/((float)$speed))+(float)0.5)-1
+  # Output bits at speed dependent on system clock
+  set *($TPIUBASE+0x10) = ((($clockspeed+$speed-1)/$speed)-1)
 
   if ($useTPIU==1)
     # Use TPIU formatter and flush
