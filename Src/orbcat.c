@@ -345,7 +345,7 @@ int _processOptions( int argc, char *argv[] )
 {
     int c;
     char *chanConfig;
-    uint chan;
+    unsigned int chan;
     char *chanIndex;
 #define DELIMITER ','
 
