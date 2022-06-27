@@ -734,6 +734,7 @@ int main( int argc, char *argv[] )
             tv.tv_usec  = TICK_TIME_MS * 1000;
 
             enum ReceiveResult result = stream->receive( stream, _r.rawBlock.buffer, TRANSFER_SIZE, &tv, ( size_t * )&_r.rawBlock.fillLevel );
+
             if ( result != RECEIVE_RESULT_OK )
             {
                 if ( result == RECEIVE_RESULT_EOF && _r.options->fileTerminate )

@@ -732,7 +732,7 @@ int main( int argc, char *argv[] )
 
     while ( !_r.ending )
     {
-      if ( _r.options->file != NULL )
+        if ( _r.options->file != NULL )
         {
             stream = streamCreateFile( _r.options->file );
         }
@@ -785,33 +785,34 @@ int main( int argc, char *argv[] )
             struct dataBlock *rxBlock = &_r.rawBlock[_r.wp];
 
             enum ReceiveResult result = stream->receive( stream, rxBlock->buffer, TRANSFER_SIZE, &tv, ( size_t * )&rxBlock->fillLevel );
-	    if (( result == RECEIVE_RESULT_EOF ) || ( result == RECEIVE_RESULT_ERROR ))
-	      {
-		break;
-	      }
 
-	    if ( rxBlock->fillLevel <= 0 )
-	      {
-		/* We are at EOF (Probably the descriptor closed) */
-		break;
-	      }
+            if ( ( result == RECEIVE_RESULT_EOF ) || ( result == RECEIVE_RESULT_ERROR ) )
+            {
+                break;
+            }
 
-	    /* ...record the fact that we received some data */
-	    _r.intervalBytes += rxBlock->fillLevel;
+            if ( rxBlock->fillLevel <= 0 )
+            {
+                /* We are at EOF (Probably the descriptor closed) */
+                break;
+            }
 
-	    int nwp = ( _r.wp + 1 ) % NUM_RAW_BLOCKS;
+            /* ...record the fact that we received some data */
+            _r.intervalBytes += rxBlock->fillLevel;
 
-	    if ( nwp == ( volatile int )_r.rp )
-	      {
-		genericsExit( -1, "Overflow" EOL );
-	      }
+            int nwp = ( _r.wp + 1 ) % NUM_RAW_BLOCKS;
 
-	    _r.wp = nwp;
-	    sem_post( &_r.dataForClients );
+            if ( nwp == ( volatile int )_r.rp )
+            {
+                genericsExit( -1, "Overflow" EOL );
+            }
+
+            _r.wp = nwp;
+            sem_post( &_r.dataForClients );
 
             /* Update the intervals */
             if ( ( ( volatile bool ) _r.sampling ) && ( ( genericsTimestampmS() - ( volatile uint32_t )_r.starttime ) > _r.options->sampleDuration ) )
-	      {
+            {
                 _r.ending = true;
 
                 /* Post an empty data packet to flag to packet processor that it's done */
@@ -825,7 +826,7 @@ int main( int argc, char *argv[] )
                 _r.rawBlock[_r.wp].fillLevel = 0;
                 _r.wp = nwp;
                 sem_post( &_r.dataForClients );
-	      }
+            }
         }
 
         stream->close( stream );

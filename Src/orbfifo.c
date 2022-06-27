@@ -390,17 +390,18 @@ int main( int argc, char *argv[] )
             }
 
             enum ReceiveResult result = stream->receive( stream, cbw, TRANSFER_SIZE, &tv, ( size_t * )&t );
-	    if (( result == RECEIVE_RESULT_EOF ) || ( result == RECEIVE_RESULT_ERROR ))
-	      {
-		break;
-	      }
-	    
-	    _processBlock( t, cbw );
-	}
+
+            if ( ( result == RECEIVE_RESULT_EOF ) || ( result == RECEIVE_RESULT_ERROR ) )
+            {
+                break;
+            }
+
+            _processBlock( t, cbw );
+        }
 
         stream->close( stream );
         free( stream );
-	
+
         if ( options.fileTerminate )
         {
             _r.ending = true;

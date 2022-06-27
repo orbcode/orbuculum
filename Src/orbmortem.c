@@ -1219,15 +1219,24 @@ int main( int argc, char *argv[] )
             tv.tv_sec = 0;
             tv.tv_usec  = 10000;
 
-            /* We always read the data, even if we're held, to keep the socket alive */
-	    enum ReceiveResult result = stream->receive( stream, _r.rawBlock.buffer, TRANSFER_SIZE, &tv, ( size_t * )&_r.rawBlock.fillLevel );
-	    if ( (( result == RECEIVE_RESULT_EOF ) || ( _r.rawBlock.fillLevel <= 0 )) && _r.options->file )
+            if ( stream )
             {
-                /* Read from file is complete, remove it */
-	      stream->close( stream );
-	      free( stream );
-	      
-	      stream = NULL;
+                /* We always read the data, even if we're held, to keep the socket alive */
+                enum ReceiveResult result = stream->receive( stream, _r.rawBlock.buffer, TRANSFER_SIZE, &tv, ( size_t * )&_r.rawBlock.fillLevel );
+
+                if ( ( ( result == RECEIVE_RESULT_EOF ) || ( _r.rawBlock.fillLevel <= 0 ) ) && _r.options->file )
+                {
+                    /* Read from file is complete, remove it */
+                    stream->close( stream );
+                    free( stream );
+
+                    stream = NULL;
+                }
+            }
+            else
+            {
+                /* No point in checking for keypresses _too_ often! */
+                usleep( TICK_TIME_MS * 100 );
             }
 
             if ( !_r.held )
