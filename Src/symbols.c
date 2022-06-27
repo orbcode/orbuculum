@@ -11,6 +11,11 @@
 #include <ctype.h>
 #include "generics.h"
 #include "symbols.h"
+#if defined(WIN32)
+    #include <Windows.h>
+    #include <io.h>
+    #include <fcntl.h>
+#endif
 
 #define MAX_LINE_LEN (4096)
 #define ELF_RELOAD_DELAY_TIME 1000000   /* Time before elf reload will be attempted when its been lost */
@@ -307,6 +312,74 @@ static bool _getDest( char *assy, uint32_t *dest )
     /* Check for cbz destination format (i.e. with a register in front of the destination address) */
     return ( 1 == sscanf( assy, "%*[^\t]\tr%*[0-7],%x", dest ) );
 }
+
+#if defined(WIN32)
+static FILE* _openProcess(char* commandLine, PROCESS_INFORMATION* processInfo)
+{
+    HANDLE readingPipe;
+    HANDLE processOutPipe;
+
+    {
+        // Create pipe for process' stdout
+        SECURITY_ATTRIBUTES pipeSecurity;
+        pipeSecurity.nLength = sizeof(pipeSecurity);
+        pipeSecurity.bInheritHandle = true;
+        pipeSecurity.lpSecurityDescriptor = NULL;
+        CreatePipe(&readingPipe, &processOutPipe, &pipeSecurity, 0);
+
+        // only write side of pipe should be inherited
+        SetHandleInformation(readingPipe, HANDLE_FLAG_INHERIT, 0);
+    }
+
+    memset(processInfo, 0, sizeof(PROCESS_INFORMATION));
+
+    {
+        STARTUPINFOA startupInfo;
+        memset(&startupInfo, 0, sizeof(startupInfo));
+        startupInfo.cb = sizeof(startupInfo);
+        startupInfo.hStdOutput = processOutPipe;
+        startupInfo.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+        startupInfo.hStdInput = GetStdHandle(STD_ERROR_HANDLE);
+        startupInfo.dwFlags = STARTF_USESTDHANDLES;
+
+        BOOL success = CreateProcessA(
+            NULL,
+            commandLine,
+            NULL,
+            NULL,
+            true,
+            DETACHED_PROCESS,
+            NULL,
+            NULL,
+            &startupInfo,
+            processInfo
+        );
+
+        // Close handle passed to child process
+        CloseHandle(processOutPipe);
+
+        if(!success) {
+            CloseHandle(readingPipe);
+            return NULL;
+        }
+    }
+
+    int fd = _open_osfhandle((intptr_t)readingPipe, _O_RDONLY);
+    if(fd == -1) {
+        CloseHandle(readingPipe);
+        return NULL;
+    }
+    FILE* f = _fdopen(fd, "r");
+
+    if(f == NULL) {
+        _close(fd);
+        return NULL;
+    }
+
+    return f;
+}
+#endif
+
 // ====================================================================================================
 static bool _getTargetProgramInfo( struct SymbolSet *s )
 
@@ -347,8 +420,12 @@ static bool _getTargetProgramInfo( struct SymbolSet *s )
     {
         snprintf( commandLine, MAX_LINE_LEN, OBJDUMP " -Sl%s --source-comment=" SOURCE_INDICATOR " %s %s",  s->demanglecpp ? " -C" : "", s->elfFile, s->odoptions );
     }
-
+#if defined(WIN32)
+    PROCESS_INFORMATION processInfo;
+    f = _openProcess(commandLine, &processInfo);
+#else
     f = popen( commandLine, "r" );
+#endif
 
     if ( !f )
     {
@@ -659,11 +736,17 @@ static bool _getTargetProgramInfo( struct SymbolSet *s )
         }
     }
 
+#if defined(WIN32)
+    WaitForSingleObject(processInfo.hProcess, INFINITE);
+    CloseHandle(processInfo.hThread);
+    CloseHandle(processInfo.hProcess);
+#else
     if ( 0 != pclose( f ) )
     {
         /* Something went wrong in the close process */
         return false;
     }
+#endif
 
     _sortLines( s );
     return true;
