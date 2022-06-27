@@ -158,6 +158,7 @@ static void _outputHelp( struct SIOInstance *sio )
     werase( sio->outputWindow );
     wattrset( sio->outputWindow, A_BOLD | COLOR_PAIR( CP_NORMAL ) );
     wprintw( sio->outputWindow, EOL "  Important Keys..." EOL EOL );
+    wprintw( sio->outputWindow, "       D: Cycle through available display modes" EOL );
     wprintw( sio->outputWindow, "       H: Hold or resume sampling" EOL );
     wprintw( sio->outputWindow, "       M: Mark a location in the sample buffer, followed by 0..%d" EOL, MAX_TAGS - 1 );
     wprintw( sio->outputWindow, "       S: Save current buffer to file" EOL );
