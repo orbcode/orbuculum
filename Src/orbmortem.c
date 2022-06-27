@@ -26,6 +26,7 @@
 #include "tpiuDecoder.h"
 #include "symbols.h"
 #include "sio.h"
+#include "stream.h"
 
 #define REMOTE_SERVER       "localhost"
 
@@ -1139,15 +1140,9 @@ static void _doExit( void )
 int main( int argc, char *argv[] )
 
 {
-    int sourcefd;
-    struct sockaddr_in serv_addr;
-    struct hostent *server;
-    int flag = 1;
-
     int32_t lastTTime, lastTSTime, lastHTime;
-    int r;
+    struct Stream *stream;              /* Stream that we are collecting data from */
     struct timeval tv;
-    fd_set readfds;
 
     /* Have a basic name and search string set up */
     _r.progName = genericsBasename( argv[0] );
@@ -1194,103 +1189,52 @@ int main( int argc, char *argv[] )
 
     while ( !_r.ending )
     {
-        if ( !_r.options->file )
+
+        if ( _r.options->file != NULL )
         {
-            /* Get the socket open */
-            sourcefd = socket( AF_INET, SOCK_STREAM, 0 );
-            setsockopt( sourcefd, SOL_SOCKET, SO_REUSEPORT, &flag, sizeof( flag ) );
-
-            if ( sourcefd < 0 )
-            {
-                perror( "Error creating socket\n" );
-                return -EIO;
-            }
-
-            if ( setsockopt( sourcefd, SOL_SOCKET, SO_REUSEADDR, &( int )
-        {
-            1
-        }, sizeof( int ) ) < 0 )
-            {
-                perror( "setsockopt(SO_REUSEADDR) failed" );
-                return -EIO;
-            }
-
-            /* Now open the network connection */
-            bzero( ( char * ) &serv_addr, sizeof( serv_addr ) );
-            server = gethostbyname( _r.options->server );
-
-            if ( !server )
-            {
-                perror( "Cannot find host" EOL );
-                return -EIO;
-            }
-
-            serv_addr.sin_family = AF_INET;
-            bcopy( ( char * )server->h_addr,
-                   ( char * )&serv_addr.sin_addr.s_addr,
-                   server->h_length );
-            serv_addr.sin_port = htons( _r.options->port + ( _r.options->useTPIU ? 0 : 1 ) );
-
-            if ( connect( sourcefd, ( struct sockaddr * ) &serv_addr, sizeof( serv_addr ) ) < 0 )
-            {
-                /* This can happen when the feeder has gone missing... */
-                close( sourcefd );
-                usleep( 1000000 );
-                continue;
-            }
+            stream = streamCreateFile( _r.options->file );
         }
         else
         {
-
-            if ( ( sourcefd = open( _r.options->file, O_RDONLY ) ) < 0 )
+            /* Keep trying to open a network connection at half second intervals */
+            while ( 1 )
             {
-                genericsExit( sourcefd, "Can't open file %s" EOL, _r.options->file );
+                stream = streamCreateSocket( _r.options->server, _r.options->port + ( _r.options->useTPIU ? 0 : 1 ) );
+
+                if ( stream )
+                {
+                    break;
+                }
+
+                /* This can happen when the feeder has gone missing... */
+                usleep( 5000000 );
             }
         }
-
-        FD_ZERO( &readfds );
 
         /* ----------------------------------------------------------------------------- */
         /* This is the main active loop...only break out of this when ending or on error */
         /* ----------------------------------------------------------------------------- */
         while ( !_r.ending )
         {
-            /* Each time segment is restricted to 10mS */
             tv.tv_sec = 0;
             tv.tv_usec  = 10000;
 
-            if ( sourcefd )
+            /* We always read the data, even if we're held, to keep the socket alive */
+            stream->receive( stream, _r.rawBlock.buffer, TRANSFER_SIZE, &tv, ( size_t * )&_r.rawBlock.fillLevel );
+
+            if ( ( _r.rawBlock.fillLevel <= 0 ) && _r.options->file )
             {
-                FD_SET( sourcefd, &readfds );
+                /* Read from file is complete, remove it */
+                stream->close( stream );
+                free( stream );
+
+                stream = NULL;
             }
 
-            FD_SET( STDIN_FILENO, &readfds );
-
-            r = select( sourcefd ? sourcefd + 1 : STDIN_FILENO + 1, &readfds, NULL, NULL, &tv );
-
-            if ( r < 0 )
+            if ( !_r.held )
             {
-                /* Something went wrong in the select */
-                break;
-            }
-
-            if ( sourcefd && FD_ISSET( sourcefd, &readfds ) )
-            {
-                /* We always read the data, even if we're held, to keep the socket alive */
-                _r.rawBlock.fillLevel = read( sourcefd, _r.rawBlock.buffer, TRANSFER_SIZE );
-
-                if ( ( _r.rawBlock.fillLevel <= 0 ) && _r.options->file )
-                {
-                    /* Read from file is complete, remove fd */
-                    close( sourcefd );
-                    sourcefd = 0;
-                }
-
-                if ( !_r.held )
-                {
-                    /* Pump all of the data through the protocol handler */
-                    _processBlock( &_r );
-                }
+                /* Pump all of the data through the protocol handler */
+                _processBlock( &_r );
             }
 
             /* Update the outputs and deal with any keys that made it up this high */
@@ -1354,7 +1298,7 @@ int main( int argc, char *argv[] )
             /* Deal with possible timeout on sampling, or if this is a read-from-file that is finished */
             if ( ( !_r.numLines )  &&
                     (
-                                ( _r.options->file && !sourcefd ) ||
+                                ( _r.options->file && !stream ) ||
 
                                 ( ( ( genericsTimestampmS() - lastHTime ) > HANG_TIME_MS ) &&
                                   ( _r.newTotalBytes - _r.oldTotalHangBytes == 0 ) &&
@@ -1391,9 +1335,12 @@ int main( int argc, char *argv[] )
         /* End of main loop ... we get here because something forced us out              */
         /* ----------------------------------------------------------------------------- */
 
-        if ( sourcefd )
+        if ( stream )
         {
-            close( sourcefd );
+            stream->close( stream );
+            free( stream );
+
+            stream = NULL;
         }
 
         if ( _r.options->file )
@@ -1410,4 +1357,5 @@ int main( int argc, char *argv[] )
 
     return OK;
 }
+
 // ====================================================================================================
