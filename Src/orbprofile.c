@@ -26,6 +26,7 @@
 #include "symbols.h"
 #include "nw.h"
 #include "ext_fileformats.h"
+#include "stream.h"
 
 #define TICK_TIME_MS        (1)          /* Time intervals for checks */
 #define DEFAULT_DURATION_MS (1000)       /* Default time to sample, in mS */
@@ -700,14 +701,8 @@ static void *_processBlocks( void *params )
 int main( int argc, char *argv[] )
 
 {
-    int sourcefd;
-    struct sockaddr_in serv_addr;
-    struct hostent *server;
-    int flag = 1;
-
-    int r;
     struct timeval tv;
-    fd_set readfds;
+    struct Stream *stream = NULL;
 
     /* Have a basic name and search string set up */
     _r.progName = genericsBasename( argv[0] );
@@ -737,58 +732,26 @@ int main( int argc, char *argv[] )
 
     while ( !_r.ending )
     {
-        if ( !_r.options->file )
+      if ( _r.options->file != NULL )
         {
-            /* Get the socket open */
-            sourcefd = socket( AF_INET, SOCK_STREAM, 0 );
-            setsockopt( sourcefd, SOL_SOCKET, SO_REUSEPORT, &flag, sizeof( flag ) );
-
-            if ( sourcefd < 0 )
-            {
-                perror( "Error creating socket\n" );
-                return -EIO;
-            }
-
-            if ( setsockopt( sourcefd, SOL_SOCKET, SO_REUSEADDR, &( int )
-        {
-            1
-        }, sizeof( int ) ) < 0 )
-            {
-                perror( "setsockopt(SO_REUSEADDR) failed" );
-                return -EIO;
-            }
-
-            /* Now open the network connection */
-            bzero( ( char * ) &serv_addr, sizeof( serv_addr ) );
-            server = gethostbyname( _r.options->server );
-
-            if ( !server )
-            {
-                perror( "Cannot find host" );
-                return -EIO;
-            }
-
-            serv_addr.sin_family = AF_INET;
-            bcopy( ( char * )server->h_addr,
-                   ( char * )&serv_addr.sin_addr.s_addr,
-                   server->h_length );
-            serv_addr.sin_port = htons( _r.options->port + ( _r.options->useTPIU ? 0 : 1 ) );
-
-            if ( connect( sourcefd, ( struct sockaddr * ) &serv_addr, sizeof( serv_addr ) ) < 0 )
-            {
-                perror( "Could not connect" );
-                close( sourcefd );
-                usleep( 1000000 );
-                continue;
-            }
+            stream = streamCreateFile( _r.options->file );
         }
         else
         {
-            if ( ( sourcefd = open( _r.options->file, O_RDONLY ) ) < 0 )
+            while ( 1 )
             {
-                genericsExit( sourcefd, "Can't open file %s" EOL, _r.options->file );
+                stream = streamCreateSocket( _r.options->server, _r.options->port );
+
+                if ( !stream )
+                {
+                    break;
+                }
+
+                perror( "Could not connect" );
+                usleep( 1000000 );
             }
         }
+
 
         /* We need symbols constantly while running ... lets get them */
         if ( !SymbolSetValid( &_r.s, _r.options->elffile ) )
@@ -811,7 +774,6 @@ int main( int argc, char *argv[] )
         /* ----------------------------------------------------------------------------- */
         /* This is the main active loop...only break out of this when ending or on error */
         /* ----------------------------------------------------------------------------- */
-        FD_ZERO( &readfds );
 
         while ( !_r.ending )
         {
@@ -819,47 +781,37 @@ int main( int argc, char *argv[] )
             tv.tv_sec = 0;
             tv.tv_usec  = TICK_TIME_MS * 1000;
 
-            FD_SET( sourcefd, &readfds );
-            FD_SET( STDIN_FILENO, &readfds );
-            r = select( sourcefd + 1, &readfds, NULL, NULL, &tv );
-
-            if ( r < 0 )
-            {
-                /* Something went wrong in the select */
-                break;
-            }
 
             struct dataBlock *rxBlock = &_r.rawBlock[_r.wp];
 
-            if ( FD_ISSET( sourcefd, &readfds ) )
-            {
-                /* We always read the data, even if we're held, to keep the socket alive */
-                rxBlock->fillLevel = read( sourcefd, rxBlock->buffer, TRANSFER_SIZE );
+            enum ReceiveResult result = stream->receive( stream, rxBlock->buffer, TRANSFER_SIZE, &tv, ( size_t * )&rxBlock->fillLevel );
+	    if (( result == RECEIVE_RESULT_EOF ) || ( result == RECEIVE_RESULT_ERROR ))
+	      {
+		break;
+	      }
 
-                if ( rxBlock->fillLevel <= 0 )
-                {
-                    /* We are at EOF (Probably the descriptor closed) */
-                    break;
-                }
+	    if ( rxBlock->fillLevel <= 0 )
+	      {
+		/* We are at EOF (Probably the descriptor closed) */
+		break;
+	      }
 
-                /* ...record the fact that we received some data */
-                _r.intervalBytes += rxBlock->fillLevel;
+	    /* ...record the fact that we received some data */
+	    _r.intervalBytes += rxBlock->fillLevel;
 
+	    int nwp = ( _r.wp + 1 ) % NUM_RAW_BLOCKS;
 
-                int nwp = ( _r.wp + 1 ) % NUM_RAW_BLOCKS;
+	    if ( nwp == ( volatile int )_r.rp )
+	      {
+		genericsExit( -1, "Overflow" EOL );
+	      }
 
-                if ( nwp == ( volatile int )_r.rp )
-                {
-                    genericsExit( -1, "Overflow" EOL );
-                }
-
-                _r.wp = nwp;
-                sem_post( &_r.dataForClients );
-            }
+	    _r.wp = nwp;
+	    sem_post( &_r.dataForClients );
 
             /* Update the intervals */
             if ( ( ( volatile bool ) _r.sampling ) && ( ( genericsTimestampmS() - ( volatile uint32_t )_r.starttime ) > _r.options->sampleDuration ) )
-            {
+	      {
                 _r.ending = true;
 
                 /* Post an empty data packet to flag to packet processor that it's done */
@@ -873,10 +825,11 @@ int main( int argc, char *argv[] )
                 _r.rawBlock[_r.wp].fillLevel = 0;
                 _r.wp = nwp;
                 sem_post( &_r.dataForClients );
-            }
+	      }
         }
 
-        close( sourcefd );
+        stream->close( stream );
+        free( stream );
     }
 
     /* Wait for data processing to be completed */

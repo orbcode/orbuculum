@@ -23,6 +23,7 @@
 #include "git_version_info.h"
 #include "generics.h"
 #include "fileWriter.h"
+#include "stream.h"
 #include "nw.h"
 
 #include "itmfifos.h"
@@ -311,17 +312,11 @@ static void _doExit( void )
 int main( int argc, char *argv[] )
 
 {
-    int sourcefd;
-    struct sockaddr_in serv_addr;
-    struct hostent *server;
     uint8_t cbw[TRANSFER_SIZE];
-    int flag = 1;
-
-    ssize_t t;
+    size_t t;
+    struct Stream *stream = NULL;
     int64_t lastTime;
-    int r;
     struct timeval tv;
-    fd_set readfds;
     int32_t remainTime;
 
     /* Setup fifos with forced ITM sync, no TPIU and TPIU on channel 1 if its engaged later */
@@ -364,58 +359,23 @@ int main( int argc, char *argv[] )
 
     while ( !_r.ending )
     {
-        if ( !options.file )
+        if ( options.file != NULL )
         {
-            /* Get the socket open */
-            sourcefd = socket( AF_INET, SOCK_STREAM, 0 );
-            setsockopt( sourcefd, SOL_SOCKET, SO_REUSEPORT, &flag, sizeof( flag ) );
-
-            if ( sourcefd < 0 )
-            {
-                perror( "Error creating socket\n" );
-                return -EIO;
-            }
-
-            if ( setsockopt( sourcefd, SOL_SOCKET, SO_REUSEADDR, &( int )
-        {
-            1
-        }, sizeof( int ) ) < 0 )
-            {
-                perror( "setsockopt(SO_REUSEADDR) failed" );
-                return -EIO;
-            }
-
-            /* Now open the network connection */
-            bzero( ( char * ) &serv_addr, sizeof( serv_addr ) );
-            server = gethostbyname( options.server );
-
-            if ( !server )
-            {
-                perror( "Cannot find host" );
-                return -EIO;
-            }
-
-            serv_addr.sin_family = AF_INET;
-            bcopy( ( char * )server->h_addr,
-                   ( char * )&serv_addr.sin_addr.s_addr,
-                   server->h_length );
-            serv_addr.sin_port = htons( options.port );
-
-            if ( connect( sourcefd, ( struct sockaddr * ) &serv_addr, sizeof( serv_addr ) ) < 0 )
-            {
-                genericsPrintf( CLEAR_SCREEN EOL );
-
-                perror( "Could not connect" );
-                close( sourcefd );
-                usleep( 1000000 );
-                continue;
-            }
+            stream = streamCreateFile( options.file );
         }
         else
         {
-            if ( ( sourcefd = open( options.file, O_RDONLY ) ) < 0 )
+            while ( 1 )
             {
-                genericsExit( sourcefd, "Can't open file %s" EOL, options.file );
+                stream = streamCreateSocket( options.server, options.port );
+
+                if ( !stream )
+                {
+                    break;
+                }
+
+                perror( "Could not connect" );
+                usleep( 1000000 );
             }
         }
 
@@ -423,41 +383,24 @@ int main( int argc, char *argv[] )
         {
             remainTime = ( ( lastTime + 1000 - genericsTimestampmS() ) * 1000 ) - 500;
 
-            r = t = 0;
-
             if ( remainTime > 0 )
             {
                 tv.tv_sec = remainTime / 1000000;
                 tv.tv_usec  = remainTime % 1000000;
-
-                FD_ZERO( &readfds );
-                FD_SET( sourcefd, &readfds );
-                r = select( sourcefd + 1, &readfds, NULL, NULL, &tv );
             }
 
-            if ( r < 0 )
-            {
-                /* Something went wrong in the select */
-                break;
-            }
+            enum ReceiveResult result = stream->receive( stream, cbw, TRANSFER_SIZE, &tv, ( size_t * )&t );
+	    if (( result == RECEIVE_RESULT_EOF ) || ( result == RECEIVE_RESULT_ERROR ))
+	      {
+		break;
+	      }
+	    
+	    _processBlock( t, cbw );
+	}
 
-            if ( r > 0 )
-            {
-                t = read( sourcefd, cbw, TRANSFER_SIZE );
-
-                if ( t <= 0 )
-                {
-                    /* We are at EOF (Probably the descriptor closed) */
-                    break;
-                }
-
-                /* Pump all of the data through the protocol handler */
-                _processBlock( t, cbw );
-            }
-        }
-
-        close( sourcefd );
-
+        stream->close( stream );
+        free( stream );
+	
         if ( options.fileTerminate )
         {
             _r.ending = true;

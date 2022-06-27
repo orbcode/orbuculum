@@ -26,6 +26,7 @@
 #include "symbols.h"
 #include "nw.h"
 #include "ext_fileformats.h"
+#include "stream.h"
 
 #define TICK_TIME_MS        (1)          /* Time intervals for checks */
 #define DEFAULT_DURATION_MS (1000)       /* Default time to sample, in mS */
@@ -655,14 +656,9 @@ static void _doExit( void )
 int main( int argc, char *argv[] )
 
 {
-    int sourcefd;
-    struct sockaddr_in serv_addr;
-    struct hostent *server;
-    int flag = 1;
+    struct Stream *stream = NULL;
 
-    int r;
     struct timeval tv;
-    fd_set readfds;
 
     /* Have a basic name and search string set up */
     _r.progName = genericsBasename( argv[0] );
@@ -694,56 +690,23 @@ int main( int argc, char *argv[] )
 
     while ( !_r.ending )
     {
-        if ( !_r.options->file )
+        if ( _r.options->file != NULL )
         {
-            /* Get the socket open */
-            sourcefd = socket( AF_INET, SOCK_STREAM, 0 );
-            setsockopt( sourcefd, SOL_SOCKET, SO_REUSEPORT, &flag, sizeof( flag ) );
-
-            if ( sourcefd < 0 )
-            {
-                perror( "Error creating socket\n" );
-                return -EIO;
-            }
-
-            if ( setsockopt( sourcefd, SOL_SOCKET, SO_REUSEADDR, &( int )
-        {
-            1
-        }, sizeof( int ) ) < 0 )
-            {
-                perror( "setsockopt(SO_REUSEADDR) failed" );
-                return -EIO;
-            }
-
-            /* Now open the network connection */
-            bzero( ( char * ) &serv_addr, sizeof( serv_addr ) );
-            server = gethostbyname( _r.options->server );
-
-            if ( !server )
-            {
-                perror( "Cannot find host" );
-                return -EIO;
-            }
-
-            serv_addr.sin_family = AF_INET;
-            bcopy( ( char * )server->h_addr,
-                   ( char * )&serv_addr.sin_addr.s_addr,
-                   server->h_length );
-            serv_addr.sin_port = htons( _r.options->port );
-
-            if ( connect( sourcefd, ( struct sockaddr * ) &serv_addr, sizeof( serv_addr ) ) < 0 )
-            {
-                perror( "Could not connect" );
-                close( sourcefd );
-                usleep( 1000000 );
-                continue;
-            }
+            stream = streamCreateFile( _r.options->file );
         }
         else
         {
-            if ( ( sourcefd = open( _r.options->file, O_RDONLY ) ) < 0 )
+            while ( 1 )
             {
-                genericsExit( sourcefd, "Can't open file %s" EOL, _r.options->file );
+                stream = streamCreateSocket( _r.options->server, _r.options->port );
+
+                if ( !stream )
+                {
+                    break;
+                }
+
+                perror( "Could not connect" );
+                usleep( 1000000 );
             }
         }
 
@@ -761,8 +724,6 @@ int main( int argc, char *argv[] )
         }
 
 
-        FD_ZERO( &readfds );
-
         /* ----------------------------------------------------------------------------- */
         /* This is the main active loop...only break out of this when ending or on error */
         /* ----------------------------------------------------------------------------- */
@@ -772,37 +733,39 @@ int main( int argc, char *argv[] )
             tv.tv_sec = 0;
             tv.tv_usec  = TICK_TIME_MS * 1000;
 
-            FD_SET( sourcefd, &readfds );
-            FD_SET( STDIN_FILENO, &readfds );
-            r = select( sourcefd + 1, &readfds, NULL, NULL, &tv );
-
-            if ( r < 0 )
+            enum ReceiveResult result = stream->receive( stream, _r.rawBlock.buffer, TRANSFER_SIZE, &tv, ( size_t * )&_r.rawBlock.fillLevel );
+            if ( result != RECEIVE_RESULT_OK )
             {
-                /* Something went wrong in the select */
+                if ( result == RECEIVE_RESULT_EOF && _r.options->fileTerminate )
+                {
+                    _r.ending = true;
+                }
+                else if ( result == RECEIVE_RESULT_ERROR )
+                {
+                    break;
+                }
+                else
+                {
+                    usleep( 100000 );
+                }
+            }
+
+
+            if ( _r.rawBlock.fillLevel <= 0 )
+            {
+                /* We are at EOF (Probably the descriptor closed) */
                 break;
             }
 
-            if ( FD_ISSET( sourcefd, &readfds ) )
+            /* ...and record the fact that we received some data */
+            _r.intervalBytes += _r.rawBlock.fillLevel;
+
+            /* Pump all of the data through the protocol handler */
+            uint8_t *c = _r.rawBlock.buffer;
+
+            while ( _r.rawBlock.fillLevel-- )
             {
-                /* We always read the data, even if we're held, to keep the socket alive */
-                _r.rawBlock.fillLevel = read( sourcefd, _r.rawBlock.buffer, TRANSFER_SIZE );
-
-                if ( _r.rawBlock.fillLevel <= 0 )
-                {
-                    /* We are at EOF (Probably the descriptor closed) */
-                    break;
-                }
-
-                /* ...and record the fact that we received some data */
-                _r.intervalBytes += _r.rawBlock.fillLevel;
-
-                /* Pump all of the data through the protocol handler */
-                uint8_t *c = _r.rawBlock.buffer;
-
-                while ( _r.rawBlock.fillLevel-- )
-                {
-                    _protocolPump( &_r, *c++ );
-                }
+                _protocolPump( &_r, *c++ );
             }
 
             /* Check to make sure there's not an unexpected TPIU in here */
@@ -818,7 +781,8 @@ int main( int argc, char *argv[] )
             }
         }
 
-        close( sourcefd );
+        stream->close( stream );
+        free( stream );
     }
 
     /* Data are collected, now process and report */
