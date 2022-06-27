@@ -3,29 +3,20 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
-#ifdef WIN32
-    #include <winsock2.h>
-#else
-    #include <sys/ioctl.h>
-    #include <netinet/in.h>
-    #include <netdb.h>
-#endif
+#include <sys/ioctl.h>
+#include <netinet/in.h>
+#include <netdb.h>
 
 #include "generics.h"
 
 
-struct SocketStream
+struct PosixSocketStream
 {
     struct Stream base;
     int socket;
 };
 
-#define SELF(stream) ((struct SocketStream*)(stream))
-
-#ifdef WIN32
-    // https://stackoverflow.com/a/14388707/995351
-    #define SO_REUSEPORT SO_REUSEADDR
-#endif
+#define SELF(stream) ((struct PosixSocketStream*)(stream))
 
 // ====================================================================================================
 // ====================================================================================================
@@ -34,10 +25,10 @@ struct SocketStream
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
-static enum ReceiveResult _socketStreamReceive( struct Stream *stream, void *buffer, size_t bufferSize,
+static enum ReceiveResult _posixSocketStreamReceive( struct Stream *stream, void *buffer, size_t bufferSize,
         struct timeval *timeout, size_t *receivedSize )
 {
-    struct SocketStream *self = SELF( stream );
+    struct PosixSocketStream *self = SELF( stream );
 
     *receivedSize = 0;
 
@@ -71,20 +62,15 @@ static enum ReceiveResult _socketStreamReceive( struct Stream *stream, void *buf
 }
 
 // ====================================================================================================
-static void _socketStreamClose( struct Stream *stream )
+static void _posixSocketStreamClose( struct Stream *stream )
 {
-    struct SocketStream *self = SELF( stream );
+    struct PosixSocketStream *self = SELF( stream );
     close( self->socket );
 }
 
 // ====================================================================================================
-static int _socketStreamCreate( const char *server, int port )
+static int _posixSocketStreamCreate( const char *server, int port )
 {
-#ifdef WIN32
-    WSADATA wsaData;
-    WSAStartup( MAKEWORD( 2, 2 ), &wsaData );
-#endif
-
     int sockfd = socket( AF_INET, SOCK_STREAM, IPPROTO_TCP );
 
     int flag = 1;
@@ -136,16 +122,16 @@ static int _socketStreamCreate( const char *server, int port )
 
 struct Stream *streamCreateSocket( const char *server, int port )
 {
-    struct SocketStream *stream = SELF( calloc( 1, sizeof( struct SocketStream ) ) );
+    struct PosixSocketStream *stream = SELF( calloc( 1, sizeof( struct PosixSocketStream ) ) );
 
     if ( stream == NULL )
     {
         return NULL;
     }
 
-    stream->base.receive = _socketStreamReceive;
-    stream->base.close = _socketStreamClose;
-    stream->socket = _socketStreamCreate( server, port );
+    stream->base.receive = _posixSocketStreamReceive;
+    stream->base.close = _posixSocketStreamClose;
+    stream->socket = _posixSocketStreamCreate( server, port );
 
     if ( stream->socket == -1 )
     {
