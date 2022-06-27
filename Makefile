@@ -89,8 +89,13 @@ ifdef OSX
 INCLUDE_PATHS += -I/usr/local/include/libusb-1.0
 LDLIBS = -L. -L/usr/local/lib -lusb-1.0 -ldl -lncurses -lpthread -lintl -L$(OLOC) -l$(ORBLIB)
 else
-INCLUDE_PATHS += -I/usr/local/include/libusb-1.0
-LDLIBS = -L. -L/usr/local/lib -lusb-1.0 -lncurses -L$(OLOC) -l$(ORBLIB)
+	ifdef WINDOWS
+		INCLUDE_PATHS += -I/usr/local/include/libusb-1.0
+		LDLIBS = -L. -L/usr/local/lib -lusb-1.0 -lncursesw -lpthread -lintl -L$(OLOC) -l$(ORBLIB)
+	else
+		INCLUDE_PATHS += -I/usr/local/include/libusb-1.0
+		LDLIBS = -L. -L/usr/local/lib -lusb-1.0 -ldl -lncurses -L$(OLOC) -l$(ORBLIB)
+	endif
 endif
 
 ifdef WINDOWS
