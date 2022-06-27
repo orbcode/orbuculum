@@ -1,0 +1,32 @@
+name: Build Windows binaries
+
+on:
+  - push
+  - pull_request
+
+jobs:
+  win64:
+    runs-on: windows-latest
+    if: github.event_name == 'push'
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: msys2/setup-msys2@v2
+        with:
+          update: true
+          msystem: MINGW64
+          install: >-
+            base-devel
+            mingw-w64-x86_64-libusb
+            mingw-w64-x86_64-toolchain
+            git
+            zip
+      - uses: actions/checkout@v2
+      - run: make build
+      - run: make dist_win_zip
+      - uses: actions/upload-artifact@v3
+        with:
+          name: orbuculum-win64
+          path: ofiles/dist_win/*.*
+
