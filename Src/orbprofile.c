@@ -12,9 +12,6 @@
 #include <fcntl.h>
 #include <stdio.h>
 #include <signal.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <netdb.h>
 #include <semaphore.h>
 #include <pthread.h>
 #include <assert.h>
@@ -539,7 +536,7 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
 
                 /* Index through protocol strings looking for match or end of list */
                 for ( r->options->protocol = TRACE_PROT_LIST_START;
-                        ( ( r->options->protocol != TRACE_PROT_LIST_END ) && strcasecmp( optarg, protoStateName[r->options->protocol] ) );
+                        ( ( r->options->protocol != TRACE_PROT_LIST_END ) && strcasecmp( optarg, TRACEprotocolString[r->options->protocol] ) );
                         r->options->protocol++ )
                 {}
 
@@ -722,11 +719,13 @@ int main( int argc, char *argv[] )
         genericsExit( -1, "Failed to establish Int handler" EOL );
     }
 
+#if !defined(WIN32)
     /* Don't kill a sub-process when any reader or writer evaporates */
     if ( SIG_ERR == signal( SIGPIPE, SIG_IGN ) )
     {
         genericsExit( -1, "Failed to ignore SIGPIPEs" EOL );
     }
+#endif
 
     TRACEDecoderInit( &_r.i, _r.i.protocol, !_r.options->noaltAddr );
 
