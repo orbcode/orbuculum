@@ -9,10 +9,6 @@
 #include <stdarg.h>
 #include <fcntl.h>
 #include <ctype.h>
-#include <sys/socket.h>
-#include <netdb.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <stdio.h>
@@ -1168,11 +1164,13 @@ int main( int argc, char *argv[] )
         genericsExit( -1, "Failed to establish Int handler" EOL );
     }
 
+#if !defined( WIN32 )
     /* Don't kill a sub-process when any reader or writer evaporates */
     if ( SIG_ERR == signal( SIGPIPE, SIG_IGN ) )
     {
         genericsExit( -1, "Failed to ignore SIGPIPEs" EOL );
     }
+#endif
 
     /* Create the buffer memory */
     _r.pmBuffer = ( uint8_t * )calloc( 1, _r.options->buflen );
