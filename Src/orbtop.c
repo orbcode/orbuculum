@@ -1121,6 +1121,7 @@ int main( int argc, char *argv[] )
     uint32_t total;
     uint32_t reportLines = 0;
     struct reportLine *report;
+    bool alreadyReported = false;
 
     int64_t remainTime;
     struct timeval tv;
@@ -1169,10 +1170,17 @@ int main( int argc, char *argv[] )
 
         if ( stream == NULL )
         {
-            genericsReport( V_ERROR, "Failed to open data stream" EOL );
+            if ( !alreadyReported )
+            {
+                genericsReport( V_ERROR, "No connection" EOL );
+                alreadyReported = true;
+            }
+
             usleep( 500 * 1000 );
             continue;
         }
+
+        alreadyReported = false;
 
         if ( ( !options.json ) || ( options.json[0] != '-' ) )
         {

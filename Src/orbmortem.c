@@ -1207,7 +1207,15 @@ int main( int argc, char *argv[] )
                 }
 
                 /* This can happen when the feeder has gone missing... */
-                usleep( 5000000 );
+                SIOalert( _r.sio, "No connection" );
+
+                if ( SIOHandler( _r.sio, true, 0 ) == SIO_EV_QUIT )
+                {
+                    _r.ending = true;
+                    break;
+                }
+
+                usleep( 1000000 );
             }
         }
 
@@ -1223,6 +1231,12 @@ int main( int argc, char *argv[] )
             {
                 /* We always read the data, even if we're held, to keep the socket alive */
                 enum ReceiveResult result = stream->receive( stream, _r.rawBlock.buffer, TRANSFER_SIZE, &tv, ( size_t * )&_r.rawBlock.fillLevel );
+
+                /* Try to re-establish socket if there was an error */
+                if ( result == RECEIVE_RESULT_ERROR )
+                {
+                    break;
+                }
 
                 if ( ( ( result == RECEIVE_RESULT_EOF ) || ( _r.rawBlock.fillLevel <= 0 ) ) && _r.options->file )
                 {

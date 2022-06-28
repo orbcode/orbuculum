@@ -664,7 +664,7 @@ static void _outputStatus( struct SIOInstance *sio, uint64_t oldintervalBytes )
         if ( sio->warnTimeout > genericsTimestampmS() )
         {
 
-            mvwprintw( sio->statusWindow, 0, 30, " %s ", sio->warnText );
+            mvwprintw( sio->statusWindow, 0, 10, " %s ", sio->warnText );
         }
         else
         {

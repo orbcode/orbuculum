@@ -53,7 +53,7 @@
 #include "nwclient.h"
 
 /* How many transfer buffers from the source to allocate */
-#define NUM_RAW_BLOCKS (3)
+#define NUM_RAW_BLOCKS (6)
 
 /* Record for options, either defaults or from command line */
 struct Options
@@ -943,7 +943,7 @@ static int _usbFeeder( struct RunTime *r )
                                         TRANSFER_SIZE,
                                         _usb_callback,
                                         &r->rawBlock[t].usbtfr,
-                                        BLOCK_TIMEOUT_INTERVAL_MS
+                                        BLOCK_TIMEOUT_INTERVAL_MS * t
                                       );
 
             int ret = libusb_submit_transfer( r->rawBlock[t].usbtfr );
@@ -1279,10 +1279,12 @@ int main( int argc, char *argv[] )
 
     /* Don't kill a sub-process when any reader or writer evaporates */
 #if !defined WIN32
+
     if ( SIG_ERR == signal( SIGPIPE, SIG_IGN ) )
     {
         genericsExit( -1, "Failed to ignore SIGPIPEs" EOL );
     }
+
 #endif
 
     if ( _r.options->useTPIU )

@@ -105,7 +105,6 @@ static int _posixSocketStreamCreate( const char *server, int port )
     if ( connect( sockfd, ( struct sockaddr * ) &serv_addr, sizeof( serv_addr ) ) < 0 )
     {
         close( sockfd );
-        genericsReport( V_ERROR, "Could not connect" EOL );
         return -1;
     }
 

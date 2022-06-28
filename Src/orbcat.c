@@ -555,7 +555,10 @@ static void _feedStream( struct Stream *stream )
 
 // ====================================================================================================
 int main( int argc, char *argv[] )
+
 {
+    bool alreadyReported = false;
+
     if ( !_processOptions( argc, argv ) )
     {
         exit( -1 );
@@ -575,10 +578,15 @@ int main( int argc, char *argv[] )
 
             if ( stream != NULL )
             {
+                alreadyReported = false;
                 break;
             }
 
-            genericsReport( V_ERROR, "Failed to open data stream" EOL );
+            if ( !alreadyReported )
+            {
+                genericsReport( V_ERROR, EOL "No connection" EOL );
+                alreadyReported = true;
+            }
 
             if ( options.endTerminate )
             {
