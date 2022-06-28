@@ -245,7 +245,11 @@ $(OLOC)/%.o : %.c
 	$(call cmd, \$(CC) -c $(CFLAGS) -MMD -MP -o $@ $< ,\
 	Compiling $<)
 
+ifdef WINDOWS
+build: $(ORBUCULUM)            $(ORBCAT) $(ORBTOP)            $(ORBMORTEM) $(ORBPROFILE) $(ORBTRACE)
+else
 build: $(ORBUCULUM) $(ORBFIFO) $(ORBCAT) $(ORBTOP) $(ORBDUMP) $(ORBMORTEM) $(ORBPROFILE) $(ORBTRACE) $(ORBSTAT)
+endif
 
 $(ORBLIB) : get_version $(ORBLIB_POBJS)
 	$(Q)$(AR) rcs $(OLOC)/lib$(ORBLIB).a  $(ORBLIB_POBJS)
