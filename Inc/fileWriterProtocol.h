@@ -9,6 +9,10 @@
 #ifndef _FILEWRITER_PROT_H_
 #define _FILEWRITER_PROT_H_
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // Structure of the command byte;
 // NN CCC FFF
 //
@@ -40,5 +44,9 @@
 #define FW_CMD_CLOSE  FW_COMMAND(3)
 #define FW_CMD_ERASE  FW_COMMAND(4)
 #define FW_CMD_WRITE  FW_COMMAND(5)
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

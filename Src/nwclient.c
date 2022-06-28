@@ -140,10 +140,10 @@ static void *_client( void *args )
     while ( !c->finish )
     {
         readDataLen = read( c->listenHandle, maxTransitPacket, TRANSFER_SIZE );
-        fflush(stdout);
+        fflush( stdout );
 
         // if ( ( c->finish ) || ( readDataLen <= 0 ) || ( write( c->portNo, maxTransitPacket, readDataLen ) < 0 ) )
-        if ( ( c->finish ) || ( readDataLen <= 0 ) || ( send( c->portNo, (const void*)maxTransitPacket, readDataLen, 0 ) < 0 ) )
+        if ( ( c->finish ) || ( readDataLen <= 0 ) || ( send( c->portNo, ( const void * )maxTransitPacket, readDataLen, 0 ) < 0 ) )
         {
             /* This port went away, so remove it */
             if ( !c->finish )
@@ -167,11 +167,11 @@ static void *_listenTask( void *arg )
     struct nwclientsHandle *h = ( struct nwclientsHandle * )arg;
     const struct timespec ts = {.tv_sec = 1, .tv_nsec = 0};
     int newsockfd;
-    #ifdef WIN32
+#ifdef WIN32
     int clilen;
-    #else
+#else
     socklen_t clilen;
-    #endif
+#endif
     struct sockaddr_in cli_addr;
     int f[2];                               /* File descriptor set for pipe */
     struct nwClient *client;
@@ -195,15 +195,15 @@ static void *_listenTask( void *arg )
 
         bool success = true;
 
-        #ifdef WIN32
+#ifdef WIN32
         HANDLE writeHandle;
         HANDLE readHandle;
-        success = CreatePipe(&readHandle, &writeHandle, NULL, 0) != 0;
-        f[0] = _open_osfhandle((intptr_t)readHandle, 0);
-        f[1] = _open_osfhandle((intptr_t)writeHandle, 0);
-        #else
-        success = !pipe(f);
-        #endif
+        success = CreatePipe( &readHandle, &writeHandle, NULL, 0 ) != 0;
+        f[0] = _open_osfhandle( ( intptr_t )readHandle, 0 );
+        f[1] = _open_osfhandle( ( intptr_t )writeHandle, 0 );
+#else
+        success = !pipe( f );
+#endif
 
         /* We got a new connection - spawn a thread to handle it */
         if ( success )
@@ -291,7 +291,7 @@ struct nwclientsHandle *nwclientStart( int port )
     }
 
     h->sockfd = socket( AF_INET, SOCK_STREAM, 0 );
-    setsockopt( h->sockfd, SOL_SOCKET, SO_REUSEPORT, (const void*)&flag, sizeof( flag ) );
+    setsockopt( h->sockfd, SOL_SOCKET, SO_REUSEPORT, ( const void * )&flag, sizeof( flag ) );
 
     if ( h->sockfd < 0 )
     {
@@ -304,7 +304,7 @@ struct nwclientsHandle *nwclientStart( int port )
     serv_addr.sin_addr.s_addr = INADDR_ANY;
     serv_addr.sin_port = htons( port );
 
-    if ( setsockopt( h->sockfd, SOL_SOCKET, SO_REUSEADDR, (const void*)&( int )
+    if ( setsockopt( h->sockfd, SOL_SOCKET, SO_REUSEADDR, ( const void * ) & ( int )
 {
     1
 }, sizeof( int ) ) < 0 )

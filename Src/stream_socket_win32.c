@@ -33,7 +33,7 @@ static void _win32SocketStreamClose( struct Stream *stream )
 {
     struct Win32SocketStream *self = SELF( stream );
 
-    closesocket( (intptr_t)self->base.source );
+    closesocket( ( intptr_t )self->base.source );
     self->base.source = INVALID_HANDLE_VALUE;
 
     streamWin32Close( &self->base );
@@ -104,7 +104,7 @@ struct Stream *streamCreateSocket( const char *server, int port )
         return NULL;
     }
 
-    if( !streamWin32Initialize( (struct Win32Stream* )stream,  _win32SocketStreamCreate( server, port ) ) )
+    if ( !streamWin32Initialize( ( struct Win32Stream * )stream,  _win32SocketStreamCreate( server, port ) ) )
     {
         free( stream );
         return NULL;

@@ -194,7 +194,7 @@ void genericsPrintf( const char *fmt, ... )
     vsnprintf( op, MAX_STRLEN, fmt, va );
     va_end( va );
     fputs( op, stdout );
-    fflush(stdout);
+    fflush( stdout );
 }
 // ====================================================================================================
 const char *genericsBasename( const char *n )
@@ -249,8 +249,8 @@ void genericsReport( enum verbLevel l, const char *fmt, ... )
         va_end( va );
         fputs( op, stderr );
         fputs( C_RESET, stderr );
-        fflush(stderr);
-        fflush(stdout);
+        fflush( stderr );
+        fflush( stdout );
     }
 }
 // ====================================================================================================
@@ -266,8 +266,8 @@ void genericsExit( int status, const char *fmt, ... )
     fputs( C_VERB_ERROR, stderr );
     fputs( op, stderr );
     fputs( C_RESET, stderr );
-    fflush(stderr);
-    fflush(stdout);
+    fflush( stderr );
+    fflush( stdout );
 
     exit( status );
 }

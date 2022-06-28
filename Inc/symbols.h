@@ -16,6 +16,10 @@
 
 #include "uthash.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define ASSY_NOT_FOUND    0xffffffff        /* Assembly line not found */
 #define NO_LINE           0xffffffff        /* No line number defined */
 #define NO_FILE           0xffffffff        /* No file defined */
@@ -126,4 +130,9 @@ const char *SymbolFilename( struct SymbolSet *s, uint32_t index );
 const char *SymbolFunction( struct SymbolSet *s, uint32_t index );
 bool SymbolLookup( struct SymbolSet *s, uint32_t addr, struct nameEntry *n );
 // ====================================================================================================
+
+#ifdef __cplusplus
+}
+#endif
+
 #endif

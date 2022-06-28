@@ -50,16 +50,81 @@
 #include "git_version_info.h"
 #include "generics.h"
 #include "tpiuDecoder.h"
-#include "orbuculumOptions.h"
-
 #include "nwclient.h"
+
+/* How many transfer buffers from the source to allocate */
+#define NUM_RAW_BLOCKS (3)
+
+/* Record for options, either defaults or from command line */
+struct Options
+{
+    /* Config information */
+    bool segger;                                         /* Using a segger debugger */
+
+    /* Source information */
+    char *seggerHost;                                    /* Segger host connection */
+    int32_t seggerPort;                                  /* ...and port */
+    char *port;                                          /* Serial host connection */
+    int speed;                                           /* Speed of serial link */
+    bool useTPIU;                                        /* Are we using TPIU, and stripping TPIU frames? */
+    uint32_t dataSpeed;                                  /* Effective data speed (can be less than link speed!) */
+    char *file;                                          /* File host connection */
+    bool fileTerminate;                                  /* Terminate when file read isn't successful */
+    char *outfile;                                       /* Output file for raw data dumping */
+
+    uint32_t intervalReportTime;                         /* If we want interval reports about performance */
+
+    char *channelList;                                   /* List of TPIU channels to be serviced */
+
+    /* Network link */
+    int listenPort;                                      /* Listening port for network */
+};
+
+struct dataBlock
+{
+    ssize_t fillLevel;                                   /* How full this block is */
+    uint8_t buffer[TRANSFER_SIZE];                       /* Block buffer */
+    struct libusb_transfer *usbtfr;                      /* USB Transfer handle */
+};
+
+struct handlers
+{
+    uint8_t channel;                                     /* Channel number for this handler */
+    uint64_t intervalBytes;                              /* Number of depacketised bytes output on this channel */
+    struct dataBlock *strippedBlock;                     /* Processed buffer for output to clients */
+    struct nwclientsHandle *n;                           /* Link to the network client subsystem */
+};
+
+struct RunTime
+{
+    struct TPIUDecoder t;                                /* TPIU decoder instance, in case we need it */
+
+    uint64_t  intervalBytes;                             /* Number of bytes transferred in current interval */
+
+    pthread_t intervalThread;                            /* Thread reporting on intervals */
+    pthread_t processThread;                             /* Thread distributing to clients */
+    sem_t     dataForClients;                            /* Semaphore counting data for clients */
+    bool      ending;                                    /* Flag indicating app is terminating */
+    int f;                                               /* File handle to data source */
+
+    int opFileHandle;                                    /* Handle if we're writing orb output locally */
+    struct Options *options;                             /* Command line options (reference to above) */
+
+    uint8_t wp;                                          /* Read and write pointers into transfer buffers */
+    uint8_t rp;
+    struct dataBlock rawBlock[NUM_RAW_BLOCKS];           /* Transfer buffers from the receiver */
+
+    uint8_t numHandlers;                                 /* Number of TPIU channel handlers in use */
+    struct handlers *handler;
+    struct nwclientsHandle *n;                           /* Link to the network client subsystem (used for non-TPIU case) */
+};
 
 #ifdef WIN32
     // https://stackoverflow.com/a/14388707/995351
     #define SO_REUSEPORT SO_REUSEADDR
 #endif
 
-#define SEGGER_HOST "localhost"               /* Address to connect to SEGGER */
+#define SEGGER_HOST "localhost"                          /* Address to connect to SEGGER */
 #define SEGGER_PORT (2332)
 
 #define NUM_TPIU_CHANNELS 0x80
@@ -111,7 +176,12 @@ static void _intHandler( int sig )
     exit( 0 );
 }
 // ====================================================================================================
+
+
 #if defined(LINUX) && defined (TCGETS2)
+// ====================================================================================================
+// Linux Specific Drivers
+// ====================================================================================================
 static int _setSerialConfig ( int f, speed_t speed )
 {
     // Use Linux specific termios2.
@@ -162,9 +232,63 @@ static int _setSerialConfig ( int f, speed_t speed )
     ioctl( f, TCFLSH, TCIOFLUSH );
     return 0;
 }
+
 #elif defined WIN32
+// ====================================================================================================
+// WIN32 Specific Driver
+// ====================================================================================================
+
+static bool _setSerialSpeed( HANDLE handle, int speed )
+{
+    DCB dcb;
+    SecureZeroMemory( &dcb, sizeof( DCB ) );
+    dcb.DCBlength = sizeof( DCB );
+    BOOL ok = GetCommState( handle, &dcb );
+
+    if ( !ok )
+    {
+        return false;
+    }
+
+    dcb.BaudRate = speed;
+    dcb.ByteSize = 8;
+    dcb.Parity   = NOPARITY;
+    dcb.StopBits = ONESTOPBIT;
+
+    ok = SetCommState( handle, &dcb );
+
+    if ( !ok )
+    {
+        return false;
+    }
+
+    // Set timeouts
+    COMMTIMEOUTS timeouts;
+    ok = GetCommTimeouts( handle, &timeouts );
+
+    if ( !ok )
+    {
+        return false;
+    }
+
+    timeouts.ReadIntervalTimeout         = 0;
+    timeouts.ReadTotalTimeoutConstant    = 0;
+    timeouts.ReadTotalTimeoutMultiplier  = 0;
+    ok = SetCommTimeouts( handle, &timeouts );
+
+    if ( !ok )
+    {
+        return false;
+    }
+
+    return true;
+}
 
 #else
+// =========================================================================================================
+// Default Drivers ( OSX and Linux without TCGETS2 )
+// =========================================================================================================
+
 static int _setSerialConfig ( int f, speed_t speed )
 {
     struct termios settings;
@@ -199,6 +323,7 @@ static int _setSerialConfig ( int f, speed_t speed )
     return 0;
 }
 #endif
+
 // ====================================================================================================
 static void _doExit( void )
 
@@ -231,6 +356,7 @@ void _printHelp( char *progName )
     genericsPrintf( "       -t: <Channel , ...> Use TPIU channels (and strip TIPU framing from output flows)" EOL );
     genericsPrintf( "       -v: <level> Verbose mode 0(errors)..3(debug)" EOL );
 }
+
 // ====================================================================================================
 int _processOptions( int argc, char *argv[], struct RunTime *r )
 
@@ -690,7 +816,7 @@ static void _usb_callback( struct libusb_transfer *t )
     libusb_submit_transfer( t );
 }
 // ====================================================================================================
-int usbFeeder( struct RunTime *r )
+static int _usbFeeder( struct RunTime *r )
 
 {
     libusb_device_handle *handle = NULL;
@@ -847,7 +973,7 @@ int usbFeeder( struct RunTime *r )
     return 0;
 }
 // ====================================================================================================
-int seggerFeeder( struct RunTime *r )
+static int _seggerFeeder( struct RunTime *r )
 
 {
     struct sockaddr_in serv_addr;
@@ -868,13 +994,13 @@ int seggerFeeder( struct RunTime *r )
     memcpy( ( char * )&serv_addr.sin_addr.s_addr,
             ( const char * )server->h_addr,
             server->h_length
-    );
+          );
     serv_addr.sin_port = htons( r->options->seggerPort );
 
     while ( !r->ending )
     {
         r->f = socket( AF_INET, SOCK_STREAM, 0 );
-        setsockopt( r->f, SOL_SOCKET, SO_REUSEPORT, (const void*)&flag, sizeof( flag ) );
+        setsockopt( r->f, SOL_SOCKET, SO_REUSEPORT, ( const void * )&flag, sizeof( flag ) );
 
         if ( r->f < 0 )
         {
@@ -919,10 +1045,97 @@ int seggerFeeder( struct RunTime *r )
     return -2;
 }
 // ====================================================================================================
+
+
 #ifdef WIN32
-int serialFeeder( struct RunTime *r );
+// ====================================================================================================
+// WIN32 Specific Driver
+// ====================================================================================================
+
+static int _serialFeeder( struct RunTime *r )
+{
+    char portPath[MAX_PATH] = { 0 };
+    snprintf( portPath, sizeof( portPath ), "\\\\.\\%s", r->options->port );
+
+    while ( !r->ending )
+    {
+        HANDLE portHandle = CreateFile( portPath,
+                                        GENERIC_READ,
+                                        0,      //  must be opened with exclusive-access
+                                        NULL,   //  default security attributes
+                                        OPEN_EXISTING, //  must use OPEN_EXISTING
+                                        0,    //  not overlapped I/O
+                                        NULL ); //  hTemplate must be NULL for comm devices
+
+        if ( portHandle == INVALID_HANDLE_VALUE )
+        {
+            genericsExit( 1, "Can't open serial port" EOL );
+        }
+
+        genericsReport( V_INFO, "Port opened" EOL );
+
+        if ( !_setSerialSpeed( portHandle, r->options->speed ) )
+        {
+            genericsExit( 2, "setSerialConfig failed" EOL );
+        }
+
+        SetCommMask( portHandle, EV_RXCHAR );
+
+        genericsReport( V_INFO, "Port configured" EOL );
+
+        while ( !r->ending )
+        {
+            DWORD eventMask = 0;
+            WaitCommEvent( portHandle, &eventMask, NULL );
+            DWORD unused;
+            COMSTAT stats;
+            ClearCommError( portHandle, &unused, &stats );
+
+            if ( stats.cbInQue == 0 )
+            {
+                continue;
+            }
+
+            struct dataBlock *rxBlock = &r->rawBlock[r->wp];
+
+            DWORD transferSize = stats.cbInQue;
+
+            if ( transferSize > TRANSFER_SIZE )
+            {
+                transferSize = TRANSFER_SIZE;
+            }
+
+            DWORD readBytes = 0;
+            ReadFile( portHandle, rxBlock->buffer, transferSize, &readBytes, NULL );
+
+            rxBlock->fillLevel = readBytes;
+
+            if ( rxBlock->fillLevel <= 0 )
+            {
+                break;
+            }
+
+            r->wp = ( r->wp + 1 ) % NUM_RAW_BLOCKS;
+            sem_post( &r->dataForClients );
+        }
+
+        if ( ! r->ending )
+        {
+            genericsReport( V_INFO, "Read failed" EOL );
+        }
+
+        CloseHandle( portHandle );
+    }
+
+    return 0;
+}
+
 #else
-int serialFeeder( struct RunTime *r )
+// =========================================================================================================
+// Default Driver ( OSX and Linux )
+// =========================================================================================================
+
+static int _serialFeeder( struct RunTime *r )
 {
     int ret;
 
@@ -988,8 +1201,9 @@ int serialFeeder( struct RunTime *r )
     return 0;
 }
 #endif
+
 // ====================================================================================================
-int fileFeeder( struct RunTime *r )
+static int _fileFeeder( struct RunTime *r )
 
 {
     if ( ( r->f = open( r->options->file, O_RDONLY ) ) < 0 )
@@ -1029,13 +1243,20 @@ int fileFeeder( struct RunTime *r )
     return true;
 }
 // ====================================================================================================
+// ====================================================================================================
+// ====================================================================================================
+// Publicly available routines
+// ====================================================================================================
+// ====================================================================================================
+// ====================================================================================================
+
 int main( int argc, char *argv[] )
 
 {
-    #ifdef WIN32
+#ifdef WIN32
     WSADATA wsaData;
-    WSAStartup(MAKEWORD(2, 2), &wsaData);
-    #endif
+    WSAStartup( MAKEWORD( 2, 2 ), &wsaData );
+#endif
 
     /* Setup TPIU in case we call it into service later */
     TPIUDecoderInit( &_r.t );
@@ -1057,12 +1278,12 @@ int main( int argc, char *argv[] )
     }
 
     /* Don't kill a sub-process when any reader or writer evaporates */
-    #if !defined WIN32
+#if !defined WIN32
     if ( SIG_ERR == signal( SIGPIPE, SIG_IGN ) )
     {
         genericsExit( -1, "Failed to ignore SIGPIPEs" EOL );
     }
-    #endif
+#endif
 
     if ( _r.options->useTPIU )
     {
@@ -1134,19 +1355,19 @@ int main( int argc, char *argv[] )
 
     if ( _r.options->seggerPort )
     {
-        exit( seggerFeeder( &_r ) );
+        exit( _seggerFeeder( &_r ) );
     }
 
     if ( _r.options->port )
     {
-        exit( serialFeeder( &_r ) );
+        exit( _serialFeeder( &_r ) );
     }
 
     if ( _r.options->file )
     {
-        exit( fileFeeder( &_r ) );
+        exit( _fileFeeder( &_r ) );
     }
 
-    exit( usbFeeder( &_r ) );
+    exit( _usbFeeder( &_r ) );
 }
 // ====================================================================================================

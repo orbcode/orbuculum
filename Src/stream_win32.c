@@ -11,9 +11,9 @@
 // ====================================================================================================
 
 // ====================================================================================================
-static uint32_t _convertTimeout( const struct timeval* timeout )
+static uint32_t _convertTimeout( const struct timeval *timeout )
 {
-    if( timeout != NULL )
+    if ( timeout != NULL )
     {
         return ( timeout->tv_sec * ( uint64_t )1000 ) + ( timeout->tv_usec / 1000 );
     }
@@ -25,9 +25,9 @@ static uint32_t _convertTimeout( const struct timeval* timeout )
 
 // ====================================================================================================
 static enum ReceiveResult _win32StreamReceive( struct Stream *stream, void *buffer, size_t bufferSize,
-                                     struct timeval *timeout, size_t *receivedSize )
+        struct timeval *timeout, size_t *receivedSize )
 {
-    struct Win32Stream* self = SELF(stream);
+    struct Win32Stream *self = SELF( stream );
 
     *receivedSize = 0;
 
@@ -40,14 +40,14 @@ static enum ReceiveResult _win32StreamReceive( struct Stream *stream, void *buff
     DWORD bytesRead;
     bool readResult = ReadFile( self->source, buffer, bufferSize, &bytesRead, &asyncRead );
 
-    if( readResult )
+    if ( readResult )
     {
         *receivedSize = bytesRead;
         asyncRead.Offset += bytesRead;
         return RECEIVE_RESULT_OK;
     }
 
-    if( GetLastError() != ERROR_IO_PENDING )
+    if ( GetLastError() != ERROR_IO_PENDING )
     {
         return RECEIVE_RESULT_ERROR;
     }
@@ -55,7 +55,8 @@ static enum ReceiveResult _win32StreamReceive( struct Stream *stream, void *buff
     // async operation
 
     DWORD waitResult = WaitForSingleObjectEx( self->readDoneEvent, _convertTimeout( timeout ), true );
-    if( waitResult == WAIT_TIMEOUT )
+
+    if ( waitResult == WAIT_TIMEOUT )
     {
         CancelIoEx( self->source, &asyncRead );
         WaitForSingleObjectEx( self->readDoneEvent, INFINITE, true );
@@ -63,9 +64,9 @@ static enum ReceiveResult _win32StreamReceive( struct Stream *stream, void *buff
         return RECEIVE_RESULT_TIMEOUT;
     }
 
-    if( GetOverlappedResult( self->source, &asyncRead, &bytesRead, true ) == 0 )
+    if ( GetOverlappedResult( self->source, &asyncRead, &bytesRead, true ) == 0 )
     {
-        if( GetLastError() != ERROR_HANDLE_EOF )
+        if ( GetLastError() != ERROR_HANDLE_EOF )
         {
             return RECEIVE_RESULT_ERROR;
         }
@@ -73,9 +74,9 @@ static enum ReceiveResult _win32StreamReceive( struct Stream *stream, void *buff
 
     *receivedSize = bytesRead;
 
-    if( bytesRead == 0 )
+    if ( bytesRead == 0 )
     {
-        if( GetLastError() == ERROR_HANDLE_EOF )
+        if ( GetLastError() == ERROR_HANDLE_EOF )
         {
             return RECEIVE_RESULT_EOF;
         }
@@ -92,8 +93,8 @@ static enum ReceiveResult _win32StreamReceive( struct Stream *stream, void *buff
 // ====================================================================================================
 static void _win32StreamCloseInner( struct Stream *stream )
 {
-    struct Win32Stream* self = SELF(stream);
-    streamWin32Close(self);
+    struct Win32Stream *self = SELF( stream );
+    streamWin32Close( self );
 }
 
 // ====================================================================================================
@@ -105,9 +106,9 @@ static void _win32StreamCloseInner( struct Stream *stream )
 // ====================================================================================================
 
 // ====================================================================================================
-bool streamWin32Initialize( struct Win32Stream* stream, HANDLE sourceHandle )
+bool streamWin32Initialize( struct Win32Stream *stream, HANDLE sourceHandle )
 {
-    if(sourceHandle == INVALID_HANDLE_VALUE)
+    if ( sourceHandle == INVALID_HANDLE_VALUE )
     {
         return false;
     }
@@ -115,15 +116,15 @@ bool streamWin32Initialize( struct Win32Stream* stream, HANDLE sourceHandle )
     stream->base.receive = _win32StreamReceive;
     stream->base.close = _win32StreamCloseInner;
     stream->source = sourceHandle;
-    stream->readDoneEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+    stream->readDoneEvent = CreateEvent( NULL, FALSE, FALSE, NULL );
 
     return true;
 }
 
 // ====================================================================================================
-void streamWin32Close( struct Win32Stream* stream )
+void streamWin32Close( struct Win32Stream *stream )
 {
-    if( stream->source != INVALID_HANDLE_VALUE )
+    if ( stream->source != INVALID_HANDLE_VALUE )
     {
         CancelIo( stream->source );
         CloseHandle( stream->source );

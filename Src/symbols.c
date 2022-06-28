@@ -314,7 +314,7 @@ static bool _getDest( char *assy, uint32_t *dest )
 }
 
 #if defined(WIN32)
-static FILE* _openProcess(char* commandLine, PROCESS_INFORMATION* processInfo)
+static FILE *_openProcess( char *commandLine, PROCESS_INFORMATION *processInfo )
 {
     HANDLE readingPipe;
     HANDLE processOutPipe;
@@ -322,57 +322,62 @@ static FILE* _openProcess(char* commandLine, PROCESS_INFORMATION* processInfo)
     {
         // Create pipe for process' stdout
         SECURITY_ATTRIBUTES pipeSecurity;
-        pipeSecurity.nLength = sizeof(pipeSecurity);
+        pipeSecurity.nLength = sizeof( pipeSecurity );
         pipeSecurity.bInheritHandle = true;
         pipeSecurity.lpSecurityDescriptor = NULL;
-        CreatePipe(&readingPipe, &processOutPipe, &pipeSecurity, 0);
+        CreatePipe( &readingPipe, &processOutPipe, &pipeSecurity, 0 );
 
         // only write side of pipe should be inherited
-        SetHandleInformation(readingPipe, HANDLE_FLAG_INHERIT, 0);
+        SetHandleInformation( readingPipe, HANDLE_FLAG_INHERIT, 0 );
     }
 
-    memset(processInfo, 0, sizeof(PROCESS_INFORMATION));
+    memset( processInfo, 0, sizeof( PROCESS_INFORMATION ) );
 
     {
         STARTUPINFOA startupInfo;
-        memset(&startupInfo, 0, sizeof(startupInfo));
-        startupInfo.cb = sizeof(startupInfo);
+        memset( &startupInfo, 0, sizeof( startupInfo ) );
+        startupInfo.cb = sizeof( startupInfo );
         startupInfo.hStdOutput = processOutPipe;
-        startupInfo.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
-        startupInfo.hStdInput = GetStdHandle(STD_ERROR_HANDLE);
+        startupInfo.hStdInput = GetStdHandle( STD_INPUT_HANDLE );
+        startupInfo.hStdInput = GetStdHandle( STD_ERROR_HANDLE );
         startupInfo.dwFlags = STARTF_USESTDHANDLES;
 
         BOOL success = CreateProcessA(
-            NULL,
-            commandLine,
-            NULL,
-            NULL,
-            true,
-            DETACHED_PROCESS,
-            NULL,
-            NULL,
-            &startupInfo,
-            processInfo
-        );
+                                   NULL,
+                                   commandLine,
+                                   NULL,
+                                   NULL,
+                                   true,
+                                   DETACHED_PROCESS,
+                                   NULL,
+                                   NULL,
+                                   &startupInfo,
+                                   processInfo
+                       );
 
         // Close handle passed to child process
-        CloseHandle(processOutPipe);
+        CloseHandle( processOutPipe );
 
-        if(!success) {
-            CloseHandle(readingPipe);
+        if ( !success )
+        {
+            CloseHandle( readingPipe );
             return NULL;
         }
     }
 
-    int fd = _open_osfhandle((intptr_t)readingPipe, _O_RDONLY);
-    if(fd == -1) {
-        CloseHandle(readingPipe);
+    int fd = _open_osfhandle( ( intptr_t )readingPipe, _O_RDONLY );
+
+    if ( fd == -1 )
+    {
+        CloseHandle( readingPipe );
         return NULL;
     }
-    FILE* f = _fdopen(fd, "r");
 
-    if(f == NULL) {
-        _close(fd);
+    FILE *f = _fdopen( fd, "r" );
+
+    if ( f == NULL )
+    {
+        _close( fd );
         return NULL;
     }
 
@@ -420,9 +425,10 @@ static bool _getTargetProgramInfo( struct SymbolSet *s )
     {
         snprintf( commandLine, MAX_LINE_LEN, OBJDUMP " -Sl%s --source-comment=" SOURCE_INDICATOR " %s %s",  s->demanglecpp ? " -C" : "", s->elfFile, s->odoptions );
     }
+
 #if defined(WIN32)
     PROCESS_INFORMATION processInfo;
-    f = _openProcess(commandLine, &processInfo);
+    f = _openProcess( commandLine, &processInfo );
 #else
     f = popen( commandLine, "r" );
 #endif
@@ -737,15 +743,17 @@ static bool _getTargetProgramInfo( struct SymbolSet *s )
     }
 
 #if defined(WIN32)
-    WaitForSingleObject(processInfo.hProcess, INFINITE);
-    CloseHandle(processInfo.hThread);
-    CloseHandle(processInfo.hProcess);
+    WaitForSingleObject( processInfo.hProcess, INFINITE );
+    CloseHandle( processInfo.hThread );
+    CloseHandle( processInfo.hProcess );
 #else
+
     if ( 0 != pclose( f ) )
     {
         /* Something went wrong in the close process */
         return false;
     }
+
 #endif
 
     _sortLines( s );

@@ -18,12 +18,11 @@ struct Win32Stream
     uint64_t readOffset;
 };
 
-bool streamWin32Initialize( struct Win32Stream* stream, HANDLE sourceHandle );
-void streamWin32Close( struct Win32Stream* stream );
+bool streamWin32Initialize( struct Win32Stream *stream, HANDLE sourceHandle );
+void streamWin32Close( struct Win32Stream *stream );
 
 #ifdef __cplusplus
 }
 #endif
-
 
 #endif

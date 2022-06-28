@@ -22,17 +22,17 @@ struct Win32FileStream
 // ====================================================================================================
 
 // ====================================================================================================
-static HANDLE _win32FileStreamCreate( const char* file )
+static HANDLE _win32FileStreamCreate( const char *file )
 {
     HANDLE h = CreateFile(
-        file,
-        GENERIC_READ,
-        FILE_SHARE_READ | FILE_SHARE_WRITE,
-        NULL,
-        OPEN_EXISTING,
-        FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED,
-        NULL
-    );
+                           file,
+                           GENERIC_READ,
+                           FILE_SHARE_READ | FILE_SHARE_WRITE,
+                           NULL,
+                           OPEN_EXISTING,
+                           FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED,
+                           NULL
+               );
 
     return h;
 }
@@ -46,16 +46,16 @@ static HANDLE _win32FileStreamCreate( const char* file )
 // ====================================================================================================
 
 // ====================================================================================================
-struct Stream* streamCreateFile(const char* file)
+struct Stream *streamCreateFile( const char *file )
 {
-    struct Win32FileStream* stream = SELF( calloc( 1, sizeof( struct Win32FileStream ) ) );
+    struct Win32FileStream *stream = SELF( calloc( 1, sizeof( struct Win32FileStream ) ) );
 
-    if( stream == NULL )
+    if ( stream == NULL )
     {
         return NULL;
     }
 
-    if( !streamWin32Initialize( (struct Win32Stream* )stream,  _win32FileStreamCreate( file ) ) )
+    if ( !streamWin32Initialize( ( struct Win32Stream * )stream,  _win32FileStreamCreate( file ) ) )
     {
         free( stream );
         return NULL;

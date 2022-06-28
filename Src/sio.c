@@ -1001,14 +1001,14 @@ enum SIOEvent SIOHandler( struct SIOInstance *sio, bool isTick, uint64_t oldinte
                 case KEY_RESIZE:
                 case 12:  /* CTRL-L, refresh ----------------------------------------------------- */
                     {
-                        #if defined(WIN32)
-                            getmaxyx(sio->outputWindow, sio->lines, sio->cols);
-                        #else
-                            struct winsize sz;
-                            ioctl( STDIN_FILENO, TIOCGWINSZ, &sz );
-                            sio->lines = ( uint32_t )sz.ws_row;
-                            sio->cols = ( uint32_t )sz.ws_col;
-                        #endif
+#if defined(WIN32)
+                        getmaxyx( sio->outputWindow, sio->lines, sio->cols );
+#else
+                        struct winsize sz;
+                        ioctl( STDIN_FILENO, TIOCGWINSZ, &sz );
+                        sio->lines = ( uint32_t )sz.ws_row;
+                        sio->cols = ( uint32_t )sz.ws_col;
+#endif
                         clearok( sio->statusWindow, true );
                         clearok( sio->outputWindow, true );
                         wresize( sio->statusWindow, STATUS_WINDOW_L, STATUS_WINDOW_W );

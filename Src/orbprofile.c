@@ -720,11 +720,13 @@ int main( int argc, char *argv[] )
     }
 
 #if !defined(WIN32)
+
     /* Don't kill a sub-process when any reader or writer evaporates */
     if ( SIG_ERR == signal( SIGPIPE, SIG_IGN ) )
     {
         genericsExit( -1, "Failed to ignore SIGPIPEs" EOL );
     }
+
 #endif
 
     TRACEDecoderInit( &_r.i, _r.i.protocol, !_r.options->noaltAddr );
