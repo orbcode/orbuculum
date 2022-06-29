@@ -126,9 +126,6 @@ else
 endif
 
 ORBUCULUM_CFILES  = $(App_DIR)/$(ORBUCULUM).c $(App_DIR)/nwclient.c
-ifdef WINDOWS
-ORBUCULUM_CFILES += $(App_DIR)/serialFeeder_win32.c
-endif
 ORBFIFO_CFILES    = $(App_DIR)/$(ORBFIFO).c $(App_DIR)/filewriter.c $(App_DIR)/itmfifos.c
 ORBCAT_CFILES     = $(App_DIR)/$(ORBCAT).c
 ORBTOP_CFILES     = $(App_DIR)/$(ORBTOP).c $(App_DIR)/symbols.c $(EXT)/cJSON.c
