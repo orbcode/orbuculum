@@ -965,7 +965,7 @@ bool SymbolSetValid( struct SymbolSet **s, char *filename )
     }
 }
 // ====================================================================================================
-struct SymbolSet *SymbolSetCreate( const char *filename, const char *deleteMaterial, bool demanglecpp, bool recordSource, bool recordAssy, const char *objdumpOptions )
+struct SymbolSet *SymbolSetCreate( const char *filename, const char *deleteMaterial, bool demanglecpp, bool recordSource, bool recordAssy, const char *objdumpOptions, bool wait )
 
 /* Create new symbol set by reading from elf file, if it's there and stable */
 
@@ -980,10 +980,10 @@ struct SymbolSet *SymbolSetCreate( const char *filename, const char *deleteMater
     s->recordAssy       = recordAssy;
 
     /* Make sure this file is stable before trying to load it */
-    if ( stat( filename, &statbuf ) == 0 )
+    if ( ( stat( filename, &statbuf ) == 0 ) && ( statbuf.st_size ) )
     {
         /* There is at least a file here */
-        while ( 1 )
+        do
         {
             usleep( ELF_CHECK_DELAY_TIME );
 
@@ -1021,6 +1021,7 @@ struct SymbolSet *SymbolSetCreate( const char *filename, const char *deleteMater
                 break;
             }
         }
+        while ( wait );
     }
 
     /* If we reach here we weren't successful, so delete the allocated memory */

@@ -123,7 +123,7 @@ struct nameEntry
 
 // ====================================================================================================
 struct SymbolSet *SymbolSetCreate( const char *filename, const char *deleteMaterial, bool demanglecpp,
-                                   bool recordSource, bool recordAssy, const char *objdumpOptions );
+                                   bool recordSource, bool recordAssy, const char *objdumpOptions, bool wait );
 void SymbolSetDelete( struct SymbolSet **s );
 bool SymbolSetValid( struct SymbolSet **s, char *filename );
 const char *SymbolFilename( struct SymbolSet *s, uint32_t index );

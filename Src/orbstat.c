@@ -713,7 +713,7 @@ int main( int argc, char *argv[] )
         /* We need symbols constantly while running ... check they are current */
         if ( !SymbolSetValid( &_r.s, _r.options->elffile ) )
         {
-            if ( !( _r.s = SymbolSetCreate( _r.options->elffile, _r.options->deleteMaterial, _r.options->demangle, true, true, _r.options->odoptions ) ) )
+            if ( !( _r.s = SymbolSetCreate( _r.options->elffile, _r.options->deleteMaterial, _r.options->demangle, true, true, _r.options->odoptions, false ) ) )
             {
                 genericsExit( -1, "Elf file or symbols in it not found" EOL );
             }

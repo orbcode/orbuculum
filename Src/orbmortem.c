@@ -760,7 +760,7 @@ static void _dumpBuffer( struct RunTime *r )
 
     if ( !SymbolSetValid( &r->s, r->options->elffile ) )
     {
-        if ( !( r->s = SymbolSetCreate( r->options->elffile, r->options->deleteMaterial, r->options->demangle, true, true, r->options->odoptions ) ) )
+        if ( !( r->s = SymbolSetCreate( r->options->elffile, r->options->deleteMaterial, r->options->demangle, true, true, r->options->odoptions, true ) ) )
         {
             genericsReport( V_ERROR, "Elf file or symbols in it not found" EOL );
             return;
@@ -1151,6 +1151,15 @@ int main( int argc, char *argv[] )
 
     /* Make sure the fifos get removed at the end */
     atexit( _doExit );
+
+    /* Check we've got _some_ symbols to start from */
+    if ( !( _r.s = SymbolSetCreate( _r.options->elffile, _r.options->deleteMaterial, _r.options->demangle,
+                                    false, false, _r.options->odoptions, false ) ) )
+    {
+        genericsExit( -EIO, "Elf file missing or does not contain valid symbols" EOL );
+    }
+
+    SymbolSetDelete( &_r.s );
 
     /* Create a screen and interaction handler */
     _r.sio = SIOsetup( _r.progName, _r.options->elffile, ( _r.options->file != NULL ) );

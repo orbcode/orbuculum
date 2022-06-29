@@ -1136,6 +1136,12 @@ int main( int argc, char *argv[] )
         exit( -EINVAL );
     }
 
+    /* Check we've got _some_ symbols to start from */
+    if ( !( _r.s = SymbolSetCreate( options.elffile, options.deleteMaterial, options.demangle, false, false, options.odoptions, false ) ) )
+    {
+        genericsExit( -EIO, "Elf file missing or does not contain valid symbols" EOL );
+    }
+
     /* Reset the TPIU handler before we start */
     TPIUDecoderInit( &_r.t );
     ITMDecoderInit( &_r.i, options.forceITMSync );
@@ -1225,7 +1231,7 @@ int main( int argc, char *argv[] )
                 /* Make sure old references are invalidated */
                 _flushHash();
 
-                if ( !( _r.s = SymbolSetCreate( options.elffile, options.deleteMaterial, options.demangle, false, false, options.odoptions ) ) )
+                if ( !( _r.s = SymbolSetCreate( options.elffile, options.deleteMaterial, options.demangle, false, false, options.odoptions, true ) ) )
                 {
                     genericsReport( V_ERROR, "Could not read symbols" EOL );
                     usleep( 1000000 );
