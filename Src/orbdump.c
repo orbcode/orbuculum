@@ -157,17 +157,17 @@ void _protocolPump( uint8_t c )
 void _printHelp( const char *const progName )
 
 {
-    fprintf( stdout, "Usage: %s [options]" EOL, progName );
-    fprintf( stdout, "    -h, --help:         This help" EOL );
-    fprintf( stdout, "    -l, --length:       <timelen> Length of time in ms to record from point of acheiving sync (defaults to %dmS)" EOL, options.timelen );
-    fprintf( stdout, "    -n, --itm-sync:     Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
-    fprintf( stdout, "    -o, --output-file:  <filename> to be used for dump file (defaults to %s)" EOL, options.outfile );
-    fprintf( stdout, "    -p, --port:         <Port> to use" EOL );
-    fprintf( stdout, "    -s, --server:       <Server> to use" EOL );
-    fprintf( stdout, "    -t, --tpiu:         <channel> Use TPIU decoder on specified channel, normally 1" EOL );
-    fprintf( stdout, "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
-    fprintf( stdout, "    -V, --version:      Print version and exit" EOL );
-    fprintf( stdout, "    -w, --sync-write:   Write syncronously to the output file after every packet" EOL );
+    genericsPrintf( "Usage: %s [options]" EOL, progName );
+    genericsPrintf( "    -h, --help:         This help" EOL );
+    genericsPrintf( "    -l, --length:       <timelen> Length of time in ms to record from point of acheiving sync (defaults to %dmS)" EOL, options.timelen );
+    genericsPrintf( "    -n, --itm-sync:     Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
+    genericsPrintf( "    -o, --output-file:  <filename> to be used for dump file (defaults to %s)" EOL, options.outfile );
+    genericsPrintf( "    -p, --port:         <Port> to use" EOL );
+    genericsPrintf( "    -s, --server:       <Server> to use" EOL );
+    genericsPrintf( "    -t, --tpiu:         <channel> Use TPIU decoder on specified channel, normally 1" EOL );
+    genericsPrintf( "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
+    genericsPrintf( "    -V, --version:      Print version and exit" EOL );
+    genericsPrintf( "    -w, --sync-write:   Write syncronously to the output file after every packet" EOL );
 }
 // ====================================================================================================
 void _printVersion( void )
