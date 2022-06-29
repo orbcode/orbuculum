@@ -907,7 +907,7 @@ void _protocolPump( uint8_t c )
     }
 }
 // ====================================================================================================
-void _printHelp( char *progName )
+void _printHelp( const char *const progName )
 
 {
     genericsPrintf( "Usage: %s [options]" EOL, progName );
@@ -966,7 +966,7 @@ struct option longOptions[] =
     {NULL, no_argument, NULL, 0}
 };
 // ====================================================================================================
-int _processOptions( int argc, char *argv[] )
+bool _processOptions( int argc, char *argv[] )
 
 {
     int c, optionIndex = 0;
