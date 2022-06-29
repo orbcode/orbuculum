@@ -930,8 +930,15 @@ void _printHelp( char *progName )
     genericsPrintf( "    -s, --server:       <Server>:<Port> to use" EOL );
     genericsPrintf( "    -t, --tpiu:         <channel> Use TPIU decoder on specified channel" EOL );
     genericsPrintf( "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
+    genericsPrintf( "    -V, --version:      Print version and exit" EOL );
     genericsPrintf( EOL "Environment Variables;" EOL );
     genericsPrintf( "  OBJDUMP: to use non-standard obbdump binary" EOL );
+}
+// ====================================================================================================
+void _printVersion( void )
+
+{
+    genericsPrintf( "orbtop version " GIT_DESCRIBE EOL );
 }
 // ====================================================================================================
 struct option longOptions[] =
@@ -955,6 +962,7 @@ struct option longOptions[] =
     {"server", required_argument, NULL, 's'},
     {"tpiu", required_argument, NULL, 't'},
     {"verbose", required_argument, NULL, 'v'},
+    {"version", no_argument, NULL, 'V'},
     {NULL, no_argument, NULL, 0}
 };
 // ====================================================================================================
@@ -963,7 +971,7 @@ int _processOptions( int argc, char *argv[] )
 {
     int c, optionIndex = 0;
 
-    while ( ( c = getopt_long ( argc, argv, "c:d:DEe:f:g:hI:j:lm:nO:o:r:Rs:t:v:", longOptions, &optionIndex ) ) != -1 )
+    while ( ( c = getopt_long ( argc, argv, "c:d:DEe:f:g:hVI:j:lm:nO:o:r:Rs:t:v:", longOptions, &optionIndex ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -1083,6 +1091,11 @@ int _processOptions( int argc, char *argv[] )
             case 'h':
                 _printHelp( argv[0] );
                 return ERR;
+
+            // ------------------------------------
+            case 'V':
+                _printVersion();
+                return false;
 
             // ------------------------------------
             case '?':
