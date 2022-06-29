@@ -154,7 +154,7 @@ void _protocolPump( uint8_t c )
     }
 }
 // ====================================================================================================
-void _printHelp( char *progName )
+void _printHelp( const char *const progName )
 
 {
     fprintf( stdout, "Usage: %s [options]" EOL, progName );
