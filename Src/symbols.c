@@ -38,7 +38,7 @@
     #define GTPIP(...) {}
 #endif
 
-enum LineType { LT_NOISE, LT_PROC_LABEL, LT_LABEL, LT_SOURCE, LT_ASSEMBLY, LT_FILEANDLINE, LT_NEWLINE, LT_ERROR };
+enum LineType { LT_NULL, LT_NOISE, LT_PROC_LABEL, LT_LABEL, LT_SOURCE, LT_ASSEMBLY, LT_FILEANDLINE, LT_NEWLINE, LT_ERROR };
 enum ProcessingState {PS_IDLE, PS_GET_SOURCE, PS_GET_ASSY} ps = PS_IDLE;
 
 // ====================================================================================================
@@ -230,6 +230,12 @@ static enum LineType _getLineType( char *sourceLine, char *p1, char *p2, char *p
 /* Analyse line returned by objdump and categorise it. If objdump output is misinterpreted, this is the first place to check */
 
 {
+    /* If it's empty, something is badly wrong */
+    if ( !*sourceLine )
+    {
+        return LT_NULL;
+    }
+
     /* If it starts with a source tag, it's unambigious */
     if ( !strncmp( sourceLine, SOURCE_INDICATOR, strlen( SOURCE_INDICATOR ) ) )
     {
@@ -386,7 +392,7 @@ static FILE *_openProcess( char *commandLine, PROCESS_INFORMATION *processInfo )
 #endif
 
 // ====================================================================================================
-static bool _getTargetProgramInfo( struct SymbolSet *s )
+static enum symbolErr _getTargetProgramInfo( struct SymbolSet *s )
 
 /* Analyse line returned by objdump and categorise it, putting results into correct structures. */
 /* If objdump output is misinterpreted, this is the second place to check */
@@ -414,7 +420,7 @@ static bool _getTargetProgramInfo( struct SymbolSet *s )
 
     if ( stat( s->elfFile, &s->st ) != 0 )
     {
-        return false;
+        return SYMBOL_NOELF;
     }
 
     if ( getenv( OBJENVNAME ) )
@@ -435,7 +441,7 @@ static bool _getTargetProgramInfo( struct SymbolSet *s )
 
     if ( !f )
     {
-        return false;
+        return SYMBOL_NOOBJDUMP;
     }
 
 
@@ -452,7 +458,7 @@ static bool _getTargetProgramInfo( struct SymbolSet *s )
         if ( lt == LT_ERROR )
         {
             pclose( f );
-            return false;
+            return SYMBOL_UNSPECIFIED;
         }
 
         GTPIP( "**************** %s", line );
@@ -750,14 +756,14 @@ static bool _getTargetProgramInfo( struct SymbolSet *s )
 
     if ( 0 != pclose( f ) )
     {
-        /* Something went wrong in the close process */
-        return false;
+        /* Something went wrong in the subprocess */
+        return SYMBOL_NOOBJDUMP;
     }
 
 #endif
 
     _sortLines( s );
-    return true;
+    return SYMBOL_OK;
 }
 // ====================================================================================================
 const char *SymbolFilename( struct SymbolSet *s, uint32_t index )
@@ -965,13 +971,18 @@ bool SymbolSetValid( struct SymbolSet **s, char *filename )
     }
 }
 // ====================================================================================================
-struct SymbolSet *SymbolSetCreate( const char *filename, const char *deleteMaterial, bool demanglecpp, bool recordSource, bool recordAssy, const char *objdumpOptions, bool wait )
+enum symbolErr SymbolSetCreate( struct SymbolSet **ss, const char *filename, const char *deleteMaterial,
+                                bool demanglecpp, bool recordSource, bool recordAssy, const char *objdumpOptions )
 
 /* Create new symbol set by reading from elf file, if it's there and stable */
 
 {
     struct stat statbuf, newstatbuf;
-    struct SymbolSet *s = ( struct SymbolSet * )calloc( sizeof( struct SymbolSet ), 1 );
+    struct SymbolSet *s;
+    enum symbolErr  ret = SYMBOL_UNSPECIFIED;
+
+    s = ( struct SymbolSet * )calloc( sizeof( struct SymbolSet ), 1 );
+
     s->odoptions        = strdup( objdumpOptions ? objdumpOptions : "" );
     s->elfFile          = strdup( filename );
     s->deleteMaterial   = strdup( deleteMaterial ? deleteMaterial : "" );
@@ -979,53 +990,60 @@ struct SymbolSet *SymbolSetCreate( const char *filename, const char *deleteMater
     s->demanglecpp      = demanglecpp;
     s->recordAssy       = recordAssy;
 
+
     /* Make sure this file is stable before trying to load it */
-    if ( ( stat( filename, &statbuf ) == 0 ) && ( statbuf.st_size ) )
+    if ( ( stat( filename, &statbuf ) != 0 ) || !( statbuf.st_mode & S_IFREG ) )
+    {
+        ret = SYMBOL_NOELF;
+    }
+    else
     {
         /* There is at least a file here */
-        do
+
+        while ( 1 )
         {
-            usleep( ELF_CHECK_DELAY_TIME );
-
-            if ( stat( filename, &newstatbuf ) != 0 )
+            if ( stat( filename, &newstatbuf ) == 0 )
             {
-                break;
-            }
-
-            /* We check filesize, modification time and status change time for any differences */
-            if (
-                        ( memcmp( &statbuf.st_size, &newstatbuf.st_size, sizeof( off_t ) ) ) ||
+                /* We check filesize, modification time and status change time for any differences */
+                if (
+                            ( memcmp( &statbuf.st_size, &newstatbuf.st_size, sizeof( off_t ) ) ) ||
 #ifdef OSX
-                        ( memcmp( &statbuf.st_mtimespec, &newstatbuf.st_mtimespec, sizeof( struct timespec ) ) ) ||
-                        ( memcmp( &statbuf.st_ctimespec, &newstatbuf.st_ctimespec, sizeof( struct timespec ) ) )
+                            ( memcmp( &statbuf.st_mtimespec, &newstatbuf.st_mtimespec, sizeof( struct timespec ) ) ) ||
+                            ( memcmp( &statbuf.st_ctimespec, &newstatbuf.st_ctimespec, sizeof( struct timespec ) ) )
 #elif WIN32
-                        ( memcmp( &statbuf.st_mtime, &newstatbuf.st_mtime, sizeof( statbuf.st_mtime ) ) ) ||
-                        ( memcmp( &statbuf.st_ctime, &newstatbuf.st_ctime, sizeof( statbuf.st_ctime ) ) )
+                            ( memcmp( &statbuf.st_mtime, &newstatbuf.st_mtime, sizeof( statbuf.st_mtime ) ) ) ||
+                            ( memcmp( &statbuf.st_ctime, &newstatbuf.st_ctime, sizeof( statbuf.st_ctime ) ) )
 #else
-                        ( memcmp( &statbuf.st_mtim, &newstatbuf.st_mtim, sizeof( struct timespec ) ) ) ||
-                        ( memcmp( &statbuf.st_ctim, &newstatbuf.st_ctim, sizeof( struct timespec ) ) )
+                            ( memcmp( &statbuf.st_mtim, &newstatbuf.st_mtim, sizeof( struct timespec ) ) ) ||
+                            ( memcmp( &statbuf.st_ctim, &newstatbuf.st_ctim, sizeof( struct timespec ) ) )
 #endif
-            )
-            {
-                /* Make this the version we check next time around */
-                memcpy( &statbuf, &newstatbuf, sizeof( struct stat ) );
-                continue;
-            }
+                )
+                {
+                    /* Make this the version we check next time around */
+                    memcpy( &statbuf, &newstatbuf, sizeof( struct stat ) );
 
-            if ( _getTargetProgramInfo( s ) )
-            {
-                return s;
-            }
-            else
-            {
-                break;
+                    usleep( ELF_RELOAD_DELAY_TIME );
+                    continue;
+                }
+                else
+                {
+                    break;
+                }
             }
         }
-        while ( wait );
+
+        /* File is stable, let's grab stuff from it */
+        ret =  _getTargetProgramInfo( s );
     }
 
-    /* If we reach here we weren't successful, so delete the allocated memory */
-    SymbolSetDelete( &s );
-    return NULL;
+    if ( ret != SYMBOL_OK )
+    {
+        SymbolSetDelete( &s );
+        s = NULL;
+    }
+
+    *ss = s;
+    return ret;
 }
+
 // ====================================================================================================

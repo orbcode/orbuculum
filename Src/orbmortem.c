@@ -760,15 +760,25 @@ static void _dumpBuffer( struct RunTime *r )
 
     if ( !SymbolSetValid( &r->s, r->options->elffile ) )
     {
-        if ( !( r->s = SymbolSetCreate( r->options->elffile, r->options->deleteMaterial, r->options->demangle, true, true, r->options->odoptions, true ) ) )
+        switch ( SymbolSetCreate( &r->s, r->options->elffile, r->options->deleteMaterial, r->options->demangle, true, true, r->options->odoptions ) )
         {
-            genericsReport( V_ERROR, "Elf file or symbols in it not found" EOL );
-            return;
+            case SYMBOL_NOELF:
+                genericsReport( V_ERROR, "Elf file or symbols in it not found" EOL );
+                return;
+
+            case SYMBOL_NOOBJDUMP:
+                genericsReport( V_ERROR, "Objdump not found" EOL );
+                return;
+
+            case SYMBOL_UNSPECIFIED:
+                genericsReport( V_ERROR, "Unspecified symbol subsystem error" EOL );
+                return;
+
+            default:
+                break;
         }
-        else
-        {
-            genericsReport( V_DEBUG, "Loaded %s" EOL, r->options->elffile );
-        }
+
+        genericsReport( V_DEBUG, "Loaded %s" EOL, r->options->elffile );
     }
 
     /* Pump the received messages through the TRACE decoder, it will callback to _traceCB with complete sentences */
@@ -1153,10 +1163,27 @@ int main( int argc, char *argv[] )
     atexit( _doExit );
 
     /* Check we've got _some_ symbols to start from */
-    if ( !( _r.s = SymbolSetCreate( _r.options->elffile, _r.options->deleteMaterial, _r.options->demangle,
-                                    false, false, _r.options->odoptions, false ) ) )
+    if ( !SymbolSetValid( &_r.s, _r.options->elffile ) )
     {
-        genericsExit( -EIO, "Elf file missing or does not contain valid symbols" EOL );
+        switch ( SymbolSetCreate( &_r.s, _r.options->elffile, _r.options->deleteMaterial, _r.options->demangle, true, true, _r.options->odoptions ) )
+        {
+            case SYMBOL_NOELF:
+                genericsReport( V_ERROR, "Elf file or symbols in it not found" EOL );
+                return -1;
+
+            case SYMBOL_NOOBJDUMP:
+                genericsReport( V_ERROR, "Objdump not found" EOL );
+                return -1;
+
+            case SYMBOL_UNSPECIFIED:
+                genericsReport( V_ERROR, "Unspecified symbol subsystem error" EOL );
+                return -1;
+
+            default:
+                break;
+        }
+
+        genericsReport( V_DEBUG, "Loaded %s" EOL, _r.options->elffile );
     }
 
     SymbolSetDelete( &_r.s );

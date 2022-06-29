@@ -1127,6 +1127,7 @@ int main( int argc, char *argv[] )
     struct timeval tv;
     enum ReceiveResult receiveResult = RECEIVE_RESULT_OK;
     size_t receivedSize = 0;
+    enum symbolErr r;
 
     /* Fill in a time to start from */
     lastTime = _timestamp();
@@ -1137,10 +1138,27 @@ int main( int argc, char *argv[] )
     }
 
     /* Check we've got _some_ symbols to start from */
-    if ( !( _r.s = SymbolSetCreate( options.elffile, options.deleteMaterial, options.demangle, false, false, options.odoptions, false ) ) )
+    r = SymbolSetCreate( &_r.s, options.elffile, options.deleteMaterial, options.demangle, true, true, options.odoptions );
+
+    switch ( r )
     {
-        genericsExit( -EIO, "Elf file missing or does not contain valid symbols" EOL );
+        case SYMBOL_NOELF:
+            genericsExit( -1, "Elf file or symbols in it not found" EOL );
+            break;
+
+        case SYMBOL_NOOBJDUMP:
+            genericsExit( -1, "No objdump found" EOL );
+            break;
+
+        case SYMBOL_UNSPECIFIED:
+            genericsExit( -1, "Unknown error in symbol subsystem" EOL );
+            break;
+
+        default:
+            break;
     }
+
+    genericsReport( V_WARN, "Loaded %s" EOL, options.elffile );
 
     /* Reset the TPIU handler before we start */
     TPIUDecoderInit( &_r.t );
@@ -1231,16 +1249,27 @@ int main( int argc, char *argv[] )
                 /* Make sure old references are invalidated */
                 _flushHash();
 
-                if ( !( _r.s = SymbolSetCreate( options.elffile, options.deleteMaterial, options.demangle, false, false, options.odoptions, true ) ) )
+                r = SymbolSetCreate( &_r.s, options.elffile, options.deleteMaterial, options.demangle, true, true, options.odoptions );
+
+                switch ( r )
                 {
-                    genericsReport( V_ERROR, "Could not read symbols" EOL );
-                    usleep( 1000000 );
-                    break;
+                    case SYMBOL_NOELF:
+                        genericsExit( -1, "Elf file or symbols in it not found" EOL );
+                        break;
+
+                    case SYMBOL_NOOBJDUMP:
+                        genericsExit( -1, "No objdump found" EOL );
+                        break;
+
+                    case SYMBOL_UNSPECIFIED:
+                        genericsExit( -1, "Unknown error in symbol subsystem" EOL );
+                        break;
+
+                    default:
+                        break;
                 }
-                else
-                {
-                    genericsReport( V_WARN, "Loaded %s" EOL, options.elffile );
-                }
+
+                genericsReport( V_WARN, "Loaded %s" EOL, options.elffile );
             }
 
             /* Pump all of the data through the protocol handler */

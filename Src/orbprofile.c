@@ -700,6 +700,7 @@ int main( int argc, char *argv[] )
 {
     struct timeval tv;
     struct Stream *stream = NULL;
+    enum symbolErr r;
 
     /* Have a basic name and search string set up */
     _r.progName = genericsBasename( argv[0] );
@@ -757,14 +758,27 @@ int main( int argc, char *argv[] )
         /* We need symbols constantly while running ... lets get them */
         if ( !SymbolSetValid( &_r.s, _r.options->elffile ) )
         {
-            if ( !( _r.s = SymbolSetCreate( _r.options->elffile, _r.options->deleteMaterial, _r.options->demangle, true, true, _r.options->odoptions, false ) ) )
+            r = SymbolSetCreate( &_r.s, _r.options->elffile, _r.options->deleteMaterial, _r.options->demangle, true, true, _r.options->odoptions );
+
+            switch ( r )
             {
-                genericsExit( -1, "Elf file or symbols in it not found" EOL );
+                case SYMBOL_NOELF:
+                    genericsExit( -1, "Elf file or symbols in it not found" EOL );
+                    break;
+
+                case SYMBOL_NOOBJDUMP:
+                    genericsExit( -1, "No objdump found" EOL );
+                    break;
+
+                case SYMBOL_UNSPECIFIED:
+                    genericsExit( -1, "Unknown error in symbol subsystem" EOL );
+                    break;
+
+                default:
+                    break;
             }
-            else
-            {
-                genericsReport( V_DEBUG, "Loaded %s" EOL, _r.options->elffile );
-            }
+
+            genericsReport( V_WARN, "Loaded %s" EOL, _r.options->elffile );
         }
 
         _r.intervalBytes = 0;

@@ -657,7 +657,7 @@ int main( int argc, char *argv[] )
 
 {
     struct Stream *stream = NULL;
-
+    enum symbolErr r;
     struct timeval tv;
 
     /* Have a basic name and search string set up */
@@ -711,18 +711,31 @@ int main( int argc, char *argv[] )
         }
 
         /* We need symbols constantly while running ... check they are current */
+        /* We need symbols constantly while running ... lets get them */
         if ( !SymbolSetValid( &_r.s, _r.options->elffile ) )
         {
-            if ( !( _r.s = SymbolSetCreate( _r.options->elffile, _r.options->deleteMaterial, _r.options->demangle, true, true, _r.options->odoptions, false ) ) )
-            {
-                genericsExit( -1, "Elf file or symbols in it not found" EOL );
-            }
-            else
-            {
-                genericsReport( V_DEBUG, "Loaded %s" EOL, _r.options->elffile );
-            }
-        }
+            r = SymbolSetCreate( &_r.s, _r.options->elffile, _r.options->deleteMaterial, _r.options->demangle, true, true, _r.options->odoptions );
 
+            switch ( r )
+            {
+                case SYMBOL_NOELF:
+                    genericsExit( -1, "Elf file or symbols in it not found" EOL );
+                    break;
+
+                case SYMBOL_NOOBJDUMP:
+                    genericsExit( -1, "No objdump found" EOL );
+                    break;
+
+                case SYMBOL_UNSPECIFIED:
+                    genericsExit( -1, "Unknown error in symbol subsystem" EOL );
+                    break;
+
+                default:
+                    break;
+            }
+
+            genericsReport( V_WARN, "Loaded %s" EOL, _r.options->elffile );
+        }
 
         /* ----------------------------------------------------------------------------- */
         /* This is the main active loop...only break out of this when ending or on error */

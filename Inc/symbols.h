@@ -33,6 +33,8 @@ extern "C" {
 #define INTERRUPT         (SPECIALS_MASK|0xd)
 #define FN_INTERRUPT_STR  "INTERRUPT"
 
+enum symbolErr { SYMBOL_OK, SYMBOL_NOELF, SYMBOL_NOOBJDUMP, SYMBOL_UNSPECIFIED };
+
 /* Mapping of lines numbers to indicies */
 struct assyLineEntry
 
@@ -122,8 +124,8 @@ struct nameEntry
 };
 
 // ====================================================================================================
-struct SymbolSet *SymbolSetCreate( const char *filename, const char *deleteMaterial, bool demanglecpp,
-                                   bool recordSource, bool recordAssy, const char *objdumpOptions, bool wait );
+enum symbolErr SymbolSetCreate( struct SymbolSet **ss, const char *filename, const char *deleteMaterial,
+                                bool demanglecpp, bool recordSource, bool recordAssy, const char *objdumpOptions );
 void SymbolSetDelete( struct SymbolSet **s );
 bool SymbolSetValid( struct SymbolSet **s, char *filename );
 const char *SymbolFilename( struct SymbolSet *s, uint32_t index );
