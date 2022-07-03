@@ -1,6 +1,8 @@
+[![Build Linux binaries](https://github.com/orbcode/orbuculum/actions/workflows/build-linux.yml/badge.svg)](https://github.com/orbcode/orbuculum/actions/workflows/build-linux.yml)
+
+[![Build Windows binaries](https://github.com/orbcode/orbuculum/actions/workflows/build-windows.yml/badge.svg)](https://github.com/orbcode/orbuculum/actions/workflows/build-windows.yml)
+
 ![Screenshot](https://raw.githubusercontent.com/orbcode/orbuculum/main/Docs/title.png)
-* Build status main: [![Build Status: main](https://travis-ci.com/orbcode/orbuculum.svg?branch=main)](https://travis-ci.com/orbcode/orbuculum)
-* Build status, Devel branch: [![Build Status: Devel](https://travis-ci.com/orbcode/orbuculum.svg?branch=Devel)](https://travis-ci.com/orbcode/orbuculum)
 
 * Latest Changes:
 

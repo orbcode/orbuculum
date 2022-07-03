@@ -1,9 +1,0 @@
-language: c
-
-script:
-  - make
-
-addons:
-  apt:
-    packages:
-    - libusb-1.0-0-dev
