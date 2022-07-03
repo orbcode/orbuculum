@@ -7,7 +7,6 @@ on:
 jobs:
   win64:
     runs-on: windows-latest
-    if: github.event_name == 'push'
     defaults:
       run:
         shell: msys2 {0}
