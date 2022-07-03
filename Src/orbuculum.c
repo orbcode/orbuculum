@@ -105,6 +105,8 @@ struct RunTime
     pthread_t processThread;                             /* Thread distributing to clients */
     sem_t     dataForClients;                            /* Semaphore counting data for clients */
     bool      ending;                                    /* Flag indicating app is terminating */
+    bool      errored;                                   /* Flag indicating problem in reception process */
+
     int f;                                               /* File handle to data source */
 
     int opFileHandle;                                    /* Handle if we're writing orb output locally */
@@ -811,9 +813,17 @@ static void _usb_callback( struct libusb_transfer *t )
             /* Do it the old fashioned way and send out the unfettered block */
             nwclientSend( _r.n, t->actual_length, t->buffer );
         }
+
     }
 
-    libusb_submit_transfer( t );
+    if ( ( t->status != LIBUSB_TRANSFER_COMPLETED ) && ( t->status != LIBUSB_TRANSFER_TIMED_OUT ) )
+    {
+        _r.errored = true;
+    }
+    else
+    {
+        libusb_submit_transfer( t );
+    }
 }
 // ====================================================================================================
 static int _usbFeeder( struct RunTime *r )
@@ -830,6 +840,8 @@ static int _usbFeeder( struct RunTime *r )
 
     while ( !r->ending )
     {
+        r->errored = false;
+
         if ( libusb_init( NULL ) < 0 )
         {
             genericsReport( V_ERROR, "Failed to initalise USB interface" EOL );
@@ -955,7 +967,7 @@ static int _usbFeeder( struct RunTime *r )
             }
         }
 
-        while ( !r->ending )
+        while ( ( !r->ending )  && ( !r->errored ) )
         {
             int ret = libusb_handle_events_completed( NULL, ( int * )&r->ending );
 
@@ -964,6 +976,11 @@ static int _usbFeeder( struct RunTime *r )
                 genericsReport( V_ERROR, "Error waiting for USB requests to complete %d" EOL, ret );
                 _doExit();
             }
+        }
+
+        if ( !r->ending )
+        {
+            genericsReport( V_INFO, "USB connection lost" EOL );
         }
 
         libusb_close( handle );
