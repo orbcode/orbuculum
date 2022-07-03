@@ -25,6 +25,7 @@ static const struct OrbtraceInterfaceType _validDevices[] =
 
 
 #define RQ_CLASS       (0x41)
+#define RQ_INTERFACE   (0x01)
 /* Commands for Trace Endpoint */
 #define RQ_SET_TWIDTH  (1)
 
@@ -148,6 +149,43 @@ uint16_t _getInterface( struct OrbtraceIf *o, char intType )
 
     return iface;
 }
+// ====================================================================================================
+static bool _doInterfaceControlTransfer( struct OrbtraceIf *o, uint8_t interface, uint16_t request, uint16_t value, uint8_t indexUpperHalf )
+{
+    if ( !o->handle )
+    {
+        return false;
+    }
+
+    if ( interface == NO_INTERFACE )
+    {
+        return false;
+    }
+
+    if ( libusb_claim_interface( o->handle,  interface ) != 0 )
+    {
+        return false;
+    }
+
+    bool isOk = libusb_control_transfer(
+                            o->handle,
+                            RQ_CLASS | RQ_INTERFACE,
+                            request,
+                            value,
+                            ( indexUpperHalf << 8 ) | interface,
+                            NULL,
+                            0,
+                            0
+                ) >= 0;
+
+    if ( libusb_release_interface( o->handle,  interface ) != 0 )
+    {
+        return false;
+    }
+
+    return isOk;
+}
+
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
@@ -305,13 +343,18 @@ bool OrbtraceIfSetTraceWidth( struct OrbtraceIf *o, int width )
 {
     uint16_t d = ( width != 4 ) ? width : 3;
 
-    if ( ( ( d < 1 ) || ( d > 3 ) ) || ( OrbtraceIfGetTraceIF( o, OrbtraceIfGetActiveDevnum( o ) ) == NO_INTERFACE ) || ( !o->handle ) )
+    if ( ( d < 1 ) || ( d > 3 ) )
     {
         return false;
     }
 
-    return ( libusb_control_transfer( o->handle, RQ_CLASS, RQ_SET_TWIDTH, d,
-                                      OrbtraceIfGetTraceIF( o, OrbtraceIfGetActiveDevnum( o ) ), NULL, 0, 0 ) >= 0 );
+    return _doInterfaceControlTransfer(
+                       o,
+                       OrbtraceIfGetTraceIF( o, OrbtraceIfGetActiveDevnum( o ) ),
+                       RQ_SET_TWIDTH,
+                       d,
+                       0
+           );
 }
 // ====================================================================================================
 enum Channel OrbtraceIfNameToChannel( char *x )
@@ -344,9 +387,15 @@ bool OrbtraceIfVoltage( struct OrbtraceIf *o, enum Channel ch, int voltage )
         return false;
     }
 
-    return ( libusb_control_transfer( o->handle, RQ_CLASS, RQ_SET_VOLTAGE, voltage,
-                                      ( ch << 8 ) | OrbtraceIfGetPowerIF( o, OrbtraceIfGetActiveDevnum( o ) ), NULL, 0, 0 ) >= 0 );
+    return _doInterfaceControlTransfer(
+                       o,
+                       OrbtraceIfGetPowerIF( o, OrbtraceIfGetActiveDevnum( o ) ),
+                       RQ_SET_VOLTAGE,
+                       voltage,
+                       ch
+           );
 }
+
 // ====================================================================================================
 bool OrbtraceIfSetVoltageEn( struct OrbtraceIf *o, enum Channel ch, bool isOn )
 
@@ -356,9 +405,13 @@ bool OrbtraceIfSetVoltageEn( struct OrbtraceIf *o, enum Channel ch, bool isOn )
         return false;
     }
 
-
-    return ( libusb_control_transfer( o->handle, RQ_CLASS, RQ_SET_ENABLE, isOn,
-                                      ( ch << 8 ) | OrbtraceIfGetPowerIF( o, OrbtraceIfGetActiveDevnum( o ) ), NULL, 0, 0 ) >= 0 );
+    return _doInterfaceControlTransfer(
+                       o,
+                       OrbtraceIfGetPowerIF( o, OrbtraceIfGetActiveDevnum( o ) ),
+                       RQ_SET_ENABLE,
+                       isOn,
+                       ch
+           );
 }
 // ====================================================================================================
 void OrbtraceIfCloseDevice( struct OrbtraceIf *o )
