@@ -537,6 +537,26 @@ static void _outputJson( FILE *f, uint32_t total, uint32_t reportLines, struct r
     free( opString );
 }
 
+static const char *ExceptionNames[] =
+{
+    [0] = "None",
+    [1] = "Reset",
+    [2] = "NMI",
+    [3] = "HardFault",
+    [4] = "MemManage",
+    [5] = "BusFault",
+    [6] = "UsageFault",
+    [7] = "Reserved",
+    [8] = "Reserved",
+    [9] = "Reserved",
+    [10] = "Reserved",
+    [11] = "SVCall",
+    [12] = "DebugMonitor",
+    [13] = "Reserved",
+    [14] = "PendSV",
+    [15] = "SysTick",
+};
+
 // ====================================================================================================
 static void _outputTop( uint32_t total, uint32_t reportLines, struct reportLine *report, int64_t lastTime )
 
@@ -660,17 +680,28 @@ static void _outputTop( uint32_t total, uint32_t reportLines, struct reportLine 
             fprintf( stdout, EOL );
         }
 
-        fprintf( stdout, EOL " Ex |   Count  |  MaxD | TotalTicks  |  AveTicks  |  minTicks  |  maxTicks " EOL );
-        fprintf( stdout, "----+----------+-------+-------------+------------+------------+------------" EOL );
+        fprintf( stdout, EOL " Exception         |   Count  |  MaxD | TotalTicks  |  AveTicks  |  minTicks  |  maxTicks  " EOL );
+        fprintf( stdout, /**/"-------------------+----------+-------+-------------+------------+------------+------------" EOL );
 
         for ( uint32_t e = 0; e < MAX_EXCEPTIONS; e++ )
         {
 
             if ( _r.er[e].visits )
             {
-                fprintf( stdout, C_DATA "%3" PRIu32 C_RESET " | " C_DATA "%8" PRIu64 C_RESET " |" C_DATA " %5"
+                char exceptionName[30] = { 0 };
+
+                if ( e < 16 )
+                {
+                    snprintf( exceptionName, sizeof( exceptionName ), "(%s)", ExceptionNames[e] );
+                }
+                else
+                {
+                    snprintf( exceptionName, sizeof( exceptionName ), "(IRQ %d)", e - 16 );
+                }
+
+                fprintf( stdout, C_DATA "%3" PRId32 " %-14s" C_RESET " | " C_DATA "%8" PRIu64 C_RESET " |" C_DATA " %5"
                          PRIu32 C_RESET " | "C_DATA " %9" PRIu64 C_RESET "  |  " C_DATA "%9" PRIu64 C_RESET " | " C_DATA "%9" PRIu64 C_RESET "  | " C_DATA" %9" PRIu64 C_RESET EOL,
-                         e, _r.er[e].visits, _r.er[e].maxDepth, _r.er[e].totalTime, _r.er[e].totalTime / _r.er[e].visits, _r.er[e].minTime, _r.er[e].maxTime );
+                         e, exceptionName, _r.er[e].visits, _r.er[e].maxDepth, _r.er[e].totalTime, _r.er[e].totalTime / _r.er[e].visits, _r.er[e].minTime, _r.er[e].maxTime );
             }
         }
     }
