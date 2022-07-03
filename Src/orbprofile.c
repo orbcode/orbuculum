@@ -147,10 +147,7 @@ struct RunTime
 
     struct Options *options;                    /* Our runtime configuration */
 
-} _r =
-{
-    .options = &_options
-};
+} _r;
 
 // ====================================================================================================
 // ====================================================================================================
@@ -704,6 +701,7 @@ int main( int argc, char *argv[] )
 
     /* Have a basic name and search string set up */
     _r.progName = genericsBasename( argv[0] );
+    _r.options = &_options;
 
     if ( !_processOptions( argc, argv, &_r ) )
     {
