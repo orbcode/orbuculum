@@ -32,6 +32,8 @@ struct Options
 
     /* Trace settings */
     int traceWidth;           /* Width to be used for communication */
+    bool swoMANCH;            /* SWO Manchester output */
+    bool swoUART;             /* SWO UART output */
     bool opJSON;              /* Set output to JSON */
 
     /* Power settings */
@@ -44,7 +46,7 @@ struct Options
 
 enum Actions { ACTION_BRIGHTNESS, ACTION_ENCHANGE_VTREF, ACTION_ENCHANGE_VTPWR, ACTION_LIST_DEVICES,
                ACTION_LOCKDEVICE, ACTION_SETNICK, ACTION_VCHANGE_VTREF, ACTION_VCHANGE_VTPWR, ACTION_SN,
-               ACTION_UNLOCK, ACTION_WRITE_PARAMS, ACTION_READ_PARAMS, ACTION_RESET_PARAMS, ACTION_SET_TRACEWIDTH,
+               ACTION_UNLOCK, ACTION_WRITE_PARAMS, ACTION_READ_PARAMS, ACTION_RESET_PARAMS, ACTION_SET_TRACE,
                ACTION_ENCHANGE_ALL
              };
 
@@ -130,24 +132,23 @@ static void _printHelp( char *progName )
 
 {
     genericsPrintf( "Usage: %s [options]" EOL, progName );
-    genericsPrintf( "      *-b: <Brightness> Set default brightness of output leds" EOL );
+    //    genericsPrintf( "      *-b: <Brightness> Set default brightness of output leds" EOL );
     genericsPrintf( "       -e: <Ch>,<On> Enable or Disable power. Ch is vtref, vtpwr or all" EOL );
-    genericsPrintf( "      *-F: Force voltage setting" EOL );
+    //    genericsPrintf( "      *-F: Force voltage setting" EOL );
     genericsPrintf( "       -h: This help" EOL );
-    genericsPrintf( "      *-j: Format output in JSON" EOL );
+    //    genericsPrintf( "      *-j: Format output in JSON" EOL );
     genericsPrintf( "       -l: Show all OrbTrace devices attached to system" EOL );
-    genericsPrintf( "      *-L: Lock device (prevent further changes)" EOL );
-    genericsPrintf( "      *-n: <Nick> Specify nickname for adaptor (8 chars max)" EOL );
-    genericsPrintf( "       -o: <num> Specify 1, 2 or 4 bits trace width" EOL );
-    genericsPrintf( "      *-q: Query all data from connected device" EOL );
-    genericsPrintf( "      *-Q: Query specified data from connected device (pPrR VPwr/IPwr/VRef/IRef)" EOL );
-    genericsPrintf( "      *-p: <Ch>,<Voltage> Set voltage in V, Ch is vtref or vtpwr" EOL );
+    //    genericsPrintf( "      *-L: Lock device (prevent further changes)" EOL );
+    //    genericsPrintf( "      *-n: <Nick> Specify nickname for adaptor (8 chars max)" EOL );
+    genericsPrintf( "       -t: <x> Trace format; 1,2 or 4 bit parallel, m for Manchester SWO, u=UART SWO" EOL );
+    //    genericsPrintf( "      *-q: Query all data from connected device" EOL );
+    //    genericsPrintf( "      *-Q: Query specified data from connected device (pPrR VPwr/IPwr/VRef/IRef)" EOL );
+    genericsPrintf( "       -p: <Ch>,<Voltage> Set voltage in V, Ch is vtref or vtpwr" EOL );
     genericsPrintf( "       -s: <Serial> any part of serial number to differentiate specific OrbTrace device" EOL );
-    genericsPrintf( "      *-U: Unlock device (allow changes, default state)" EOL );
+    //    genericsPrintf( "      *-U: Unlock device (allow changes, default state)" EOL );
     genericsPrintf( "       -v: <level> Verbose mode 0(errors)..3(debug)" EOL );
-    genericsPrintf( "      *-w: Write parameters specified on command line to NVRAM" EOL );
-    genericsPrintf( "      *-W: Reset all NVRAM parameters to default values" EOL );
-    genericsPrintf( EOL "Actions marked * are not yet implemented" EOL );
+    //    genericsPrintf( "      *-w: Write parameters specified on command line to NVRAM" EOL );
+    //    genericsPrintf( "      *-W: Reset all NVRAM parameters to default values" EOL );
 }
 // ====================================================================================================
 static bool _checkVoltages( struct RunTime *r )
@@ -181,7 +182,7 @@ static int _processOptions( struct RunTime *r, int argc, char *argv[]  )
     bool action;
     char *a;
 
-    while ( ( c = getopt ( argc, argv, "b:e:f:hlLn:o:qQ:p:s:Uv:wW" ) ) != -1 )
+    while ( ( c = getopt ( argc, argv, "e:hlp:s:t:v:" ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -265,10 +266,16 @@ static int _processOptions( struct RunTime *r, int argc, char *argv[]  )
                 break;
 
             // ------------------------------------
-            case 'o': /* Set tracewidth */
+            case 't': /* Set tracewidth */
+	      r->options->traceWidth = 0;
+	      if (( *optarg=='u' ) && (!*(optarg+1)))
+		r->options->swoUART = true;
+	      else if ((*optarg=='m' ) && (!*(optarg+1)))
+		r->options->swoMANCH = true;
+	      else
                 r->options->traceWidth = atoi( optarg );
-                _set_action( r, ACTION_SET_TRACEWIDTH );
-                break;
+	      _set_action( r, ACTION_SET_TRACE );
+	      break;
 
             // ------------------------------------
             case 'p': /* Set power */
@@ -357,13 +364,21 @@ static int _processOptions( struct RunTime *r, int argc, char *argv[]  )
         return false;
     }
 
+    if (( _tst_action( r, ACTION_SET_TRACE )) &&
+	(((r->options->traceWidth) && ((r->options->swoUART) || (r->options->swoMANCH))) ||
+	 ((r->options->swoUART) && (r->options->swoMANCH)) ))
+      {
+	genericsReport( V_ERROR, "Only one trace configuration can be set at the same time" EOL );
+	return false;
+      }
+    
     if ( _tst_action( r, ACTION_LIST_DEVICES ) && ( _num_actions( r ) > 1 ) )
     {
         genericsReport( V_ERROR, "Listing devices is an exclusive operation" EOL );
         return false;
     }
 
-    if ( ( _tst_action( r, ACTION_SET_TRACEWIDTH ) ) &&
+    if (    ( r->options->traceWidth != 0 ) &&
             ( r->options->traceWidth != 1 ) &&
             ( r->options->traceWidth != 2 ) &&
             ( r->options->traceWidth != 4 ) )
@@ -526,18 +541,33 @@ static void _performActions( struct RunTime *r )
     }
 
     // -----------------------------------------------------------------------------------
-    if ( _tcl_action( r, ACTION_SET_TRACEWIDTH ) )
+    if ( _tcl_action( r, ACTION_SET_TRACE ) )
     {
-        genericsReport( V_INFO, "Setting port width to %d" EOL, r->options->traceWidth );
+      if ( r->options->traceWidth )
+	{
+	  genericsReport( V_INFO, "Setting port width to %d" EOL, r->options->traceWidth );
 
-        if ( OrbtraceIfSetTraceWidth( r->dev, r->options->traceWidth ) )
-        {
-            genericsReport( V_INFO, "OK" EOL );
-        }
-        else
-        {
-            genericsReport( V_INFO, "Failed" EOL );
-        }
+	  if ( OrbtraceIfSetTraceWidth( r->dev, r->options->traceWidth ) )
+	    {
+	      genericsReport( V_INFO, "OK" EOL );
+	    }
+	  else
+	    {
+	      genericsReport( V_INFO, "Failed" EOL );
+	    }
+	}
+      else if (( r->options->swoMANCH ) ||  ( r->options->swoUART ))
+	{
+	  genericsReport( V_INFO, "Setting SWO with %s encoding" EOL,r->options->swoMANCH?"Manchester":"UART");
+	  if ( OrbtraceIfSetTraceSWO( r->dev, r->options->swoMANCH ) )
+	    {
+	      genericsReport( V_INFO, "OK" EOL );
+	    }
+	  else
+	    {
+	      genericsReport( V_INFO, "Failed" EOL );
+	    }
+	}
     }
 
     // -----------------------------------------------------------------------------------
