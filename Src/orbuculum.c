@@ -53,7 +53,7 @@
 #include "nwclient.h"
 
 /* How many transfer buffers from the source to allocate */
-#define NUM_RAW_BLOCKS (6)
+#define NUM_RAW_BLOCKS (4)
 
 /* Record for options, either defaults or from command line */
 struct Options
@@ -151,7 +151,6 @@ static const struct deviceList
 // #define DUMP_BLOCK
 
 /* Interval between blocks for timeouts..smaller means smoother, but higher CPU load */
-#define BLOCK_TIMEOUT_INTERVAL_MS (50)
 
 struct Options _options =
 {
@@ -955,7 +954,7 @@ static int _usbFeeder( struct RunTime *r )
                                         TRANSFER_SIZE,
                                         _usb_callback,
                                         &r->rawBlock[t].usbtfr,
-                                        BLOCK_TIMEOUT_INTERVAL_MS * t
+                                        0
                                       );
 
             int ret = libusb_submit_transfer( r->rawBlock[t].usbtfr );
