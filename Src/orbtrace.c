@@ -267,15 +267,23 @@ static int _processOptions( struct RunTime *r, int argc, char *argv[]  )
 
             // ------------------------------------
             case 't': /* Set tracewidth */
-	      r->options->traceWidth = 0;
-	      if (( *optarg=='u' ) && (!*(optarg+1)))
-		r->options->swoUART = true;
-	      else if ((*optarg=='m' ) && (!*(optarg+1)))
-		r->options->swoMANCH = true;
-	      else
-                r->options->traceWidth = atoi( optarg );
-	      _set_action( r, ACTION_SET_TRACE );
-	      break;
+                r->options->traceWidth = 0;
+
+                if ( ( *optarg == 'u' ) && ( !*( optarg + 1 ) ) )
+                {
+                    r->options->swoUART = true;
+                }
+                else if ( ( *optarg == 'm' ) && ( !*( optarg + 1 ) ) )
+                {
+                    r->options->swoMANCH = true;
+                }
+                else
+                {
+                    r->options->traceWidth = atoi( optarg );
+                }
+
+                _set_action( r, ACTION_SET_TRACE );
+                break;
 
             // ------------------------------------
             case 'p': /* Set power */
@@ -364,14 +372,14 @@ static int _processOptions( struct RunTime *r, int argc, char *argv[]  )
         return false;
     }
 
-    if (( _tst_action( r, ACTION_SET_TRACE )) &&
-	(((r->options->traceWidth) && ((r->options->swoUART) || (r->options->swoMANCH))) ||
-	 ((r->options->swoUART) && (r->options->swoMANCH)) ))
-      {
-	genericsReport( V_ERROR, "Only one trace configuration can be set at the same time" EOL );
-	return false;
-      }
-    
+    if ( ( _tst_action( r, ACTION_SET_TRACE ) ) &&
+            ( ( ( r->options->traceWidth ) && ( ( r->options->swoUART ) || ( r->options->swoMANCH ) ) ) ||
+              ( ( r->options->swoUART ) && ( r->options->swoMANCH ) ) ) )
+    {
+        genericsReport( V_ERROR, "Only one trace configuration can be set at the same time" EOL );
+        return false;
+    }
+
     if ( _tst_action( r, ACTION_LIST_DEVICES ) && ( _num_actions( r ) > 1 ) )
     {
         genericsReport( V_ERROR, "Listing devices is an exclusive operation" EOL );
@@ -543,31 +551,32 @@ static void _performActions( struct RunTime *r )
     // -----------------------------------------------------------------------------------
     if ( _tcl_action( r, ACTION_SET_TRACE ) )
     {
-      if ( r->options->traceWidth )
-	{
-	  genericsReport( V_INFO, "Setting port width to %d" EOL, r->options->traceWidth );
+        if ( r->options->traceWidth )
+        {
+            genericsReport( V_INFO, "Setting port width to %d" EOL, r->options->traceWidth );
 
-	  if ( OrbtraceIfSetTraceWidth( r->dev, r->options->traceWidth ) )
-	    {
-	      genericsReport( V_INFO, "OK" EOL );
-	    }
-	  else
-	    {
-	      genericsReport( V_INFO, "Failed" EOL );
-	    }
-	}
-      else if (( r->options->swoMANCH ) ||  ( r->options->swoUART ))
-	{
-	  genericsReport( V_INFO, "Setting SWO with %s encoding" EOL,r->options->swoMANCH?"Manchester":"UART");
-	  if ( OrbtraceIfSetTraceSWO( r->dev, r->options->swoMANCH ) )
-	    {
-	      genericsReport( V_INFO, "OK" EOL );
-	    }
-	  else
-	    {
-	      genericsReport( V_INFO, "Failed" EOL );
-	    }
-	}
+            if ( OrbtraceIfSetTraceWidth( r->dev, r->options->traceWidth ) )
+            {
+                genericsReport( V_INFO, "OK" EOL );
+            }
+            else
+            {
+                genericsReport( V_INFO, "Failed" EOL );
+            }
+        }
+        else if ( ( r->options->swoMANCH ) ||  ( r->options->swoUART ) )
+        {
+            genericsReport( V_INFO, "Setting SWO with %s encoding" EOL, r->options->swoMANCH ? "Manchester" : "UART" );
+
+            if ( OrbtraceIfSetTraceSWO( r->dev, r->options->swoMANCH ) )
+            {
+                genericsReport( V_INFO, "OK" EOL );
+            }
+            else
+            {
+                genericsReport( V_INFO, "Failed" EOL );
+            }
+        }
     }
 
     // -----------------------------------------------------------------------------------

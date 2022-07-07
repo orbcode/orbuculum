@@ -364,11 +364,11 @@ bool OrbtraceIfSetTraceSWO( struct OrbtraceIf *o, bool isMANCH )
                        o,
                        OrbtraceIfGetTraceIF( o, OrbtraceIfGetActiveDevnum( o ) ),
                        RQ_SET_TWIDTH,
-                       isMANCH?0x10:0x12,
+                       isMANCH ? 0x10 : 0x12,
                        0
            );
 }
-// ====================================================================================================  
+// ====================================================================================================
 enum Channel OrbtraceIfNameToChannel( char *x )
 
 /* Turn case insensitive text name to channel number. Can be terminated with NULL or a ',' */

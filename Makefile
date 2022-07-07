@@ -10,6 +10,8 @@ SCREEN_PALETTE="uicolours_default.h"
 
 CFLAGS=-DVERSION="\"2.0.0Beta2InProgress\""
 
+INSTALL_ROOT?=/usr/local/
+
 CROSS_COMPILE=
 # Output Files
 ORBLIB = orb
@@ -20,12 +22,12 @@ ORBTOP    = orbtop
 ORBDUMP   = orbdump
 ORBSTAT   = orbstat
 ORBMORTEM = orbmortem
-ORBPROFILE= orbprofile
+ORBTRACE  = orbtrace
 
 ifdef MAKE_EXPERIMENTAL
-ORBTRACE  = orbtrace
+ORBPROFILE= orbprofile
 else
-ORBTRACE  =
+ORBPROFILE  =
 endif
 ##########################################################################
 # Check Host OS
@@ -105,6 +107,8 @@ endif
 ifdef LINUX
 LDLIBS += -lpthread -ldl
 endif
+
+DIRTY := $(shell git diff-index --quiet HEAD; echo $$?)
 
 ##########################################################################
 # Generic multi-project files
@@ -235,7 +239,10 @@ all : build
 
 get_version:
 	$(Q)mkdir -p $(OLOC)
-	$(Q)$(GET_GIT_HASH) > $(OLOC)/$(GIT_HASH_FILENAME)
+	$(Q)echo "#define GIT_HASH 0x"`git rev-parse --short=8 HEAD` > $(OLOC)/$(GIT_HASH_FILENAME)
+	$(Q)echo "#define GIT_BRANCH \""`git rev-parse --abbrev-ref HEAD`\" >> $(OLOC)/$(GIT_HASH_FILENAME)
+	$(Q)echo "#define BUILD_DATE \""`date "+%Y-%m-%d %H:%M:%S%z"`\" >> $(OLOC)/$(GIT_HASH_FILENAME)
+	$(Q)echo "#define GIT_DIRTY " $(DIRTY) >> $(OLOC)/$(GIT_HASH_FILENAME)
 
 $(OLOC)/%.o : %.c
 	$(Q)mkdir -p $(basename $@)
@@ -290,6 +297,31 @@ $(ORBTRACE) : $(ORBTRACE_POBJS)
 
 tags:
 	-@etags $(CFILES) 2> /dev/null
+
+install: $(ORBUCULUM) $(ORBFIFO) $(ORBCAT) $(ORBDUMP) $(ORBSTAT) $(ORBMORTEM) $(ORBPROFILE) $(ORBTRACE)
+	$(Q)install -D $(OLOC)/$(ORBUCULUM) --target-directory=$(DESTDIR)$(INSTALL_ROOT)bin
+	$(Q)install -D $(OLOC)/$(ORBFIFO) --target-directory=$(DESTDIR)$(INSTALL_ROOT)bin
+	$(Q)install -D $(OLOC)/$(ORBCAT) --target-directory=$(DESTDIR)$(INSTALL_ROOT)bin
+	$(Q)install -D $(OLOC)/$(ORBDUMP) --target-directory=$(DESTDIR)$(INSTALL_ROOT)bin
+	$(Q)install -D $(OLOC)/$(ORBSTAT) --target-directory=$(DESTDIR)$(INSTALL_ROOT)bin
+	$(Q)install -D $(OLOC)/$(ORBMORTEM) --target-directory=$(DESTDIR)$(INSTALL_ROOT)bin
+	$(Q)install -D $(OLOC)/$(ORBPROFILE) --target-directory=$(DESTDIR)$(INSTALL_ROOT)bin
+	$(Q)install -D $(OLOC)/$(ORBTRACE) --target-directory=$(DESTDIR)$(INSTALL_ROOT)bin
+	$(Q)install -D -m 644 Support/gdbtrace.init --target-directory=$(DESTDIR)$(INSTALL_ROOT)share/orbcode
+	-@echo "Install complete"
+
+uninstall:
+	$(Q)rm -f $(DESTDIR)$(INSTALL_ROOT)bin/$(ORBUCULUM) \
+		$(DESTDIR)$(INSTALL_ROOT)bin/$(ORBFIFO) \
+		$(DESTDIR)$(INSTALL_ROOT)bin/$(ORBCAT) \
+		$(DESTDIR)$(INSTALL_ROOT)bin/$(ORBDUMP) \
+		$(DESTDIR)$(INSTALL_ROOT)bin/$(ORBSTAT) \
+		$(DESTDIR)$(INSTALL_ROOT)bin/$(ORBMORTEM) \
+		$(DESTDIR)$(INSTALL_ROOT)bin/$(ORBPROFILE) \
+		$(DESTDIR)$(INSTALL_ROOT)bin/$(ORBTRACE) \
+		$(DESTDIR)$(INSTALL_ROOT)share/orbcode/gdbtrace.init
+
+	-@echo "Uninstall complete"
 
 clean:
 	-$(call cmd, \rm -f $(POBJS) $(LD_TEMP) $(ORBUCULUM) $(ORBFIFO) $(ORBCAT) $(ORBDUMP) $(ORBSTAT) $(ORBMORTEM) $(ORBPROFILE) $(ORBTRACE) $(OUTFILE).map $(EXPORT) ,\
