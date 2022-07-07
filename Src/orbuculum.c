@@ -10,6 +10,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <ctype.h>
+#include <assert.h>
 #ifdef WIN32
     #include <winsock2.h>
 #else
@@ -83,7 +84,7 @@ struct Options
 struct dataBlock
 {
     ssize_t fillLevel;                                   /* How full this block is */
-    uint8_t buffer[TRANSFER_SIZE];                       /* Block buffer */
+    uint8_t *buffer;                                     /* Block buffer */
     struct libusb_transfer *usbtfr;                      /* USB Transfer handle */
 };
 
@@ -948,6 +949,7 @@ static int _usbFeeder( struct RunTime *r )
         for ( uint32_t t = 0; t < NUM_RAW_BLOCKS; t++ )
         {
             r->rawBlock[t].usbtfr = libusb_alloc_transfer( 0 );
+            r->rawBlock[t].buffer = libusb_dev_mem_alloc( handle, TRANSFER_SIZE );
 
             libusb_fill_bulk_transfer ( r->rawBlock[t].usbtfr, handle, ep,
                                         r->rawBlock[t].buffer,
@@ -1337,6 +1339,7 @@ int main( int argc, char *argv[] )
 
                 _r.handler[_r.numHandlers].channel = x;
                 _r.handler[_r.numHandlers].strippedBlock = ( struct dataBlock * )calloc( 1, sizeof( struct dataBlock ) );
+                _r.handler[_r.numHandlers].strippedBlock->buffer = ( uint8_t * )malloc( TRANSFER_SIZE );
                 _r.handler[_r.numHandlers].n = nwclientStart(  _r.options->listenPort + _r.numHandlers );
                 genericsReport( V_WARN, "Started Network interface for channel %d on port %d" EOL, x, _r.options->listenPort + _r.numHandlers );
                 _r.numHandlers++;
