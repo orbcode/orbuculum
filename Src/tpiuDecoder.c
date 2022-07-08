@@ -111,19 +111,25 @@ bool TPIUGetPacket( struct TPIUDecoder *t, struct TPIUPacket *p )
         }
         else
         {
-            /* This is a data byte - store it */
-            p->packet[p->len].d = t->rxedPacket[i] | ( lowbits & 1 );
-            p->packet[p->len].s = t->currentStream;
-            p->len++;
+            /* This is a data byte - store it, provided it's not padding */
+            if ( t->currentStream )
+            {
+                p->packet[p->len].d = t->rxedPacket[i] | ( lowbits & 1 );
+                p->packet[p->len].s = t->currentStream;
+                p->len++;
+            }
         }
 
         /* Now deal with the second byte of the pair */
         if ( i < 14 )
         {
             /* Now deal with the other byte of the pair ... this is always data */
-            p->packet[p->len].d = t->rxedPacket[i + 1];
-            p->packet[p->len].s = t->currentStream;
-            p->len++;
+            if ( t->currentStream )
+            {
+                p->packet[p->len].d = t->rxedPacket[i + 1];
+                p->packet[p->len].s = t->currentStream;
+                p->len++;
+            }
         }
 
         /* ... and finally, if there's a delayed channel change, deal with it */

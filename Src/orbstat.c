@@ -436,7 +436,7 @@ void _protocolPump( struct RunTime *r, uint8_t c )
 
                     if ( r->p.packet[g].s != 0 )
                     {
-                        genericsReport( V_WARN, "Unknown TPIU channel %02x" EOL, r->p.packet[g].s );
+                        genericsReport( V_DEBUG, "Unknown TPIU channel %02x" EOL, r->p.packet[g].s );
                     }
                 }
 

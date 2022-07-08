@@ -309,7 +309,7 @@ void _protocolPump( uint8_t c )
 
                     if  ( _r.p.packet[g].s != 0 )
                     {
-                        genericsReport( V_INFO, "Unknown TPIU channel %02x" EOL, _r.p.packet[g].s );
+                        genericsReport( V_DEBUG, "Unknown TPIU channel %02x" EOL, _r.p.packet[g].s );
                     }
                 }
 
