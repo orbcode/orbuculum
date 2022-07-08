@@ -951,6 +951,11 @@ static int _usbFeeder( struct RunTime *r )
             r->rawBlock[t].usbtfr = libusb_alloc_transfer( 0 );
             r->rawBlock[t].buffer = libusb_dev_mem_alloc( handle, TRANSFER_SIZE );
 
+            if ( r->rawBlock[t].buffer == NULL )
+            {
+                r->rawBlock[t].buffer = malloc( TRANSFER_SIZE );
+            }
+
             libusb_fill_bulk_transfer ( r->rawBlock[t].usbtfr, handle, ep,
                                         r->rawBlock[t].buffer,
                                         TRANSFER_SIZE,
