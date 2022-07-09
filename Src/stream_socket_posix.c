@@ -5,10 +5,16 @@
 #include <unistd.h>
 #include <sys/ioctl.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <sys/socket.h>
+#include <fcntl.h>
 #include <netdb.h>
+#include <poll.h>
 
 #include "generics.h"
 
+/* How long to wait for a connection before declaring failure */
+#define CONNECT_WAIT_TIME_MS (200)
 
 struct PosixSocketStream
 {
@@ -72,16 +78,8 @@ static void _posixSocketStreamClose( struct Stream *stream )
 static int _posixSocketStreamCreate( const char *server, int port )
 {
     int sockfd = socket( AF_INET, SOCK_STREAM, IPPROTO_TCP );
-
     int flag = 1;
-    setsockopt( sockfd, SOL_SOCKET, SO_REUSEPORT, ( const void * )&flag, sizeof( flag ) );
-
-    if ( sockfd < 0 )
-    {
-        genericsReport( V_ERROR, "Error creating socket" EOL );
-        return -1;
-    }
-
+    struct sockaddr_in serv_addr;
     struct hostent *serverEnt = gethostbyname( server );
 
     if ( !serverEnt )
@@ -91,7 +89,14 @@ static int _posixSocketStreamCreate( const char *server, int port )
         return -1;
     }
 
-    struct sockaddr_in serv_addr;
+    setsockopt( sockfd, SOL_SOCKET, SO_REUSEPORT, ( const void * )&flag, sizeof( flag ) );
+
+    if ( sockfd < 0 )
+    {
+        genericsReport( V_ERROR, "Error creating socket" EOL );
+        return -1;
+    }
+
 
     /* Now open the network connection */
     memset( &serv_addr, 0, sizeof( serv_addr ) );
@@ -102,7 +107,39 @@ static int _posixSocketStreamCreate( const char *server, int port )
 
     serv_addr.sin_port = htons( port );
 
-    if ( connect( sockfd, ( struct sockaddr * ) &serv_addr, sizeof( serv_addr ) ) < 0 )
+    /* Make sure we don't wait too long before failing the call */
+    int sockfd_flags_before = fcntl( sockfd, F_GETFL, 0 );
+
+    fcntl( sockfd, F_SETFL, sockfd_flags_before | O_NONBLOCK );
+
+    connect( sockfd, ( struct sockaddr * )&serv_addr, sizeof( serv_addr ) );
+
+    if ( ( errno != EWOULDBLOCK ) && ( errno != EINPROGRESS ) )
+    {
+        close( sockfd );
+        return -1;
+    }
+
+    struct pollfd pfds[] = { { .fd = sockfd, .events = POLLOUT } };
+
+    if ( 0 == poll( pfds, 1, CONNECT_WAIT_TIME_MS ) )
+    {
+        close( sockfd );
+        return -1;
+    }
+
+    socklen_t error;
+    socklen_t len  = sizeof( socklen_t );
+
+    if ( 0 != getsockopt( sockfd, SOL_SOCKET, SO_ERROR, &error, &len ) )
+    {
+        flag = -1;
+    }
+
+    fcntl( sockfd, F_SETFL, sockfd_flags_before );
+
+    /* If we got an error give up */
+    if ( 0 != error )
     {
         close( sockfd );
         return -1;

@@ -578,13 +578,18 @@ int main( int argc, char *argv[] )
 
             if ( stream != NULL )
             {
-                alreadyReported = false;
+                if ( alreadyReported )
+                {
+                    genericsReport( V_INFO, "Connected" EOL );
+                    alreadyReported = false;
+                }
+
                 break;
             }
 
             if ( !alreadyReported )
             {
-                genericsReport( V_ERROR, EOL "No connection" EOL );
+                genericsReport( V_INFO, EOL "No connection" EOL );
                 alreadyReported = true;
             }
 
@@ -598,12 +603,10 @@ int main( int argc, char *argv[] )
             }
         }
 
-        if ( stream == NULL )
+        if ( stream != NULL )
         {
-            break;
+            _feedStream( stream );
         }
-
-        _feedStream( stream );
 
         stream->close( stream );
         free( stream );
