@@ -488,6 +488,7 @@ static void _performActions( struct RunTime *r )
 /* Whatever we were asked to do, do it */
 
 {
+    /* Beware, there is a logic to the order of actions...think before you change them or insert new ones */
     // -----------------------------------------------------------------------------------
     if ( _tst_action( r, ACTION_UNLOCK ) )
     {
@@ -495,26 +496,6 @@ static void _performActions( struct RunTime *r )
 
     // -----------------------------------------------------------------------------------
     if ( _tst_action( r, ACTION_RESET_PARAMS ) )
-    {
-    }
-
-    // -----------------------------------------------------------------------------------
-    if ( _tst_action( r, ACTION_BRIGHTNESS ) )
-    {
-    }
-
-    // -----------------------------------------------------------------------------------
-    if ( _tst_action( r, ACTION_SN ) )
-    {
-    }
-
-    // -----------------------------------------------------------------------------------
-    if ( _tst_action( r, ACTION_READ_PARAMS ) )
-    {
-    }
-
-    // -----------------------------------------------------------------------------------
-    if ( _tst_action( r, ACTION_SETNICK ) )
     {
     }
 
@@ -545,37 +526,6 @@ static void _performActions( struct RunTime *r )
         else
         {
             genericsReport( V_ERROR, "Failed" EOL );
-        }
-    }
-
-    // -----------------------------------------------------------------------------------
-    if ( _tcl_action( r, ACTION_SET_TRACE ) )
-    {
-        if ( r->options->traceWidth )
-        {
-            genericsReport( V_INFO, "Setting port width to %d" EOL, r->options->traceWidth );
-
-            if ( OrbtraceIfSetTraceWidth( r->dev, r->options->traceWidth ) )
-            {
-                genericsReport( V_INFO, "OK" EOL );
-            }
-            else
-            {
-                genericsReport( V_INFO, "Failed" EOL );
-            }
-        }
-        else if ( ( r->options->swoMANCH ) ||  ( r->options->swoUART ) )
-        {
-            genericsReport( V_INFO, "Setting SWO with %s encoding" EOL, r->options->swoMANCH ? "Manchester" : "UART" );
-
-            if ( OrbtraceIfSetTraceSWO( r->dev, r->options->swoMANCH ) )
-            {
-                genericsReport( V_INFO, "OK" EOL );
-            }
-            else
-            {
-                genericsReport( V_INFO, "Failed" EOL );
-            }
         }
     }
 
@@ -621,6 +571,57 @@ static void _performActions( struct RunTime *r )
         else
         {
             genericsReport( V_INFO, "Failed" EOL );
+        }
+    }
+
+    // -----------------------------------------------------------------------------------
+    if ( _tst_action( r, ACTION_BRIGHTNESS ) )
+    {
+    }
+
+    // -----------------------------------------------------------------------------------
+    if ( _tst_action( r, ACTION_SN ) )
+    {
+    }
+
+    // -----------------------------------------------------------------------------------
+    if ( _tst_action( r, ACTION_READ_PARAMS ) )
+    {
+    }
+
+    // -----------------------------------------------------------------------------------
+    if ( _tst_action( r, ACTION_SETNICK ) )
+    {
+    }
+
+    // -----------------------------------------------------------------------------------
+    if ( _tcl_action( r, ACTION_SET_TRACE ) )
+    {
+        if ( r->options->traceWidth )
+        {
+            genericsReport( V_INFO, "Setting port width to %d" EOL, r->options->traceWidth );
+
+            if ( OrbtraceIfSetTraceWidth( r->dev, r->options->traceWidth ) )
+            {
+                genericsReport( V_INFO, "OK" EOL );
+            }
+            else
+            {
+                genericsReport( V_INFO, "Failed" EOL );
+            }
+        }
+        else if ( ( r->options->swoMANCH ) ||  ( r->options->swoUART ) )
+        {
+            genericsReport( V_INFO, "Setting SWO with %s encoding" EOL, r->options->swoMANCH ? "Manchester" : "UART" );
+
+            if ( OrbtraceIfSetTraceSWO( r->dev, r->options->swoMANCH ) )
+            {
+                genericsReport( V_INFO, "OK" EOL );
+            }
+            else
+            {
+                genericsReport( V_INFO, "Failed" EOL );
+            }
         }
     }
 
