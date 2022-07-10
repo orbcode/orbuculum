@@ -483,11 +483,13 @@ static int _selectDevice( struct RunTime *r, bool listOnly )
 }
 
 // ====================================================================================================
-static void _performActions( struct RunTime *r )
+static int _performActions( struct RunTime *r )
 
 /* Whatever we were asked to do, do it */
 
 {
+    int retVal = 0;
+
     /* Beware, there is a logic to the order of actions...think before you change them or insert new ones */
     // -----------------------------------------------------------------------------------
     if ( _tst_action( r, ACTION_UNLOCK ) )
@@ -510,7 +512,8 @@ static void _performActions( struct RunTime *r )
         }
         else
         {
-            genericsReport( V_ERROR, "Failed" EOL );
+            genericsReport( V_ERROR, "Setting VTRef failed" EOL );
+            retVal |= -1;
         }
     }
 
@@ -525,7 +528,8 @@ static void _performActions( struct RunTime *r )
         }
         else
         {
-            genericsReport( V_ERROR, "Failed" EOL );
+            genericsReport( V_ERROR, "Setting VTPwr failed" EOL );
+            retVal |= -1;
         }
     }
 
@@ -540,7 +544,8 @@ static void _performActions( struct RunTime *r )
         }
         else
         {
-            genericsReport( V_INFO, "Failed" EOL );
+            genericsReport( V_ERROR, "Changing VTRef state failed" EOL );
+            retVal |= -1;
         }
     }
 
@@ -555,7 +560,8 @@ static void _performActions( struct RunTime *r )
         }
         else
         {
-            genericsReport( V_INFO, "Failed" EOL );
+            genericsReport( V_ERROR, "Changing all power channel states failed" EOL );
+            retVal |= -1;
         }
     }
 
@@ -570,7 +576,8 @@ static void _performActions( struct RunTime *r )
         }
         else
         {
-            genericsReport( V_INFO, "Failed" EOL );
+            genericsReport( V_ERROR, "Changing VTPwr state failed" EOL );
+            retVal |= -1;
         }
     }
 
@@ -607,7 +614,8 @@ static void _performActions( struct RunTime *r )
             }
             else
             {
-                genericsReport( V_INFO, "Failed" EOL );
+                genericsReport( V_ERROR, "Setting port width failed" EOL );
+                retVal |= -1;
             }
         }
         else if ( ( r->options->swoMANCH ) ||  ( r->options->swoUART ) )
@@ -620,7 +628,8 @@ static void _performActions( struct RunTime *r )
             }
             else
             {
-                genericsReport( V_INFO, "Failed" EOL );
+                genericsReport( V_ERROR, "Setting SWO encoding failed" EOL );
+                retVal |= -1;
             }
         }
     }
@@ -634,12 +643,15 @@ static void _performActions( struct RunTime *r )
     if ( _tst_action( r, ACTION_LOCKDEVICE ) )
     {
     }
+
+    return retVal;
 }
 // ====================================================================================================
 int main( int argc, char *argv[] )
 
 {
     int selection = 0;
+    int retVal = 0;
 
     if ( !_processOptions( &_r, argc, argv ) )
     {
@@ -689,10 +701,12 @@ int main( int argc, char *argv[] )
                 genericsExit( -2, "Specified interface voltage check failed" EOL );
             }
 
-            _performActions( &_r );
+            retVal = _performActions( &_r );
         }
 
         OrbtraceIfCloseDevice( _r.dev );
     }
+
+    return retVal;
 }
 // ====================================================================================================
