@@ -167,10 +167,17 @@ static void _printHelp( struct RunTime *r )
     genericsPrintf( "    -s, --server:       <Server>:<Port> to use" EOL );
     genericsPrintf( "    -t, --tpiu:         <channel>: Use TPIU to strip TPIU on specfied channel" EOL );
     genericsPrintf( "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
+    genericsPrintf( "    -V, --version:      Print version and exit" EOL );
     genericsPrintf( EOL "(Will connect one port higher than that set in -s when TPIU is not used)" EOL );
     genericsPrintf( EOL "(this will automatically select the second output stream from orb TPIU.)" EOL );
     genericsPrintf( EOL "Environment Variables;" EOL );
     genericsPrintf( "  OBJDUMP: to use non-standard obbdump binary" EOL );
+}
+// ====================================================================================================
+void _printVersion( void )
+
+{
+    genericsPrintf( "orbmortem version " GIT_DESCRIBE EOL );
 }
 // ====================================================================================================
 struct option longOptions[] =
@@ -189,6 +196,7 @@ struct option longOptions[] =
     {"server", required_argument, NULL, 's'},
     {"tpiu", required_argument, NULL, 't'},
     {"verbose", required_argument, NULL, 'v'},
+    {"version", no_argument, NULL, 'V'},
     {NULL, no_argument, NULL, 0}
 };
 // ====================================================================================================
@@ -197,7 +205,7 @@ static int _processOptions( int argc, char *argv[], struct RunTime *r )
 {
     int c, optionIndex = 0;
 
-    while ( ( c = getopt_long ( argc, argv, "Ab:C:Dd:eE:f:hO:p:s:t:v:", longOptions, &optionIndex ) ) != -1 )
+    while ( ( c = getopt_long ( argc, argv, "Ab:C:Dd:eE:f:hVO:p:s:t:v:", longOptions, &optionIndex ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -246,6 +254,11 @@ static int _processOptions( int argc, char *argv[], struct RunTime *r )
 
             case 'h':
                 _printHelp( r );
+                return false;
+
+            // ------------------------------------
+            case 'V':
+                _printVersion();
                 return false;
 
             // ------------------------------------
