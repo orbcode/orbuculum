@@ -2,6 +2,8 @@
 
 [![Build Windows binaries](https://github.com/orbcode/orbuculum/actions/workflows/build-windows.yml/badge.svg)](https://github.com/orbcode/orbuculum/actions/workflows/build-windows.yml)
 
+[![Discord](https://img.shields.io/discord/613131135903596547?logo=discord)](https://discord.gg/P7FYThy)
+
 ![Screenshot](https://raw.githubusercontent.com/orbcode/orbuculum/main/Docs/title.png)
 
 * Latest Changes:
