@@ -597,10 +597,6 @@ int main( int argc, char *argv[] )
             {
                 break;
             }
-            else
-            {
-                usleep( 500 * 1000 );
-            }
         }
 
         if ( stream != NULL )
@@ -614,10 +610,6 @@ int main( int argc, char *argv[] )
         if ( options.endTerminate )
         {
             break;
-        }
-        else
-        {
-            usleep( 100000 );
         }
     }
 

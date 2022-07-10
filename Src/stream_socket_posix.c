@@ -14,7 +14,7 @@
 #include "generics.h"
 
 /* How long to wait for a connection before declaring failure */
-#define CONNECT_WAIT_TIME_MS (200)
+#define CONNECT_WAIT_TIME_MS (2000)
 
 struct PosixSocketStream
 {
