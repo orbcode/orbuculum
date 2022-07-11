@@ -108,8 +108,6 @@ ifdef LINUX
 LDLIBS += -lpthread -ldl
 endif
 
-DIRTY := $(shell git diff-index --quiet HEAD; echo $$?)
-
 ##########################################################################
 # Generic multi-project files
 ##########################################################################
@@ -239,11 +237,8 @@ all : build
 
 get_version:
 	$(Q)mkdir -p $(OLOC)
-	$(Q)echo "#define GIT_HASH 0x"`git rev-parse --short=8 HEAD` > $(OLOC)/$(GIT_HASH_FILENAME)
-	$(Q)echo "#define GIT_BRANCH \""`git rev-parse --abbrev-ref HEAD`\" >> $(OLOC)/$(GIT_HASH_FILENAME)
-	$(Q)echo "#define BUILD_DATE \""`date "+%Y-%m-%d %H:%M:%S%z"`\" >> $(OLOC)/$(GIT_HASH_FILENAME)
-	$(Q)echo "#define GIT_DIRTY " $(DIRTY) >> $(OLOC)/$(GIT_HASH_FILENAME)
-	$(Q)echo "#define GIT_DESCRIBE \"`git describe --tags --always --dirty`\"" >> $(OLOC)/$(GIT_HASH_FILENAME)
+	$(Q)echo "#define GIT_DESCRIBE \"`git describe --tags --always --dirty`\"" > $(OLOC)/$(GIT_HASH_FILENAME).comp
+	$(Q)diff -q $(OLOC)/$(GIT_HASH_FILENAME).comp $(OLOC)/$(GIT_HASH_FILENAME) > /dev/null 2>&1 || cp $(OLOC)/$(GIT_HASH_FILENAME).comp $(OLOC)/$(GIT_HASH_FILENAME)
 
 $(OLOC)/%.o : %.c
 	$(Q)mkdir -p $(basename $@)
@@ -296,10 +291,7 @@ $(ORBTRACE) : $(ORBTRACE_POBJS)
 	$(Q)$(LD) $(LDFLAGS) -o $(OLOC)/$(ORBTRACE) $(MAP) $(ORBTRACE_POBJS)  $(LDLIBS)
 	-@echo "Completed build of" $(ORBTRACE)
 
-tags:
-	-@etags $(CFILES) 2> /dev/null
-
-install: $(ORBUCULUM) $(ORBFIFO) $(ORBCAT) $(ORBDUMP) $(ORBSTAT) $(ORBMORTEM) $(ORBPROFILE) $(ORBTRACE)
+install:
 	$(Q)install -D $(OLOC)/$(ORBUCULUM) --target-directory=$(DESTDIR)$(INSTALL_ROOT)bin
 	$(Q)install -D $(OLOC)/$(ORBFIFO) --target-directory=$(DESTDIR)$(INSTALL_ROOT)bin
 	$(Q)install -D $(OLOC)/$(ORBCAT) --target-directory=$(DESTDIR)$(INSTALL_ROOT)bin
