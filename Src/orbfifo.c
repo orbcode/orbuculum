@@ -92,10 +92,10 @@ static void _printHelp( const char *const progName )
 void _printVersion( void )
 
 {
-    genericsPrintf( "orbfifo version " GIT_DESCRIBE EOL );
+    genericsPrintf( "orbfifo version " GIT_DESCRIBE );
 }
 // ====================================================================================================
-struct option longOptions[] =
+struct option _longOptions[] =
 {
     {"basedir", required_argument, NULL, 'b'},
     {"channel", required_argument, NULL, 'c'},
@@ -121,7 +121,7 @@ static bool _processOptions( int argc, char *argv[] )
     uint chan;
     char *chanIndex;
 
-    while ( ( c = getopt_long ( argc, argv, "b:c:ef:hVn:Pt:v:w:", longOptions, &optionIndex ) ) != -1 )
+    while ( ( c = getopt_long ( argc, argv, "b:c:ef:hVn:Pt:v:w:", _longOptions, &optionIndex ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -250,11 +250,7 @@ static bool _processOptions( int argc, char *argv[] )
         }
 
     /* ... and dump the config if we're being verbose */
-    genericsReport( V_INFO, "%s V" VERSION " (Git %08X %s, Built " BUILD_DATE ")" EOL, argv[0], GIT_HASH, ( GIT_DIRTY ? "Dirty" : "Clean" ) );
-    genericsReport( V_INFO, "BasePath    : %s" EOL, itmfifoGetChanPath( _r.f ) );
-    genericsReport( V_INFO, "ForceSync   : %s" EOL, itmfifoGetForceITMSync( _r.f ) ? "true" : "false" );
-    genericsReport( V_INFO, "Permafile   : %s" EOL, options.permafile ? "true" : "false" );
-
+    genericsReport( V_INFO, "orbfifo version " GIT_DESCRIBE EOL );    
     if ( itmfifoGetUseTPIU( _r.f ) )
     {
         genericsReport( V_INFO, "Using TPIU  : true (ITM on channel %d)" EOL, itmfifoGettpiuITMChannel( _r.f ) );

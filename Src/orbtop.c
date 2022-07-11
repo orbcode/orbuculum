@@ -941,7 +941,7 @@ void _printVersion( void )
     genericsPrintf( "orbtop version " GIT_DESCRIBE EOL );
 }
 // ====================================================================================================
-struct option longOptions[] =
+static struct option _longOptions[] =
 {
     {"cut-after", required_argument, NULL, 'c'},
     {"no-demangle", required_argument, NULL, 'D'},
@@ -971,7 +971,7 @@ bool _processOptions( int argc, char *argv[] )
 {
     int c, optionIndex = 0;
 
-    while ( ( c = getopt_long ( argc, argv, "c:d:DEe:f:g:hVI:j:lm:nO:o:r:Rs:t:v:", longOptions, &optionIndex ) ) != -1 )
+    while ( ( c = getopt_long ( argc, argv, "c:d:DEe:f:g:hVI:j:lm:nO:o:r:Rs:t:v:", _longOptions, &optionIndex ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -1095,7 +1095,7 @@ bool _processOptions( int argc, char *argv[] )
             // ------------------------------------
             case 'V':
                 _printVersion();
-                return false;
+		return -EINVAL;		
 
             // ------------------------------------
             case '?':
@@ -1129,8 +1129,7 @@ bool _processOptions( int argc, char *argv[] )
         exit( -EBADF );
     }
 
-    genericsReport( V_INFO, "orbtop V" VERSION " (Git %08X %s, Built " BUILD_DATE ")" EOL, GIT_HASH, ( GIT_DIRTY ? "Dirty" : "Clean" ) );
-
+    genericsReport( V_INFO, "orbtop version " GIT_DESCRIBE EOL );
     if ( options.file )
     {
         genericsReport( V_INFO, "Input File       : %s", options.file );

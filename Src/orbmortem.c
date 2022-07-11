@@ -169,18 +169,18 @@ static void _printHelp( const char *const progName )
     genericsPrintf( "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
     genericsPrintf( "    -V, --version:      Print version and exit" EOL );
     genericsPrintf( EOL "(Will connect one port higher than that set in -s when TPIU is not used)" EOL );
-    genericsPrintf( EOL "(this will automatically select the second output stream from orb TPIU.)" EOL );
+    genericsPrintf(     "(this will automatically select the second output stream from orb TPIU.)" EOL );
     genericsPrintf( EOL "Environment Variables;" EOL );
-    genericsPrintf( "  OBJDUMP: to use non-standard obbdump binary" EOL );
+    genericsPrintf( "  OBJDUMP: to use non-standard objdump binary" EOL );
 }
 // ====================================================================================================
 void _printVersion( void )
 
 {
-    genericsPrintf( "orbmortem version " GIT_DESCRIBE EOL );
+    genericsPrintf( "orbmortem version " GIT_DESCRIBE );
 }
 // ====================================================================================================
-struct option longOptions[] =
+static struct option _longOptions[] =
 {
     {"alt-addr-enc", no_argument, NULL, 'A'},
     {"buffer-len", required_argument, NULL, 'b'},
@@ -205,7 +205,7 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
 {
     int c, optionIndex = 0;
 
-    while ( ( c = getopt_long ( argc, argv, "Ab:C:Dd:eE:f:hVO:p:s:t:v:", longOptions, &optionIndex ) ) != -1 )
+    while ( ( c = getopt_long ( argc, argv, "Ab:C:Dd:eE:f:hVO:p:s:t:v:", _longOptions, &optionIndex ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -339,8 +339,8 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
         }
 
     /* ... and dump the config if we're being verbose */
-    genericsReport( V_INFO, "%s V" VERSION " (Git %08X %s, Built " BUILD_DATE ")" EOL, argv[0], GIT_HASH, ( GIT_DIRTY ? "Dirty" : "Clean" ) );
-
+    genericsReport( V_INFO, "orbmortem version " GIT_DESCRIBE EOL );
+    
     if ( r->options->protocol >= TRACE_PROT_NONE )
     {
         genericsExit( V_ERROR, "Unrecognised decode protocol" EOL );

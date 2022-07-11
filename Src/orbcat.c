@@ -348,7 +348,7 @@ void _printVersion( void )
     genericsPrintf( "orbcat version " GIT_DESCRIBE EOL );
 }
 // ====================================================================================================
-struct option longOptions[] =
+static struct option _longOptions[] =
 {
     {"channel", required_argument, NULL, 'c'},
     {"eof", no_argument, NULL, 'e'},
@@ -371,7 +371,7 @@ bool _processOptions( int argc, char *argv[] )
     char *chanIndex;
 #define DELIMITER ','
 
-    while ( ( c = getopt_long ( argc, argv, "c:ef:hVns:t:v:", longOptions, &optionIndex ) ) != -1 )
+    while ( ( c = getopt_long ( argc, argv, "c:ef:hVns:t:v:", _longOptions, &optionIndex ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -488,8 +488,7 @@ bool _processOptions( int argc, char *argv[] )
         return false;
     }
 
-    genericsReport( V_INFO, "orbcat V" VERSION " (Git %08X %s, Built " BUILD_DATE EOL, GIT_HASH, ( GIT_DIRTY ? "Dirty" : "Clean" ) );
-
+    genericsReport( V_INFO, "orbcat version " GIT_DESCRIBE EOL );
     genericsReport( V_INFO, "Server     : %s:%d" EOL, options.server, options.port );
     genericsReport( V_INFO, "ForceSync  : %s" EOL, options.forceITMSync ? "true" : "false" );
 

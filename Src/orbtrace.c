@@ -13,6 +13,7 @@
 #include <string.h>
 #include <assert.h>
 #include <signal.h>
+#include <getopt.h>
 
 #include "git_version_info.h"
 #include "generics.h"
@@ -132,24 +133,46 @@ static void _printHelp( const char *const progName )
 
 {
     genericsPrintf( "Usage: %s [options]" EOL, progName );
+    genericsPrintf( "       -e, --power:         <Ch>,<On> Enable or Disable power. Ch is vtref, vtpwr or all" EOL );
+    genericsPrintf( "       -h, --help::         This help" EOL );
+    genericsPrintf( "       -l, --list:          Show all OrbTrace devices attached to system" EOL );
+    genericsPrintf( "       -T, --trace-format:  <x> Trace format; 1,2 or 4 bit parallel, m for Manchester SWO, u=UART SWO" EOL );
+    genericsPrintf( "       -n, --serial-number: <Serial> any part of serial number to differentiate specific OrbTrace device" EOL );
+    genericsPrintf( "       -p, --voltage:       <Ch>,<Voltage> Set voltage in V, Ch is vtref or vtpwr" EOL );
+    genericsPrintf( "       -v, --verbose:       <level> Verbose mode 0(errors)..3(debug)" EOL );
+    genericsPrintf( "       -V, --version:       Print version and exit" EOL );    
+
     //    genericsPrintf( "      *-b: <Brightness> Set default brightness of output leds" EOL );
-    genericsPrintf( "       -e: <Ch>,<On> Enable or Disable power. Ch is vtref, vtpwr or all" EOL );
     //    genericsPrintf( "      *-F: Force voltage setting" EOL );
-    genericsPrintf( "       -h: This help" EOL );
     //    genericsPrintf( "      *-j: Format output in JSON" EOL );
-    genericsPrintf( "       -l: Show all OrbTrace devices attached to system" EOL );
     //    genericsPrintf( "      *-L: Lock device (prevent further changes)" EOL );
-    //    genericsPrintf( "      *-n: <Nick> Specify nickname for adaptor (8 chars max)" EOL );
-    genericsPrintf( "       -T: <x> Trace format; 1,2 or 4 bit parallel, m for Manchester SWO, u=UART SWO" EOL );
+    //    genericsPrintf( "      *-N: <Nick> Specify nickname for adaptor (8 chars max)" EOL );
     //    genericsPrintf( "      *-q: Query all data from connected device" EOL );
     //    genericsPrintf( "      *-Q: Query specified data from connected device (pPrR VPwr/IPwr/VRef/IRef)" EOL );
-    genericsPrintf( "       -p: <Ch>,<Voltage> Set voltage in V, Ch is vtref or vtpwr" EOL );
-    genericsPrintf( "       -s: <Serial> any part of serial number to differentiate specific OrbTrace device" EOL );
     //    genericsPrintf( "      *-U: Unlock device (allow changes, default state)" EOL );
-    genericsPrintf( "       -v: <level> Verbose mode 0(errors)..3(debug)" EOL );
     //    genericsPrintf( "      *-w: Write parameters specified on command line to NVRAM" EOL );
     //    genericsPrintf( "      *-W: Reset all NVRAM parameters to default values" EOL );
 }
+// ====================================================================================================
+void _printVersion( void )
+
+{
+    genericsPrintf( "Orbtrace version " GIT_DESCRIBE );
+}
+// ====================================================================================================
+static struct option _longOptions[] =
+{
+    {"power", required_argument, NULL, 'e'},
+    {"help", no_argument, NULL, 'h'},
+    {"list", no_argument, NULL, 'l'},
+    {"monitor", required_argument, NULL, 'm'},
+    {"trace-format", required_argument, NULL, 'T'},
+    {"serial-number", required_argument, NULL, 'n'},
+    {"voltage", required_argument, NULL, 'p'},
+    {"verbose", required_argument, NULL, 'v'},
+    {"version", no_argument, NULL, 'V'},
+    {NULL, no_argument, NULL, 0}
+};
 // ====================================================================================================
 static bool _checkVoltages( struct RunTime *r )
 
@@ -176,13 +199,14 @@ static int _processOptions( struct RunTime *r, int argc, char *argv[]  )
 /* Process command line options into options and actions records */
 
 {
-    int c;
+  int c;
+  int optionIndex = 0;
     float voltage;
     int channel;
     bool action;
     char *a;
 
-    while ( ( c = getopt ( argc, argv, "e:hlp:s:T:v:" ) ) != -1 )
+    while ( ( c = getopt_long ( argc, argv, "e:hlp:n:T:v:V", _longOptions, &optionIndex ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -260,7 +284,7 @@ static int _processOptions( struct RunTime *r, int argc, char *argv[]  )
                 break;
 
             // ------------------------------------
-            case 'n': /* Set nickname */
+            case 'N': /* Set nickname */
                 r->options->nick = optarg;
                 _set_action( r, ACTION_SETNICK );
                 break;
@@ -320,7 +344,7 @@ static int _processOptions( struct RunTime *r, int argc, char *argv[]  )
 
             // ------------------------------------
 
-            case 's': /* Set serial number */
+            case 'n': /* Set serial number */
                 r->options->sn = optarg;
                 _set_action( r, ACTION_SN );
                 break;
@@ -336,6 +360,11 @@ static int _processOptions( struct RunTime *r, int argc, char *argv[]  )
                 break;
 
             // ------------------------------------
+            case 'V':
+                _printVersion();
+                return false;
+
+	    // ------------------------------------
             case 'w': /* Write parameters to NVRAM */
                 _set_action( r, ACTION_WRITE_PARAMS );
                 break;
@@ -402,8 +431,7 @@ static int _processOptions( struct RunTime *r, int argc, char *argv[]  )
     }
 
     /* ... and dump the config if we're being verbose */
-    genericsReport( V_INFO, "%s V" VERSION " (Git %08X %s, Built " BUILD_DATE ")" EOL, argv[0], GIT_HASH, ( GIT_DIRTY ? "Dirty" : "Clean" ) );
-
+    genericsReport( V_INFO, "orbtrace version " GIT_DESCRIBE EOL );
     return true;
 }
 // ====================================================================================================

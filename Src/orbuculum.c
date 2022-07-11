@@ -365,10 +365,10 @@ void _printHelp( const char *const progName )
 void _printVersion( void )
 
 {
-    genericsPrintf( "oruculum version " GIT_DESCRIBE EOL );
+    genericsPrintf( "orbuculum version " GIT_DESCRIBE );
 }
 // ====================================================================================================
-struct option longOptions[] =
+static struct option _longOptions[] =
 {
     {"serial-speed", required_argument, NULL, 'a'},
     {"eof", no_argument, NULL, 'e'},
@@ -391,7 +391,7 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
     int c, optionIndex = 0;
 #define DELIMITER ','
 
-    while ( ( c = getopt_long ( argc, argv, "a:ef:hVl:m:no:p:s:t:v:", longOptions, &optionIndex ) ) != -1 )
+    while ( ( c = getopt_long ( argc, argv, "a:ef:hVl:m:no:p:s:t:v:", _longOptions, &optionIndex ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -504,7 +504,7 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
         }
 
     /* ... and dump the config if we're being verbose */
-    genericsReport( V_INFO, "Orbuculum V" VERSION " (Git %08X %s, Built " BUILD_DATE ")" EOL, GIT_HASH, ( GIT_DIRTY ? "Dirty" : "Clean" ) );
+    genericsReport( V_INFO, "orbuculum version " GIT_DESCRIBE EOL );
 
     if ( r->options->intervalReportTime )
     {

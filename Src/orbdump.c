@@ -176,7 +176,7 @@ void _printVersion( void )
     genericsPrintf( "orbdump version " GIT_DESCRIBE EOL );
 }
 // ====================================================================================================
-struct option longOptions[] =
+static struct option _longOptions[] =
 {
     {"help", no_argument, NULL, 'h'},
     {"length", required_argument, NULL, 'l'},
@@ -196,7 +196,7 @@ bool _processOptions( int argc, char *argv[] )
 {
     int c, optionIndex = 0;
 
-    while ( ( c = getopt_long ( argc, argv, "hVl:no:p:s:t:v:w", longOptions, &optionIndex ) ) != -1 )
+    while ( ( c = getopt_long ( argc, argv, "hVl:no:p:s:t:v:w", _longOptions, &optionIndex ) ) != -1 )
         switch ( c )
         {
             case 'o':
@@ -265,8 +265,7 @@ bool _processOptions( int argc, char *argv[] )
         return false;
     }
 
-    genericsReport( V_INFO, "orbdump V" VERSION " (Git %08X %s, Built " BUILD_DATE ")" EOL, GIT_HASH, ( GIT_DIRTY ? "Dirty" : "Clean" ) );
-
+    genericsReport( V_INFO, "orbdump version " GIT_DESCRIBE EOL );
     genericsReport( V_INFO, "Server    : %s:%d" EOL, options.server, options.port );
     genericsReport( V_INFO, "ForceSync : %s" EOL, options.forceITMSync ? "true" : "false" );
 

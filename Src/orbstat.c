@@ -471,8 +471,8 @@ static void _printHelp( struct RunTime *r )
     genericsPrintf( "Usage: %s [options]" EOL, r->progName );
     genericsPrintf( "    -D, --no-demangle:  Switch off C++ symbol demangling" EOL );
     genericsPrintf( "    -d, --del-prefix:   <String> Material to delete off front of filenames" EOL );
-    genericsPrintf( "    -E, --elf-file:     <ElfFile> to use for symbols" EOL );
-    genericsPrintf( "    -e, --eof:          When reading from file, terminate at end of file rather than waiting for further input" EOL );
+    genericsPrintf( "    -e, --elf-file:     <ElfFile> to use for symbols" EOL );
+    genericsPrintf( "    -E, --eof:          When reading from file, terminate at end of file rather than waiting for further input" EOL );
     genericsPrintf( "    -f, --input-file:   <filename>: Take input from specified file" EOL );
     genericsPrintf( "    -g, --trace-chn:    <TraceChannel> for trace output (default %d)" EOL, r->options->traceChannel );
     genericsPrintf( "    -h, --help:         This help" EOL );
@@ -493,15 +493,15 @@ static void _printHelp( struct RunTime *r )
 void _printVersion( void )
 
 {
-    genericsPrintf( "orbstat version " GIT_DESCRIBE EOL );
+    genericsPrintf( "orbstat version " GIT_DESCRIBE );
 }
 // ====================================================================================================
-struct option longOptions[] =
+static struct option _longOptions[] =
 {
     {"no-demangle", required_argument, NULL, 'D'},
     {"del-prefix", required_argument, NULL, 'd'},
-    {"elf-file", required_argument, NULL, 'E'},
-    {"eof", no_argument, NULL, 'e'},
+    {"elf-file", required_argument, NULL, 'e'},
+    {"eof", no_argument, NULL, 'E'},
     {"input-file", required_argument, NULL, 'f'},
     {"trace-chn", required_argument, NULL, 'g'},
     {"help", no_argument, NULL, 'h'},
@@ -523,7 +523,7 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
 {
     int c, optionIndex = 0;
 
-    while ( ( c = getopt_long ( argc, argv, "Dd:eE:f:g:hVI:n:O:s:Tt:v:y:z:", longOptions, &optionIndex ) ) != -1 )
+    while ( ( c = getopt_long ( argc, argv, "Dd:e:Ef:g:hVI:n:O:s:Tt:v:y:z:", _longOptions, &optionIndex ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -537,12 +537,12 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
                 break;
 
             // ------------------------------------
-            case 'e':
+            case 'E':
                 r->options->fileTerminate = true;
                 break;
 
             // ------------------------------------
-            case 'E':
+            case 'e':
                 r->options->elffile = optarg;
                 break;
 
@@ -665,7 +665,7 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
         exit( -2 );
     }
 
-    genericsReport( V_INFO, "%s V" VERSION " (Git %08X %s, Built " BUILD_DATE ")" EOL, r->progName, GIT_HASH, ( GIT_DIRTY ? "Dirty" : "Clean" ) );
+    genericsReport( V_INFO, "orbstat version " GIT_DESCRIBE EOL );
     genericsReport( V_INFO, "Server          : %s:%d" EOL, r->options->server, r->options->port );
     genericsReport( V_INFO, "Delete Material : %s" EOL, r->options->deleteMaterial ? r->options->deleteMaterial : "None" );
     genericsReport( V_INFO, "Elf File        : %s %s" EOL, r->options->elffile, r->options->truncateDeleteMaterial ? "(Truncate)" : "(Don't Truncate)" );
