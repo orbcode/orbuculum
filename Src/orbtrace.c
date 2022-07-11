@@ -140,7 +140,7 @@ static void _printHelp( const char *const progName )
     genericsPrintf( "       -l: Show all OrbTrace devices attached to system" EOL );
     //    genericsPrintf( "      *-L: Lock device (prevent further changes)" EOL );
     //    genericsPrintf( "      *-n: <Nick> Specify nickname for adaptor (8 chars max)" EOL );
-    genericsPrintf( "       -t: <x> Trace format; 1,2 or 4 bit parallel, m for Manchester SWO, u=UART SWO" EOL );
+    genericsPrintf( "       -T: <x> Trace format; 1,2 or 4 bit parallel, m for Manchester SWO, u=UART SWO" EOL );
     //    genericsPrintf( "      *-q: Query all data from connected device" EOL );
     //    genericsPrintf( "      *-Q: Query specified data from connected device (pPrR VPwr/IPwr/VRef/IRef)" EOL );
     genericsPrintf( "       -p: <Ch>,<Voltage> Set voltage in V, Ch is vtref or vtpwr" EOL );
@@ -182,7 +182,7 @@ static int _processOptions( struct RunTime *r, int argc, char *argv[]  )
     bool action;
     char *a;
 
-    while ( ( c = getopt ( argc, argv, "e:hlp:s:t:v:" ) ) != -1 )
+    while ( ( c = getopt ( argc, argv, "e:hlp:s:T:v:" ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -266,7 +266,7 @@ static int _processOptions( struct RunTime *r, int argc, char *argv[]  )
                 break;
 
             // ------------------------------------
-            case 't': /* Set tracewidth */
+            case 'T': /* Set tracewidth */
                 r->options->traceWidth = 0;
 
                 if ( ( *optarg == 'u' ) && ( !*( optarg + 1 ) ) )
