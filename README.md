@@ -58,7 +58,7 @@ provide dot and gnuplot source data for perty graphics.
 * orbstat: An analysis/statistics utility which can produce KCacheGrind input files. KCacheGrind
 is a very powerful code performance analysis tool.
 
-* orbtrace: The fpga configuration bitstream maker to support parallel trace operation.
+* orbtrace: The fpga configuration controller.
 
 A few simple use cases are documented in the last section of this
 document, as are example outputs of using orbtop to report on the
@@ -93,10 +93,10 @@ from the target;
 * Anything capable of offering SWO on a TCP port
 * ORBTrace Mini
 
-Information about using each individual interface can be found in the
-docs directory. gdb setup files for each device type can be found in the `Support` directory. You'll find
+gdb setup files for each device type can be found in the `Support` directory. You'll find
 example get-you-going applications in the [Orbmule](https://github.com/orbcode/orbmule) repository including
-`gdbinit` scripts for OpenOCD, pyOCD and Blackmagic Probe Hosted.
+`gdbinit` scripts for OpenOCD, pyOCD and Blackmagic Probe Hosted. There are walkthroughs for lots of examples
+of the use of the orbuculum suite at [Orbcode]https://orbcode.org).
 
 When using SWO Orbuculum can use, or bypass, the TPIU. The TPIU adds (a small amount of) overhead
 to the datastream, but provides better synchronisation if there is corruption
@@ -119,8 +119,10 @@ the gdb session with the 'monitor traceswo xxxx' command. For a TTL
 Serial device its set by the Orbuculum command line.  Segger devices
 can normally work faster, but no experimentation has yet been done to
 find their max limits, which are probably it's dependent on the specific JLink
-you are using. JLink-Pro and JTrace devices appear to work up to 50MHz. YMMV. We haven't
-really found the limits of ORBTrace Mini yet.
+you are using. ORBTrace Mini can operate with Manchester encoded SWO at up
+to 48Mbps, which means there's no speed matching needed to use it, and it should
+continue to work correctly even if the target clock speed changes (e.g. when it goes
+into a low power mode).
 
 Configuring the Target
 ======================
@@ -167,7 +169,7 @@ Anyway, generically, a configuration looks like this;
 
     # ---------- Using Stm32F1 as debuggee---------------------------
     enableSTM32SWO                          <*--- turn on SWO output pin on CPU
-    # ----------ALTERNATIVELY, for Stm32F4 as debugge----------------
+    # ----------ALTERNATIVELY, for Stm32F4 as debuggee----------------
     enableSTM32SWO 4                        <*--- turn on SWO output pin on CPU
     # ----------END OF ALTERNATIVE-----------------------------------
 
@@ -215,7 +217,7 @@ Dependencies
 * libusb-1.0
 
 Note that `objdump` is also required. By default the suite will run `arm-none-eabi-objdump` but another binary or pathname can be
-subsituted via the `-O` option.
+subsituted via the OBJDUMP environment variable.
 
 Build
 -----
@@ -257,7 +259,7 @@ Simply start orbuculum with the correct options for your trace probe and
 then you can start of stop other utilities as you wish. A typical command
 to run orbuculum would be;
 
->ofiles/orbuculum -m 100
+$ orbuculum --monitor 100
 
 In this case, because no source options were provided on the command line, input
 will be taken from a Blackmagic probe USB SWO feed, or from an ORBTrace mini if it can find one.
@@ -281,19 +283,23 @@ Command Line Options
 
 For `orbuculum`, the specific command line options of note are;
 
- `-a [serialSpeed]`: Use serial port and set device speed.
+ `-a, --serial-speed: [serialSpeed]`: Use serial port and set device speed.
 
- `-h`: Brief help.
+ `-E, --eof`: When reading from file, ignore eof.
+ 
+ `-f, --input-file [filename]`: Take input from file rather than device.
+ 
+ `-h, --help`: Brief help.
 
- `-m`: Monitor interval (in mS) for reporting on state of the link. If baudrate is specified (using `-a`) and is greater than 100bps then the percentage link occupancy is also reported.
+ `-m, --monitor`: Monitor interval (in mS) for reporting on state of the link. If baudrate is specified (using `-a`) and is greater than 100bps then the percentage link occupancy is also reported.
 
-  `-o [filename]`: Record trace data locally. This is unfettered data directly from the source device, can be useful for replay purposes or other tool testing.
+  `-o, --output-file [filename]`: Record trace data locally. This is unfettered data directly from the source device, can be useful for replay purposes or other tool testing.
   
-  `-p [serialPort]`: to use. If not specified then the program defaults to Blackmagic probe.
+  `-p, --serial-port [serialPort]`: to use. If not specified then the program defaults to Blackmagic probe.
 
-  `-s [address]:[port]`: Set address for explicit TCP Source connection, (default none:2332).
+  `-s, --server [address]:[port]`: Set address for explicit TCP Source connection, (default none:2332).
 
-  `-t x,y,...`: Remove TPIU formatting and issue streams x, y etc over incrementing IP port numbers.
+  `-t, --tpiu x,y,...`: Remove TPIU formatting and issue streams x, y etc over incrementing IP port numbers.
 
 
 Orbfifo
@@ -345,40 +351,29 @@ the order of these has changed);
 
 The command line options are;
 
- `-b [basedir]`: for channels. Note that this is actually just leading text on the channel
+ `-b, --basedir [basedir]`: for channels. Note that this is actually just leading text on the channel
      name, so if you put xyz/chan then all ITM software channels will end up in a directory
      xyz, prepended with chan.  If xyz doesn't exist, then the channel creation will
      fail silently.
 
- `-c [Number],[Name],[Format]`: of channel to populate (repeat per channel) using printf formatting.
+ `-c, --channel [Number],[Name],[Format]`: of channel to populate (repeat per channel) using printf formatting.
 
- `-e`: When reading from file, terminate when file exhausts, rather than waiting for more data to arrive.
+ `-E`: When reading from file, terminate when file exhausts, rather than waiting for more data to arrive.
 
- `-f [filename]`: Take input from specified file (CTRL-C to abort from this).
+ `-f, --input-file [filename]`: Take input from specified file (CTRL-C to abort from this).
 
- `-h`: Brief help.
+ `-h, --help`: Brief help.
 
- `-i [channel]`: Set Channel for ITM in TPIU decode (defaults to 1). Note that the TPIU must
-     be in use for this to make sense.  If you call the GenericsConfigureTracing
-     routine above with the ITM Channel set to 0x7f then the TPIU will be bypassed.  ***If you do
-     not have this set correctly and you're using the TPIU you will not see any data at all***.
-
-  `-l [port]`: Set listening port for the incoming connections from clients.
-
-  `-m`: Monitor interval (in mS) for reporting on state of the link. If baudrate is specified (using `-a`) and is greater than 100bps then the percentage link occupancy is also reported.
-
-  `-n`: Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)
-
-  `-P`: Create permanent files rather than fifos - useful when you want to use the processed data later.
+  `-P, --permanent`: Create permanent files rather than fifos - useful when you want to use the processed data later.
 
   `-s [address]:[port]`: Set address for Source connection, (default localhost:3443).
 
-  `-t`: Use TPIU decoder.  This will not sync if TPIU is not configured, so you won't see
+  `-t, --tpiu`: Use TPIU decoder.  This will not sync if TPIU is not configured, so you won't see
      packets in that case.
 
-  `-v`: Verbose mode 0==Errors only, 1=Warnings (Default) 2=Info, 3=Full Debug.
+  `-v, --verbose`: Verbose mode 0==Errors only, 1=Warnings (Default) 2=Info, 3=Full Debug.
 
-  `-w [path]` : Enable filewriter functionality with output in specified directory (disabled by default).
+  `-W, --writer-path [path]` : Enable filewriter functionality with output in specified directory (disabled by default).
 
 Orbcat
 ------
@@ -398,28 +393,24 @@ of doing this to just replicate the data delivered over ITM Channel 0 would be
 will combine data from those individual channels into one stream. Command line
 options for orbcat are;
 
- `-c [Number],[Format]`: of channel to populate (repeat per channel) using printf
+ `-c, --channel [Number],[Format]`: of channel to populate (repeat per channel) using printf
      formatting. Note that the `Name` component is missing in this format because
      orbcat does not create fifos.
 
- `-e`: When reading from file, terminate when file exhausts, rather than waiting for more data to arrive.
+ `-E, --eof`: When reading from file, terminate when file exhausts, rather than waiting for more data to arrive.
 
- `-f [filename]`: Take input from specified file (CTRL-C to abort from this).
+ `-f, --input-file [filename]`: Take input from specified file (CTRL-C to abort from this).
 
- `-h`: Brief help.
+ `-h, --help`: Brief help.
 
- `-i [channel]`: Set Channel for ITM in TPIU decode (defaults to 1). Note that the TPIU must
-     be in use for this to make sense.  If you call the GenericsConfigureTracing
-     routine above with the ITM Channel set to 0 then the TPIU will be bypassed.
+ `-n, --itm-sync`: Enforce sync requirement for ITM (i.e. ITM needsd to issue syncs)
 
- `-n`: Enforce sync requirement for ITM (i.e. ITM needsd to issue syncs)
+ `-s --server [server]:[port]`: to connect to. Defaults to localhost:3443 to connect to the orbuculum daemon. Use localhost:2332 to connect to a Segger J-Link, or whatever other combination applies to your source.
 
- `-s [server]:[port]`: to connect to. Defaults to localhost:3443 to connect to the orbuculum daemon. Use localhost:2332 to connect to a Segger J-Link, or whatever other combination applies to your source.
-
- `-t`: Use TPIU decoder.  This will not sync if TPIU is not configured, so you won't see
+ `-t, --tpiu`: Use TPIU decoder.  This will not sync if TPIU is not configured, so you won't see
      packets in that case.
 
- `-v`: Verbose mode.
+ `-v, --verbose [x]`: Verbose mode level 0..3.
 
 Orbtop
 ------
@@ -445,42 +436,44 @@ SWO data on its TCP its port, with no requirement for the orbuculum multiplexer 
 
 Command line options for orbtop are;
 
- `-c [num]`: Cut screen output after number of lines.
+ `-c, --cut-after [num]`: Cut screen output after number of lines.
 
- `-d [DeleteMaterial]`: to take off front of filenames (for pretty printing).
+ `-d, --del-prefix [DeleteMaterial]`: to take off front of filenames (for pretty printing).
 
- `-D`: Switch off C++ symbol demangling (on by default).
+ `-D, --no-demangle`: Switch off C++ symbol demangling (on by default).
 
- `-e`: Set elf file for recovery of program symbols. This will be monitored and reloaded if it changes.
+ `-e, --elf-file`: Set elf file for recovery of program symbols. This will be monitored and reloaded if it changes.
 
- `-E`: Include exception (interrupt) measurements.
+ `-E, --exceptions`: Include exception (interrupt) measurements.
 
- `-g [LogFile]`: Append historic records to specified file on an ongoing basis.
+ `-f, --input-file [Filename]`: Take input from specified file
 
- `-h`: Brief help.
+ `-g, --record-file [LogFile]`: Append historic records to specified file on an ongoing basis.
 
- `-i [channel]`: Set Channel for ITM in TPIU decode (defaults to 1). Note that the TPIU must
-     be in use for this to make sense.  If you call the GenericsConfigureTracing
-     routine above with the ITM Channel set to 0 then the TPIU will be bypassed.
+ `-h, --help`: Brief help.
 
- `-I [Interval]`: Set integration and display interval in milliseconds (defaults to 1000 mS)
+ `-I, --interval [Interval]`: Set integration and display interval in milliseconds (defaults to 1000 mS)
 
- `-j [filename]`: Output to file in JSON format (or screen if <filename> is '-')
+ `-j, --json-file [filename]`: Output to file in JSON format (or screen if <filename> is '-')
 
- `-l`: Aggregate per line rather than per function
+ `-l, --agg-lines`: Aggregate per line rather than per function
 
- `-n`: Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)
+ `-n, --itm-sync`: Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)
 
- `-o [filename]`: Set file to be used for output history
+ `-o, --output-file [filename]`: Set file to be used for output history
 
- `-r <routines>`: Number of lines to record in history file
+ `-O, --objdump-opts [opts]`: Set options to pass directly to objdump
 
- `-s [server]:[port]`: to connect to. Defaults to localhost:3443
+ `-r, --routines <routines>`: Number of lines to record in history file
 
- `-t`: Use TPIU decoder.  This will not sync if TPIU is not configured, so you won't see
+ `-R, --report-file [filename]`: Report filenames as part of function discriminator
+
+ `-s, --server [server]:[port]`: to connect to. Defaults to localhost:3443
+
+ `-t, --tpiu`: Use TPIU decoder.  This will not sync if TPIU is not configured, so you won't see
      packets in that case.
 
- `-v`: Verbose mode.
+ `-v, --verbose [x]`: Verbose mode 0..3.
 
 Its worth a few notes about interrupt measurements. orbtop can provide information about the number of
 times an interrupt is called, what its maximum nesting is, how many 'execution ticks' it's active for
@@ -523,31 +516,33 @@ configured to stream parallel trace info (clue; the `startETM` option).
 
 The command line options of note are;
 
- `-a`: Don't use alternate address encoding. Select this if decodes don't seem to arrive correctly. You can discover if you need this option by using the `describeETM` command inside the debugger.
+ `-a, --alt-addr-enc`: Don't use alternate address encoding. Select this if decodes don't seem to arrive correctly. You can discover if you need this option by using the `describeETM` command inside the debugger.
  
- `-b [Length]`: Set length of post-mortem buffer, in KBytes (Default 32 KBytes)
+ `-b, --buffer-len [Length]`: Set length of post-mortem buffer, in KBytes (Default 32 KBytes)
  
- `-c [command]`: Set command line for external editor (0.000000 = filename, % = line). A few examples are;
+ `-c, --editor-cmd [command]`: Set command line for external editor (0.000000 = filename, % = line). A few examples are;
  
      * emacs; `-c emacs "+%l %f"`
      * codium/VSCode; `-c codium  -g "%f:%l"`
      * eclipse; `-c eclipse "%f:%l"`
      
- `-D`: Switch off C++ symbol demangling
+ `-D, --no-demangle`: Switch off C++ symbol demangling
  
- `-d [String]`: Material to delete off front of filenames
+ `-d, --del-prefix [String]`: Material to delete off front of filenames
  
- `-e [ElfFile]`: to use for symbols and source
+ `-e, --elf-file [ElfFile]`: to use for symbols and source
  
- `-E`: When reading from file, terminate at end of file rather than waiting for further input
+ `-E, --eof`: When reading from file, terminate at end of file rather than waiting for further input
  
- `-f [filename]`: Take input from specified file rather than live from a probe (useful for ETB decode)
+ `-f, --input-file [filename]`: Take input from specified file rather than live from a probe (useful for ETB decode)
+
+ `-h, --help`: Provide brief help
  
- `-p [protocol]`: to use, where protocols are MTB or ETM35 (default). Note that MTB only makes sense from a file.
+ `-p, --trace-proto [protocol]`: to use, where protocols are MTB or ETM35 (default). Note that MTB only makes sense from a file.
  
- `-s [Server:Port]`: to use
+ `-s, --server [Server:Port]`: to use
  
- `-t [channel]`: Use TPIU to strip TPIU on specfied channel (normally best to let `orbuculum` handle this
+ `-t, --tpiu [channel]`: Use TPIU to strip TPIU on specfied channel (normally best to let `orbuculum` handle this
  
 
 Once it's running you will receive an indication at the lower right of the screen that it's capturing data. Hitting `H` will hold the capture and it will decode whatever is currently in the buffer. More usefully, if the capture stream is lost (e.g. because of debugger entry) then it will auto-hold and decode the buffer, showing you the last instructions executed. You can use the arrow keys to move around this buffer and dive into individual source files. Hit the `?` key for a quick overview of available commands.
@@ -565,7 +560,7 @@ reliabilty but there's not too much we can do about that since the SWO
 link is unidirectional (no opportunity for re-transmits). The
 following section provides evidence for the claim that the link is good;
 
-A test 'mule' sends data flat out to the link at the maximum data rate
+On blackmagic a test 'mule' sends data flat out to the link at the maximum data rate
 of 2.25Mbps using a loop like the one below;
 
     while (1)
@@ -626,6 +621,23 @@ The output was;
 
 (On inspection, the last line of recorded data was indeed a 'D' line).
 
+ORBTrace Mini is considerably faster than blackmagic. To test that, strings were sent out at maximum speed
+over a 48Mbps SWO/Manch channel for an extended period of time. They were then collated and sorted by uniqueness, as follows;
+
+```
+$ time orbcat -c 0,"%c" | sort | uniq -c
+      1 ABCDEFGHIJKLMNOPQRST
+2385153869 ABCDEFGHIJKLMNOPQRSTUVWXYZ_*_abcdefghijklmnopqrstuvwxyz
+
+real    490m37.616s
+user    82m15.087s
+sys    11m2.847s
+```
+
+That is 124.4GBytes of user to user transfer, 155.5GBytes of line transfer with no errors at 5.4MBytes/sec line,
+4.32MBytes/sec user-to-user, assuming my math is holding up. As with blackmagic...if the wiring is reliable, the
+link will be.
+
 Using SWO in Battle
 ===================
 
@@ -665,7 +677,8 @@ Now, this works perfectly for chars, but you can also write longer
 values into the transit buffer so if, for example, you wanted to write
 32 bit values from a calculation, just update the routine to take
 int32_t and change the channel definition to be something more like
-`-c 4,calcResult,"%d"`.
+`-c 4,calcResult,"%d"`. You'll find example routines in the orbmule/examples/simple repository.
+
 
 Mixing Channels
 ---------------

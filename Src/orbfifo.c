@@ -79,7 +79,7 @@ static void _printHelp( const char *const progName )
     genericsPrintf( "Usage: %s [options]" EOL, progName );
     genericsPrintf( "    -b, --basedir:      <basedir> for channels" EOL );
     genericsPrintf( "    -c, --channel:      <Number>,<Name>,<Format> of channel to populate (repeat per channel)" EOL );
-    genericsPrintf( "    -e, --eof:          When reading from file, terminate at end of file rather than waiting for further input" EOL );
+    genericsPrintf( "    -E, --eof:          When reading from file, terminate at end of file rather than waiting for further input" EOL );
     genericsPrintf( "    -f, --input-file:   <filename> Take input from specified file" EOL );
     genericsPrintf( "    -h, --help:         This help" EOL );
     genericsPrintf( "    -P, --permanent:    Create permanent files rather than fifos" EOL );
@@ -99,7 +99,7 @@ struct option _longOptions[] =
 {
     {"basedir", required_argument, NULL, 'b'},
     {"channel", required_argument, NULL, 'c'},
-    {"eof", no_argument, NULL, 'e'},
+    {"eof", no_argument, NULL, 'E'},
     {"input-file", required_argument, NULL, 'f'},
     {"help", no_argument, NULL, 'h'},
     {"permanent", no_argument, NULL, 'P'},
@@ -121,7 +121,7 @@ static bool _processOptions( int argc, char *argv[] )
     uint chan;
     char *chanIndex;
 
-    while ( ( c = getopt_long ( argc, argv, "b:c:ef:hVn:Pt:v:w:", _longOptions, &optionIndex ) ) != -1 )
+    while ( ( c = getopt_long ( argc, argv, "b:c:Ef:hVn:Pt:v:w:", _longOptions, &optionIndex ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -131,7 +131,7 @@ static bool _processOptions( int argc, char *argv[] )
                 break;
 
             // ------------------------------------
-            case 'e':
+            case 'E':
                 options.fileTerminate = true;
                 break;
 
@@ -250,7 +250,8 @@ static bool _processOptions( int argc, char *argv[] )
         }
 
     /* ... and dump the config if we're being verbose */
-    genericsReport( V_INFO, "orbfifo version " GIT_DESCRIBE EOL );    
+    genericsReport( V_INFO, "orbfifo version " GIT_DESCRIBE EOL );
+
     if ( itmfifoGetUseTPIU( _r.f ) )
     {
         genericsReport( V_INFO, "Using TPIU  : true (ITM on channel %d)" EOL, itmfifoGettpiuITMChannel( _r.f ) );

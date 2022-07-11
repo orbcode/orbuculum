@@ -1,5 +1,8 @@
 Version 2.0.0 in Progress
 
+* New longopts & some name changes to options
+* makefile install and uninstall capability
+* orbtrace utility now supports SWO
 * Fix packet scheduling from orbuculum
 * Move to semantic numbering - 2.00 becomes 2.0.0. 
 * Various fixes in orbmortem for reliability and performance

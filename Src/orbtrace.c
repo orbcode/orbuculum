@@ -140,7 +140,7 @@ static void _printHelp( const char *const progName )
     genericsPrintf( "       -n, --serial-number: <Serial> any part of serial number to differentiate specific OrbTrace device" EOL );
     genericsPrintf( "       -p, --voltage:       <Ch>,<Voltage> Set voltage in V, Ch is vtref or vtpwr" EOL );
     genericsPrintf( "       -v, --verbose:       <level> Verbose mode 0(errors)..3(debug)" EOL );
-    genericsPrintf( "       -V, --version:       Print version and exit" EOL );    
+    genericsPrintf( "       -V, --version:       Print version and exit" EOL );
 
     //    genericsPrintf( "      *-b: <Brightness> Set default brightness of output leds" EOL );
     //    genericsPrintf( "      *-F: Force voltage setting" EOL );
@@ -199,8 +199,8 @@ static int _processOptions( struct RunTime *r, int argc, char *argv[]  )
 /* Process command line options into options and actions records */
 
 {
-  int c;
-  int optionIndex = 0;
+    int c;
+    int optionIndex = 0;
     float voltage;
     int channel;
     bool action;
@@ -364,7 +364,7 @@ static int _processOptions( struct RunTime *r, int argc, char *argv[]  )
                 _printVersion();
                 return false;
 
-	    // ------------------------------------
+            // ------------------------------------
             case 'w': /* Write parameters to NVRAM */
                 _set_action( r, ACTION_WRITE_PARAMS );
                 break;

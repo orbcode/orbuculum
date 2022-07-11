@@ -158,8 +158,8 @@ static void _printHelp( const char *const progName )
     genericsPrintf( "    -C, --editor-cmd:   <command> Command line for external editor (%f = filename, %l = line)" EOL );
     genericsPrintf( "    -D, --no-demangle:  Switch off C++ symbol demangling" EOL );
     genericsPrintf( "    -d, --del-prefix:   <String> Material to delete off the front of filenames" EOL );
-    genericsPrintf( "    -E, --elf-file:     <ElfFile> to use for symbols and source" EOL );
-    genericsPrintf( "    -e, --eof:          When reading from file, terminate at end of file rather than waiting for further input" EOL );
+    genericsPrintf( "    -e, --elf-file:     <ElfFile> to use for symbols and source" EOL );
+    genericsPrintf( "    -E, --eof:          When reading from file, terminate at end of file rather than waiting for further input" EOL );
     genericsPrintf( "    -f, --input-file:   <filename>: Take input from specified file" EOL );
     genericsPrintf( "    -h, --help:         This help" EOL );
     genericsPrintf( "    -O, --objdump-opts: <options> Options to pass directly to objdump" EOL );
@@ -187,8 +187,8 @@ static struct option _longOptions[] =
     {"editor-cmd", required_argument, NULL, 'C'},
     {"no-demangle", required_argument, NULL, 'D'},
     {"del-prefix", required_argument, NULL, 'd'},
-    {"elf-file", required_argument, NULL, 'E'},
-    {"eof", no_argument, NULL, 'e'},
+    {"elf-file", required_argument, NULL, 'e'},
+    {"eof", no_argument, NULL, 'E'},
     {"input-file", required_argument, NULL, 'f'},
     {"help", no_argument, NULL, 'h'},
     {"objdump-opts", required_argument, NULL, 'O'},
@@ -205,7 +205,7 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
 {
     int c, optionIndex = 0;
 
-    while ( ( c = getopt_long ( argc, argv, "Ab:C:Dd:eE:f:hVO:p:s:t:v:", _longOptions, &optionIndex ) ) != -1 )
+    while ( ( c = getopt_long ( argc, argv, "Ab:C:Dd:Ee:f:hVO:p:s:t:v:", _longOptions, &optionIndex ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -234,13 +234,13 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
                 break;
 
             // ------------------------------------
-            case 'e':
+            case 'E':
                 r->options->fileTerminate = true;
                 break;
 
             // ------------------------------------
 
-            case 'E':
+            case 'e':
                 r->options->elffile = optarg;
                 break;
 
@@ -340,7 +340,7 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
 
     /* ... and dump the config if we're being verbose */
     genericsReport( V_INFO, "orbmortem version " GIT_DESCRIBE EOL );
-    
+
     if ( r->options->protocol >= TRACE_PROT_NONE )
     {
         genericsExit( V_ERROR, "Unrecognised decode protocol" EOL );

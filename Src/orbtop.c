@@ -701,21 +701,21 @@ static void _outputTop( uint32_t total, uint32_t reportLines, struct reportLine 
                 }
 
                 genericsPrintf( C_DATA "%3" PRId32 " %-14s" C_RESET " | " C_DATA "%8" PRIu64 C_RESET " |" C_DATA " %5"
-                         PRIu32 C_RESET " | "C_DATA " %9" PRIu64 C_RESET "  |  " C_DATA "%9" PRIu64 C_RESET " | " C_DATA "%9" PRIu64 C_RESET "  | " C_DATA" %9" PRIu64 C_RESET EOL,
-                         e, exceptionName, _r.er[e].visits, _r.er[e].maxDepth, _r.er[e].totalTime, _r.er[e].totalTime / _r.er[e].visits, _r.er[e].minTime, _r.er[e].maxTime );
+                                PRIu32 C_RESET " | "C_DATA " %9" PRIu64 C_RESET "  |  " C_DATA "%9" PRIu64 C_RESET " | " C_DATA "%9" PRIu64 C_RESET "  | " C_DATA" %9" PRIu64 C_RESET EOL,
+                                e, exceptionName, _r.er[e].visits, _r.er[e].maxDepth, _r.er[e].totalTime, _r.er[e].totalTime / _r.er[e].visits, _r.er[e].minTime, _r.er[e].maxTime );
             }
         }
     }
 
     genericsPrintf( EOL C_RESET "[%s%s%s%s" C_RESET "] ",
-             ( _r.ITMoverflows != ITMDecoderGetStats( &_r.i )->overflow ) ? C_OVF_IND "V" : C_RESET "-",
-             ( _r.SWPkt != ITMDecoderGetStats( &_r.i )->SWPkt ) ? C_SOFT_IND "S" : C_RESET "-",
-             ( _r.TSPkt != ITMDecoderGetStats( &_r.i )->TSPkt ) ? C_TSTAMP_IND "T" : C_RESET "-",
-             ( _r.HWPkt != ITMDecoderGetStats( &_r.i )->HWPkt ) ? C_HW_IND "H" : C_RESET "-" );
+                    ( _r.ITMoverflows != ITMDecoderGetStats( &_r.i )->overflow ) ? C_OVF_IND "V" : C_RESET "-",
+                    ( _r.SWPkt != ITMDecoderGetStats( &_r.i )->SWPkt ) ? C_SOFT_IND "S" : C_RESET "-",
+                    ( _r.TSPkt != ITMDecoderGetStats( &_r.i )->TSPkt ) ? C_TSTAMP_IND "T" : C_RESET "-",
+                    ( _r.HWPkt != ITMDecoderGetStats( &_r.i )->HWPkt ) ? C_HW_IND "H" : C_RESET "-" );
 
     if ( _r.lastReportTicks )
         genericsPrintf( "Interval = " C_DATA "%" PRIu64 "mS " C_RESET "/ "C_DATA "%" PRIu64 C_RESET " (~" C_DATA "%" PRIu64 C_RESET " Ticks/mS)" EOL,
-                 lastTime - _r.lastReportmS, _r.timeStamp - _r.lastReportTicks, ( _r.timeStamp - _r.lastReportTicks ) / ( lastTime - _r.lastReportmS ) );
+                        lastTime - _r.lastReportmS, _r.timeStamp - _r.lastReportTicks, ( _r.timeStamp - _r.lastReportTicks ) / ( lastTime - _r.lastReportmS ) );
     else
     {
         genericsPrintf( C_RESET "Interval = " C_DATA "%" PRIu64 C_RESET "mS" EOL, lastTime - _r.lastReportmS );
@@ -1095,7 +1095,7 @@ bool _processOptions( int argc, char *argv[] )
             // ------------------------------------
             case 'V':
                 _printVersion();
-		return -EINVAL;		
+                return -EINVAL;
 
             // ------------------------------------
             case '?':
@@ -1130,6 +1130,7 @@ bool _processOptions( int argc, char *argv[] )
     }
 
     genericsReport( V_INFO, "orbtop version " GIT_DESCRIBE EOL );
+
     if ( options.file )
     {
         genericsReport( V_INFO, "Input File       : %s", options.file );

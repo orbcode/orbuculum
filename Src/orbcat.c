@@ -332,7 +332,7 @@ void _printHelp( const char *const progName )
 {
     fprintf( stdout, "Usage: %s [options]" EOL, progName );
     fprintf( stdout, "    -c, --channel:      <Number>,<Format> of channel to add into output stream (repeat per channel)" EOL );
-    fprintf( stdout, "    -e, --eof:          Terminate when the file/socket ends/is closed, or attempt to wait for more / reconnect" EOL );
+    fprintf( stdout, "    -E, --eof:          Terminate when the file/socket ends/is closed, or attempt to wait for more / reconnect" EOL );
     fprintf( stdout, "    -f, --input-file:   <filename> Take input from specified file" EOL );
     fprintf( stdout, "    -h, --help:         This help" EOL );
     fprintf( stdout, "    -n, --itm-sync:     Enforce sync requirement for ITM (i.e. ITM needsd to issue syncs)" EOL );
@@ -351,7 +351,7 @@ void _printVersion( void )
 static struct option _longOptions[] =
 {
     {"channel", required_argument, NULL, 'c'},
-    {"eof", no_argument, NULL, 'e'},
+    {"eof", no_argument, NULL, 'E'},
     {"input-file", required_argument, NULL, 'f'},
     {"help", no_argument, NULL, 'h'},
     {"itm-sync", no_argument, NULL, 'n'},
@@ -371,7 +371,7 @@ bool _processOptions( int argc, char *argv[] )
     char *chanIndex;
 #define DELIMITER ','
 
-    while ( ( c = getopt_long ( argc, argv, "c:ef:hVns:t:v:", _longOptions, &optionIndex ) ) != -1 )
+    while ( ( c = getopt_long ( argc, argv, "c:Ef:hVns:t:v:", _longOptions, &optionIndex ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -385,7 +385,7 @@ bool _processOptions( int argc, char *argv[] )
                 return false;
 
             // ------------------------------------
-            case 'e':
+            case 'E':
                 options.endTerminate = true;
                 break;
 

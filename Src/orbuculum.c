@@ -348,7 +348,7 @@ void _printHelp( const char *const progName )
 {
     genericsPrintf( "Usage: %s [options]" EOL, progName );
     genericsPrintf( "    -a, --serial-speed: <serialSpeed> to use" EOL );
-    genericsPrintf( "    -e, --eof:          When reading from file, terminate at end of file" EOL );
+    genericsPrintf( "    -E, --eof:          When reading from file, terminate at end of file" EOL );
     genericsPrintf( "    -f, --input-file:   <filename> Take input from specified file" EOL );
     genericsPrintf( "    -h, --help:         This help" EOL );
     genericsPrintf( "    -l, --listen-port:  <port> Listen port for the incoming connections (defaults to %d)" EOL, NWCLIENT_SERVER_PORT );
@@ -371,7 +371,7 @@ void _printVersion( void )
 static struct option _longOptions[] =
 {
     {"serial-speed", required_argument, NULL, 'a'},
-    {"eof", no_argument, NULL, 'e'},
+    {"eof", no_argument, NULL, 'E'},
     {"input-file", required_argument, NULL, 'f'},
     {"help", no_argument, NULL, 'h'},
     {"listen-port", required_argument, NULL, 'l'},
@@ -391,7 +391,7 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
     int c, optionIndex = 0;
 #define DELIMITER ','
 
-    while ( ( c = getopt_long ( argc, argv, "a:ef:hVl:m:no:p:s:t:v:", _longOptions, &optionIndex ) ) != -1 )
+    while ( ( c = getopt_long ( argc, argv, "a:Ef:hVl:m:no:p:s:t:v:", _longOptions, &optionIndex ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -402,7 +402,7 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
 
             // ------------------------------------
 
-            case 'e':
+            case 'E':
                 r->options->fileTerminate = true;
                 break;
 

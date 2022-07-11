@@ -297,6 +297,7 @@ install:
 	$(Q)install -D $(OLOC)/$(ORBCAT) --target-directory=$(DESTDIR)$(INSTALL_ROOT)bin
 	$(Q)install -D $(OLOC)/$(ORBDUMP) --target-directory=$(DESTDIR)$(INSTALL_ROOT)bin
 	$(Q)install -D $(OLOC)/$(ORBSTAT) --target-directory=$(DESTDIR)$(INSTALL_ROOT)bin
+	$(Q)install -D $(OLOC)/$(ORBTOP) --target-directory=$(DESTDIR)$(INSTALL_ROOT)bin
 	$(Q)install -D $(OLOC)/$(ORBMORTEM) --target-directory=$(DESTDIR)$(INSTALL_ROOT)bin
 	$(Q)install -D $(OLOC)/$(ORBPROFILE) --target-directory=$(DESTDIR)$(INSTALL_ROOT)bin
 	$(Q)install -D $(OLOC)/$(ORBTRACE) --target-directory=$(DESTDIR)$(INSTALL_ROOT)bin
@@ -309,6 +310,7 @@ uninstall:
 		$(DESTDIR)$(INSTALL_ROOT)bin/$(ORBCAT) \
 		$(DESTDIR)$(INSTALL_ROOT)bin/$(ORBDUMP) \
 		$(DESTDIR)$(INSTALL_ROOT)bin/$(ORBSTAT) \
+		$(DESTDIR)$(INSTALL_ROOT)bin/$(ORBTOP) \
 		$(DESTDIR)$(INSTALL_ROOT)bin/$(ORBMORTEM) \
 		$(DESTDIR)$(INSTALL_ROOT)bin/$(ORBPROFILE) \
 		$(DESTDIR)$(INSTALL_ROOT)bin/$(ORBTRACE) \
