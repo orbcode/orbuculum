@@ -12,6 +12,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netdb.h>
+#include <getopt.h>
 
 #include "generics.h"
 #include "uthash.h"
@@ -153,27 +154,49 @@ void _protocolPump( uint8_t c )
     }
 }
 // ====================================================================================================
-void _printHelp( char *progName )
+void _printHelp( const char *const progName )
 
 {
-    fprintf( stdout, "Usage: %s [options]" EOL, progName );
-    fprintf( stdout, "       -h: This help" EOL );
-    fprintf( stdout, "       -l: <timelen> Length of time in ms to record from point of acheiving sync (defaults to %dmS)" EOL, options.timelen );
-    fprintf( stdout, "       -n: Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
-    fprintf( stdout, "       -o: <filename> to be used for dump file (defaults to %s)" EOL, options.outfile );
-    fprintf( stdout, "       -p: <Port> to use" EOL );
-    fprintf( stdout, "       -s: <Server> to use" EOL );
-    fprintf( stdout, "       -t: <channel> Use TPIU decoder on specified channel, normally 1" EOL );
-    fprintf( stdout, "       -v: <level> Verbose mode 0(errors)..3(debug)" EOL );
-    fprintf( stdout, "       -w: Write syncronously to the output file after every packet" EOL );
+    genericsPrintf( "Usage: %s [options]" EOL, progName );
+    genericsPrintf( "    -h, --help:         This help" EOL );
+    genericsPrintf( "    -l, --length:       <timelen> Length of time in ms to record from point of acheiving sync (defaults to %dmS)" EOL, options.timelen );
+    genericsPrintf( "    -n, --itm-sync:     Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
+    genericsPrintf( "    -o, --output-file:  <filename> to be used for dump file (defaults to %s)" EOL, options.outfile );
+    genericsPrintf( "    -p, --port:         <Port> to use" EOL );
+    genericsPrintf( "    -s, --server:       <Server> to use" EOL );
+    genericsPrintf( "    -t, --tpiu:         <channel> Use TPIU decoder on specified channel, normally 1" EOL );
+    genericsPrintf( "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
+    genericsPrintf( "    -V, --version:      Print version and exit" EOL );
+    genericsPrintf( "    -w, --sync-write:   Write syncronously to the output file after every packet" EOL );
 }
 // ====================================================================================================
-int _processOptions( int argc, char *argv[] )
+void _printVersion( void )
 
 {
-    int c;
+    genericsPrintf( "orbdump version " GIT_DESCRIBE EOL );
+}
+// ====================================================================================================
+struct option longOptions[] =
+{
+    {"help", no_argument, NULL, 'h'},
+    {"length", required_argument, NULL, 'l'},
+    {"itm-sync", no_argument, NULL, 'n'},
+    {"output-file", required_argument, NULL, 'o'},
+    {"port", required_argument, NULL, 'p'},
+    {"server", required_argument, NULL, 's'},
+    {"tpiu", required_argument, NULL, 't'},
+    {"verbose", required_argument, NULL, 'v'},
+    {"version", no_argument, NULL, 'V'},
+    {"sync-write", no_argument, NULL, 'w'},
+    {NULL, no_argument, NULL, 0}
+};
+// ====================================================================================================
+bool _processOptions( int argc, char *argv[] )
 
-    while ( ( c = getopt ( argc, argv, "hl:no:p:s:t:v:w" ) ) != -1 )
+{
+    int c, optionIndex = 0;
+
+    while ( ( c = getopt_long ( argc, argv, "hVl:no:p:s:t:v:w", longOptions, &optionIndex ) ) != -1 )
         switch ( c )
         {
             case 'o':
@@ -212,6 +235,11 @@ int _processOptions( int argc, char *argv[] )
 
             case 'h':
                 _printHelp( argv[0] );
+                return false;
+
+            // ------------------------------------
+            case 'V':
+                _printVersion();
                 return false;
 
             case '?':

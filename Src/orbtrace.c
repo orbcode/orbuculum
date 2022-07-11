@@ -128,7 +128,7 @@ static void _intHandler( int sig )
     exit( 0 );
 }
 // ====================================================================================================
-static void _printHelp( char *progName )
+static void _printHelp( const char *const progName )
 
 {
     genericsPrintf( "Usage: %s [options]" EOL, progName );

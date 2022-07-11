@@ -14,6 +14,7 @@
 #include <stdio.h>
 #include <assert.h>
 #include <signal.h>
+#include <getopt.h>
 
 #include "git_version_info.h"
 #include "generics.h"
@@ -148,40 +149,67 @@ static void _intHandler( int sig )
     exit( 0 );
 }
 // ====================================================================================================
-static void _printHelp( struct RunTime *r )
+static void _printHelp( const char *const progName )
 
 {
-    genericsPrintf( "Usage: %s [options]" EOL, r->progName );
-    genericsPrintf( "       -a: Do not use alternate address encoding" EOL );
-    genericsPrintf( "       -b: <Length> Length of post-mortem buffer, in KBytes (Default %d KBytes)" EOL, DEFAULT_PM_BUFLEN_K );
-    genericsPrintf( "       -c: <command> Command line for external editor (%f = filename, %l = line)" EOL );
-    genericsPrintf( "       -D: Switch off C++ symbol demangling" EOL );
-    genericsPrintf( "       -d: <String> Material to delete off front of filenames" EOL );
-    genericsPrintf( "       -e: <ElfFile> to use for symbols and source" EOL );
-    genericsPrintf( "       -E: When reading from file, terminate at end of file rather than waiting for further input" EOL );
-    genericsPrintf( "       -f <filename>: Take input from specified file" EOL );
-    genericsPrintf( "       -h: This help" EOL );
-    genericsPrintf( "       -O: <options> Options to pass directly to objdump" EOL );
-    genericsPrintf( "       -p: {ETM35|MTB} trace protocol to use, default is ETM35" EOL );
-    genericsPrintf( "       -s: <Server>:<Port> to use" EOL );
-    genericsPrintf( "       -t <channel>: Use TPIU to strip TPIU on specfied channel" EOL );
-    genericsPrintf( "       -v: <level> Verbose mode 0(errors)..3(debug)" EOL );
+    genericsPrintf( "Usage: %s [options]" EOL, progName );
+    genericsPrintf( "    -A, --alt-addr-enc: Do not use alternate address encoding" EOL );
+    genericsPrintf( "    -b, --buffer-len:   <Length> Length of post-mortem buffer, in KBytes (Default %d KBytes)" EOL, DEFAULT_PM_BUFLEN_K );
+    genericsPrintf( "    -C, --editor-cmd:   <command> Command line for external editor (%f = filename, %l = line)" EOL );
+    genericsPrintf( "    -D, --no-demangle:  Switch off C++ symbol demangling" EOL );
+    genericsPrintf( "    -d, --del-prefix:   <String> Material to delete off the front of filenames" EOL );
+    genericsPrintf( "    -E, --elf-file:     <ElfFile> to use for symbols and source" EOL );
+    genericsPrintf( "    -e, --eof:          When reading from file, terminate at end of file rather than waiting for further input" EOL );
+    genericsPrintf( "    -f, --input-file:   <filename>: Take input from specified file" EOL );
+    genericsPrintf( "    -h, --help:         This help" EOL );
+    genericsPrintf( "    -O, --objdump-opts: <options> Options to pass directly to objdump" EOL );
+    genericsPrintf( "    -p, --trace-proto:  {ETM35|MTB} trace protocol to use, default is ETM35" EOL );
+    genericsPrintf( "    -s, --server:       <Server>:<Port> to use" EOL );
+    genericsPrintf( "    -t, --tpiu:         <channel>: Use TPIU to strip TPIU on specfied channel" EOL );
+    genericsPrintf( "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
+    genericsPrintf( "    -V, --version:      Print version and exit" EOL );
     genericsPrintf( EOL "(Will connect one port higher than that set in -s when TPIU is not used)" EOL );
     genericsPrintf( EOL "(this will automatically select the second output stream from orb TPIU.)" EOL );
     genericsPrintf( EOL "Environment Variables;" EOL );
     genericsPrintf( "  OBJDUMP: to use non-standard obbdump binary" EOL );
 }
 // ====================================================================================================
-static int _processOptions( int argc, char *argv[], struct RunTime *r )
+void _printVersion( void )
 
 {
-    int c;
+    genericsPrintf( "orbmortem version " GIT_DESCRIBE EOL );
+}
+// ====================================================================================================
+struct option longOptions[] =
+{
+    {"alt-addr-enc", no_argument, NULL, 'A'},
+    {"buffer-len", required_argument, NULL, 'b'},
+    {"editor-cmd", required_argument, NULL, 'C'},
+    {"no-demangle", required_argument, NULL, 'D'},
+    {"del-prefix", required_argument, NULL, 'd'},
+    {"elf-file", required_argument, NULL, 'E'},
+    {"eof", no_argument, NULL, 'e'},
+    {"input-file", required_argument, NULL, 'f'},
+    {"help", no_argument, NULL, 'h'},
+    {"objdump-opts", required_argument, NULL, 'O'},
+    {"trace-proto", required_argument, NULL, 'p'},
+    {"server", required_argument, NULL, 's'},
+    {"tpiu", required_argument, NULL, 't'},
+    {"verbose", required_argument, NULL, 'v'},
+    {"version", no_argument, NULL, 'V'},
+    {NULL, no_argument, NULL, 0}
+};
+// ====================================================================================================
+static bool _processOptions( int argc, char *argv[], struct RunTime *r )
 
-    while ( ( c = getopt ( argc, argv, "ab:c:Dd:Ee:f:hO:p:s:t:v:" ) ) != -1 )
+{
+    int c, optionIndex = 0;
+
+    while ( ( c = getopt_long ( argc, argv, "Ab:C:Dd:eE:f:hVO:p:s:t:v:", longOptions, &optionIndex ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
-            case 'a':
+            case 'A':
                 r->options->noAltAddr = true;
                 break;
 
@@ -191,7 +219,7 @@ static int _processOptions( int argc, char *argv[], struct RunTime *r )
                 break;
 
             // ------------------------------------
-            case 'c':
+            case 'C':
                 r->options->openFileCL = optarg;
                 break;
 
@@ -206,13 +234,13 @@ static int _processOptions( int argc, char *argv[], struct RunTime *r )
                 break;
 
             // ------------------------------------
-            case 'E':
+            case 'e':
                 r->options->fileTerminate = true;
                 break;
 
             // ------------------------------------
 
-            case 'e':
+            case 'E':
                 r->options->elffile = optarg;
                 break;
 
@@ -225,7 +253,12 @@ static int _processOptions( int argc, char *argv[], struct RunTime *r )
             // ------------------------------------
 
             case 'h':
-                _printHelp( r );
+                _printHelp( r->progName );
+                return false;
+
+            // ------------------------------------
+            case 'V':
+                _printVersion();
                 return false;
 
             // ------------------------------------

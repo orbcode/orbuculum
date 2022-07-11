@@ -243,6 +243,7 @@ get_version:
 	$(Q)echo "#define GIT_BRANCH \""`git rev-parse --abbrev-ref HEAD`\" >> $(OLOC)/$(GIT_HASH_FILENAME)
 	$(Q)echo "#define BUILD_DATE \""`date "+%Y-%m-%d %H:%M:%S%z"`\" >> $(OLOC)/$(GIT_HASH_FILENAME)
 	$(Q)echo "#define GIT_DIRTY " $(DIRTY) >> $(OLOC)/$(GIT_HASH_FILENAME)
+	$(Q)echo "#define GIT_DESCRIBE \"`git describe --tags --always --dirty`\"" >> $(OLOC)/$(GIT_HASH_FILENAME)
 
 $(OLOC)/%.o : %.c
 	$(Q)mkdir -p $(basename $@)

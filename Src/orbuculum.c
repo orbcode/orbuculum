@@ -24,6 +24,7 @@
 #include <strings.h>
 #include <string.h>
 #include <pthread.h>
+#include <getopt.h>
 #if defined OSX
     #include <sys/ioctl.h>
     #include <libusb.h>
@@ -342,31 +343,55 @@ static void _doExit( void )
     }
 }
 // ====================================================================================================
-void _printHelp( char *progName )
+void _printHelp( const char *const progName )
 
 {
     genericsPrintf( "Usage: %s [options]" EOL, progName );
-    genericsPrintf( "       -a: <serialSpeed> to use" EOL );
-    genericsPrintf( "       -e: When reading from file, terminate at end of file" EOL );
-    genericsPrintf( "       -f: <filename> Take input from specified file" EOL );
-    genericsPrintf( "       -h: This help" EOL );
-    genericsPrintf( "       -l: <port> Listen port for the incoming connections (defaults to %d)" EOL, NWCLIENT_SERVER_PORT );
-    genericsPrintf( "       -m: <interval> Output monitor information about the link at <interval>ms" EOL );
-    genericsPrintf( "       -o: <filename> to be used for dump file" EOL );
-    genericsPrintf( "       -p: <serialPort> to use" EOL );
-    genericsPrintf( "       -s: <Server>:<Port> to use" EOL );
-    genericsPrintf( "       -t: <Channel , ...> Use TPIU channels (and strip TIPU framing from output flows)" EOL );
-    genericsPrintf( "       -v: <level> Verbose mode 0(errors)..3(debug)" EOL );
+    genericsPrintf( "    -a, --serial-speed: <serialSpeed> to use" EOL );
+    genericsPrintf( "    -e, --eof:          When reading from file, terminate at end of file" EOL );
+    genericsPrintf( "    -f, --input-file:   <filename> Take input from specified file" EOL );
+    genericsPrintf( "    -h, --help:         This help" EOL );
+    genericsPrintf( "    -l, --listen-port:  <port> Listen port for the incoming connections (defaults to %d)" EOL, NWCLIENT_SERVER_PORT );
+    genericsPrintf( "    -m, --monitor:      <interval> Output monitor information about the link at <interval>ms" EOL );
+    genericsPrintf( "    -o, --output-file:  <filename> to be used for dump file" EOL );
+    genericsPrintf( "    -p, --serial-port:  <serialPort> to use" EOL );
+    genericsPrintf( "    -s, --server:       <Server>:<Port> to use" EOL );
+    genericsPrintf( "    -t, --tpiu:         <Channel , ...> Use TPIU channels (and strip TPIU framing from output flows)" EOL );
+    genericsPrintf( "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
+    genericsPrintf( "    -V, --version:      Print version and exit" EOL );
 }
 
 // ====================================================================================================
-int _processOptions( int argc, char *argv[], struct RunTime *r )
+void _printVersion( void )
 
 {
-    int c;
+    genericsPrintf( "oruculum version " GIT_DESCRIBE EOL );
+}
+// ====================================================================================================
+struct option longOptions[] =
+{
+    {"serial-speed", required_argument, NULL, 'a'},
+    {"eof", no_argument, NULL, 'e'},
+    {"input-file", required_argument, NULL, 'f'},
+    {"help", no_argument, NULL, 'h'},
+    {"listen-port", required_argument, NULL, 'l'},
+    {"monitor", required_argument, NULL, 'm'},
+    {"output-file", required_argument, NULL, 'o'},
+    {"serial-port", required_argument, NULL, 'p'},
+    {"server", required_argument, NULL, 's'},
+    {"tpiu", required_argument, NULL, 't'},
+    {"verbose", required_argument, NULL, 'v'},
+    {"version", no_argument, NULL, 'V'},
+    {NULL, no_argument, NULL, 0}
+};
+// ====================================================================================================
+bool _processOptions( int argc, char *argv[], struct RunTime *r )
+
+{
+    int c, optionIndex = 0;
 #define DELIMITER ','
 
-    while ( ( c = getopt ( argc, argv, "a:ef:hl:m:no:p:s:t:v:" ) ) != -1 )
+    while ( ( c = getopt_long ( argc, argv, "a:ef:hVl:m:no:p:s:t:v:", longOptions, &optionIndex ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -389,6 +414,11 @@ int _processOptions( int argc, char *argv[], struct RunTime *r )
             // ------------------------------------
             case 'h':
                 _printHelp( argv[0] );
+                return false;
+
+            // ------------------------------------
+            case 'V':
+                _printVersion();
                 return false;
 
             // ------------------------------------
