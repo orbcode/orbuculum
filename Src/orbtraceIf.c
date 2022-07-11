@@ -162,10 +162,14 @@ static bool _doInterfaceControlTransfer( struct OrbtraceIf *o, uint8_t interface
         return false;
     }
 
+#ifdef WIN32
+
     if ( libusb_claim_interface( o->handle,  interface ) != 0 )
     {
         return false;
     }
+
+#endif
 
     bool isOk = libusb_control_transfer(
                             o->handle,
@@ -178,10 +182,14 @@ static bool _doInterfaceControlTransfer( struct OrbtraceIf *o, uint8_t interface
                             0
                 ) >= 0;
 
+#ifdef WIN32
+
     if ( libusb_release_interface( o->handle,  interface ) != 0 )
     {
         return false;
     }
+
+#endif
 
     return isOk;
 }
