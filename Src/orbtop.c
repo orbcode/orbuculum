@@ -1351,6 +1351,7 @@ int main( int argc, char *argv[] )
                 if ( ITMDecoderGetStats( &_r.i )->tpiuSyncCount )
                 {
                     genericsReport( V_WARN, "Got a TPIU sync while decoding ITM...did you miss a -t option?" EOL );
+                    ITMDecoderGetStats( &_r.i )->tpiuSyncCount = 0;
                 }
             }
         }
