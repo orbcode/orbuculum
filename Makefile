@@ -173,7 +173,7 @@ HOST=-lc -lusb
 GIT_HASH_FILENAME=git_version_info.h
 
 CFLAGS +=  $(ARCH_FLAGS) $(STARTUP_DEFS) $(OPT_LEVEL) $(DEBUG_OPTS) \
-           -ffunction-sections -fdata-sections -Wall -Wno-unused-result $(INCLUDE_PATHS) \
+           -Wall -Wno-unused-result $(INCLUDE_PATHS) \
            -include $(SCREEN_PALETTE) $(GCC_DEFINE)
 ASFLAGS += -c $(DEBUG_OPTS) $(INCLUDE_PATHS) $(ARCH_FLAGS) $(GCC_DEFINE) \
            -x assembler-with-cpp
