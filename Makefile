@@ -293,16 +293,29 @@ $(ORBTRACE) : $(ORBTRACE_POBJS)
 
 install:
 	$(Q)install -D $(OLOC)/$(ORBUCULUM) --target-directory=$(DESTDIR)$(INSTALL_ROOT)bin
-	$(Q)install -D $(OLOC)/$(ORBFIFO) --target-directory=$(DESTDIR)$(INSTALL_ROOT)bin
 	$(Q)install -D $(OLOC)/$(ORBCAT) --target-directory=$(DESTDIR)$(INSTALL_ROOT)bin
-	$(Q)install -D $(OLOC)/$(ORBDUMP) --target-directory=$(DESTDIR)$(INSTALL_ROOT)bin
-	$(Q)install -D $(OLOC)/$(ORBSTAT) --target-directory=$(DESTDIR)$(INSTALL_ROOT)bin
 	$(Q)install -D $(OLOC)/$(ORBTOP) --target-directory=$(DESTDIR)$(INSTALL_ROOT)bin
 	$(Q)install -D $(OLOC)/$(ORBMORTEM) --target-directory=$(DESTDIR)$(INSTALL_ROOT)bin
 	$(Q)install -D $(OLOC)/$(ORBPROFILE) --target-directory=$(DESTDIR)$(INSTALL_ROOT)bin
 	$(Q)install -D $(OLOC)/$(ORBTRACE) --target-directory=$(DESTDIR)$(INSTALL_ROOT)bin
+ifndef WINDOWS
+	$(Q)install -D $(OLOC)/$(ORBFIFO) --target-directory=$(DESTDIR)$(INSTALL_ROOT)bin
+	$(Q)install -D $(OLOC)/$(ORBDUMP) --target-directory=$(DESTDIR)$(INSTALL_ROOT)bin
+	$(Q)install -D $(OLOC)/$(ORBSTAT) --target-directory=$(DESTDIR)$(INSTALL_ROOT)bin
+endif
+
 	$(Q)install -D -m 644 Support/gdbtrace.init --target-directory=$(DESTDIR)$(INSTALL_ROOT)share/orbcode
 	-@echo "Install complete"
+
+ifdef WINDOWS
+install-mingw-deps:
+	$(Q)ldd $(OLOC)/$(ORBUCULUM) | grep -vi System32 | gawk '{ print $$3 }' | xargs -rt cp -t $(DESTDIR)$(INSTALL_ROOT)bin
+	$(Q)ldd $(OLOC)/$(ORBCAT) | grep -vi System32 | gawk '{ print $$3 }' | xargs -rt cp -t $(DESTDIR)$(INSTALL_ROOT)bin
+	$(Q)ldd $(OLOC)/$(ORBTOP) | grep -vi System32 | gawk '{ print $$3 }' | xargs -rt cp -t $(DESTDIR)$(INSTALL_ROOT)bin
+	$(Q)ldd $(OLOC)/$(ORBMORTEM) | grep -vi System32 | gawk '{ print $$3 }' | xargs -rt cp -t $(DESTDIR)$(INSTALL_ROOT)bin
+	$(Q)ldd $(OLOC)/$(ORBMORTEM) | grep -vi System32 | gawk '{ print $$3 }' | xargs -rt cp -t $(DESTDIR)$(INSTALL_ROOT)bin
+	$(Q)ldd $(OLOC)/$(ORBTRACE) | grep -vi System32 | gawk '{ print $$3 }' | xargs -rt cp -t $(DESTDIR)$(INSTALL_ROOT)bin
+endif
 
 uninstall:
 	$(Q)rm -f $(DESTDIR)$(INSTALL_ROOT)bin/$(ORBUCULUM) \
@@ -339,29 +352,6 @@ print-%:
 
 pretty:
 	$(Q)-$(ASTYLE) --options=config/astyle.conf "Inc/*.h" "Src/*.c"
-
-ifdef WINDOWS
-.PHONY: dist_win_zip
-
-dist_win_zip:
-	-@echo "Building Windows distributable"
-	mkdir -p $(OLOC)/dist_win
-	cp $(OLOC)/$(ORBUCULUM) $(OLOC)/dist_win
-	cp $(OLOC)/$(ORBCAT) $(OLOC)/dist_win
-	cp $(OLOC)/$(ORBTOP) $(OLOC)/dist_win
-	cp $(OLOC)/$(ORBMORTEM) $(OLOC)/dist_win
-	cp $(OLOC)/$(ORBTRACE) $(OLOC)/dist_win
-
-	-@echo "Copy dependencies"
-	$(Q)ldd $(OLOC)/$(ORBUCULUM)  | grep -vi System32 | gawk '{ print $$3 }' | xargs -rt cp -t $(OLOC)/dist_win
-	$(Q)ldd $(OLOC)/$(ORBCAT)  | grep -vi System32 | gawk '{ print $$3 }' | xargs -rt cp -t $(OLOC)/dist_win
-	$(Q)ldd $(OLOC)/$(ORBTOP)  | grep -vi System32 | gawk '{ print $$3 }' | xargs -rt cp -t $(OLOC)/dist_win
-	$(Q)ldd $(OLOC)/$(ORBMORTEM)  | grep -vi System32 | gawk '{ print $$3 }' | xargs -rt cp -t $(OLOC)/dist_win
-	$(Q)ldd $(OLOC)/$(ORBTRACE)  | grep -vi System32 | gawk '{ print $$3 }' | xargs -rt cp -t $(OLOC)/dist_win
-
-	-@echo "Creating archive $(OLOC)/orbuculum_win.zip"
-	$(Q)(cd $(OLOC)/dist_win && zip ../orbuculum_win.zip *)
-endif
 
 -include $(PDEPS)
 

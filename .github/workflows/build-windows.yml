@@ -23,9 +23,10 @@ jobs:
             zip
       - uses: actions/checkout@v2
       - run: make build
-      - run: make dist_win_zip
+      - run: make install install-mingw-deps DESTDIR=ofiles/dist_win INSTALL_ROOT=/
       - uses: actions/upload-artifact@v3
         with:
           name: orbuculum-win64
-          path: ofiles/dist_win/*.*
+          path: ofiles/dist_win/**/*.*
+          if-no-files-found: error
 
