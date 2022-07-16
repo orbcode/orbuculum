@@ -9,9 +9,6 @@
 #include <unistd.h>
 #include <ctype.h>
 #include <stdio.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <netdb.h>
 #include <getopt.h>
 
 #include "generics.h"
@@ -20,6 +17,7 @@
 #include "generics.h"
 #include "tpiuDecoder.h"
 #include "itmDecoder.h"
+#include "stream.h"
 
 #include "nw.h"
 
@@ -287,20 +285,22 @@ bool _processOptions( int argc, char *argv[] )
 
     return true;
 }
+
+static struct Stream *_tryOpenStream()
+{
+    return streamCreateSocket( options.server, options.port );
+}
+
 // ====================================================================================================
 int main( int argc, char *argv[] )
-
 {
-    int sockfd;
-    struct sockaddr_in serv_addr;
-    struct hostent *server;
     uint8_t cbw[TRANSFER_SIZE];
     uint64_t firstTime = 0;
     size_t octetsRxed = 0;
     FILE *opFile;
 
-    ssize_t readLength, t;
-    int flag = 1;
+    ssize_t t;
+    size_t receivedSize;
 
     bool haveSynced = false;
 
@@ -313,33 +313,9 @@ int main( int argc, char *argv[] )
     TPIUDecoderInit( &_r.t );
     ITMDecoderInit( &_r.i, options.forceITMSync );
 
-    sockfd = socket( AF_INET, SOCK_STREAM, 0 );
-    setsockopt( sockfd, SOL_SOCKET, SO_REUSEPORT, &flag, sizeof( flag ) );
+    struct Stream *stream = _tryOpenStream();
 
-    if ( sockfd < 0 )
-    {
-        genericsReport( V_ERROR, "Error creating socket" EOL );
-        return -1;
-    }
-
-
-    /* Now open the network connection */
-    bzero( ( char * ) &serv_addr, sizeof( serv_addr ) );
-    server = gethostbyname( options.server );
-
-    if ( !server )
-    {
-        genericsReport( V_ERROR, "Cannot find host" EOL );
-        return -1;
-    }
-
-    serv_addr.sin_family = AF_INET;
-    bcopy( ( char * )server->h_addr,
-           ( char * )&serv_addr.sin_addr.s_addr,
-           server->h_length );
-    serv_addr.sin_port = htons( options.port );
-
-    if ( connect( sockfd, ( struct sockaddr * ) &serv_addr, sizeof( serv_addr ) ) < 0 )
+    if ( stream == NULL )
     {
         genericsReport( V_ERROR, "Could not connect" EOL );
         return -1;
@@ -357,8 +333,24 @@ int main( int argc, char *argv[] )
     genericsReport( V_INFO, "Waiting for sync" EOL );
 
     /* Start the process of collecting the data */
-    while ( ( readLength = read( sockfd, cbw, TRANSFER_SIZE ) ) > 0 )
+    while ( true )
     {
+        enum ReceiveResult result = stream->receive( stream, cbw, TRANSFER_SIZE, NULL, &receivedSize );
+
+        if ( result != RECEIVE_RESULT_OK )
+        {
+            if ( result == RECEIVE_RESULT_EOF )
+            {
+                break;
+            }
+
+            if ( result == RECEIVE_RESULT_ERROR )
+            {
+                genericsReport( V_ERROR, "Reading from connection failed" EOL );
+                return -2;
+            }
+        }
+
         if ( ( options.timelen ) && ( ( firstTime != 0 ) && ( ( _timestamp() - firstTime ) > options.timelen ) ) )
         {
             /* This packet arrived at the end of the window...finish the write process */
@@ -367,7 +359,7 @@ int main( int argc, char *argv[] )
 
         uint8_t *c = cbw;
 
-        t = readLength;
+        t = receivedSize;
 
         while ( t-- )
         {
@@ -396,7 +388,7 @@ int main( int argc, char *argv[] )
             genericsReport( V_INFO, "Started recording" EOL );
         }
 
-        octetsRxed += fwrite( cbw, 1, readLength, opFile );
+        octetsRxed += fwrite( cbw, 1, receivedSize, opFile );
 
         if ( !ITMDecoderIsSynced( &_r.i ) )
         {
@@ -405,14 +397,19 @@ int main( int argc, char *argv[] )
 
         if ( options.writeSync )
         {
+#if defined(WIN32)
+            _flushall();
+#else
             sync();
+#endif
         }
     }
 
-    close( sockfd );
+    stream->close( stream );
+    free( stream );
     fclose( opFile );
 
-    if ( readLength <= 0 )
+    if ( receivedSize <= 0 )
     {
         genericsReport( V_ERROR, "Network Read failed" EOL );
         return -2;
