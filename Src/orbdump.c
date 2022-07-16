@@ -38,7 +38,7 @@ struct                                      /* Record for options, either defaul
     /* File to output dump to */
     char *outfile;
 
-    /* Do we need to write syncronously */
+    /* Do we need to write synchronously */
     bool writeSync;
 
     /* How long to dump */
@@ -165,7 +165,7 @@ void _printHelp( const char *const progName )
     genericsPrintf( "    -t, --tpiu:         <channel> Use TPIU decoder on specified channel, normally 1" EOL );
     genericsPrintf( "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
     genericsPrintf( "    -V, --version:      Print version and exit" EOL );
-    genericsPrintf( "    -w, --sync-write:   Write syncronously to the output file after every packet" EOL );
+    genericsPrintf( "    -w, --sync-write:   Write synchronously to the output file after every packet" EOL );
 }
 // ====================================================================================================
 void _printVersion( void )
