@@ -752,7 +752,7 @@ int main( int argc, char *argv[] )
             {
                 stream = streamCreateSocket( _r.options->server, _r.options->port );
 
-                if ( !stream )
+                if ( stream )
                 {
                     break;
                 }
@@ -816,22 +816,16 @@ int main( int argc, char *argv[] )
                 }
             }
 
-
-            if ( _r.rawBlock.fillLevel <= 0 )
-            {
-                /* We are at EOF (Probably the descriptor closed) */
-                break;
-            }
-
             /* ...and record the fact that we received some data */
             _r.intervalBytes += _r.rawBlock.fillLevel;
 
             /* Pump all of the data through the protocol handler */
             uint8_t *c = _r.rawBlock.buffer;
 
-            while ( _r.rawBlock.fillLevel-- )
+            while ( _r.rawBlock.fillLevel > 0 )
             {
                 _protocolPump( &_r, *c++ );
+                _r.rawBlock.fillLevel--;
             }
 
             /* Check to make sure there's not an unexpected TPIU in here */
