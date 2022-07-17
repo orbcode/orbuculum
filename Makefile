@@ -246,7 +246,7 @@ $(OLOC)/%.o : %.c
 	Compiling $<)
 
 ifdef WINDOWS
-build: $(ORBUCULUM)            $(ORBCAT) $(ORBTOP)            $(ORBMORTEM) $(ORBPROFILE) $(ORBTRACE)
+build: $(ORBUCULUM)            $(ORBCAT) $(ORBTOP)            $(ORBMORTEM) $(ORBPROFILE) $(ORBTRACE) $(ORBSTAT)
 else
 build: $(ORBUCULUM) $(ORBFIFO) $(ORBCAT) $(ORBTOP) $(ORBDUMP) $(ORBMORTEM) $(ORBPROFILE) $(ORBTRACE) $(ORBSTAT)
 endif
@@ -298,10 +298,10 @@ install:
 	$(Q)install -D $(OLOC)/$(ORBMORTEM) --target-directory=$(DESTDIR)$(INSTALL_ROOT)bin
 	$(Q)install -D $(OLOC)/$(ORBPROFILE) --target-directory=$(DESTDIR)$(INSTALL_ROOT)bin
 	$(Q)install -D $(OLOC)/$(ORBTRACE) --target-directory=$(DESTDIR)$(INSTALL_ROOT)bin
+	$(Q)install -D $(OLOC)/$(ORBSTAT) --target-directory=$(DESTDIR)$(INSTALL_ROOT)bin
 ifndef WINDOWS
 	$(Q)install -D $(OLOC)/$(ORBFIFO) --target-directory=$(DESTDIR)$(INSTALL_ROOT)bin
 	$(Q)install -D $(OLOC)/$(ORBDUMP) --target-directory=$(DESTDIR)$(INSTALL_ROOT)bin
-	$(Q)install -D $(OLOC)/$(ORBSTAT) --target-directory=$(DESTDIR)$(INSTALL_ROOT)bin
 endif
 
 	$(Q)install -D -m 644 Support/gdbtrace.init --target-directory=$(DESTDIR)$(INSTALL_ROOT)share/orbcode
@@ -315,6 +315,7 @@ install-mingw-deps:
 	$(Q)ldd $(OLOC)/$(ORBMORTEM) | grep -vi System32 | gawk '{ print $$3 }' | xargs -rt cp -t $(DESTDIR)$(INSTALL_ROOT)bin
 	$(Q)ldd $(OLOC)/$(ORBMORTEM) | grep -vi System32 | gawk '{ print $$3 }' | xargs -rt cp -t $(DESTDIR)$(INSTALL_ROOT)bin
 	$(Q)ldd $(OLOC)/$(ORBTRACE) | grep -vi System32 | gawk '{ print $$3 }' | xargs -rt cp -t $(DESTDIR)$(INSTALL_ROOT)bin
+	$(Q)ldd $(OLOC)/$(ORBSTAT) | grep -vi System32 | gawk '{ print $$3 }' | xargs -rt cp -t $(DESTDIR)$(INSTALL_ROOT)bin
 endif
 
 uninstall:

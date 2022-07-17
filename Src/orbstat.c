@@ -13,9 +13,6 @@
 #include <stdio.h>
 #include <signal.h>
 #include <assert.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <netdb.h>
 #include <getopt.h>
 
 #include "git_version_info.h"
@@ -729,11 +726,15 @@ int main( int argc, char *argv[] )
         genericsExit( -1, "Failed to establish Int handler" EOL );
     }
 
+#if !defined(WIN32)
+
     /* Don't kill a sub-process when any reader or writer evaporates */
     if ( SIG_ERR == signal( SIGPIPE, SIG_IGN ) )
     {
         genericsExit( -1, "Failed to ignore SIGPIPEs" EOL );
     }
+
+#endif
 
     /* Reset the TPIU handler before we start */
     TPIUDecoderInit( &_r.t );
