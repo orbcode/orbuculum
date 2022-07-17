@@ -503,7 +503,7 @@ void _printVersion( void )
 // ====================================================================================================
 static struct option _longOptions[] =
 {
-    {"no-demangle", required_argument, NULL, 'D'},
+    {"no-demangle", no_argument, NULL, 'D'},
     {"del-prefix", required_argument, NULL, 'd'},
     {"elf-file", required_argument, NULL, 'e'},
     {"eof", no_argument, NULL, 'E'},
@@ -528,7 +528,7 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
 {
     int c, optionIndex = 0;
 
-    while ( ( c = getopt_long ( argc, argv, "Dd:e:Ef:g:hVI:n:O:s:Tt:v:y:z:", _longOptions, &optionIndex ) ) != -1 )
+    while ( ( c = getopt_long ( argc, argv, "Dd:e:Ef:g:hI:nO:s:t:Tv:Vy:z:", _longOptions, &optionIndex ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
