@@ -267,11 +267,6 @@ static void _handleSW( struct RunTime *r )
                     HASH_ADD_INT( r->insthead, addr, ( r->to ) );
                 }
 
-                if ( r->from->addr > 0xfffffff0 )
-                {
-                    printf( "%s" EOL, SymbolFunction( r->s, r->to->functionindex ) );
-                }
-
                 r->to->count++;
 
                 /* ----------------------------------------------------------------------------------------------------------*/
