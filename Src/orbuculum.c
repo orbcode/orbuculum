@@ -61,11 +61,11 @@
 struct Options
 {
     /* Config information */
-    bool segger;                                         /* Using a segger debugger */
+    bool nwserver;                                       /* Using a nw server source */
 
     /* Source information */
-    char *seggerHost;                                    /* Segger host connection */
-    int32_t seggerPort;                                  /* ...and port */
+    char *nwserverHost;                                  /* NW Server host connection */
+    int32_t nwserverPort;                                /* ...and port */
     char *port;                                          /* Serial host connection */
     int speed;                                           /* Speed of serial link */
     bool useTPIU;                                        /* Are we using TPIU, and stripping TPIU frames? */
@@ -128,8 +128,8 @@ struct RunTime
     #define SO_REUSEPORT SO_REUSEADDR
 #endif
 
-#define SEGGER_HOST "localhost"                          /* Address to connect to SEGGER */
-#define SEGGER_PORT (2332)
+#define NWSERVER_HOST "localhost"                        /* Address to connect to NW Server */
+#define NWSERVER_PORT (2332)
 
 #define NUM_TPIU_CHANNELS 0x80
 
@@ -156,8 +156,8 @@ static const struct deviceList
 
 struct Options _options =
 {
-    .listenPort = NWCLIENT_SERVER_PORT,
-    .seggerHost = SEGGER_HOST,
+    .listenPort   = NWCLIENT_SERVER_PORT,
+    .nwserverHost = NWSERVER_HOST,
 };
 
 struct RunTime _r =
@@ -448,7 +448,7 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
             // ------------------------------------
 
             case 's':
-                r->options->seggerHost = optarg;
+                r->options->nwserverHost = optarg;
 
                 // See if we have an optional port number too
                 char *a = optarg;
@@ -461,12 +461,12 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
                 if ( *a == ':' )
                 {
                     *a = 0;
-                    r->options->seggerPort = atoi( ++a );
+                    r->options->nwserverPort = atoi( ++a );
                 }
 
-                if ( !r->options->seggerPort )
+                if ( !r->options->nwserverPort )
                 {
-                    r->options->seggerPort = SEGGER_PORT;
+                    r->options->nwserverPort = NWSERVER_PORT;
                 }
 
                 break;
@@ -531,9 +531,9 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
         genericsReport( V_INFO, "Raw Output file: %s" EOL, r->options->outfile );
     }
 
-    if ( r->options->seggerPort )
+    if ( r->options->nwserverPort )
     {
-        genericsReport( V_INFO, "SEGGER H&P    : %s:%d" EOL, r->options->seggerHost, r->options->seggerPort );
+        genericsReport( V_INFO, "NW SERVER H&P  : %s:%d" EOL, r->options->nwserverHost, r->options->nwserverPort );
     }
 
     if ( r->options->useTPIU )
@@ -559,15 +559,15 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
         }
     }
 
-    if ( ( r->options->file ) && ( ( r->options->port ) || ( r->options->seggerPort ) ) )
+    if ( ( r->options->file ) && ( ( r->options->port ) || ( r->options->nwserverPort ) ) )
     {
-        genericsReport( V_ERROR, "Cannot specify file and port or Segger at same time" EOL );
+        genericsReport( V_ERROR, "Cannot specify file and port or NW Server at same time" EOL );
         return false;
     }
 
-    if ( ( r->options->port ) && ( r->options->seggerPort ) )
+    if ( ( r->options->port ) && ( r->options->nwserverPort ) )
     {
-        genericsReport( V_ERROR, "Cannot specify port and Segger at same time" EOL );
+        genericsReport( V_ERROR, "Cannot specify port and NW Server at same time" EOL );
         return false;
     }
 
@@ -1026,7 +1026,7 @@ static int _usbFeeder( struct RunTime *r )
     return 0;
 }
 // ====================================================================================================
-static int _seggerFeeder( struct RunTime *r )
+static int _nwserverFeeder( struct RunTime *r )
 
 {
     struct sockaddr_in serv_addr;
@@ -1035,7 +1035,7 @@ static int _seggerFeeder( struct RunTime *r )
     int flag = 1;
 
     memset( ( char * ) &serv_addr, 0, sizeof( serv_addr ) );
-    server = gethostbyname( r->options->seggerHost );
+    server = gethostbyname( r->options->nwserverHost );
 
     if ( !server )
     {
@@ -1048,7 +1048,7 @@ static int _seggerFeeder( struct RunTime *r )
             ( const char * )server->h_addr,
             server->h_length
           );
-    serv_addr.sin_port = htons( r->options->seggerPort );
+    serv_addr.sin_port = htons( r->options->nwserverPort );
 
     while ( !r->ending )
     {
@@ -1071,7 +1071,7 @@ static int _seggerFeeder( struct RunTime *r )
             break;
         }
 
-        genericsReport( V_INFO, "Established Segger Link" EOL );
+        genericsReport( V_INFO, "Established NW Server Link" EOL );
 
         while ( !r->ending )
 
@@ -1091,7 +1091,7 @@ static int _seggerFeeder( struct RunTime *r )
 
         if ( ! r->ending )
         {
-            genericsReport( V_INFO, "Lost Segger Link" EOL );
+            genericsReport( V_INFO, "Lost NW Server Link" EOL );
         }
     }
 
@@ -1409,9 +1409,18 @@ int main( int argc, char *argv[] )
         }
     }
 
-    if ( _r.options->seggerPort )
+    /* Allocate memory blocks for non-usb case */
+    if ( ( _r.options->nwserverPort ) || ( _r.options->port ) || ( _r.options->file ) )
     {
-        exit( _seggerFeeder( &_r ) );
+        for ( uint32_t t = 0; t < NUM_RAW_BLOCKS; t++ )
+        {
+            _r.rawBlock[t].buffer = malloc( TRANSFER_SIZE );
+        }
+    }
+
+    if ( _r.options->nwserverPort )
+    {
+        exit( _nwserverFeeder( &_r ) );
     }
 
     if ( _r.options->port )
