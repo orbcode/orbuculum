@@ -996,7 +996,7 @@ static int _usbFeeder( struct RunTime *r )
 
         genericsReport( V_DEBUG, "USB Interface claimed, ready for data" EOL );
 
-        for ( uint32_t t = 0; ((t < NUM_RAW_BLOCKS) && !r->errored); t++ )
+        for ( uint32_t t = 0; ( ( t < NUM_RAW_BLOCKS ) && !r->errored ); t++ )
         {
             /* Allocate memory if it's not already provisioned */
             if ( !r->rawBlock[t].usbtfr )
@@ -1032,7 +1032,7 @@ static int _usbFeeder( struct RunTime *r )
             }
         }
 
-	/* If we are connected depends on if there was an error submitting the requests */
+        /* If we are connected depends on if there was an error submitting the requests */
         r->conn = !r->errored;
 
         while ( ( !r->ending )  && ( !r->errored ) )
@@ -1045,6 +1045,7 @@ static int _usbFeeder( struct RunTime *r )
                 _doExit();
             }
         }
+
         r->conn = false;
 
         /* Remove transfers from list and release the memory */
@@ -1061,11 +1062,11 @@ static int _usbFeeder( struct RunTime *r )
                 free( r->rawBlock[t].buffer );
             }
 
-	    if (r->rawBlock[t].usbtfr)
-	      {
-		libusb_free_transfer( r->rawBlock[t].usbtfr );
-	      }
-	    
+            if ( r->rawBlock[t].usbtfr )
+            {
+                libusb_free_transfer( r->rawBlock[t].usbtfr );
+            }
+
             r->rawBlock[t].buffer = NULL;
             r->rawBlock[t].usbtfr = NULL;
         }
@@ -1076,9 +1077,9 @@ static int _usbFeeder( struct RunTime *r )
         }
 
         //libusb_close( handle );
-	libusb_exit( NULL );
+        libusb_exit( NULL );
         genericsReport( V_INFO, "USB Interface closed" EOL );
-	usleep(INTERVAL_100MS);
+        usleep( INTERVAL_100MS );
     }
 
     return 0;

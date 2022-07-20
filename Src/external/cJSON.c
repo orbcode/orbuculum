@@ -2235,7 +2235,12 @@ CJSON_PUBLIC( cJSON * ) cJSON_AddArrayToObject( cJSON *const object, const char 
 
 CJSON_PUBLIC( cJSON * ) cJSON_DetachItemViaPointer( cJSON *parent, cJSON *const item )
 {
-    if ( ( parent == NULL ) || ( item == NULL ) )
+    if ( item == NULL )
+    {
+        return NULL;
+    }
+
+    if ( parent == NULL )
     {
         return NULL;
     }
@@ -2308,6 +2313,11 @@ CJSON_PUBLIC( void ) cJSON_DeleteItemFromObjectCaseSensitive( cJSON *object, con
 CJSON_PUBLIC( void ) cJSON_InsertItemInArray( cJSON *array, int which, cJSON *newitem )
 {
     cJSON *after_inserted = NULL;
+
+    if ( NULL == array )
+    {
+        return;
+    }
 
     if ( which < 0 )
     {

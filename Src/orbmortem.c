@@ -497,6 +497,11 @@ static void _flushBuffer( struct RunTime *r )
     r->op.workingAddr = NO_DESTADDRESS;
 }
 // ====================================================================================================
+// Strdup leak is deliberately ignored. That is the central purpose of this code. It's cleaned
+// upin __flushBuffer above.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wanalyzer-malloc-leak"
+
 static void _appendToOPBuffer( struct RunTime *r, int32_t lineno, enum LineType lt, const char *fmt, ... )
 
 /* Add line to output buffer, in a printf stylee */
@@ -522,6 +527,8 @@ static void _appendToOPBuffer( struct RunTime *r, int32_t lineno, enum LineType 
     r->opText[r->numLines].isRef  = false;
     r->numLines++;
 }
+#pragma GCC diagnostic pop
+
 // ====================================================================================================
 static void _appendRefToOPBuffer( struct RunTime *r, int32_t lineno, enum LineType lt, const char *ref )
 

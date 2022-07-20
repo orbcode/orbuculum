@@ -209,6 +209,8 @@ static void *_listenTask( void *arg )
         if ( success )
         {
             client = ( struct nwClient * )calloc( 1, sizeof( struct nwClient ) );
+            MEMCHECK( client, NULL );
+
             client->handle = f[1];
             client->parent = h;
             client->listenHandle = f[0];

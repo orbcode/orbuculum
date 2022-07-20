@@ -66,13 +66,6 @@ struct
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
-static void _intHandler( int sig )
-
-{
-    /* CTRL-C exit is not an error... */
-    exit( 0 );
-}
-// ====================================================================================================
 static void _printHelp( const char *const progName )
 
 {
@@ -189,11 +182,19 @@ static bool _processOptions( int argc, char *argv[] )
             /* Individual channel setup */
             case 'c':
                 chanIndex = chanConfig = strdup( optarg );
+
+                if ( NULL == chanConfig )
+                {
+                    genericsReport( V_ERROR, "Couldn't allocate memory at %s::%d" EOL, __FILE__, __LINE__ );
+                    return false;
+                }
+
                 chan = atoi( optarg );
 
                 if ( chan >= NUM_CHANNELS )
                 {
                     genericsReport( V_ERROR, "Channel index out of range" EOL );
+                    free( chanConfig );
                     return false;
                 }
 
@@ -206,6 +207,7 @@ static bool _processOptions( int argc, char *argv[] )
                 if ( !*chanIndex )
                 {
                     genericsReport( V_ERROR, "No filename for channel %d" EOL, chan );
+                    free( chanConfig );
                     return false;
                 }
 
@@ -333,6 +335,15 @@ static void _doExit( void )
     /* Give them a bit of time, then we're leaving anyway */
     usleep( 200 );
 }
+
+// ====================================================================================================
+static void _intHandler( int sig )
+
+{
+    /* CTRL-C exit is not an error... */
+    _doExit();
+}
+
 // ====================================================================================================
 int main( int argc, char *argv[] )
 

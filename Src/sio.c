@@ -840,14 +840,20 @@ static void _updateWindows( struct SIOInstance *sio, bool isTick, bool isKey, ui
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
+// Malloc leak is deliberately ignored. That is the central purpose of this code!
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wanalyzer-malloc-leak"
+
 struct SIOInstance *SIOsetup( const char *progname, const char *elffile, bool isFile )
 
 {
     struct SIOInstance *sio;
 
     sio = ( struct SIOInstance * )calloc( sizeof( struct SIOInstance ), 1 );
+    MEMCHECK( sio, NULL );
 
     sio->searchString = ( char * )calloc( 2, sizeof( char ) );
+    MEMCHECK( sio->searchString, NULL );
     sio->progName = progname;
     sio->elffile = elffile;
     sio->isFile  = isFile;
@@ -886,6 +892,7 @@ struct SIOInstance *SIOsetup( const char *progname, const char *elffile, bool is
 
     return sio;
 }
+#pragma GCC diagnostic pop
 // ====================================================================================================
 const char *SIOgetSaveFilename( struct SIOInstance *sio )
 

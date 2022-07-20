@@ -439,11 +439,19 @@ bool _processOptions( int argc, char *argv[] )
             /* Individual channel setup */
             case 'c':
                 chanIndex = chanConfig = strdup( optarg );
+
+                if ( NULL == chanConfig )
+                {
+                    genericsReport( V_ERROR, "Couldn't allocate memory at %s::%d" EOL, __FILE__, __LINE__ );
+                    return false;
+                }
+
                 chan = atoi( optarg );
 
                 if ( chan >= NUM_CHANNELS )
                 {
                     genericsReport( V_ERROR, "Channel index out of range" EOL );
+                    free( chanConfig );
                     return false;
                 }
 
@@ -456,6 +464,7 @@ bool _processOptions( int argc, char *argv[] )
                 if ( !*chanIndex )
                 {
                     genericsReport( V_ERROR, "No output format for channel %d" EOL, chan );
+                    free( chanConfig );
                     return false;
                 }
 

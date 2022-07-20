@@ -567,6 +567,10 @@ void itmfifoSetChanPath( struct itmfifosHandle *f, char *s )
 }
 
 // ====================================================================================================
+// strdup leak is deliberately ignored. That is the central purpose of this code!
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wanalyzer-malloc-leak"
+
 void itmfifoSetChannel( struct itmfifosHandle *f, int chan, char *n, char *s )
 
 {
@@ -577,9 +581,19 @@ void itmfifoSetChannel( struct itmfifosHandle *f, int chan, char *n, char *s )
         free( f->c[chan].presFormat );
     }
 
+    if ( f->c[chan].chanName )
+    {
+        free( f->c[chan].chanName );
+    }
+
     f->c[chan].chanName = strdup( n );
+
+    MEMCHECK( f->c[chan].chanName, );
     f->c[chan].presFormat = s ? strdup( s ) : NULL;
+
+    MEMCHECK( f->c[chan].presFormat, );
 }
+#pragma GCC diagnostic pop
 // ====================================================================================================
 void itmfifoSetUseTPIU( struct itmfifosHandle *f, bool s )
 
@@ -827,6 +841,9 @@ struct itmfifosHandle *itmfifoInit( bool forceITMSyncSet, bool useTPIUSet, int T
 
 {
     struct itmfifosHandle *f = ( struct itmfifosHandle * )calloc( 1, sizeof( struct itmfifosHandle  ) );
+
+    MEMCHECK( f, NULL );
+
     f->chanPath = strdup( "" );
     f->useTPIU = useTPIUSet;
     f->forceITMSync = forceITMSyncSet;

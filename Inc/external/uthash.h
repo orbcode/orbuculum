@@ -916,8 +916,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
                     while ((_hs_psize != 0U) || ((_hs_qsize != 0U) && (_hs_q != NULL))) {    \
                         if (_hs_psize == 0U) {                                                 \
                             _hs_e = _hs_q;                                                       \
-                            _hs_q = ((_hs_q->next != NULL) ?                                     \
-                                     HH_FROM_ELMT((head)->hh.tbl, _hs_q->next) : NULL);                 \
+                            _hs_q = ( _hs_q && ((_hs_q->next != NULL)) ? \
+                                      HH_FROM_ELMT((head)->hh.tbl, _hs_q->next) : NULL); \
                             _hs_qsize--;                                                         \
                         } else if ((_hs_qsize == 0U) || (_hs_q == NULL)) {                     \
                             _hs_e = _hs_p;                                                       \
@@ -938,7 +938,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
                             _hs_psize--;                                                         \
                         } else {                                                               \
                             _hs_e = _hs_q;                                                       \
-                            _hs_q = ((_hs_q->next != NULL) ?                                     \
+                            _hs_q = ((_hs_q && (_hs_q->next != NULL)) ? \
                                      HH_FROM_ELMT((head)->hh.tbl, _hs_q->next) : NULL);                 \
                             _hs_qsize--;                                                         \
                         }                                                                      \

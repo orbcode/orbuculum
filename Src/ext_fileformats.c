@@ -85,6 +85,11 @@ bool ext_ff_outputDot( char *dotfile, struct subcall *subcallList, struct Symbol
         return false;
     }
 
+    if ( !subcallList )
+    {
+        return false;
+    }
+
     /* Sort according to addresses visited. */
 
     c = fopen( dotfile, "w" );
@@ -144,7 +149,6 @@ bool ext_ff_outputProfile( char *profile, char *elffile, char *deleteMaterial, b
     {
         return false;
     }
-
 
     c = fopen( profile, "w" );
     fprintf( c, "# callgrind format\n" );

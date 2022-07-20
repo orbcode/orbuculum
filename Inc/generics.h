@@ -60,6 +60,13 @@ extern "C" {
 #define C_MONO    ""
 
 #define ALWAYS_INLINE inline __attribute__((always_inline))
+
+#define MEMCHECK(x,y) if ( NULL == (x))                 \
+    {                                   \
+        genericsExit( ENOMEM,"Out of memory at %s::%d" EOL, __FILE__,__LINE__); \
+        return y;                         \
+    }
+
 // ====================================================================================================
 enum verbLevel {V_ERROR, V_WARN, V_INFO, V_DEBUG, V_MAX_VERBLEVEL};
 
