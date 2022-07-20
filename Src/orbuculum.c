@@ -55,7 +55,7 @@
 #include "nwclient.h"
 
 /* How many transfer buffers from the source to allocate */
-#define NUM_RAW_BLOCKS (4)
+#define NUM_RAW_BLOCKS (10)
 
 /* Record for options, either defaults or from command line */
 struct Options
@@ -91,8 +91,8 @@ struct dataBlock
 
 struct handlers
 {
-    uint8_t channel;                                     /* Channel number for this handler */
-    uint64_t intervalBytes;                              /* Number of depacketised bytes output on this channel */
+    int channel;                                         /* Channel number for this handler */
+    long int intervalBytes;                              /* Number of depacketised bytes output on this channel */
     struct dataBlock *strippedBlock;                     /* Processed buffer for output to clients */
     struct nwclientsHandle *n;                           /* Link to the network client subsystem */
 };
@@ -101,24 +101,25 @@ struct RunTime
 {
     struct TPIUDecoder t;                                /* TPIU decoder instance, in case we need it */
 
-    uint64_t  intervalBytes;                             /* Number of bytes transferred in current interval */
+    long int  intervalBytes;                             /* Number of bytes transferred in current interval */
 
     pthread_t intervalThread;                            /* Thread reporting on intervals */
     pthread_t processThread;                             /* Thread distributing to clients */
     sem_t     dataForClients;                            /* Semaphore counting data for clients */
     bool      ending;                                    /* Flag indicating app is terminating */
     bool      errored;                                   /* Flag indicating problem in reception process */
+    bool      conn;                                      /* Flag indicating that we have a good connection */
 
     int f;                                               /* File handle to data source */
 
     int opFileHandle;                                    /* Handle if we're writing orb output locally */
     struct Options *options;                             /* Command line options (reference to above) */
 
-    uint8_t wp;                                          /* Read and write pointers into transfer buffers */
-    uint8_t rp;
+    int wp;                                              /* Read and write pointers into transfer buffers */
+    int rp;
     struct dataBlock rawBlock[NUM_RAW_BLOCKS];           /* Transfer buffers from the receiver */
 
-    uint8_t numHandlers;                                 /* Number of TPIU channel handlers in use */
+    int numHandlers;                                     /* Number of TPIU channel handlers in use */
     struct handlers *handler;
     struct nwclientsHandle *n;                           /* Link to the network client subsystem (used for non-TPIU case) */
 };
@@ -150,9 +151,12 @@ static const struct deviceList
     { 0, 0, 0, 0, 0 }
 };
 
-// #define DUMP_BLOCK
+#define INTERVAL_100US (100U)
+#define INTERVAL_1MS   (10*INTERVAL_100US)
+#define INTERVAL_100MS (100*INTERVAL_1MS)
+#define INTERVAL_1S    (10*INTERVAL_100MS)
 
-/* Interval between blocks for timeouts..smaller means smoother, but higher CPU load */
+// #define DUMP_BLOCK
 
 struct Options _options =
 {
@@ -171,13 +175,6 @@ struct RunTime _r =
 // Private routines
 // ====================================================================================================
 // ====================================================================================================
-// ====================================================================================================
-static void _intHandler( int sig )
-
-{
-    /* CTRL-C exit is not an error... */
-    exit( 0 );
-}
 // ====================================================================================================
 
 
@@ -335,12 +332,19 @@ static void _doExit( void )
 
     nwclientShutdown( _r.n );
     /* Give them a bit of time, then we're leaving anyway */
-    usleep( 200 );
+    usleep( INTERVAL_100MS );
 
     if ( _r.opFileHandle )
     {
         close( _r.opFileHandle );
     }
+}
+// ====================================================================================================
+static void _intHandler( int sig )
+
+{
+    /* CTRL-C exit is not an error... */
+    _doExit();
 }
 // ====================================================================================================
 void _printHelp( const char *const progName )
@@ -585,7 +589,7 @@ void *_checkInterval( void *params )
 
     while ( !r->ending )
     {
-        usleep( r->options->intervalReportTime * 1000 );
+        usleep( r->options->intervalReportTime * INTERVAL_1MS );
 
         /* Grab the interval and scale to 1 second */
         snapInterval = r->intervalBytes * 1000 / r->options->intervalReportTime;
@@ -593,44 +597,51 @@ void *_checkInterval( void *params )
         snapInterval *= 8;
         genericsPrintf( C_PREV_LN C_CLR_LN C_DATA );
 
-        if ( snapInterval / 1000000 )
+        if ( ! r->conn )
         {
-            genericsPrintf( "%4d.%d " C_RESET "MBits/sec ", snapInterval / 1000000, ( snapInterval * 1 / 100000 ) % 10 );
-        }
-        else if ( snapInterval / 1000 )
-        {
-            genericsPrintf( "%4d.%d " C_RESET "KBits/sec ", snapInterval / 1000, ( snapInterval / 100 ) % 10 );
+            genericsPrintf( " No active connection" );
         }
         else
         {
-            genericsPrintf( "  %4d " C_RESET " Bits/sec ", snapInterval );
-        }
-
-        h = r->handler;
-        uint64_t totalDat = 0;
-
-        if ( ( r->intervalBytes ) && ( r->options->useTPIU ) )
-        {
-            for ( int chIndex = 0; chIndex < r->numHandlers; chIndex++ )
+            if ( snapInterval / 1000000 )
             {
-                genericsPrintf( " %d:%3d%% ",  h->channel, ( h->intervalBytes * 100 ) / r->intervalBytes );
-                totalDat += h->intervalBytes;
-                /* TODO: This needs a mutex */
-                h->intervalBytes = 0;
-
-                h++;
+                genericsPrintf( "%4d.%d " C_RESET "MBits/sec ", snapInterval / 1000000, ( snapInterval * 1 / 100000 ) % 10 );
+            }
+            else if ( snapInterval / 1000 )
+            {
+                genericsPrintf( "%4d.%d " C_RESET "KBits/sec ", snapInterval / 1000, ( snapInterval / 100 ) % 10 );
+            }
+            else
+            {
+                genericsPrintf( "  %4d " C_RESET " Bits/sec ", snapInterval );
             }
 
-            genericsPrintf( " Waste:%3d%% ",  100 - ( ( totalDat * 100 ) / r->intervalBytes ) );
-        }
+            h = r->handler;
+            uint64_t totalDat = 0;
 
-        r->intervalBytes = 0;
+            if ( ( r->intervalBytes ) && ( r->options->useTPIU ) )
+            {
+                for ( int chIndex = 0; chIndex < r->numHandlers; chIndex++ )
+                {
+                    genericsPrintf( " %d:%3d%% ",  h->channel, ( h->intervalBytes * 100 ) / r->intervalBytes );
+                    totalDat += h->intervalBytes;
+                    /* TODO: This needs a mutex */
+                    h->intervalBytes = 0;
 
-        if ( r->options->dataSpeed > 100 )
-        {
-            /* Conversion to percentage done as a division to avoid overflow */
-            uint32_t fullPercent = ( snapInterval * 100 ) / r->options->dataSpeed;
-            genericsPrintf( "(" C_DATA " %3d%% " C_RESET "full)", ( fullPercent > 100 ) ? 100 : fullPercent );
+                    h++;
+                }
+
+                genericsPrintf( " Waste:%3d%% ",  100 - ( ( totalDat * 100 ) / r->intervalBytes ) );
+            }
+
+            r->intervalBytes = 0;
+
+            if ( r->options->dataSpeed > 100 )
+            {
+                /* Conversion to percentage done as a division to avoid overflow */
+                uint32_t fullPercent = ( snapInterval * 100 ) / r->options->dataSpeed;
+                genericsPrintf( "(" C_DATA " %3d%% " C_RESET "full)", ( fullPercent > 100 ) ? 100 : fullPercent );
+            }
         }
 
         genericsPrintf( C_RESET EOL );
@@ -681,7 +692,7 @@ static void _stripTPIU( struct RunTime *r, uint8_t *c, int bytes )
             case TPIU_EV_RXEDPACKET:
                 if ( !TPIUGetPacket( &r->t, &p ) )
                 {
-                    genericsReport( V_WARN, "TPIUGetPacket fell over" EOL );
+                    genericsReport( V_WARN, "TPIUGetPacket fell over%s" EOL, ( _r.options->intervalReportTime ) ? EOL : "" );
                 }
 
                 /* Iterate through the packet, putting it into the correct output buffers */
@@ -706,7 +717,7 @@ static void _stripTPIU( struct RunTime *r, uint8_t *c, int bytes )
                         }
                     }
 
-                    if ( chIndex != r->numHandlers )
+                    if ( ( chIndex != r->numHandlers ) && ( h ) )
                     {
                         /* We must have found a match for this at some point, so add it to the queue */
                         h->strippedBlock->buffer[h->strippedBlock->fillLevel++] = p.packet[g].d;
@@ -716,7 +727,7 @@ static void _stripTPIU( struct RunTime *r, uint8_t *c, int bytes )
                 break;
 
             case TPIU_EV_ERROR:
-                genericsReport( V_WARN, "****ERROR****" EOL );
+                genericsReport( V_WARN, "****ERROR****%s" EOL, ( _r.options->intervalReportTime ) ? EOL : "" );
                 break;
 
             case TPIU_EV_NEWSYNC:
@@ -742,7 +753,7 @@ static void *_processBlocks( void *params )
 
         if ( r->rp != r->wp )
         {
-            genericsReport( V_DEBUG, "RXED Packet of %d bytes" EOL, r->rawBlock[r->rp].fillLevel );
+            genericsReport( V_DEBUG, "RXED Packet of %d bytes%s" EOL, r->rawBlock[r->rp].fillLevel, ( _r.options->intervalReportTime ) ? EOL : "" );
 
             if ( r->rawBlock[r->rp].fillLevel )
             {
@@ -846,13 +857,20 @@ static void _usb_callback( struct libusb_transfer *t )
 
     }
 
-    if ( ( t->status != LIBUSB_TRANSFER_COMPLETED ) && ( t->status != LIBUSB_TRANSFER_TIMED_OUT ) )
+    if ( ( t->status != LIBUSB_TRANSFER_COMPLETED ) &&
+            ( t->status != LIBUSB_TRANSFER_TIMED_OUT ) &&
+            ( t->status != LIBUSB_TRANSFER_CANCELLED )
+       )
     {
+        genericsReport( V_DEBUG, "Errored out with status %d (%s)" EOL, t->status, libusb_error_name( t->status ) );
         _r.errored = true;
     }
     else
     {
-        libusb_submit_transfer( t );
+        if ( t->status != LIBUSB_TRANSFER_CANCELLED )
+        {
+            libusb_submit_transfer( t );
+        }
     }
 }
 // ====================================================================================================
@@ -867,12 +885,13 @@ static int _usbFeeder( struct RunTime *r )
     uint8_t altsetting = 0;
     uint8_t num_altsetting = 0;
     int32_t err;
+    bool using_devmem = false;
 
     while ( !r->ending )
     {
         r->errored = false;
 
-        if ( libusb_init( NULL ) < 0 )
+        if ( libusb_init( NULL ) )
         {
             genericsReport( V_ERROR, "Failed to initalise USB interface" EOL );
             return ( -1 );
@@ -901,7 +920,7 @@ static int _usbFeeder( struct RunTime *r )
             }
 
             /* Take a pause before looking again */
-            usleep( 500000 );
+            usleep( INTERVAL_100MS );
         }
 
         genericsReport( V_INFO, "Found %s" EOL, p->name );
@@ -965,7 +984,8 @@ static int _usbFeeder( struct RunTime *r )
 
         if ( ( err = libusb_claim_interface ( handle, iface ) ) < 0 )
         {
-            genericsReport( V_WARN, "Failed to claim interface (%d)" EOL, err );
+            genericsReport( V_DEBUG, "Failed to claim interface (%d)" EOL, err );
+            usleep( INTERVAL_100MS );
             continue;
         }
 
@@ -976,12 +996,21 @@ static int _usbFeeder( struct RunTime *r )
 
         genericsReport( V_DEBUG, "USB Interface claimed, ready for data" EOL );
 
-        for ( uint32_t t = 0; t < NUM_RAW_BLOCKS; t++ )
+        for ( uint32_t t = 0; ((t < NUM_RAW_BLOCKS) && !r->errored); t++ )
         {
-            r->rawBlock[t].usbtfr = libusb_alloc_transfer( 0 );
-            r->rawBlock[t].buffer = libusb_dev_mem_alloc( handle, TRANSFER_SIZE );
+            /* Allocate memory if it's not already provisioned */
+            if ( !r->rawBlock[t].usbtfr )
+            {
+                r->rawBlock[t].usbtfr = libusb_alloc_transfer( 0 );
+            }
 
-            if ( r->rawBlock[t].buffer == NULL )
+            if ( !r->rawBlock[t].buffer )
+            {
+                r->rawBlock[t].buffer = libusb_dev_mem_alloc( handle, TRANSFER_SIZE );
+                using_devmem = true;
+            }
+
+            if ( !r->rawBlock[t].buffer )
             {
                 r->rawBlock[t].buffer = malloc( TRANSFER_SIZE );
             }
@@ -998,20 +1027,47 @@ static int _usbFeeder( struct RunTime *r )
 
             if ( ret )
             {
-                genericsReport( V_ERROR, "Error submitting USB requests %d" EOL, ret );
-                _doExit();
+                genericsReport( V_INFO, "Error submitting USB requests %d" EOL, ret );
+                r->errored = true;
             }
         }
 
+	/* If we are connected depends on if there was an error submitting the requests */
+        r->conn = !r->errored;
+
         while ( ( !r->ending )  && ( !r->errored ) )
         {
-            int ret = libusb_handle_events_completed( NULL, ( int * )&r->ending );
+            int ret = libusb_handle_events_completed( NULL, NULL );
 
-            if ( ret )
+            if ( ret ) //&& ( ret != LIBUSB_ERROR_INTERRUPTED ) )
             {
                 genericsReport( V_ERROR, "Error waiting for USB requests to complete %d" EOL, ret );
                 _doExit();
             }
+        }
+        r->conn = false;
+
+        /* Remove transfers from list and release the memory */
+        for ( uint32_t t = 0; t < NUM_RAW_BLOCKS; t++ )
+        {
+            libusb_cancel_transfer( r->rawBlock[t].usbtfr );
+
+            if ( using_devmem )
+            {
+                libusb_dev_mem_free( handle, r->rawBlock[t].buffer, TRANSFER_SIZE );
+            }
+            else
+            {
+                free( r->rawBlock[t].buffer );
+            }
+
+	    if (r->rawBlock[t].usbtfr)
+	      {
+		libusb_free_transfer( r->rawBlock[t].usbtfr );
+	      }
+	    
+            r->rawBlock[t].buffer = NULL;
+            r->rawBlock[t].usbtfr = NULL;
         }
 
         if ( !r->ending )
@@ -1019,8 +1075,10 @@ static int _usbFeeder( struct RunTime *r )
             genericsReport( V_INFO, "USB connection lost" EOL );
         }
 
-        libusb_close( handle );
+        //libusb_close( handle );
+	libusb_exit( NULL );
         genericsReport( V_INFO, "USB Interface closed" EOL );
+	usleep(INTERVAL_100MS);
     }
 
     return 0;
@@ -1063,7 +1121,7 @@ static int _nwserverFeeder( struct RunTime *r )
 
         while ( ( !r->ending ) && ( connect( r->f, ( struct sockaddr * ) &serv_addr, sizeof( serv_addr ) ) < 0 ) )
         {
-            usleep( 500000 );
+            usleep( INTERVAL_100MS );
         }
 
         if ( r->ending )
@@ -1072,6 +1130,8 @@ static int _nwserverFeeder( struct RunTime *r )
         }
 
         genericsReport( V_INFO, "Established NW Server Link" EOL );
+
+        r->conn = true;
 
         while ( !r->ending )
 
@@ -1086,6 +1146,8 @@ static int _nwserverFeeder( struct RunTime *r )
             r->wp = ( r->wp + 1 ) % NUM_RAW_BLOCKS;
             sem_post( &r->dataForClients );
         }
+
+        r->conn = false;
 
         close( r->f );
 
@@ -1136,6 +1198,8 @@ static int _serialFeeder( struct RunTime *r )
 
         genericsReport( V_INFO, "Port configured" EOL );
 
+        r->conn = true;
+
         while ( !r->ending )
         {
             DWORD eventMask = 0;
@@ -1172,6 +1236,8 @@ static int _serialFeeder( struct RunTime *r )
             sem_post( &r->dataForClients );
         }
 
+        r->conn = false;
+
         if ( ! r->ending )
         {
             genericsReport( V_INFO, "Read failed" EOL );
@@ -1203,7 +1269,7 @@ static int _serialFeeder( struct RunTime *r )
 #endif
         {
             genericsReport( V_WARN, "Can't open serial port" EOL );
-            usleep( 500000 );
+            usleep( INTERVAL_100MS );
         }
 
         genericsReport( V_INFO, "Port opened" EOL );
@@ -1230,6 +1296,8 @@ static int _serialFeeder( struct RunTime *r )
             genericsExit( ret, "setSerialConfig failed" EOL );
         }
 
+        r->conn = true;
+
         while ( !r->ending )
         {
             struct dataBlock *rxBlock = &r->rawBlock[r->wp];
@@ -1239,9 +1307,19 @@ static int _serialFeeder( struct RunTime *r )
                 break;
             }
 
-            r->wp = ( r->wp + 1 ) % NUM_RAW_BLOCKS;
             sem_post( &r->dataForClients );
+            uint8_t nwp = ( r->wp + 1 ) % NUM_RAW_BLOCKS;
+
+            /* Spin waiting for buffer space to become available */
+            while ( nwp == r->rp )
+            {
+                usleep( INTERVAL_100US );
+            }
+
+            r->wp = nwp;
         }
+
+        r->conn = false;
 
         if ( ! r->ending )
         {
@@ -1264,6 +1342,8 @@ static int _fileFeeder( struct RunTime *r )
         genericsExit( -4, "Can't open file %s" EOL, r->options->file );
     }
 
+    r->conn = true;
+
     while ( !r->ending )
     {
         struct dataBlock *rxBlock = &r->rawBlock[r->wp];
@@ -1278,14 +1358,24 @@ static int _fileFeeder( struct RunTime *r )
             else
             {
                 // Just spin for a while to avoid clogging the CPU
-                usleep( 100000 );
+                usleep( INTERVAL_100MS );
                 continue;
             }
         }
 
-        r->wp = ( r->wp + 1 ) % NUM_RAW_BLOCKS;
         sem_post( &r->dataForClients );
+        uint8_t nwp = ( r->wp + 1 ) % NUM_RAW_BLOCKS;
+
+        /* Spin waiting for buffer space to become available */
+        while ( nwp == r->rp )
+        {
+            usleep( INTERVAL_100US );
+        }
+
+        r->wp = nwp;
     }
+
+    r->conn = false;
 
     if ( !r->options->fileTerminate )
     {
@@ -1313,7 +1403,11 @@ int main( int argc, char *argv[] )
 
     /* Setup TPIU in case we call it into service later */
     TPIUDecoderInit( &_r.t );
-    sem_init( &_r.dataForClients, 0, 0 );
+
+    if ( sem_init( &_r.dataForClients, 0, 0 ) < 0 )
+    {
+        genericsExit( -1, "Failed to establish semaphore" EOL );
+    }
 
     if ( !_processOptions( argc, argv, &_r ) )
     {
@@ -1381,6 +1475,12 @@ int main( int argc, char *argv[] )
                 x = 0;
             }
         }
+
+        /* ...a blank line so this doesn't get erased by monitoring reports */
+        if ( _r.options->intervalReportTime )
+        {
+            genericsReport( V_WARN, EOL );
+        }
     }
     else
     {
@@ -1416,23 +1516,25 @@ int main( int argc, char *argv[] )
         {
             _r.rawBlock[t].buffer = malloc( TRANSFER_SIZE );
         }
-    }
 
-    if ( _r.options->nwserverPort )
+        if ( _r.options->nwserverPort )
+        {
+            exit( _nwserverFeeder( &_r ) );
+        }
+
+        if ( _r.options->port )
+        {
+            exit( _serialFeeder( &_r ) );
+        }
+
+        if ( _r.options->file )
+        {
+            exit( _fileFeeder( &_r ) );
+        }
+    }
+    else
     {
-        exit( _nwserverFeeder( &_r ) );
+        exit( _usbFeeder( &_r ) );
     }
-
-    if ( _r.options->port )
-    {
-        exit( _serialFeeder( &_r ) );
-    }
-
-    if ( _r.options->file )
-    {
-        exit( _fileFeeder( &_r ) );
-    }
-
-    exit( _usbFeeder( &_r ) );
 }
 // ====================================================================================================
