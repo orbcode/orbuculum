@@ -214,6 +214,11 @@ static void _handleSW( struct RunTime *r )
                     {
                         r->from = calloc( 1, sizeof( struct execEntryHash ) );
 
+                        if ( !r->from )
+                        {
+                            genericsExit( ENOMEM,  "Memory allocation failure at %s::%d", __FILE__, __LINE__ );
+                        }
+
                         r->from->addr          = addr;
                         r->from->fileindex     = n.fileindex;
                         r->from->line          = n.line;
@@ -244,6 +249,11 @@ static void _handleSW( struct RunTime *r )
                     if ( SymbolLookup( r->s, addr, &n ) )
                     {
                         r->to = calloc( 1, sizeof( struct execEntryHash ) );
+
+                        if ( !r->to )
+                        {
+                            genericsExit( ENOMEM,  "Memory allocation failure at %s::%d", __FILE__, __LINE__ );
+                        }
 
                         r->to->addr          = addr;
                         r->to->fileindex     = n.fileindex;
@@ -283,6 +293,12 @@ static void _handleSW( struct RunTime *r )
                     {
                         /* This entry doesn't exist...let's create it */
                         s = ( struct subcall * )calloc( 1, sizeof( struct subcall ) );
+
+                        if ( !s )
+                        {
+                            genericsExit( ENOMEM,  "Memory allocation failure at %s::%d", __FILE__, __LINE__ );
+                        }
+
                         memcpy( &s->sig, &sig, sizeof( struct subcallSig ) );
                         s->srch = r->from;
                         s->dsth = r->to;
@@ -455,14 +471,6 @@ void _protocolPump( struct RunTime *r, uint8_t c )
         /* There's no TPIU in use, so this goes straight to the ITM layer */
         _itmPumpProcess( r, c );
     }
-}
-// ====================================================================================================
-static void _intHandler( int sig )
-
-/* Catch CTRL-C so things can be cleaned up properly via atexit functions */
-{
-    /* CTRL-C exit is not an error... */
-    exit( 0 );
 }
 // ====================================================================================================
 static void _printHelp( struct RunTime *r )
@@ -686,6 +694,14 @@ static void _doExit( void )
     _r.ending = true;
     /* Give them a bit of time, then we're leaving anyway */
     usleep( 200 );
+}
+// ====================================================================================================
+static void _intHandler( int sig )
+
+/* Catch CTRL-C so things can be cleaned up properly via atexit functions */
+{
+    /* CTRL-C exit is not an error... */
+    _doExit();
 }
 // ====================================================================================================
 int main( int argc, char *argv[] )
