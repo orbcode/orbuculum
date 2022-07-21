@@ -33,7 +33,7 @@
 /* How many transfer buffers from the source to allocate */
 #define NUM_RAW_BLOCKS (1000)
 
-#define DBG_OUT(...) printf(__VA_ARGS__)
+#define DBG_OUT(...) fprintf(stderr,__VA_ARGS__)
 //#define DBG_OUT(...)
 
 struct _subcallAccount
@@ -367,7 +367,7 @@ static void _traceCB( void *d )
         if ( TRACEStateChanged( &r->i, EV_CH_ADDRESS ) )
         {
             r->op.workingAddr = cpu->addr;
-            printf( "Got initial address %08x" EOL, r->op.workingAddr );
+            DBG_OUT( "Got initial address %08x" EOL, r->op.workingAddr );
             r->sampling  = true;
         }
 
@@ -393,20 +393,20 @@ static void _traceCB( void *d )
         /* instructions was cancelled and, if it wasn't and it's still outstanding, action it. */
         if ( TRACEStateChanged( &r->i, EV_CH_CANCELLED ) )
         {
-            printf( "CANCELLED" EOL );
+            DBG_OUT( "CANCELLED" EOL );
         }
         else
         {
             if ( incAddr )
             {
-                printf( "***" EOL );
+                DBG_OUT( "***" EOL );
                 _handleInstruction( r, disposition & 1 );
 
                 if ( ( r->op.h->isJump ) || ( r->op.h->isSubCall ) || ( r->op.h->isReturn ) )
                 {
                     if ( TRACEStateChanged( &r->i, EV_CH_ADDRESS ) )
                     {
-                        printf( "New addr %08x" EOL, cpu->addr );
+                        DBG_OUT( "New addr %08x" EOL, cpu->addr );
                         r->op.workingAddr = cpu->addr;
                     }
 
@@ -419,12 +419,12 @@ static void _traceCB( void *d )
         {
             if ( TRACEStateChanged( &r->i, EV_CH_EX_ENTRY ) )
             {
-                printf( "INTERRUPT!!" EOL );
+                DBG_OUT( "INTERRUPT!!" EOL );
                 _callEvent( r, r->op.workingAddr, cpu->addr );
             }
 
             r->op.workingAddr = cpu->addr;
-            printf( "A:%08x" EOL, cpu->addr );
+            DBG_OUT( "A:%08x" EOL, cpu->addr );
         }
 
         /* ================================================ */
@@ -432,7 +432,7 @@ static void _traceCB( void *d )
         /* ================================================ */
         incAddr     = cpu->eatoms + cpu->natoms;
         disposition = cpu->disposition;
-        printf( "E:%d N:%d" EOL, cpu->eatoms, cpu->natoms );
+        DBG_OUT( "E:%d N:%d" EOL, cpu->eatoms, cpu->natoms );
 
         /* Action those changes, except the last one */
         while ( incAddr > 1 )
@@ -709,15 +709,15 @@ static void *_processBlocks( void *params )
             uint8_t *c = r->rawBlock[r->rp].buffer;
             uint32_t y = r->rawBlock[r->rp].fillLevel;
 
-            fprintf( stderr, EOL );
+            DBG_OUT( EOL );
 
             while ( y-- )
             {
-                fprintf( stderr, "%02X ", *c++ );
+                DBG_OUT( "%02X ", *c++ );
 
                 if ( !( y % 16 ) )
                 {
-                    fprintf( stderr, EOL );
+                    DBG_OUT( EOL );
                 }
             }
 
@@ -738,6 +738,8 @@ int main( int argc, char *argv[] )
     struct timeval tv;
     struct Stream *stream = NULL;
     enum symbolErr r;
+
+    DBG_OUT( "This utility is in development. Use at your own risk!!" EOL );
 
     /* Have a basic name and search string set up */
     _r.progName = genericsBasename( argv[0] );

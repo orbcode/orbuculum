@@ -337,11 +337,11 @@ static void _doExit( void )
     if ( _r.opFileHandle )
     {
         close( _r.opFileHandle );
-	_r.opFileHandle = 0;
+        _r.opFileHandle = 0;
     }
 
     /* Need to nudge our own process in case it's stuck in a read or similar */
-    _exit(0);
+    _exit( 0 );
 }
 // ====================================================================================================
 static void _intHandler( int sig )
@@ -927,10 +927,11 @@ static int _usbFeeder( struct RunTime *r )
             usleep( INTERVAL_100MS );
         }
 
-	if (r->ending || r->errored)
-	  {
-	    break;
-	  }
+        if ( r->ending || r->errored )
+        {
+            break;
+        }
+
         genericsReport( V_INFO, "Found %s" EOL, p->name );
 
         if ( !( dev = libusb_get_device( handle ) ) )
