@@ -13,9 +13,6 @@
 #include <stdio.h>
 #include <signal.h>
 #include <assert.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <netdb.h>
 #include <getopt.h>
 
 #include "git_version_info.h"
@@ -270,11 +267,6 @@ static void _handleSW( struct RunTime *r )
                     HASH_ADD_INT( r->insthead, addr, ( r->to ) );
                 }
 
-                if ( r->from->addr > 0xfffffff0 )
-                {
-                    printf( "%s" EOL, SymbolFunction( r->s, r->to->functionindex ) );
-                }
-
                 r->to->count++;
 
                 /* ----------------------------------------------------------------------------------------------------------*/
@@ -506,7 +498,7 @@ void _printVersion( void )
 // ====================================================================================================
 static struct option _longOptions[] =
 {
-    {"no-demangle", required_argument, NULL, 'D'},
+    {"no-demangle", no_argument, NULL, 'D'},
     {"del-prefix", required_argument, NULL, 'd'},
     {"elf-file", required_argument, NULL, 'e'},
     {"eof", no_argument, NULL, 'E'},
@@ -531,7 +523,7 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
 {
     int c, optionIndex = 0;
 
-    while ( ( c = getopt_long ( argc, argv, "Dd:e:Ef:g:hVI:n:O:s:Tt:v:y:z:", _longOptions, &optionIndex ) ) != -1 )
+    while ( ( c = getopt_long ( argc, argv, "Dd:e:Ef:g:hI:nO:s:t:Tv:Vy:z:", _longOptions, &optionIndex ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -729,11 +721,15 @@ int main( int argc, char *argv[] )
         genericsExit( -1, "Failed to establish Int handler" EOL );
     }
 
+#if !defined(WIN32)
+
     /* Don't kill a sub-process when any reader or writer evaporates */
     if ( SIG_ERR == signal( SIGPIPE, SIG_IGN ) )
     {
         genericsExit( -1, "Failed to ignore SIGPIPEs" EOL );
     }
+
+#endif
 
     /* Reset the TPIU handler before we start */
     TPIUDecoderInit( &_r.t );
@@ -751,7 +747,7 @@ int main( int argc, char *argv[] )
             {
                 stream = streamCreateSocket( _r.options->server, _r.options->port );
 
-                if ( !stream )
+                if ( stream )
                 {
                     break;
                 }
@@ -815,22 +811,16 @@ int main( int argc, char *argv[] )
                 }
             }
 
-
-            if ( _r.rawBlock.fillLevel <= 0 )
-            {
-                /* We are at EOF (Probably the descriptor closed) */
-                break;
-            }
-
             /* ...and record the fact that we received some data */
             _r.intervalBytes += _r.rawBlock.fillLevel;
 
             /* Pump all of the data through the protocol handler */
             uint8_t *c = _r.rawBlock.buffer;
 
-            while ( _r.rawBlock.fillLevel-- )
+            while ( _r.rawBlock.fillLevel > 0 )
             {
                 _protocolPump( &_r, *c++ );
+                _r.rawBlock.fillLevel--;
             }
 
             /* Check to make sure there's not an unexpected TPIU in here */
