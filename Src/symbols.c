@@ -320,10 +320,13 @@ static bool _getDest( char *assy, uint32_t *dest )
 }
 
 #if defined(WIN32)
-static FILE *_openProcess( char *commandLine, PROCESS_INFORMATION *processInfo )
+static FILE *_openProcess( char *commandLine, PROCESS_INFORMATION *processInfo, FILE **errorOutput )
 {
     HANDLE readingPipe;
     HANDLE processOutPipe;
+
+    HANDLE errorReadingPipe;
+    HANDLE processErrorPipe;
 
     {
         // Create pipe for process' stdout
@@ -337,6 +340,18 @@ static FILE *_openProcess( char *commandLine, PROCESS_INFORMATION *processInfo )
         SetHandleInformation( readingPipe, HANDLE_FLAG_INHERIT, 0 );
     }
 
+    {
+        // Create pipe for process' stderr
+        SECURITY_ATTRIBUTES pipeSecurity;
+        pipeSecurity.nLength = sizeof( pipeSecurity );
+        pipeSecurity.bInheritHandle = true;
+        pipeSecurity.lpSecurityDescriptor = NULL;
+        CreatePipe( &errorReadingPipe, &processErrorPipe, &pipeSecurity, 1 * 1024 * 1024 );
+
+        // only write side of pipe should be inherited
+        SetHandleInformation( errorReadingPipe, HANDLE_FLAG_INHERIT, 0 );
+    }
+
     memset( processInfo, 0, sizeof( PROCESS_INFORMATION ) );
 
     {
@@ -345,7 +360,7 @@ static FILE *_openProcess( char *commandLine, PROCESS_INFORMATION *processInfo )
         startupInfo.cb = sizeof( startupInfo );
         startupInfo.hStdOutput = processOutPipe;
         startupInfo.hStdInput = GetStdHandle( STD_INPUT_HANDLE );
-        startupInfo.hStdInput = GetStdHandle( STD_ERROR_HANDLE );
+        startupInfo.hStdError = processErrorPipe;
         startupInfo.dwFlags = STARTF_USESTDHANDLES;
 
         BOOL success = CreateProcessA(
@@ -363,10 +378,12 @@ static FILE *_openProcess( char *commandLine, PROCESS_INFORMATION *processInfo )
 
         // Close handle passed to child process
         CloseHandle( processOutPipe );
+        CloseHandle( processErrorPipe );
 
         if ( !success )
         {
             CloseHandle( readingPipe );
+            CloseHandle( errorReadingPipe );
             return NULL;
         }
     }
@@ -376,6 +393,7 @@ static FILE *_openProcess( char *commandLine, PROCESS_INFORMATION *processInfo )
     if ( fd == -1 )
     {
         CloseHandle( readingPipe );
+        CloseHandle( errorReadingPipe );
         return NULL;
     }
 
@@ -384,6 +402,24 @@ static FILE *_openProcess( char *commandLine, PROCESS_INFORMATION *processInfo )
     if ( f == NULL )
     {
         _close( fd );
+        return NULL;
+    }
+
+    int errorFd = _open_osfhandle( ( intptr_t )errorReadingPipe, _O_RDONLY );
+
+    if ( errorFd == -1 )
+    {
+        fclose( f );
+        CloseHandle( errorReadingPipe );
+        return NULL;
+    }
+
+    *errorOutput = _fdopen( errorFd, "r" );
+
+    if ( *errorOutput == NULL )
+    {
+        _close( errorFd );
+        fclose( f );
         return NULL;
     }
 
@@ -434,7 +470,8 @@ static enum symbolErr _getTargetProgramInfo( struct SymbolSet *s )
 
 #if defined(WIN32)
     PROCESS_INFORMATION processInfo;
-    f = _openProcess( commandLine, &processInfo );
+    FILE *errorOut;
+    f = _openProcess( commandLine, &processInfo, &errorOut );
 #else
     f = popen( commandLine, "r" );
 #endif
@@ -750,8 +787,29 @@ static enum symbolErr _getTargetProgramInfo( struct SymbolSet *s )
 
 #if defined(WIN32)
     WaitForSingleObject( processInfo.hProcess, INFINITE );
+
+    DWORD exitCode = 1;
+
+    if ( !GetExitCodeProcess( processInfo.hProcess, &exitCode ) )
+    {
+        exitCode = 1;
+    }
+
     CloseHandle( processInfo.hThread );
     CloseHandle( processInfo.hProcess );
+
+    if ( exitCode != 0 )
+    {
+        while ( !feof( errorOut ) )
+        {
+            fgets( line, MAX_LINE_LEN, errorOut );
+            fputs( line, stderr );
+        }
+
+        return SYMBOL_NOOBJDUMP;
+    }
+
+    fclose( errorOut );
 #else
 
     if ( 0 != pclose( f ) )
