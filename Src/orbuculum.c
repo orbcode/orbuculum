@@ -337,7 +337,11 @@ static void _doExit( void )
     if ( _r.opFileHandle )
     {
         close( _r.opFileHandle );
+	_r.opFileHandle = 0;
     }
+
+    /* Need to nudge our own process in case it's stuck in a read or similar */
+    _exit(0);
 }
 // ====================================================================================================
 static void _intHandler( int sig )

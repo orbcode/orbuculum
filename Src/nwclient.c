@@ -140,9 +140,7 @@ static void *_client( void *args )
     while ( !c->finish )
     {
         readDataLen = read( c->listenHandle, maxTransitPacket, TRANSFER_SIZE );
-        fflush( stdout );
 
-        // if ( ( c->finish ) || ( readDataLen <= 0 ) || ( write( c->portNo, maxTransitPacket, readDataLen ) < 0 ) )
         if ( ( c->finish ) || ( readDataLen <= 0 ) || ( send( c->portNo, ( const void * )maxTransitPacket, readDataLen, 0 ) < 0 ) )
         {
             /* This port went away, so remove it */
