@@ -879,7 +879,7 @@ static int _usbFeeder( struct RunTime *r )
 {
     libusb_device_handle *handle = NULL;
     libusb_device *dev;
-    const struct deviceList *p;
+    const struct deviceList *p = NULL;
     uint8_t iface;
     uint8_t ep;
     uint8_t altsetting = 0;
@@ -898,7 +898,7 @@ static int _usbFeeder( struct RunTime *r )
         }
 
         /* Snooze waiting for the device to appear .... this is useful for when they come and go */
-        while ( 1 )
+        while ( !r->ending )
         {
             p = _deviceList;
 
@@ -923,6 +923,10 @@ static int _usbFeeder( struct RunTime *r )
             usleep( INTERVAL_100MS );
         }
 
+	if (r->ending || r->errored)
+	  {
+	    break;
+	  }
         genericsReport( V_INFO, "Found %s" EOL, p->name );
 
         if ( !( dev = libusb_get_device( handle ) ) )
@@ -1039,7 +1043,7 @@ static int _usbFeeder( struct RunTime *r )
         {
             int ret = libusb_handle_events_completed( NULL, NULL );
 
-            if ( ret ) //&& ( ret != LIBUSB_ERROR_INTERRUPTED ) )
+            if ( ( ret ) && ( ret != LIBUSB_ERROR_INTERRUPTED ) )
             {
                 genericsReport( V_ERROR, "Error waiting for USB requests to complete %d" EOL, ret );
                 _doExit();
