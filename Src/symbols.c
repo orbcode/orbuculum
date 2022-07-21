@@ -115,6 +115,9 @@ static uint32_t _getFunctionEntryIdx( struct SymbolSet *s, char *function )
     return ( i < s->functionCount ) ? i : SYM_NOT_FOUND;
 }
 // ====================================================================================================
+// Strdup leak is deliberately ignored. That is the central purpose of this code!
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wanalyzer-malloc-leak"
 static uint32_t _getOrAddFunctionEntryIdx( struct SymbolSet *s, char *function )
 
 /* Return index to file entry in the functions table, or create an entry and return that */
@@ -129,11 +132,13 @@ static uint32_t _getOrAddFunctionEntryIdx( struct SymbolSet *s, char *function )
         f = s->functionCount;
         memset( &( s->functions[f] ), 0, sizeof( struct functionEntry ) );
         s->functions[f].name = strdup( function );
+        MEMCHECK( s->functions[f].name, 0 );
         s->functionCount++;
     }
 
     return f;
 }
+#pragma GCC diagnostic pop
 // ====================================================================================================
 static struct sourceLineEntry *_AddSourceLineEntry( struct SymbolSet *s )
 
@@ -1029,6 +1034,9 @@ bool SymbolSetValid( struct SymbolSet **s, char *filename )
     }
 }
 // ====================================================================================================
+// Malloc leak is deliberately ignored. That is the central purpose of this code!
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wanalyzer-malloc-leak"
 enum symbolErr SymbolSetCreate( struct SymbolSet **ss, const char *filename, const char *deleteMaterial,
                                 bool demanglecpp, bool recordSource, bool recordAssy, const char *objdumpOptions )
 
@@ -1040,10 +1048,14 @@ enum symbolErr SymbolSetCreate( struct SymbolSet **ss, const char *filename, con
     enum symbolErr  ret = SYMBOL_UNSPECIFIED;
 
     s = ( struct SymbolSet * )calloc( sizeof( struct SymbolSet ), 1 );
+    MEMCHECK( s, 0 );
 
     s->odoptions        = strdup( objdumpOptions ? objdumpOptions : "" );
+    MEMCHECK( s->odoptions, 0 );
     s->elfFile          = strdup( filename );
+    MEMCHECK( s->elfFile, 0 );
     s->deleteMaterial   = strdup( deleteMaterial ? deleteMaterial : "" );
+    MEMCHECK( s->deleteMaterial, 0 );
     s->recordSource     = recordSource;
     s->demanglecpp      = demanglecpp;
     s->recordAssy       = recordAssy;
@@ -1103,5 +1115,5 @@ enum symbolErr SymbolSetCreate( struct SymbolSet **ss, const char *filename, con
     *ss = s;
     return ret;
 }
-
+#pragma GCC diagnostic pop
 // ====================================================================================================

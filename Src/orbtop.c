@@ -760,9 +760,11 @@ void _handlePCSample( struct pcSampleMsg *m, struct ITMDecoder *i )
             /* This is a new entry - record it */
 
             a = ( struct visitedAddr * )calloc( 1, sizeof( struct visitedAddr ) );
+            MEMCHECK( a, );
             a->visits = 1;
 
             a->n = ( struct nameEntry * )malloc( sizeof( struct nameEntry ) );
+            MEMCHECK( a->n, )
             memcpy( a->n, &n, sizeof( struct nameEntry ) );
             HASH_ADD_INT( _r.addresses, n->addr, a );
         }

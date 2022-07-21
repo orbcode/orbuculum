@@ -337,7 +337,11 @@ static void _doExit( void )
     if ( _r.opFileHandle )
     {
         close( _r.opFileHandle );
+	_r.opFileHandle = 0;
     }
+
+    /* Need to nudge our own process in case it's stuck in a read or similar */
+    _exit(0);
 }
 // ====================================================================================================
 static void _intHandler( int sig )
@@ -879,7 +883,7 @@ static int _usbFeeder( struct RunTime *r )
 {
     libusb_device_handle *handle = NULL;
     libusb_device *dev;
-    const struct deviceList *p;
+    const struct deviceList *p = NULL;
     uint8_t iface;
     uint8_t ep;
     uint8_t altsetting = 0;
@@ -898,7 +902,7 @@ static int _usbFeeder( struct RunTime *r )
         }
 
         /* Snooze waiting for the device to appear .... this is useful for when they come and go */
-        while ( 1 )
+        while ( !r->ending )
         {
             p = _deviceList;
 
@@ -923,6 +927,10 @@ static int _usbFeeder( struct RunTime *r )
             usleep( INTERVAL_100MS );
         }
 
+	if (r->ending || r->errored)
+	  {
+	    break;
+	  }
         genericsReport( V_INFO, "Found %s" EOL, p->name );
 
         if ( !( dev = libusb_get_device( handle ) ) )
@@ -996,7 +1004,7 @@ static int _usbFeeder( struct RunTime *r )
 
         genericsReport( V_DEBUG, "USB Interface claimed, ready for data" EOL );
 
-        for ( uint32_t t = 0; ((t < NUM_RAW_BLOCKS) && !r->errored); t++ )
+        for ( uint32_t t = 0; ( ( t < NUM_RAW_BLOCKS ) && !r->errored ); t++ )
         {
             /* Allocate memory if it's not already provisioned */
             if ( !r->rawBlock[t].usbtfr )
@@ -1032,19 +1040,20 @@ static int _usbFeeder( struct RunTime *r )
             }
         }
 
-	/* If we are connected depends on if there was an error submitting the requests */
+        /* If we are connected depends on if there was an error submitting the requests */
         r->conn = !r->errored;
 
         while ( ( !r->ending )  && ( !r->errored ) )
         {
             int ret = libusb_handle_events_completed( NULL, NULL );
 
-            if ( ret ) //&& ( ret != LIBUSB_ERROR_INTERRUPTED ) )
+            if ( ( ret ) && ( ret != LIBUSB_ERROR_INTERRUPTED ) )
             {
                 genericsReport( V_ERROR, "Error waiting for USB requests to complete %d" EOL, ret );
                 _doExit();
             }
         }
+
         r->conn = false;
 
         /* Remove transfers from list and release the memory */
@@ -1061,11 +1070,11 @@ static int _usbFeeder( struct RunTime *r )
                 free( r->rawBlock[t].buffer );
             }
 
-	    if (r->rawBlock[t].usbtfr)
-	      {
-		libusb_free_transfer( r->rawBlock[t].usbtfr );
-	      }
-	    
+            if ( r->rawBlock[t].usbtfr )
+            {
+                libusb_free_transfer( r->rawBlock[t].usbtfr );
+            }
+
             r->rawBlock[t].buffer = NULL;
             r->rawBlock[t].usbtfr = NULL;
         }
@@ -1076,9 +1085,9 @@ static int _usbFeeder( struct RunTime *r )
         }
 
         //libusb_close( handle );
-	libusb_exit( NULL );
+        libusb_exit( NULL );
         genericsReport( V_INFO, "USB Interface closed" EOL );
-	usleep(INTERVAL_100MS);
+        usleep( INTERVAL_100MS );
     }
 
     return 0;
