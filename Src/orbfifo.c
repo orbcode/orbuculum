@@ -405,12 +405,12 @@ int main( int argc, char *argv[] )
             {
                 stream = streamCreateSocket( options.server, options.port );
 
-                if ( !stream )
+                if ( stream )
                 {
                     break;
                 }
 
-                perror( "Could not connect" );
+		genericsReport( V_INFO, "Could not connect" EOL );		
                 usleep( 1000000 );
             }
         }
