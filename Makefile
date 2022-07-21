@@ -246,7 +246,7 @@ $(OLOC)/%.o : %.c
 	Compiling $<)
 
 ifdef WINDOWS
-build: $(ORBUCULUM)            $(ORBCAT) $(ORBTOP) $(ORBDUMP) $(ORBMORTEM) $(ORBPROFILE) $(ORBTRACE)
+build: $(ORBUCULUM)            $(ORBCAT) $(ORBTOP) $(ORBDUMP) $(ORBMORTEM) $(ORBPROFILE) $(ORBTRACE) $(ORBSTAT)
 else
 build: $(ORBUCULUM) $(ORBFIFO) $(ORBCAT) $(ORBTOP) $(ORBDUMP) $(ORBMORTEM) $(ORBPROFILE) $(ORBTRACE) $(ORBSTAT)
 endif

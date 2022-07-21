@@ -228,6 +228,11 @@ The command line to build the Orbuculum tool suite is;
 
 You may need to change the paths to your libusb files, depending on how well your build environment is set up.
 
+Permissions and Access
+----------------------
+A udev rules files is included in ```Support/60-orbcode.rules```
+Install this to ```/etc/udev/rules.d``` to grant access to orbcode hardware, if required.
+
 Building on OSX
 ===============
 
