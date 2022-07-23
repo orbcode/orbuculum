@@ -81,13 +81,16 @@ struct TPIUPacket
 };
 
 // ====================================================================================================
+/* LEGACY */ bool TPIUGetPacket( struct TPIUDecoder *t, struct TPIUPacket *p );
+/* LEGACY */ enum TPIUPumpEvent TPIUPump( struct TPIUDecoder *t, uint8_t d );
+
 void TPIUDecoderForceSync( struct TPIUDecoder *t, uint8_t offset );
-bool TPIUGetPacket( struct TPIUDecoder *t, struct TPIUPacket *p );
 void TPIUDecoderZeroStats( struct TPIUDecoder *t );
 bool TPIUDecoderSynced( struct TPIUDecoder *t );
 struct TPIUDecoderStats *TPIUDecoderGetStats( struct TPIUDecoder *t );
 struct TPIUCommsStats *TPIUGetCommsStats( struct TPIUDecoder *t );
-enum TPIUPumpEvent TPIUPump( struct TPIUDecoder *t, uint8_t d );
+
+void TPIUPump2( struct TPIUDecoder *t, uint8_t *frame, int len, void ( *packetRxed )( enum TPIUPumpEvent e, struct TPIUPacket *p ) );
 void TPIUDecoderInit( struct TPIUDecoder *t );
 // ====================================================================================================
 #ifdef __cplusplus

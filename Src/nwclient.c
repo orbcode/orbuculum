@@ -40,7 +40,7 @@
 struct nwclientsHandle
 
 {
-    volatile struct nwClient* firstClient;    /* Head of linked list of network clients */
+    volatile struct nwClient *firstClient;    /* Head of linked list of network clients */
     pthread_mutex_t           clientList;     /* Lock for list of network clients */
 
     int                       wp;             /* Next write to shared buffer */
@@ -57,9 +57,9 @@ struct nwClient
 {
     int                       handle;         /* Handle to client */
     pthread_t                 thread;         /* Execution thread */
-    struct nwclientsHandle*   parent;         /* Who owns this list */
-    volatile struct nwClient* nextClient;
-    volatile struct nwClient* prevClient;
+    struct nwclientsHandle   *parent;         /* Who owns this list */
+    volatile struct nwClient *nextClient;
+    volatile struct nwClient *prevClient;
     bool                      finish;        /* Flag indicating it's time to cease operation */
     sem_t                     dataAvailable; /* Semaphore to say there's stuff to process */
 
@@ -148,14 +148,14 @@ static void *_client( void *args )
         /* Spin until we're told there's something to send along */
         sem_wait( &c->dataAvailable );
 
-	while ( c->rp != c->parent->wp )
+        while ( c->rp != c->parent->wp )
         {
             /* Data to send is either to the end of the ring buffer or to the wp, whichever is first */
             readDataLen = ( c->rp < c->parent->wp ) ? c->parent->wp - c->rp : SHARED_BUFFER_SIZE - c->rp;
             p = &( c->parent->sharedBuffer[c->rp] );
             c->rp = ( c->rp + readDataLen ) % SHARED_BUFFER_SIZE;
 
-            while (( readDataLen > 0 ) && (sent >= 0))
+            while ( ( readDataLen > 0 ) && ( sent >= 0 ) )
             {
                 sent = send( c->portNo, ( const void * )p, readDataLen, MSG_NOSIGNAL );
                 p += sent;
@@ -226,10 +226,10 @@ static void *_listenTask( void *arg )
 
         if ( pthread_create( &( client->thread ), NULL, &_client, client ) )
         {
-	  genericsExit( -1, "Failed to create thread" EOL );
-	}
-	else
-	  {
+            genericsExit( -1, "Failed to create thread" EOL );
+        }
+        else
+        {
             /* Auto-cleanup for this thread */
             pthread_detach( client->thread );
 
@@ -250,7 +250,7 @@ static void *_listenTask( void *arg )
             h->firstClient = client;
 
             pthread_mutex_unlock( &h->clientList );
-	  }
+        }
     }
 
     close( h->sockfd );

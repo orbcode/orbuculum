@@ -28,12 +28,12 @@
 #endif // timersub
 
 
-#define SYNCPATTERN 0xFFFFFF7F
-#define HALFSYNC_HIGH 0x7F
-#define HALFSYNC_LOW  0XFF
-#define NO_CHANNEL_CHANGE (0xFF)
-#define TIMEOUT (3)
-#define STAT_SYNC_BYTE (0xA6)
+#define SYNCPATTERN 0xFFFFFF7F           // Full sync indicator
+#define HALFSYNC_HIGH 0x7F               // Halfsync indicator, last arriving byte
+#define HALFSYNC_LOW  0XFF               // Halfsync indicator, first arriving byte
+#define NO_CHANNEL_CHANGE (0xFF)         // Flag to not change channel
+#define TPIU_TIMEOUT_US (200000U)        // Note that this timeout must be less than 1sec (<1000000 us)
+#define STAT_SYNC_BYTE (0xA6)            // Sync header for status
 
 // ====================================================================================================
 void TPIUDecoderInit( struct TPIUDecoder *t )
@@ -166,7 +166,7 @@ void _decodeCommsStats( struct TPIUDecoder *t )
 // ====================================================================================================
 enum TPIUPumpEvent TPIUPump( struct TPIUDecoder *t, uint8_t d )
 
-/* Pump next byte into the protocol decoder */
+/* LEGACY:: Pump next byte into the protocol decoder */
 
 {
     struct timeval nowTime, diffTime;
@@ -248,8 +248,8 @@ enum TPIUPumpEvent TPIUPump( struct TPIUDecoder *t, uint8_t d )
             memcpy( &t->lastPacket, &nowTime, sizeof( struct timeval ) );
             t->byteCount = 0;
 
-            /* If it was less than a second since the last packet then it's valid */
-            if ( diffTime.tv_sec < TIMEOUT )
+            /* If it was less than the timeout period then it's valid */
+            if ( ( diffTime.tv_sec == 0 ) && ( diffTime.tv_usec < TPIU_TIMEOUT_US ) )
             {
                 t->stats.packets++;
                 genericsReport( V_DEBUG, EOL );
@@ -269,6 +269,105 @@ enum TPIUPumpEvent TPIUPump( struct TPIUDecoder *t, uint8_t d )
             t->stats.error++;
             return TPIU_EV_ERROR;
             // -----------------------------------
+    }
+}
+// ====================================================================================================
+void TPIUPump2( struct TPIUDecoder *t, uint8_t *frame, int len, void ( *packetRxed )( enum TPIUPumpEvent e, struct TPIUPacket *p ) )
+
+/* Assemble this packet into TPIU frames and call them back */
+
+{
+    struct timeval nowTime, diffTime;
+    uint8_t d;
+    struct TPIUPacket _packet;
+
+    /* Check if this packet arrived a sensible time since the last one */
+    gettimeofday( &nowTime, NULL );
+    timersub( &nowTime, &t->lastPacket, &diffTime );
+    memcpy( &t->lastPacket, &nowTime, sizeof( struct timeval ) );
+
+    /* If it excedes the keepalive time then it's not validly synced */
+    if ( ( diffTime.tv_sec != 0 ) || ( diffTime.tv_usec > TPIU_TIMEOUT_US ) )
+    {
+        genericsReport( V_WARN, ">>>>>>>>> PACKET INTERVAL TOO LONG <<<<<<<<<<<<<<" EOL );
+        t->state = TPIU_UNSYNCED;
+        t->stats.lostSync++;
+        packetRxed( TPIU_EV_UNSYNCED, NULL );
+    }
+
+    /* Now process the packet */
+    while ( len-- )
+    {
+        d = *frame++;
+        t->syncMonitor = ( t->syncMonitor << 8 ) | d;
+
+        /* ----------------------------------------------------------------------------------- */
+        /* First case : This is a sync pattern. If so then process it, then move to next octet */
+        if ( t->syncMonitor == SYNCPATTERN )
+        {
+            packetRxed( ( t->state == TPIU_UNSYNCED ) ? TPIU_EV_NEWSYNC : TPIU_EV_SYNCED, NULL );
+
+            /* Deal with the special state that these are communication stats from the link */
+            /* ...it is still a reset though!                                               */
+            if ( ( t->byteCount == 14 ) && ( t->rxedPacket[0] == STAT_SYNC_BYTE ) )
+            {
+                _decodeCommsStats( t );
+            }
+
+            t->state = TPIU_RXING;
+            t->stats.syncCount++;
+            t->byteCount = 0;
+            t->got_lowbits = false;
+            genericsReport( V_DEBUG, "!!!! " EOL );
+
+            /* Consider this a valid timestamp */
+            gettimeofday( &t->lastPacket, NULL );
+            continue;
+        }
+
+        /* ----------------------------------------------- */
+        /* Second case : We're not synced, just move along */
+        if ( t->state == TPIU_UNSYNCED )
+        {
+            continue;
+        }
+
+        /* ------------------------------------------------------------------------------- */
+        /* Otherwise : Process this into a frame, and deal with the frame if it's complete */
+
+        // We collect in sets of 16 bits, in order to filter halfsyncs (0x7fff)
+        if ( !t->got_lowbits )
+        {
+            t->got_lowbits = true;
+            t->rxedPacket[t->byteCount] = d;
+            continue;
+        }
+
+        t->got_lowbits = false;
+
+        if ( ( d == HALFSYNC_HIGH ) && ( t->rxedPacket[t->byteCount] == HALFSYNC_LOW ) )
+        {
+            // A halfsync, waste of space, to be ignored
+            t->stats.halfSyncCount++;
+            continue;
+        }
+
+        // Pre-increment for the low byte we already got, post increment for this one
+        genericsReport( V_DEBUG, "[%02x %02x] ", t->rxedPacket[t->byteCount], d );
+        t->byteCount++;
+        t->rxedPacket[t->byteCount++] = d;
+
+        if ( t->byteCount == TPIU_PACKET_LEN )
+        {
+            t->stats.packets++;
+            genericsReport( V_DEBUG, EOL );
+
+            if ( TPIUGetPacket( t, &_packet ) )
+            {
+                packetRxed( TPIU_EV_RXEDPACKET, &_packet );
+            }
+        }
+        continue;
     }
 }
 // ====================================================================================================
