@@ -55,7 +55,7 @@
 #include "nwclient.h"
 
 /* How many transfer buffers from the source to allocate */
-#define NUM_RAW_BLOCKS (10)
+#define NUM_RAW_BLOCKS (32)
 
 /* Record for options, either defaults or from command line */
 struct Options
@@ -82,10 +82,11 @@ struct Options
     int listenPort;                                      /* Listening port for network */
 };
 
+
 struct dataBlock
 {
     ssize_t fillLevel;                                   /* How full this block is */
-    uint8_t *buffer;                                     /* Block buffer */
+    uint8_t buffer[TRANSFER_SIZE];                       /* Block buffer */
     struct libusb_transfer *usbtfr;                      /* USB Transfer handle */
 };
 
@@ -104,7 +105,7 @@ struct RunTime
     long int  intervalBytes;                             /* Number of bytes transferred in current interval */
 
     pthread_t intervalThread;                            /* Thread reporting on intervals */
-    pthread_t processThread;                             /* Thread distributing to clients */
+    pthread_t processThread;                             /* Thread for processing prior to distributing to clients */
     sem_t     dataForClients;                            /* Semaphore counting data for clients */
     bool      ending;                                    /* Flag indicating app is terminating */
     bool      errored;                                   /* Flag indicating problem in reception process */
@@ -156,7 +157,7 @@ static const struct deviceList
 #define INTERVAL_100MS (100*INTERVAL_1MS)
 #define INTERVAL_1S    (10*INTERVAL_100MS)
 
-// #define DUMP_BLOCK
+//#define DUMP_BLOCK
 
 struct Options _options =
 {
@@ -745,8 +746,59 @@ static void _stripTPIU( struct RunTime *r, uint8_t *c, int bytes )
     }
 }
 // ====================================================================================================
-static void *_processBlocks( void *params )
-/* Generic block processor for received data */
+static void _processBlock( struct RunTime *r, ssize_t fillLevel, uint8_t* buffer )
+
+{
+  genericsReport( V_DEBUG, "RXED Packet of %d bytes%s" EOL, fillLevel, ( r->options->intervalReportTime ) ? EOL : "" );
+
+  if ( fillLevel )
+    {
+      /* Account for this reception */
+      r->intervalBytes += fillLevel;
+
+#ifdef DUMP_BLOCK
+      uint8_t *c = buffer;
+      uint32_t y = fillLevel;
+
+      genericsPrintf( EOL );
+
+      while ( y-- )
+	{
+	  genericsPrintf( "%02X ", *c++ );
+
+	  if ( !( y % 16 ) )
+	    {
+	      genericsPrinttf( EOL );
+	    }
+	}
+#endif
+
+      if ( r->opFileHandle )
+	{
+	  if ( write( r->opFileHandle, buffer, fillLevel ) < 0 )
+	    {
+	      genericsExit( -3, "Writing to file failed" EOL );
+	    }
+	}
+
+      if ( r-> options->useTPIU )
+	{
+	  /* Strip the TPIU framing from this input */
+	  _stripTPIU( r, r->rawBlock[r->rp].buffer, r->rawBlock[r->rp].fillLevel );
+	  _purgeBlock( r );
+	}
+      else
+	{
+	  /* Do it the old fashioned way and send out the unfettered block */
+	  nwclientSend( _r.n, r->rawBlock[r->rp].fillLevel, r->rawBlock[r->rp].buffer );
+	}
+    }
+}
+
+// ====================================================================================================
+static void *_processBlocksQueue( void *params )
+
+/* Generic block processor task for received data */
 
 {
     struct RunTime *r = ( struct RunTime * )params;
@@ -757,53 +809,8 @@ static void *_processBlocks( void *params )
 
         if ( r->rp != r->wp )
         {
-            genericsReport( V_DEBUG, "RXED Packet of %d bytes%s" EOL, r->rawBlock[r->rp].fillLevel, ( _r.options->intervalReportTime ) ? EOL : "" );
-
-            if ( r->rawBlock[r->rp].fillLevel )
-            {
-                /* Account for this reception */
-                r->intervalBytes += r->rawBlock[r->rp].fillLevel;
-
-#ifdef DUMP_BLOCK
-                uint8_t *c = r->rawBlock[r->rp].buffer;
-                uint32_t y = r->rawBlock[r->rp].fillLevel;
-
-                fprintf( stderr, EOL );
-
-                while ( y-- )
-                {
-                    fprintf( stderr, "%02X ", *c++ );
-
-                    if ( !( y % 16 ) )
-                    {
-                        fprintf( stderr, EOL );
-                    }
-                }
-
-#endif
-
-                if ( _r.opFileHandle )
-                {
-                    if ( write( _r.opFileHandle, r->rawBlock[r->rp].buffer, r->rawBlock[r->rp].fillLevel ) < 0 )
-                    {
-                        genericsExit( -3, "Writing to file failed" EOL );
-                    }
-                }
-
-                if ( r-> options->useTPIU )
-                {
-                    /* Strip the TPIU framing from this input */
-                    _stripTPIU( r, r->rawBlock[r->rp].buffer, r->rawBlock[r->rp].fillLevel );
-                    _purgeBlock( r );
-                }
-                else
-                {
-                    /* Do it the old fashioned way and send out the unfettered block */
-                    nwclientSend( _r.n, r->rawBlock[r->rp].fillLevel, r->rawBlock[r->rp].buffer );
-                }
-            }
-
-            r->rp = ( r->rp + 1 ) % NUM_RAW_BLOCKS;
+	  _processBlock( r, r->rawBlock[r->rp].fillLevel, r->rawBlock[r->rp].buffer );
+	  r->rp = ( r->rp + 1 ) % NUM_RAW_BLOCKS;
         }
     }
 
@@ -828,7 +835,6 @@ static void _usb_callback( struct libusb_transfer *t )
                 genericsExit( -4, "Writing to file failed (%s)" EOL, strerror( errno ) );
             }
         }
-
 #ifdef DUMP_BLOCK
         uint8_t *c = t->buffer;
         uint32_t y = t->actual_length;
@@ -844,7 +850,6 @@ static void _usb_callback( struct libusb_transfer *t )
                 fprintf( stderr, EOL );
             }
         }
-
 #endif
 
         if ( _r.options->useTPIU )
@@ -858,7 +863,6 @@ static void _usb_callback( struct libusb_transfer *t )
             /* Do it the old fashioned way and send out the unfettered block */
             nwclientSend( _r.n, t->actual_length, t->buffer );
         }
-
     }
 
     if ( ( t->status != LIBUSB_TRANSFER_COMPLETED ) &&
@@ -866,7 +870,9 @@ static void _usb_callback( struct libusb_transfer *t )
             ( t->status != LIBUSB_TRANSFER_CANCELLED )
        )
     {
-        genericsReport( V_DEBUG, "Errored out with status %d (%s)" EOL, t->status, libusb_error_name( t->status ) );
+        genericsReport( V_WARN, "Errored out with status %d (%s)" EOL, t->status, libusb_error_name( t->status ) );
+        exit( 0 );
+
         _r.errored = true;
     }
     else
@@ -889,7 +895,6 @@ static int _usbFeeder( struct RunTime *r )
     uint8_t altsetting = 0;
     uint8_t num_altsetting = 0;
     int32_t err;
-    bool using_devmem = false;
 
     while ( !r->ending )
     {
@@ -1013,17 +1018,6 @@ static int _usbFeeder( struct RunTime *r )
                 r->rawBlock[t].usbtfr = libusb_alloc_transfer( 0 );
             }
 
-            if ( !r->rawBlock[t].buffer )
-            {
-                r->rawBlock[t].buffer = libusb_dev_mem_alloc( handle, TRANSFER_SIZE );
-                using_devmem = true;
-            }
-
-            if ( !r->rawBlock[t].buffer )
-            {
-                r->rawBlock[t].buffer = malloc( TRANSFER_SIZE );
-            }
-
             libusb_fill_bulk_transfer ( r->rawBlock[t].usbtfr, handle, ep,
                                         r->rawBlock[t].buffer,
                                         TRANSFER_SIZE,
@@ -1062,21 +1056,11 @@ static int _usbFeeder( struct RunTime *r )
         {
             libusb_cancel_transfer( r->rawBlock[t].usbtfr );
 
-            if ( using_devmem )
-            {
-                libusb_dev_mem_free( handle, r->rawBlock[t].buffer, TRANSFER_SIZE );
-            }
-            else
-            {
-                free( r->rawBlock[t].buffer );
-            }
-
             if ( r->rawBlock[t].usbtfr )
             {
                 libusb_free_transfer( r->rawBlock[t].usbtfr );
             }
 
-            r->rawBlock[t].buffer = NULL;
             r->rawBlock[t].usbtfr = NULL;
         }
 
@@ -1154,7 +1138,7 @@ static int _nwserverFeeder( struct RunTime *r )
             }
 
             r->wp = ( r->wp + 1 ) % NUM_RAW_BLOCKS;
-            sem_post( &r->dataForClients );
+	    sem_post( &r->dataForClients );
         }
 
         r->conn = false;
@@ -1243,7 +1227,7 @@ static int _serialFeeder( struct RunTime *r )
             }
 
             r->wp = ( r->wp + 1 ) % NUM_RAW_BLOCKS;
-            sem_post( &r->dataForClients );
+	    sem_post( &r->dataForClients );
         }
 
         r->conn = false;
@@ -1317,16 +1301,8 @@ static int _serialFeeder( struct RunTime *r )
                 break;
             }
 
-            sem_post( &r->dataForClients );
-            uint8_t nwp = ( r->wp + 1 ) % NUM_RAW_BLOCKS;
-
-            /* Spin waiting for buffer space to become available */
-            while ( nwp == r->rp )
-            {
-                usleep( INTERVAL_100US );
-            }
-
-            r->wp = nwp;
+            r->wp = ( r->wp + 1 ) % NUM_RAW_BLOCKS;
+	    sem_post( &r->dataForClients );
         }
 
         r->conn = false;
@@ -1373,18 +1349,17 @@ static int _fileFeeder( struct RunTime *r )
             }
         }
 
-        sem_post( &r->dataForClients );
-        uint8_t nwp = ( r->wp + 1 ) % NUM_RAW_BLOCKS;
+	/* We can probably read from file faster than we can process.... */
+	sem_post( &r->dataForClients );
+	int nwp = ( r->wp + 1 ) % NUM_RAW_BLOCKS;
 
         /* Spin waiting for buffer space to become available */
         while ( nwp == r->rp )
         {
             usleep( INTERVAL_100US );
         }
-
-        r->wp = nwp;
+	r->wp = nwp;
     }
-
     r->conn = false;
 
     if ( !r->options->fileTerminate )
@@ -1415,7 +1390,7 @@ int main( int argc, char *argv[] )
     TPIUDecoderInit( &_r.t );
 
     if ( sem_init( &_r.dataForClients, 0, 0 ) < 0 )
-    {
+      {
         genericsExit( -1, "Failed to establish semaphore" EOL );
     }
 
@@ -1478,7 +1453,6 @@ int main( int argc, char *argv[] )
 
                 _r.handler[_r.numHandlers].channel = x;
                 _r.handler[_r.numHandlers].strippedBlock = ( struct dataBlock * )calloc( 1, sizeof( struct dataBlock ) );
-                _r.handler[_r.numHandlers].strippedBlock->buffer = ( uint8_t * )malloc( TRANSFER_SIZE );
                 _r.handler[_r.numHandlers].n = nwclientStart(  _r.options->listenPort + _r.numHandlers );
                 genericsReport( V_WARN, "Started Network interface for channel %d on port %d" EOL, x, _r.options->listenPort + _r.numHandlers );
                 _r.numHandlers++;
@@ -1505,9 +1479,6 @@ int main( int argc, char *argv[] )
         pthread_create( &_r.intervalThread, NULL, &_checkInterval, &_r );
     }
 
-    /* Now start the distribution task */
-    pthread_create( &_r.processThread, NULL, &_processBlocks, &_r );
-
     if ( _r.options->outfile )
     {
         _r.opFileHandle = open( _r.options->outfile, O_CREAT | O_TRUNC | O_WRONLY, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH );
@@ -1519,32 +1490,28 @@ int main( int argc, char *argv[] )
         }
     }
 
-    /* Allocate memory blocks for non-usb case */
-    if ( ( _r.options->nwserverPort ) || ( _r.options->port ) || ( _r.options->file ) )
+    if (( _r.options->nwserverPort ) || ( _r.options->port ) || ( _r.options->file ))
     {
-        for ( uint32_t t = 0; t < NUM_RAW_BLOCKS; t++ )
-        {
-            _r.rawBlock[t].buffer = malloc( TRANSFER_SIZE );
-        }
+      /* Start the distribution task */
+      pthread_create( &_r.processThread, NULL, &_processBlocksQueue, &_r );
 
-        if ( _r.options->nwserverPort )
-        {
-            exit( _nwserverFeeder( &_r ) );
-        }
+      if ( _r.options->nwserverPort )
+	{
+	  exit( _nwserverFeeder( &_r ) );
+	}
 
-        if ( _r.options->port )
-        {
-            exit( _serialFeeder( &_r ) );
-        }
+      if ( _r.options->port )
+	{
+	  exit( _serialFeeder( &_r ) );
+	}
 
-        if ( _r.options->file )
-        {
-            exit( _fileFeeder( &_r ) );
-        }
+      if ( _r.options->file )
+	{
+	  exit( _fileFeeder( &_r ) );
+	}
     }
-    else
-    {
-        exit( _usbFeeder( &_r ) );
-    }
+
+    /* ...nothing else left, it must be usb! */
+    exit( _usbFeeder( &_r ) );
 }
 // ====================================================================================================

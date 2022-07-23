@@ -366,7 +366,6 @@ bool _processOptions( int argc, char *argv[] )
 
 {
     int c, optionIndex = 0;
-    char *chanConfig;
     unsigned int chan;
     char *chanIndex;
 #define DELIMITER ','
@@ -438,20 +437,13 @@ bool _processOptions( int argc, char *argv[] )
             // ------------------------------------
             /* Individual channel setup */
             case 'c':
-                chanIndex = chanConfig = strdup( optarg );
-
-                if ( NULL == chanConfig )
-                {
-                    genericsReport( V_ERROR, "Couldn't allocate memory at %s::%d" EOL, __FILE__, __LINE__ );
-                    return false;
-                }
+                chanIndex = optarg;
 
                 chan = atoi( optarg );
 
                 if ( chan >= NUM_CHANNELS )
                 {
                     genericsReport( V_ERROR, "Channel index out of range" EOL );
-                    free( chanConfig );
                     return false;
                 }
 
@@ -464,7 +456,6 @@ bool _processOptions( int argc, char *argv[] )
                 if ( !*chanIndex )
                 {
                     genericsReport( V_ERROR, "No output format for channel %d" EOL, chan );
-                    free( chanConfig );
                     return false;
                 }
 
@@ -551,7 +542,6 @@ static struct Stream *_tryOpenStream()
     }
 }
 // ====================================================================================================
-
 static void _feedStream( struct Stream *stream )
 {
     unsigned char cbw[TRANSFER_SIZE];
@@ -632,6 +622,9 @@ int main( int argc, char *argv[] )
             {
                 break;
             }
+
+	    /* Checking every 100ms for a connection is quite often enough */
+	    usleep(10000);
         }
 
         if ( stream != NULL )
@@ -647,6 +640,5 @@ int main( int argc, char *argv[] )
             break;
         }
     }
-
 }
 // ====================================================================================================

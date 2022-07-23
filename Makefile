@@ -10,6 +10,10 @@ SCREEN_PALETTE="uicolours_default.h"
 
 CFLAGS=-DVERSION="\"2.0.0Beta2InProgress\""
 
+# Add these flags to be evil, but in a nice way
+#CFLAGS+=-fsanitize=address -static-libasan
+#CFLAGS+=-fanalyzer
+
 INSTALL_ROOT?=/usr/local/
 
 CROSS_COMPILE=

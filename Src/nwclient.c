@@ -32,38 +32,43 @@
     #define SO_REUSEPORT SO_REUSEADDR
 #endif
 
-#define CLIENT_TERM_INTERVAL_US (10000)       /* Interval to check for all clients lost */
+/* Shared ring buffer for data */
+#define SHARED_BUFFER_SIZE (8*TRANSFER_SIZE)
 
-/* Master structure for the nwclients */
+/* Master structure for the set of nwclients */
 struct nwclientsHandle
 
 {
-    struct nwClient *firstClient;             /* Head of linked list of network clients */
-    pthread_mutex_t clientList;               /* Lock for list of network clients */
+    volatile struct nwClient* firstClient;    /* Head of linked list of network clients */
+    pthread_mutex_t           clientList;     /* Lock for list of network clients */
 
-    int sockfd;                               /* The socket for the inferior */
-    pthread_t ipThread;                       /* The listening thread for n/w clients */
-    bool finish;                              /* Its time to leave */
+    int                       wp;             /* Next write to shared buffer */
+    uint8_t sharedBuffer[SHARED_BUFFER_SIZE]; /* Data waiting to be sent to the clients */
+
+    int                       sockfd;         /* The socket for the inferior */
+    pthread_t                 ipThread;       /* The listening thread for n/w clients */
+    bool                      finish;         /* Its time to leave */
 };
 
-/* List of any connected network clients */
+/* Descriptor for individual connected network clients */
 struct nwClient
 
 {
-    int handle;                               /* Handle to client */
-    pthread_t thread;                         /* Execution thread */
-    struct nwclientsHandle *parent;           /* Who owns this list */
-    struct nwClient *nextClient;
-    struct nwClient *prevClient;
-    bool finish;                              /* Flag indicating it's time to cease operation */
+    int                       handle;         /* Handle to client */
+    pthread_t                 thread;         /* Execution thread */
+    struct nwclientsHandle*   parent;         /* Who owns this list */
+    volatile struct nwClient* nextClient;
+    volatile struct nwClient* prevClient;
+    bool                      finish;        /* Flag indicating it's time to cease operation */
+    sem_t                     dataAvailable; /* Semaphore to say there's stuff to process */
 
     /* Parameters used to run the client */
-    int portNo;                               /* Port of connection */
-    int listenHandle;                         /* Handle for listener */
-
+    int                       portNo;        /* Port of connection */
+    int                       rp;            /* Current read pointer in data stream */
 };
 
-static int lock_with_timeout( pthread_mutex_t *mutex, const struct timespec *ts )
+// ====================================================================================================
+static int _lock_with_timeout( pthread_mutex_t *mutex, const struct timespec *ts )
 {
     int ret;
     int left, step;
@@ -98,11 +103,10 @@ static void _clientRemove( struct nwClient *c )
     const struct timespec ts = {.tv_sec = 1, .tv_nsec = 0};
 
     close( c->portNo );
-    close( c->listenHandle );
 
     /* First of all, make sure we can get access to the client list */
 
-    if ( lock_with_timeout( &c->parent->clientList, &ts ) < 0 )
+    if ( _lock_with_timeout( &c->parent->clientList, &ts ) < 0 )
     {
         genericsExit( -1, "Failed to acquire mutex" EOL );
     }
@@ -134,26 +138,42 @@ static void *_client( void *args )
 
 {
     struct nwClient *c = ( struct nwClient * )args;
-    int readDataLen;
-    uint8_t maxTransitPacket[TRANSFER_SIZE];
+    ssize_t readDataLen;
+    uint8_t *p;
+    ssize_t sent = 0;
 
     while ( !c->finish )
     {
-        readDataLen = read( c->listenHandle, maxTransitPacket, TRANSFER_SIZE );
+        /* Spin until we're told there's something to send along */
+        sem_wait( &c->dataAvailable );
 
-        if ( ( c->finish ) || ( readDataLen <= 0 ) || ( send( c->portNo, ( const void * )maxTransitPacket, readDataLen, 0 ) < 0 ) )
+	while ( c->rp != c->parent->wp )
         {
-            /* This port went away, so remove it */
-            if ( !c->finish )
+            /* Data to send is either to the end of the ring buffer or to the wp, whichever is first */
+            readDataLen = ( c->rp < c->parent->wp ) ? c->parent->wp - c->rp : SHARED_BUFFER_SIZE - c->rp;
+            p = &( c->parent->sharedBuffer[c->rp] );
+            c->rp = ( c->rp + readDataLen ) % SHARED_BUFFER_SIZE;
+
+            while (( readDataLen > 0 ) && (sent >= 0))
             {
-                genericsReport( V_INFO, "Connection dropped" EOL );
+                sent = send( c->portNo, ( const void * )p, readDataLen, MSG_NOSIGNAL );
+                p += sent;
+                readDataLen -= sent;
             }
 
-            c->finish = true;
+            if ( c->finish || readDataLen )
+            {
+                /* This port went away, so remove it */
+                if ( !c->finish )
+                {
+                    genericsReport( V_INFO, "Connection dropped" EOL );
+                }
+
+                c->finish = true;
+                break;
+            }
         }
     }
-
-    close( c->listenHandle );
 
     _clientRemove( c );
     return NULL;
@@ -171,7 +191,6 @@ static void *_listenTask( void *arg )
     socklen_t clilen;
 #endif
     struct sockaddr_in cli_addr;
-    int f[2];                               /* File descriptor set for pipe */
     struct nwClient *client;
     char s[100];
 
@@ -191,53 +210,46 @@ static void *_listenTask( void *arg )
         inet_ntop( AF_INET, &cli_addr.sin_addr, s, 99 );
         genericsReport( V_INFO, "New connection from %s" EOL, s );
 
-        bool success = true;
-
-#ifdef WIN32
-        HANDLE writeHandle;
-        HANDLE readHandle;
-        success = CreatePipe( &readHandle, &writeHandle, NULL, 0 ) != 0;
-        f[0] = _open_osfhandle( ( intptr_t )readHandle, 0 );
-        f[1] = _open_osfhandle( ( intptr_t )writeHandle, 0 );
-#else
-        success = !pipe( f );
-#endif
-
         /* We got a new connection - spawn a thread to handle it */
-        if ( success )
+        client = ( struct nwClient * )calloc( 1, sizeof( struct nwClient ) );
+        MEMCHECK( client, NULL );
+
+        client->parent = h;
+        client->portNo = newsockfd;
+        client->rp     = h->wp;
+
+        if ( sem_init( &client->dataAvailable, 0, 0 ) < 0 )
         {
-            client = ( struct nwClient * )calloc( 1, sizeof( struct nwClient ) );
-            MEMCHECK( client, NULL );
-
-            client->handle = f[1];
-            client->parent = h;
-            client->listenHandle = f[0];
-            client->portNo = newsockfd;
-
-            if ( !pthread_create( &( client->thread ), NULL, &_client, client ) )
-            {
-                /* Auto-cleanup for this thread */
-                pthread_detach( client->thread );
-
-                /* Hook into linked list */
-                if ( lock_with_timeout( &h->clientList, &ts ) < 0 )
-                {
-                    genericsExit( -1, "Failed to acquire mutex" EOL );
-                }
-
-                client->nextClient = h->firstClient;
-                client->prevClient = NULL;
-
-                if ( client->nextClient )
-                {
-                    client->nextClient->prevClient = client;
-                }
-
-                h->firstClient = client;
-
-                pthread_mutex_unlock( &h->clientList );
-            }
+            genericsExit( -1, "Failed to establish semaphore" EOL );
         }
+
+        if ( pthread_create( &( client->thread ), NULL, &_client, client ) )
+        {
+	  genericsExit( -1, "Failed to create thread" EOL );
+	}
+	else
+	  {
+            /* Auto-cleanup for this thread */
+            pthread_detach( client->thread );
+
+            /* Hook into linked list */
+            if ( _lock_with_timeout( &h->clientList, &ts ) < 0 )
+            {
+                genericsExit( -1, "Failed to acquire mutex" EOL );
+            }
+
+            client->nextClient = h->firstClient;
+            client->prevClient = NULL;
+
+            if ( client->nextClient )
+            {
+                client->nextClient->prevClient = client;
+            }
+
+            h->firstClient = client;
+
+            pthread_mutex_unlock( &h->clientList );
+	  }
     }
 
     close( h->sockfd );
@@ -250,25 +262,37 @@ static void *_listenTask( void *arg )
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
-void nwclientSend( struct nwclientsHandle *h, uint32_t len, uint8_t *buffer )
+void nwclientSend( struct nwclientsHandle *h, uint32_t len, uint8_t *ipbuffer )
 
 {
-    assert( h );
-    assert( len );
-
     const struct timespec ts = {.tv_sec = 1, .tv_nsec = 0};
-    struct nwClient *n = h->firstClient;
+    int newWp = ( h->wp + len );
+    int toEnd = ( newWp > SHARED_BUFFER_SIZE ) ? SHARED_BUFFER_SIZE - h->wp : len;
+    int fromStart = len - toEnd;
+
+    /* Copy the received data into the shared buffer */
+    memcpy( &h->sharedBuffer[h->wp], ipbuffer, toEnd );
+
+    if ( fromStart )
+    {
+        memcpy( h->sharedBuffer, &ipbuffer[toEnd], fromStart );
+    }
+
+    h->wp = newWp % SHARED_BUFFER_SIZE;
 
     if ( !h->finish )
     {
-        if ( lock_with_timeout( &h->clientList, &ts ) < 0 )
+        if ( _lock_with_timeout( &h->clientList, &ts ) < 0 )
         {
             genericsExit( -1, "Failed to acquire mutex" EOL );
         }
 
+        /* Now kick all the clients that new data arrived for them to distribute */
+        volatile struct nwClient *n = h->firstClient;
+
         while ( n )
         {
-            write( n->handle, buffer, len );
+            sem_post( ( sem_t * )&n->dataAvailable );
             n = n->nextClient;
         }
 
@@ -284,11 +308,7 @@ struct nwclientsHandle *nwclientStart( int port )
     struct sockaddr_in serv_addr;
     int flag = 1;
     struct nwclientsHandle *h = ( struct nwclientsHandle * )calloc( 1, sizeof( struct nwclientsHandle ) );
-
-    if ( !h )
-    {
-        return NULL;
-    }
+    MEMCHECK( h, NULL );
 
     h->sockfd = socket( AF_INET, SOCK_STREAM, 0 );
     setsockopt( h->sockfd, SOL_SOCKET, SO_REUSEPORT, ( const void * )&flag, sizeof( flag ) );
@@ -304,10 +324,7 @@ struct nwclientsHandle *nwclientStart( int port )
     serv_addr.sin_addr.s_addr = INADDR_ANY;
     serv_addr.sin_port = htons( port );
 
-    if ( setsockopt( h->sockfd, SOL_SOCKET, SO_REUSEADDR, ( const void * ) & ( int )
-{
-    1
-}, sizeof( int ) ) < 0 )
+    if ( setsockopt( h->sockfd, SOL_SOCKET, SO_REUSEADDR, ( const void * ) &flag, sizeof( flag ) ) < 0 )
     {
         genericsReport( V_ERROR, "setsockopt(SO_REUSEADDR) failed" );
         goto free_and_return;
@@ -349,21 +366,20 @@ void nwclientShutdown( struct nwclientsHandle *h )
     /* Flag that we're ending */
     h->finish = true;
 
-    if ( lock_with_timeout( &h->clientList, &ts ) < 0 )
+    if ( _lock_with_timeout( &h->clientList, &ts ) < 0 )
     {
         genericsExit( -1, "Failed to acquire mutex" EOL );
     }
 
-    struct nwClient *c = h->firstClient;
+    volatile struct nwClient *c = h->firstClient;
 
     /* Tell all the clients to terminate */
     while ( c )
     {
         c->finish = true;
 
-        /* Closing both ends of the connection will kill the client */
+        /* Closing the connection will kill the client */
         close( c->handle );
-        close( c->listenHandle );
 
         /* This is safe because we are locked by the mutex */
         c = c->nextClient;
