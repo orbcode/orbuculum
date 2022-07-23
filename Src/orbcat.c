@@ -623,8 +623,8 @@ int main( int argc, char *argv[] )
                 break;
             }
 
-	    /* Checking every 100ms for a connection is quite often enough */
-	    usleep(10000);
+            /* Checking every 100ms for a connection is quite often enough */
+            usleep( 10000 );
         }
 
         if ( stream != NULL )

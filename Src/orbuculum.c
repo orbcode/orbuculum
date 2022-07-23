@@ -746,52 +746,112 @@ static void _stripTPIU( struct RunTime *r, uint8_t *c, int bytes )
     }
 }
 // ====================================================================================================
-static void _processBlock( struct RunTime *r, ssize_t fillLevel, uint8_t* buffer )
+static void _TPIUpacketRxed( enum TPIUPumpEvent e, struct TPIUPacket *p )
+
+/* Callback for when a TPIU frame has been assembled */
 
 {
-  genericsReport( V_DEBUG, "RXED Packet of %d bytes%s" EOL, fillLevel, ( r->options->intervalReportTime ) ? EOL : "" );
+    struct handlers *h = NULL;
+    int cachedChannel = -1;
+    int chIndex = 0;
 
-  if ( fillLevel )
+    switch ( e )
     {
-      /* Account for this reception */
-      r->intervalBytes += fillLevel;
+        case TPIU_EV_RXEDPACKET:
+
+            /* Iterate through the packet, putting it into the correct output buffers */
+            for ( uint32_t g = 0; g < p->len; g++ )
+            {
+                if ( cachedChannel != p->packet[g].s )
+                {
+                    /* Whatever happens, cache this result */
+                    cachedChannel = p->packet[g].s;
+
+                    /* Search for channel */
+                    h = _r.handler;
+
+                    for ( chIndex = 0; chIndex < _r.numHandlers; chIndex++ )
+                    {
+                        if ( h->channel == p->packet[g].s )
+                        {
+                            break;
+                        }
+
+                        h++;
+                    }
+                }
+
+                if ( ( chIndex != _r.numHandlers ) && ( h ) )
+                {
+                    /* We must have found a match for this at some point, so add it to the queue */
+                    h->strippedBlock->buffer[h->strippedBlock->fillLevel++] = p->packet[g].d;
+                }
+            }
+
+            break;
+
+        case TPIU_EV_ERROR:
+            genericsReport( V_WARN, "****ERROR****%s" EOL, ( _r.options->intervalReportTime ) ? EOL : "" );
+            break;
+
+        case TPIU_EV_NEWSYNC:
+        case TPIU_EV_SYNCED:
+        case TPIU_EV_RXING:
+        case TPIU_EV_NONE:
+        case TPIU_EV_UNSYNCED:
+        default:
+            break;
+    }
+}
+
+// ====================================================================================================
+static void _processBlock( struct RunTime *r, ssize_t fillLevel, uint8_t *buffer )
+
+{
+    genericsReport( V_DEBUG, "RXED Packet of %d bytes%s" EOL, fillLevel, ( r->options->intervalReportTime ) ? EOL : "" );
+
+    if ( fillLevel )
+    {
+        /* Account for this reception */
+        r->intervalBytes += fillLevel;
 
 #ifdef DUMP_BLOCK
-      uint8_t *c = buffer;
-      uint32_t y = fillLevel;
+        uint8_t *c = buffer;
+        uint32_t y = fillLevel;
 
-      genericsPrintf( EOL );
+        genericsPrintf( EOL );
 
-      while ( y-- )
-	{
-	  genericsPrintf( "%02X ", *c++ );
+        while ( y-- )
+        {
+            genericsPrintf( "%02X ", *c++ );
 
-	  if ( !( y % 16 ) )
-	    {
-	      genericsPrinttf( EOL );
-	    }
-	}
+            if ( !( y % 16 ) )
+            {
+                genericsPrinttf( EOL );
+            }
+        }
+
 #endif
 
-      if ( r->opFileHandle )
-	{
-	  if ( write( r->opFileHandle, buffer, fillLevel ) < 0 )
-	    {
-	      genericsExit( -3, "Writing to file failed" EOL );
-	    }
-	}
+        if ( r->opFileHandle )
+        {
+            if ( write( r->opFileHandle, buffer, fillLevel ) < 0 )
+            {
+                genericsExit( -3, "Writing to file failed" EOL );
+            }
+        }
 
-      if ( r-> options->useTPIU )
-	{
-	  /* Strip the TPIU framing from this input */
-	  _stripTPIU( r, r->rawBlock[r->rp].buffer, r->rawBlock[r->rp].fillLevel );
-	  _purgeBlock( r );
-	}
-      else
-	{
-	  /* Do it the old fashioned way and send out the unfettered block */
-	  nwclientSend( _r.n, r->rawBlock[r->rp].fillLevel, r->rawBlock[r->rp].buffer );
-	}
+        if ( r-> options->useTPIU )
+        {
+            /* Strip the TPIU framing from this input */
+            TPIUPump2( &r->t, r->rawBlock[r->rp].buffer, r->rawBlock[r->rp].fillLevel, _TPIUpacketRxed );
+            _purgeBlock( r );
+        }
+        else
+        {
+            /* Do it the old fashioned way and send out the unfettered block */
+            nwclientSend( _r.n, r->rawBlock[r->rp].fillLevel, r->rawBlock[r->rp].buffer );
+        }
     }
 }
 
@@ -809,8 +869,8 @@ static void *_processBlocksQueue( void *params )
 
         if ( r->rp != r->wp )
         {
-	  _processBlock( r, r->rawBlock[r->rp].fillLevel, r->rawBlock[r->rp].buffer );
-	  r->rp = ( r->rp + 1 ) % NUM_RAW_BLOCKS;
+            _processBlock( r, r->rawBlock[r->rp].fillLevel, r->rawBlock[r->rp].buffer );
+            r->rp = ( r->rp + 1 ) % NUM_RAW_BLOCKS;
         }
     }
 
@@ -835,6 +895,7 @@ static void _usb_callback( struct libusb_transfer *t )
                 genericsExit( -4, "Writing to file failed (%s)" EOL, strerror( errno ) );
             }
         }
+
 #ifdef DUMP_BLOCK
         uint8_t *c = t->buffer;
         uint32_t y = t->actual_length;
@@ -850,6 +911,7 @@ static void _usb_callback( struct libusb_transfer *t )
                 fprintf( stderr, EOL );
             }
         }
+
 #endif
 
         if ( _r.options->useTPIU )
@@ -1138,7 +1200,7 @@ static int _nwserverFeeder( struct RunTime *r )
             }
 
             r->wp = ( r->wp + 1 ) % NUM_RAW_BLOCKS;
-	    sem_post( &r->dataForClients );
+            sem_post( &r->dataForClients );
         }
 
         r->conn = false;
@@ -1227,7 +1289,7 @@ static int _serialFeeder( struct RunTime *r )
             }
 
             r->wp = ( r->wp + 1 ) % NUM_RAW_BLOCKS;
-	    sem_post( &r->dataForClients );
+            sem_post( &r->dataForClients );
         }
 
         r->conn = false;
@@ -1302,7 +1364,7 @@ static int _serialFeeder( struct RunTime *r )
             }
 
             r->wp = ( r->wp + 1 ) % NUM_RAW_BLOCKS;
-	    sem_post( &r->dataForClients );
+            sem_post( &r->dataForClients );
         }
 
         r->conn = false;
@@ -1349,17 +1411,19 @@ static int _fileFeeder( struct RunTime *r )
             }
         }
 
-	/* We can probably read from file faster than we can process.... */
-	sem_post( &r->dataForClients );
-	int nwp = ( r->wp + 1 ) % NUM_RAW_BLOCKS;
+        /* We can probably read from file faster than we can process.... */
+        sem_post( &r->dataForClients );
+        int nwp = ( r->wp + 1 ) % NUM_RAW_BLOCKS;
 
         /* Spin waiting for buffer space to become available */
         while ( nwp == r->rp )
         {
             usleep( INTERVAL_100US );
         }
-	r->wp = nwp;
+
+        r->wp = nwp;
     }
+
     r->conn = false;
 
     if ( !r->options->fileTerminate )
@@ -1390,7 +1454,7 @@ int main( int argc, char *argv[] )
     TPIUDecoderInit( &_r.t );
 
     if ( sem_init( &_r.dataForClients, 0, 0 ) < 0 )
-      {
+    {
         genericsExit( -1, "Failed to establish semaphore" EOL );
     }
 
@@ -1490,25 +1554,25 @@ int main( int argc, char *argv[] )
         }
     }
 
-    if (( _r.options->nwserverPort ) || ( _r.options->port ) || ( _r.options->file ))
+    if ( ( _r.options->nwserverPort ) || ( _r.options->port ) || ( _r.options->file ) )
     {
-      /* Start the distribution task */
-      pthread_create( &_r.processThread, NULL, &_processBlocksQueue, &_r );
+        /* Start the distribution task */
+        pthread_create( &_r.processThread, NULL, &_processBlocksQueue, &_r );
 
-      if ( _r.options->nwserverPort )
-	{
-	  exit( _nwserverFeeder( &_r ) );
-	}
+        if ( _r.options->nwserverPort )
+        {
+            exit( _nwserverFeeder( &_r ) );
+        }
 
-      if ( _r.options->port )
-	{
-	  exit( _serialFeeder( &_r ) );
-	}
+        if ( _r.options->port )
+        {
+            exit( _serialFeeder( &_r ) );
+        }
 
-      if ( _r.options->file )
-	{
-	  exit( _fileFeeder( &_r ) );
-	}
+        if ( _r.options->file )
+        {
+            exit( _fileFeeder( &_r ) );
+        }
     }
 
     /* ...nothing else left, it must be usb! */
