@@ -94,7 +94,7 @@ struct handlers
 {
     int channel;                                         /* Channel number for this handler */
     long int intervalBytes;                              /* Number of depacketised bytes output on this channel */
-    struct dataBlock *strippedBlock;                     /* Processed buffer for output to clients */
+    struct dataBlock *strippedBlock;                     /* Processed buffers for output to clients */
     struct nwclientsHandle *n;                           /* Link to the network client subsystem */
 };
 
@@ -679,78 +679,13 @@ static void _purgeBlock( struct RunTime *r )
     }
 }
 // ====================================================================================================
-static void _stripTPIU( struct RunTime *r, uint8_t *c, int bytes )
-
-{
-    struct TPIUPacket p;
-
-    struct handlers *h = NULL;
-    int cachedChannel;
-    int chIndex = 0;
-
-    cachedChannel = -1;
-
-    while ( bytes-- )
-    {
-        switch ( TPIUPump( &r->t, *c++ ) )
-        {
-            case TPIU_EV_RXEDPACKET:
-                if ( !TPIUGetPacket( &r->t, &p ) )
-                {
-                    genericsReport( V_WARN, "TPIUGetPacket fell over%s" EOL, ( _r.options->intervalReportTime ) ? EOL : "" );
-                }
-
-                /* Iterate through the packet, putting it into the correct output buffers */
-                for ( uint32_t g = 0; g < p.len; g++ )
-                {
-                    if ( cachedChannel != p.packet[g].s )
-                    {
-                        /* Whatever happens, cache this result */
-                        cachedChannel = p.packet[g].s;
-
-                        /* Search for channel */
-                        h = r->handler;
-
-                        for ( chIndex = 0; chIndex < r->numHandlers; chIndex++ )
-                        {
-                            if ( h->channel == p.packet[g].s )
-                            {
-                                break;
-                            }
-
-                            h++;
-                        }
-                    }
-
-                    if ( ( chIndex != r->numHandlers ) && ( h ) )
-                    {
-                        /* We must have found a match for this at some point, so add it to the queue */
-                        h->strippedBlock->buffer[h->strippedBlock->fillLevel++] = p.packet[g].d;
-                    }
-                }
-
-                break;
-
-            case TPIU_EV_ERROR:
-                genericsReport( V_WARN, "****ERROR****%s" EOL, ( _r.options->intervalReportTime ) ? EOL : "" );
-                break;
-
-            case TPIU_EV_NEWSYNC:
-            case TPIU_EV_SYNCED:
-            case TPIU_EV_RXING:
-            case TPIU_EV_NONE:
-            case TPIU_EV_UNSYNCED:
-            default:
-                break;
-        }
-    }
-}
-// ====================================================================================================
-static void _TPIUpacketRxed( enum TPIUPumpEvent e, struct TPIUPacket *p )
+static void _TPIUpacketRxed( enum TPIUPumpEvent e, struct TPIUPacket *p, void *param )
 
 /* Callback for when a TPIU frame has been assembled */
 
 {
+    struct RunTime *r = ( struct RunTime * )param;
+
     struct handlers *h = NULL;
     int cachedChannel = -1;
     int chIndex = 0;
@@ -768,9 +703,9 @@ static void _TPIUpacketRxed( enum TPIUPumpEvent e, struct TPIUPacket *p )
                     cachedChannel = p->packet[g].s;
 
                     /* Search for channel */
-                    h = _r.handler;
+                    h = r->handler;
 
-                    for ( chIndex = 0; chIndex < _r.numHandlers; chIndex++ )
+                    for ( chIndex = 0; chIndex < r->numHandlers; chIndex++ )
                     {
                         if ( h->channel == p->packet[g].s )
                         {
@@ -781,7 +716,7 @@ static void _TPIUpacketRxed( enum TPIUPumpEvent e, struct TPIUPacket *p )
                     }
                 }
 
-                if ( ( chIndex != _r.numHandlers ) && ( h ) )
+                if ( ( chIndex != r->numHandlers ) && ( h ) )
                 {
                     /* We must have found a match for this at some point, so add it to the queue */
                     h->strippedBlock->buffer[h->strippedBlock->fillLevel++] = p->packet[g].d;
@@ -791,7 +726,7 @@ static void _TPIUpacketRxed( enum TPIUPumpEvent e, struct TPIUPacket *p )
             break;
 
         case TPIU_EV_ERROR:
-            genericsReport( V_WARN, "****ERROR****%s" EOL, ( _r.options->intervalReportTime ) ? EOL : "" );
+            genericsReport( V_WARN, "****ERROR****%s" EOL, ( r->options->intervalReportTime ) ? EOL : "" );
             break;
 
         case TPIU_EV_NEWSYNC:
@@ -844,7 +779,7 @@ static void _processBlock( struct RunTime *r, ssize_t fillLevel, uint8_t *buffer
         if ( r-> options->useTPIU )
         {
             /* Strip the TPIU framing from this input */
-            TPIUPump2( &r->t, r->rawBlock[r->rp].buffer, r->rawBlock[r->rp].fillLevel, _TPIUpacketRxed );
+            TPIUPump2( &r->t, r->rawBlock[r->rp].buffer, r->rawBlock[r->rp].fillLevel, _TPIUpacketRxed, r );
             _purgeBlock( r );
         }
         else
@@ -900,15 +835,15 @@ static void _usb_callback( struct libusb_transfer *t )
         uint8_t *c = t->buffer;
         uint32_t y = t->actual_length;
 
-        fprintf( stderr, EOL );
+        genericsPrintf( stderr, EOL );
 
         while ( y-- )
         {
-            fprintf( stderr, "%02X ", *c++ );
+            genericsPrintf( stderr, "%02X ", *c++ );
 
             if ( !( y % 16 ) )
             {
-                fprintf( stderr, EOL );
+                genericsPrintf( stderr, EOL );
             }
         }
 
@@ -917,7 +852,7 @@ static void _usb_callback( struct libusb_transfer *t )
         if ( _r.options->useTPIU )
         {
             /* Strip the TPIU framing from this input */
-            _stripTPIU( &_r, t->buffer, t->actual_length );
+            TPIUPump2( &_r.t, t->buffer, t->actual_length, _TPIUpacketRxed, &_r );
             _purgeBlock( &_r );
         }
         else

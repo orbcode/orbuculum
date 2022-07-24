@@ -272,7 +272,10 @@ enum TPIUPumpEvent TPIUPump( struct TPIUDecoder *t, uint8_t d )
     }
 }
 // ====================================================================================================
-void TPIUPump2( struct TPIUDecoder *t, uint8_t *frame, int len, void ( *packetRxed )( enum TPIUPumpEvent e, struct TPIUPacket *p ) )
+void TPIUPump2( struct TPIUDecoder *t, uint8_t *frame, int len,
+                void ( *packetRxed )( enum TPIUPumpEvent e, struct TPIUPacket *p, void *param ),
+                void *param )
+
 
 /* Assemble this packet into TPIU frames and call them back */
 
@@ -284,16 +287,22 @@ void TPIUPump2( struct TPIUDecoder *t, uint8_t *frame, int len, void ( *packetRx
     /* Check if this packet arrived a sensible time since the last one */
     gettimeofday( &nowTime, NULL );
     timersub( &nowTime, &t->lastPacket, &diffTime );
-    memcpy( &t->lastPacket, &nowTime, sizeof( struct timeval ) );
 
     /* If it excedes the keepalive time then it's not validly synced */
-    if ( ( diffTime.tv_sec != 0 ) || ( diffTime.tv_usec > TPIU_TIMEOUT_US ) )
+    if ( ( diffTime.tv_sec > 0 ) || ( diffTime.tv_usec > TPIU_TIMEOUT_US ) )
     {
-        genericsReport( V_WARN, ">>>>>>>>> PACKET INTERVAL TOO LONG <<<<<<<<<<<<<<" EOL );
+        if ( t->lastPacket.tv_sec )
+        {
+            /* There was a legal value for last time...this is not the startup case */
+            genericsReport( V_WARN, ">>>>>>>>> PACKET INTERVAL TOO LONG <<<<<<<<<<<<<<" EOL );
+            t->stats.lostSync++;
+        }
+
         t->state = TPIU_UNSYNCED;
-        t->stats.lostSync++;
-        packetRxed( TPIU_EV_UNSYNCED, NULL );
+        packetRxed( TPIU_EV_UNSYNCED, NULL, param );
     }
+
+    memcpy( &t->lastPacket, &nowTime, sizeof( struct timeval ) );
 
     /* Now process the packet */
     while ( len-- )
@@ -305,7 +314,7 @@ void TPIUPump2( struct TPIUDecoder *t, uint8_t *frame, int len, void ( *packetRx
         /* First case : This is a sync pattern. If so then process it, then move to next octet */
         if ( t->syncMonitor == SYNCPATTERN )
         {
-            packetRxed( ( t->state == TPIU_UNSYNCED ) ? TPIU_EV_NEWSYNC : TPIU_EV_SYNCED, NULL );
+            packetRxed( ( t->state == TPIU_UNSYNCED ) ? TPIU_EV_NEWSYNC : TPIU_EV_SYNCED, NULL, param );
 
             /* Deal with the special state that these are communication stats from the link */
             /* ...it is still a reset though!                                               */
@@ -360,13 +369,15 @@ void TPIUPump2( struct TPIUDecoder *t, uint8_t *frame, int len, void ( *packetRx
         if ( t->byteCount == TPIU_PACKET_LEN )
         {
             t->stats.packets++;
+            t->byteCount = 0;
             genericsReport( V_DEBUG, EOL );
 
             if ( TPIUGetPacket( t, &_packet ) )
             {
-                packetRxed( TPIU_EV_RXEDPACKET, &_packet );
+                packetRxed( TPIU_EV_RXEDPACKET, &_packet, param );
             }
         }
+
         continue;
     }
 }
