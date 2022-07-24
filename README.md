@@ -215,6 +215,7 @@ Building on Linux
 Dependencies
 ------------
 * libusb-1.0
+* libczmq-dev
 
 Note that `objdump` is also required. By default the suite will run `arm-none-eabi-objdump` but another binary or pathname can be
 subsituted via the OBJDUMP environment variable.
