@@ -30,6 +30,7 @@
 #ifdef WIN32
     // https://stackoverflow.com/a/14388707/995351
     #define SO_REUSEPORT SO_REUSEADDR
+    #define MSG_NOSIGNAL 0
 #endif
 
 /* Shared ring buffer for data */

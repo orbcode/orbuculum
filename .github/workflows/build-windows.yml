@@ -19,6 +19,7 @@ jobs:
             base-devel
             mingw-w64-x86_64-libusb
             mingw-w64-x86_64-toolchain
+            mingw-w64-x86_64-zeromq
             git
             zip
       - uses: actions/checkout@v2

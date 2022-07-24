@@ -380,6 +380,62 @@ The command line options are;
 
   `-W, --writer-path [path]` : Enable filewriter functionality with output in specified directory (disabled by default).
 
+Orbzmq
+------
+`orbzmq` is utility that connects to orbuculum over the network and outputs data from various ITM HW and SW channels that it find. This output is sent over ZeroMQ PUBLISH socket bound to specified URL. Each published message is composed of two parts: **topic** and **payload**. Topic can be used by consumers to filter incoming messages, payload contains actual message data - for SW channels formatted or raw data and predefined format for HW channels.
+
+A typical command line would be like:
+> orbzmq -l tcp://localhost:1234 -c 0,text,%c -c 1,raw, -c 2,formatted,"Value: 0x%08X\n" -e AWP,OFS,PC -v 1
+
+`orbzmq` will create ZeroMQ socket bound to address `tcp://localhost:1234` and publish messages with topics: `text`, `raw`, `formatted`, `hweventAWP`, `hweventOFS` and `hweventPC`.
+
+Simple client written in Python can receive messsages in following way:
+```python
+import zmq
+
+
+ctx = zmq.Context()
+sock = ctx.socket(zmq.SUB)
+sock.connect('tcp://127.0.0.1:1234')
+sock.setsockopt(zmq.SUBSCRIBE, b'raw')
+sock.setsockopt(zmq.SUBSCRIBE, b'formatted')
+sock.setsockopt(zmq.SUBSCRIBE, b'hwevent') # subscribe to all hwevents
+
+while True:
+    [topic, msg] = sock.recv_multipart()
+    if topic == b'raw':
+        decoded = int.from_bytes(msg, byteorder='little')
+        print(f'Raw: 0x{decoded:08X}')
+    elif topic == b'formatted':
+        print(msg.decode('ascii'))
+    elif topic.startswith(b'hwevent'):
+        print(f'HWEvent: {topic} Msg: {msg}')
+```
+
+Command line options are:
+
+ `-b, --bind [url]`:         ZeroMQ bind URL
+
+ `-c, --channel [Topic],[Name],[Format]`:      of channel to populate (repeat per channel)
+
+ `-e, --hwevent [event1],[event2]`:      Comma-separated list of published hwevents (Use `all` to include all hwevents)
+
+ `-E, --eof`:          Terminate when the file/socket ends/is closed, or attempt to wait for more / reconnect
+
+ `-f, --input-file [filename]`:   Take input from specified file
+
+ `-h, --help`:         This help
+
+ `-n, --itm-sync`:     Enforce sync requirement for ITM (i.e. ITM needsd to issue syncs)
+
+ `-s, --server [server]:[port]`:       to connect to
+
+ `-t, --tpiu [channel]`:         Use TPIU decoder on specified channel (normally 1)
+
+ `-v, --verbose [level]`:      Verbose mode 0(errors)..3(debug)
+
+ `-V, --version`:      Print version and exit
+
 Orbcat
 ------
 
