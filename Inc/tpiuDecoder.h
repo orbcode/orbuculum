@@ -90,7 +90,9 @@ bool TPIUDecoderSynced( struct TPIUDecoder *t );
 struct TPIUDecoderStats *TPIUDecoderGetStats( struct TPIUDecoder *t );
 struct TPIUCommsStats *TPIUGetCommsStats( struct TPIUDecoder *t );
 
-void TPIUPump2( struct TPIUDecoder *t, uint8_t *frame, int len, void ( *packetRxed )( enum TPIUPumpEvent e, struct TPIUPacket *p ) );
+void TPIUPump2( struct TPIUDecoder *t, uint8_t *frame, int len,
+                void ( *packetRxed )( enum TPIUPumpEvent e, struct TPIUPacket *p, void *param ),
+                void *param );
 void TPIUDecoderInit( struct TPIUDecoder *t );
 // ====================================================================================================
 #ifdef __cplusplus
