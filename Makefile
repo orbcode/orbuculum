@@ -27,6 +27,7 @@ ORBDUMP   = orbdump
 ORBSTAT   = orbstat
 ORBMORTEM = orbmortem
 ORBTRACE  = orbtrace
+ORBZMQ    = orbzmq
 
 ifdef MAKE_EXPERIMENTAL
 ORBPROFILE= orbprofile
@@ -140,6 +141,7 @@ ORBSTAT_CFILES    = $(App_DIR)/$(ORBSTAT).c $(App_DIR)/symbols.c $(App_DIR)/ext_
 ORBMORTEM_CFILES  = $(App_DIR)/$(ORBMORTEM).c $(App_DIR)/symbols.c $(App_DIR)/sio.c
 ORBPROFILE_CFILES = $(App_DIR)/$(ORBPROFILE).c $(App_DIR)/symbols.c $(App_DIR)/ext_fileformats.c
 ORBTRACE_CFILES   = $(App_DIR)/$(ORBTRACE).c $(App_DIR)/orbtraceIf.c $(App_DIR)/symbols.c
+ORBZMQ_CFILES     = $(App_DIR)/$(ORBZMQ).c
 
 ##########################################################################
 # GNU GCC compiler prefix and location
@@ -231,6 +233,10 @@ ORBTRACE_OBJS =  $(OBJS) $(patsubst %.c,%.o,$(ORBTRACE_CFILES))
 ORBTRACE_POBJS = $(POJBS) $(patsubst %,$(OLOC)/%,$(ORBTRACE_OBJS))
 PDEPS += $(ORBTRACE_POBJS:.o=.d)
 
+ORBZMQ_OBJS =  $(OBJS) $(patsubst %.c,%.o,$(ORBZMQ_CFILES))
+ORBZMQ_POBJS = $(POJBS) $(patsubst %,$(OLOC)/%,$(ORBZMQ_OBJS))
+PDEPS += $(ORBZMQ_POBJS:.o=.d)
+
 CFILES += $(App_DIR)/generics.c
 
 ##########################################################################
@@ -250,9 +256,9 @@ $(OLOC)/%.o : %.c
 	Compiling $<)
 
 ifdef WINDOWS
-build: $(ORBUCULUM)            $(ORBCAT) $(ORBTOP) $(ORBDUMP) $(ORBMORTEM) $(ORBPROFILE) $(ORBTRACE) $(ORBSTAT)
+build: $(ORBUCULUM)            $(ORBCAT) $(ORBTOP) $(ORBDUMP) $(ORBMORTEM) $(ORBPROFILE) $(ORBTRACE) $(ORBSTAT) $(ORBZMQ)
 else
-build: $(ORBUCULUM) $(ORBFIFO) $(ORBCAT) $(ORBTOP) $(ORBDUMP) $(ORBMORTEM) $(ORBPROFILE) $(ORBTRACE) $(ORBSTAT)
+build: $(ORBUCULUM) $(ORBFIFO) $(ORBCAT) $(ORBTOP) $(ORBDUMP) $(ORBMORTEM) $(ORBPROFILE) $(ORBTRACE) $(ORBSTAT) $(ORBZMQ)
 endif
 
 $(ORBLIB) : get_version $(ORBLIB_POBJS)
@@ -295,6 +301,10 @@ $(ORBTRACE) : $(ORBTRACE_POBJS)
 	$(Q)$(LD) $(LDFLAGS) -o $(OLOC)/$(ORBTRACE) $(MAP) $(ORBTRACE_POBJS)  $(LDLIBS)
 	-@echo "Completed build of" $(ORBTRACE)
 
+$(ORBZMQ) : $(ORBLIB) $(ORBZMQ_POBJS)
+	$(Q)$(LD) $(LDFLAGS) -o $(OLOC)/$(ORBZMQ) $(MAP) $(ORBZMQ_POBJS) $(LDLIBS) -lzmq
+	-@echo "Completed build of" $(ORBZMQ)
+
 install:
 	$(Q)install -D $(OLOC)/$(ORBUCULUM) --target-directory=$(DESTDIR)$(INSTALL_ROOT)bin
 	$(Q)install -D $(OLOC)/$(ORBCAT) --target-directory=$(DESTDIR)$(INSTALL_ROOT)bin
@@ -304,6 +314,7 @@ install:
 	$(Q)install -D $(OLOC)/$(ORBTRACE) --target-directory=$(DESTDIR)$(INSTALL_ROOT)bin
 	$(Q)install -D $(OLOC)/$(ORBSTAT) --target-directory=$(DESTDIR)$(INSTALL_ROOT)bin
 	$(Q)install -D $(OLOC)/$(ORBDUMP) --target-directory=$(DESTDIR)$(INSTALL_ROOT)bin
+	$(Q)install -D $(OLOC)/$(ORBZMQ) --target-directory=$(DESTDIR)$(INSTALL_ROOT)bin
 ifndef WINDOWS
 	$(Q)install -D $(OLOC)/$(ORBFIFO) --target-directory=$(DESTDIR)$(INSTALL_ROOT)bin
 	$(Q)install -D $(OLOC)/$(ORBSTAT) --target-directory=$(DESTDIR)$(INSTALL_ROOT)bin
@@ -322,6 +333,7 @@ install-mingw-deps:
 	$(Q)ldd $(OLOC)/$(ORBTRACE) | grep -vi System32 | gawk '{ print $$3 }' | xargs -rt cp -t $(DESTDIR)$(INSTALL_ROOT)bin
 	$(Q)ldd $(OLOC)/$(ORBSTAT) | grep -vi System32 | gawk '{ print $$3 }' | xargs -rt cp -t $(DESTDIR)$(INSTALL_ROOT)bin
 	$(Q)ldd $(OLOC)/$(ORBDUMP) | grep -vi System32 | gawk '{ print $$3 }' | xargs -rt cp -t $(DESTDIR)$(INSTALL_ROOT)bin
+	$(Q)ldd $(OLOC)/$(ORBZMQ) | grep -vi System32 | gawk '{ print $$3 }' | xargs -rt cp -t $(DESTDIR)$(INSTALL_ROOT)bin
 endif
 
 uninstall:
@@ -334,12 +346,13 @@ uninstall:
 		$(DESTDIR)$(INSTALL_ROOT)bin/$(ORBMORTEM) \
 		$(DESTDIR)$(INSTALL_ROOT)bin/$(ORBPROFILE) \
 		$(DESTDIR)$(INSTALL_ROOT)bin/$(ORBTRACE) \
+		$(DESTDIR)$(INSTALL_ROOT)bin/$(ORBZMQ) \
 		$(DESTDIR)$(INSTALL_ROOT)share/orbcode/gdbtrace.init
 
 	-@echo "Uninstall complete"
 
 clean:
-	-$(call cmd, \rm -f $(POBJS) $(LD_TEMP) $(ORBUCULUM) $(ORBFIFO) $(ORBCAT) $(ORBDUMP) $(ORBSTAT) $(ORBMORTEM) $(ORBPROFILE) $(ORBTRACE) $(OUTFILE).map $(EXPORT) ,\
+	-$(call cmd, \rm -f $(POBJS) $(LD_TEMP) $(ORBUCULUM) $(ORBFIFO) $(ORBCAT) $(ORBDUMP) $(ORBSTAT) $(ORBMORTEM) $(ORBPROFILE) $(ORBTRACE) $(ORBZMQ) $(OUTFILE).map $(EXPORT) ,\
 	Cleaning )
 	$(Q)-rm -rf SourceDoc/*
 	$(Q)-rm -rf *~ core

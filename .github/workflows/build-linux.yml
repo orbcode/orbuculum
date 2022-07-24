@@ -8,7 +8,7 @@ jobs:
   linux:
     runs-on: ubuntu-latest
     steps:
-      - run: sudo apt-get install -y libusb-1.0-0-dev
+      - run: sudo apt-get install -y libusb-1.0-0-dev libzmq3-dev
       - uses: actions/checkout@v3
       - run: make build
       - uses: actions/upload-artifact@v3
