@@ -1,5 +1,7 @@
 Version 2.0.0 in Progress
 
+* Addition of orbzmq for ZeroMQ support
+* Significant simplifications to the orbuculum mux to reduce load/improve throughput
 * New longopts & some name changes to options
 * makefile install and uninstall capability
 * orbtrace utility now supports SWO

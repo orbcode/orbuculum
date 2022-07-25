@@ -6,11 +6,11 @@
 
 ![Screenshot](https://raw.githubusercontent.com/orbcode/orbuculum/main/Docs/title.png)
 
-* Latest Changes:
+This is the development branch for V2.0.0 which includes parallel trace support as well as all the SWO goodness that Orbuculum has always offered. It is pretty close to being labelled as 2.0.0 with only a few minor issues outstanding.
 
-This is the development branch for V2.00 which includes parallel trace support as well as all the SWO goodness that Orbuculum has always offered. ORBTrace (the FPGA trace interface) has now been moved into its own separate repository as it's grown considerably and really needs its own identity. History for orbtrace until the split point is maintained here for provenance purposes, but new work is now done over in the new location.
+ORBTrace (the FPGA trace interface) has now been moved into its own separate repository as it's grown considerably and really needs its own identity. History for orbtrace until the split point is maintained here for provenance purposes, but new work is now done over in the new location.
 
-The CHANGES file now tells you what's been done when.
+The CHANGES file now tells you what's been done recently.
 
 Orbuculum now has an active Discord channel at https://discord.gg/P7FYThy . Thats the place to go if you need interactive help.
 
@@ -18,13 +18,13 @@ An Orbuculum is a Crystal Ball, used for seeing things that would
  be otherwise invisible. A  nodding reference to (the) BlackMagic
  (debug probe), BMP.
 
-You can find information about using this suite at [Orbcode](https://www.orbcode.org).
+You can find information about using this suite at [Orbcode](https://www.orbcode.org), especially the 'Data Feed' section.
 
-*** ORBTrace Mini is now available for debug and realtime tracing. Go to [Orbcode](https://www.orbcode.org) for more info. ***
+** ORBTrace Mini is now available for debug and realtime tracing. Go to [Orbcode](https://www.orbcode.org) for more info. **
 
 For the current development status you will need to use the `Devel` branch. Fixes are made on main and Devel.
 
-The code is in daily use now and small issues are patched as they are found. The software runs on both Linux and OSX and the whole suite is working OK on most workloads. Any bugs found now will be treated as high priority issues. Functional enhancements will also be folded in as time permits. A contribution offering a build for windows is in progress but isn't yet available.
+The code is in daily use now and small issues are patched as they are found. The software runs on Linux, OSX and Windows and the whole suite is working OK on most workloads. Any bugs found now will be treated as high priority issues. Functional enhancements will also be folded in as time permits. Currently progress is reasonably rapid, and patches are always welcome.
 
 What is it?
 ===========
@@ -60,6 +60,8 @@ is a very powerful code performance analysis tool.
 
 * orbtrace: The fpga configuration controller.
 
+* orbzmq: ZeroMQ server.
+
 A few simple use cases are documented in the last section of this
 document, as are example outputs of using orbtop to report on the
 activity of BMP while emitting SWO packets.
@@ -67,10 +69,13 @@ activity of BMP while emitting SWO packets.
 The data flowing from the SWO pin can be encoded
 either using NRZ (UART) or RZ (Manchester) formats.  The pin is a
 dedicated one that would be used for TDO when the debug interface is
-in JTAG mode.
+in JTAG mode. We've demonstrated
+ITM feeds of around 4.3MBytes/sec on a STM32F427 via SWO with Manchester
+encoding running at 48Mbps.
 
 The data flowing from the TRACE pins is clocked using a separate TRACECLK pin. There can
-be 1-4 TRACE pins which obviously give you much higher bandwidth than the single SWO.
+be 1-4 TRACE pins which obviously give you much higher bandwidth than the single SWO. We've demonstrated
+ITM feeds of around 12.5MBytes/sec on a STM32F427 via 4 bit parallel trace.
 
 Whatever it's source, orbuculum takes this data flow and makes it accessible to tools on the host
 PC. At its core it takes the data from the source, decodes it and presents it on a network
@@ -96,9 +101,9 @@ from the target;
 gdb setup files for each device type can be found in the `Support` directory. You'll find
 example get-you-going applications in the [Orbmule](https://github.com/orbcode/orbmule) repository including
 `gdbinit` scripts for OpenOCD, pyOCD and Blackmagic Probe Hosted. There are walkthroughs for lots of examples
-of the use of the orbuculum suite at [Orbcode]https://orbcode.org).
+of the use of the orbuculum suite at (Orbcode)[https://orbcode.org].
 
-When using SWO Orbuculum can use, or bypass, the TPIU. The TPIU adds (a small amount of) overhead
+When using SWO Orbuculum can use, or bypass, the TPIU. The TPIU adds overhead
 to the datastream, but provides better synchronisation if there is corruption
 on the link. To include the TPIU in decode stack, provide the -t
 option on the command line. If you don't provide it, and the ITM decoder sees
@@ -107,22 +112,24 @@ after I spent two days trying to find an obscure bug 'cos I'd left the `-t` opti
 channels to the `-t` option, which is useful when you've got debug data in one stream and
 trace data in another.
 
-Beware that in parallel trace the TPIU is mandatory, so therefore so is the -t option. It can be stripped either
+Beware that in parallel trace the TPIU is mandatory, so therefore so is the -t option.
+
+TPIU framing can be stripped either
 by individual applications or the `orbuculum` mux. When its stripped by the mux the data are made available on
 consecutive TCP/IP ports...so `-t 1,2` would put stream 1 data out over TCP port 3443 and stream 2 over 3444, by default.
 
-When in NRZ mode the SWO data rate that comes out of the chip _must_
+When in NRZ (UART) mode the SWO data rate that comes out of the chip _must_
 match the rate that the debugger expects. On the BMP speeds of
 2.25Mbps are normal, TTL Serial devices tend to run a little slower
 but 921600 baud is normally acheivable. On BMP the baudrate is set via
 the gdb session with the 'monitor traceswo xxxx' command. For a TTL
 Serial device its set by the Orbuculum command line.  Segger devices
-can normally work faster, but no experimentation has yet been done to
+can normally work faster, but no experimentation has been done to
 find their max limits, which are probably it's dependent on the specific JLink
 you are using. ORBTrace Mini can operate with Manchester encoded SWO at up
 to 48Mbps, which means there's no speed matching needed to use it, and it should
 continue to work correctly even if the target clock speed changes (e.g. when it goes
-into a low power mode).
+into a low power mode). This is a good thing.
 
 Configuring the Target
 ======================
@@ -259,13 +266,15 @@ Using
 The command line options for Orbuculum are available by running
 orbuculum with the -h option. Orbuculum is just the multiplexer, the
 fifos are now provided by `orbfifo`. *This is a change to the previous
-way the suite was configured where the fifos were integrated into `orbuculum` itself*.
+way the suite was configured where the fifos were integrated into `orbuculum` itself*. Note that
+orbfifo isn't available on Windows (there are no fifos), so use orbzmq to get similar functionality
+on that platform.
 
 Simply start orbuculum with the correct options for your trace probe and
 then you can start of stop other utilities as you wish. A typical command
 to run orbuculum would be;
 
-$ orbuculum --monitor 100
+```$ orbuculum --monitor 100```
 
 In this case, because no source options were provided on the command line, input
 will be taken from a Blackmagic probe USB SWO feed, or from an ORBTrace mini if it can find one.
@@ -383,14 +392,14 @@ The command line options are;
 
 Orbzmq
 ------
-`orbzmq` is utility that connects to orbuculum over the network and outputs data from various ITM HW and SW channels that it find. This output is sent over ZeroMQ PUBLISH socket bound to specified URL. Each published message is composed of two parts: **topic** and **payload**. Topic can be used by consumers to filter incoming messages, payload contains actual message data - for SW channels formatted or raw data and predefined format for HW channels.
+`orbzmq` is utility that connects to orbuculum over the network and outputs data from various ITM HW and SW channels that it find. This output is sent over (ZeroMQ)[https://zeromq.org/] PUBLISH socket bound to specified URL. Each published message is composed of two parts: **topic** and **payload**. Topic can be used by consumers to filter incoming messages, payload contains actual message data - for SW channels formatted or raw data and predefined format for HW channels.
 
 A typical command line would be like:
 > orbzmq -l tcp://localhost:1234 -c 0,text,%c -c 1,raw, -c 2,formatted,"Value: 0x%08X\n" -e AWP,OFS,PC -v 1
 
-`orbzmq` will create ZeroMQ socket bound to address `tcp://localhost:1234` and publish messages with topics: `text`, `raw`, `formatted`, `hweventAWP`, `hweventOFS` and `hweventPC`.
+`orbzmq` will create a ZeroMQ socket bound to address `tcp://localhost:1234` and publish messages with topics: `text`, `raw`, `formatted`, `hweventAWP`, `hweventOFS` and `hweventPC`.
 
-Simple client written in Python can receive messsages in following way:
+A simple python client can receive messsages in the following way:
 ```python
 import zmq
 
@@ -698,7 +707,9 @@ sys    11m2.847s
 
 That is 124.4GBytes of user to user transfer, 155.5GBytes of line transfer with no errors at 5.4MBytes/sec line,
 4.32MBytes/sec user-to-user, assuming my math is holding up. As with blackmagic...if the wiring is reliable, the
-link will be.
+link will be.  The equivalent test on the same chip using 4 bit parallel TRACE gives a user-to-user data rate
+of around 12.5MBytes/sec...at that point you're limited by the speed the CPU can put data out onto line rather
+than the capacity of the link itself.
 
 Using SWO in Battle
 ===================
