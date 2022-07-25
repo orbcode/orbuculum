@@ -22,6 +22,8 @@
 #define HWFIFO_NAME "hwevent"
 #define MAX_STRING_LENGTH (100)              /* Maximum length that will be output for a single event */
 
+#define DEFAULT_ZMQ_BIND_URL "tcp://*:3442"  /* by default bind to all source interfaces */
+
 // Record for options, either defaults or from command line
 
 struct Channel
@@ -49,7 +51,13 @@ struct
     char *file;                                          /* File host connection */
     bool endTerminate;                                  /* Terminate when file/socket "ends" */
 
-} options = {.forceITMSync = true, .tpiuChannel = 1, .bindUrl = NULL, .port = NWCLIENT_SERVER_PORT, .server = "localhost"};
+} options = {
+  .forceITMSync = true,
+  .tpiuChannel = 1,
+  .bindUrl = DEFAULT_ZMQ_BIND_URL,
+  .port = NWCLIENT_SERVER_PORT,
+  .server = "localhost"
+};
 
 struct
 {
@@ -452,27 +460,23 @@ void _printHelp( const char *const progName )
 
 {
     fprintf( stdout, "Usage: %s [options]" EOL, progName );
-    fprintf( stdout, "    -b, --bind:         <url>: ZeroMQ bind URL" EOL );
-    fprintf( stdout, "    -c, --channel:      <Number>,<Name>,<Format> of channel to populate (repeat per channel)" EOL );
-    fprintf( stdout, "    -e, --hwevent:      Comma-separated list of published hwevents" EOL );
-    fprintf( stdout, "    -E, --eof:          Terminate when the file/socket ends/is closed, or attempt to wait for more / reconnect" EOL );
-    fprintf( stdout, "    -f, --input-file:   <filename> Take input from specified file" EOL );
-    fprintf( stdout, "    -h, --help:         This help" EOL );
-    fprintf( stdout, "    -n, --itm-sync:     Enforce sync requirement for ITM (i.e. ITM needsd to issue syncs)" EOL );
-    fprintf( stdout, "    -s, --server:       <Server>:<Port> to use" EOL );
-    fprintf( stdout, "    -t, --tpiu:         <channel>: Use TPIU decoder on specified channel (normally 1)" EOL );
-    fprintf( stdout, "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
-    fprintf( stdout, "    -V, --version:      Print version and exit" EOL );
+    fprintf( stdout, "    -c, --channel:    <Number>,<Name>,<Format> of channel to populate (repeat per channel)" EOL );
+    fprintf( stdout, "    -e, --hwevent:    Comma-separated list of published hwevents" EOL );
+    fprintf( stdout, "    -E, --eof:        Terminate when the file/socket ends/is closed, otherwise wait to reconnect" EOL );
+    fprintf( stdout, "    -f, --input-file: <filename> Take input from specified file" EOL );
+    fprintf( stdout, "    -h, --help:       This help" EOL );
+    fprintf( stdout, "    -n, --itm-sync:   Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
+    fprintf( stdout, "    -s, --server:     <Server>:<Port> to use, default %s:%d" EOL, options.server,options.port );
+    fprintf( stdout, "    -t, --tpiu:       <channel>: Use TPIU decoder on specified channel (normally 1)" EOL );
+    fprintf( stdout, "    -v, --verbose:    <level> Verbose mode 0(errors)..3(debug)" EOL );
+    fprintf( stdout, "    -V, --version:    Print version and exit" EOL );
+    fprintf( stdout, "    -z, --zbind:      <url>: ZeroMQ bind URL, default %s" EOL, options.bindUrl );
     fprintf( stdout, EOL );
     fprintf( stdout, "Available HW events: " EOL );
-    fprintf( stdout, "   * all  - All hwevents" EOL );
-    fprintf( stdout, "   * TS   - Timestamp" EOL );
-    fprintf( stdout, "   * EXCP - Exception entry/exit" EOL );
-    fprintf( stdout, "   * PC   - PC sampling" EOL );
-    fprintf( stdout, "   * DWT  - DWT event" EOL );
-    fprintf( stdout, "   * RWWT - Read/write watchpoint" EOL );
-    fprintf( stdout, "   * AWP  - Access watchpoint" EOL );
-    fprintf( stdout, "   * OFS  - Data offset" EOL );
+    fprintf( stdout, "      all  - All hwevents          TS   - Timestamp" EOL );
+    fprintf( stdout, "      EXCP - Exception entry/exit  PC   - PC sampling" EOL );
+    fprintf( stdout, "      DWT  - DWT event             RWWT - Read/write watchpoint" EOL );
+    fprintf( stdout, "      AWP  - Access watchpoint     OFS  - Data offset" EOL );
 }
 // ====================================================================================================
 void _printVersion( void )
@@ -537,7 +541,7 @@ static int32_t _parseHWEventsArg( char *s )
 // ====================================================================================================
 static struct option _longOptions[] =
 {
-    {"bind", required_argument, NULL, 'b'},
+    {"zbind", required_argument, NULL, 'z'},
     {"channel", required_argument, NULL, 'c'},
     {"hwevent", required_argument, NULL, 'e'},
     {"eof", no_argument, NULL, 'E'},
@@ -567,7 +571,7 @@ bool _processOptions( int argc, char *argv[] )
         options.channel[g].topic = NULL;
     }
 
-    while ( ( c = getopt_long ( argc, argv, "l:c:e:Ef:hns:t:v:V", _longOptions, &optionIndex ) ) != -1 )
+    while ( ( c = getopt_long ( argc, argv, "c:e:Ef:hns:t:v:Vz:", _longOptions, &optionIndex ) ) != -1 )
     {
         switch ( c )
         {
@@ -580,11 +584,6 @@ bool _processOptions( int argc, char *argv[] )
             case 'V':
                 _printVersion();
                 return false;
-
-            // ------------------------------------
-            case 'l':
-                options.bindUrl = optarg;
-                break;
 
             // ------------------------------------
             case 'E':
@@ -717,7 +716,13 @@ bool _processOptions( int argc, char *argv[] )
 
                 return false;
 
-            // ------------------------------------
+		// ------------------------------------
+		
+	    case 'z':
+                options.bindUrl = optarg;
+                break;
+
+                // ------------------------------------
             default:
                 return false;
                 // ------------------------------------
@@ -851,7 +856,7 @@ int main( int argc, char *argv[] )
 
     _r.zmqContext = zmq_ctx_new();
     _r.zmqSocket = zmq_socket( _r.zmqContext, ZMQ_PUB );
-    zmq_bind( _r.zmqSocket, options.bindUrl );
+    zmq_bind( _r.zmqSocket, "tcp://*:3442");//options.bindUrl );
 
     /* Reset the TPIU handler before we start */
     TPIUDecoderInit( &_r.t );

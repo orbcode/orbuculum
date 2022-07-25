@@ -397,7 +397,7 @@ Orbzmq
 A typical command line would be like:
 > orbzmq -l tcp://localhost:1234 -c 0,text,%c -c 1,raw, -c 2,formatted,"Value: 0x%08X\n" -e AWP,OFS,PC -v 1
 
-`orbzmq` will create a ZeroMQ socket bound to address `tcp://localhost:1234` and publish messages with topics: `text`, `raw`, `formatted`, `hweventAWP`, `hweventOFS` and `hweventPC`.
+`orbzmq` will create a ZeroMQ socket bound to address `tcp://*:3442` (which means, all interfaces, tcp port 3442) and publish messages with topics: `text`, `raw`, `formatted`, `hweventAWP`, `hweventOFS` and `hweventPC`.
 
 A simple python client can receive messsages in the following way:
 ```python
@@ -406,7 +406,7 @@ import zmq
 
 ctx = zmq.Context()
 sock = ctx.socket(zmq.SUB)
-sock.connect('tcp://127.0.0.1:1234')
+sock.connect('tcp://localhost:3442')
 sock.setsockopt(zmq.SUBSCRIBE, b'raw')
 sock.setsockopt(zmq.SUBSCRIBE, b'formatted')
 sock.setsockopt(zmq.SUBSCRIBE, b'hwevent') # subscribe to all hwevents
@@ -417,14 +417,12 @@ while True:
         decoded = int.from_bytes(msg, byteorder='little')
         print(f'Raw: 0x{decoded:08X}')
     elif topic == b'formatted':
-        print(msg.decode('ascii'))
+        print(msg.decode('ascii'),end="")
     elif topic.startswith(b'hwevent'):
         print(f'HWEvent: {topic} Msg: {msg}')
 ```
 
 Command line options are:
-
- `-b, --bind [url]`:         ZeroMQ bind URL
 
  `-c, --channel [Topic],[Name],[Format]`:      of channel to populate (repeat per channel)
 
@@ -445,6 +443,9 @@ Command line options are:
  `-v, --verbose [level]`:      Verbose mode 0(errors)..3(debug)
 
  `-V, --version`:      Print version and exit
+
+ `-z, --zbind [url]`:         ZeroMQ bind URL
+
 
 Orbcat
 ------
