@@ -224,13 +224,13 @@ Dependencies
 * libusb-1.0
 * libczmq-dev
 
-Note that `objdump` is also required. By default the suite will run `arm-none-eabi-objdump` but another binary or pathname can be
+Note that `objdump`  version at least 2.33.1 is also required. By default the suite will run `arm-none-eabi-objdump` but another binary or pathname can be
 subsituted via the OBJDUMP environment variable.
 
 Build
 -----
 
-The command line to build the Orbuculum tool suite is;
+The command line to build the Orbuculum tool suite is:
 
 >make
 
@@ -259,6 +259,29 @@ You can also see notes under [Issue #63](https://github.com/orbcode/orbuculum/is
 mac. You need to watch out for Homebrew binutils...on a M1 Mac you must use the Apple binutils or you will get linker errors. All
 you need to do is move the homebrew binutils out of the way while you do the build....no big deal when you know about it.
 
+
+Building on Windows
+===================
+
+MinGW-w64 from MSys2 is recommended as environment for building Windows distribution.
+
+Dependencies
+------------
+* mingw-w64-x86_64-libusb
+* mingw-w64-x86_64-zeromq
+
+Build
+-----
+
+The command line to build the Orbuculum tool suite is:
+
+>make
+
+In order to get single folder with Orbuculum and MinGW dependencies run:
+
+>make install install-mingw-deps DESTDIR=<directory1> INSTALL_ROOT=/<directory2>
+
+Everything will be installed into `directory1/directory2` and can be transfered to different machine or used outside of MSys2 shell.
 
 Using
 =====
@@ -319,6 +342,8 @@ For `orbuculum`, the specific command line options of note are;
 
 Orbfifo
 -------
+
+**Note:** `orbfifo` is not supported on Windows.
 
 The easiest way to use the output from orbuculum is with one of the utilities
 such as orbfifo. This creates a set of fifos or permanent files in a given
