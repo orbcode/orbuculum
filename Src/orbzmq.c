@@ -51,12 +51,13 @@ struct
     char *file;                                          /* File host connection */
     bool endTerminate;                                  /* Terminate when file/socket "ends" */
 
-} options = {
-  .forceITMSync = true,
-  .tpiuChannel = 1,
-  .bindUrl = DEFAULT_ZMQ_BIND_URL,
-  .port = NWCLIENT_SERVER_PORT,
-  .server = "localhost"
+} options =
+{
+    .forceITMSync = true,
+    .tpiuChannel = 1,
+    .bindUrl = DEFAULT_ZMQ_BIND_URL,
+    .port = NWCLIENT_SERVER_PORT,
+    .server = "localhost"
 };
 
 struct
@@ -466,7 +467,7 @@ void _printHelp( const char *const progName )
     fprintf( stdout, "    -f, --input-file: <filename> Take input from specified file" EOL );
     fprintf( stdout, "    -h, --help:       This help" EOL );
     fprintf( stdout, "    -n, --itm-sync:   Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
-    fprintf( stdout, "    -s, --server:     <Server>:<Port> to use, default %s:%d" EOL, options.server,options.port );
+    fprintf( stdout, "    -s, --server:     <Server>:<Port> to use, default %s:%d" EOL, options.server, options.port );
     fprintf( stdout, "    -t, --tpiu:       <channel>: Use TPIU decoder on specified channel (normally 1)" EOL );
     fprintf( stdout, "    -v, --verbose:    <level> Verbose mode 0(errors)..3(debug)" EOL );
     fprintf( stdout, "    -V, --version:    Print version and exit" EOL );
@@ -716,13 +717,13 @@ bool _processOptions( int argc, char *argv[] )
 
                 return false;
 
-		// ------------------------------------
-		
-	    case 'z':
+            // ------------------------------------
+
+            case 'z':
                 options.bindUrl = optarg;
                 break;
 
-                // ------------------------------------
+            // ------------------------------------
             default:
                 return false;
                 // ------------------------------------
@@ -856,7 +857,7 @@ int main( int argc, char *argv[] )
 
     _r.zmqContext = zmq_ctx_new();
     _r.zmqSocket = zmq_socket( _r.zmqContext, ZMQ_PUB );
-    zmq_bind( _r.zmqSocket, "tcp://*:3442");//options.bindUrl );
+    zmq_bind( _r.zmqSocket, "tcp://*:3442" ); //options.bindUrl );
 
     /* Reset the TPIU handler before we start */
     TPIUDecoderInit( &_r.t );
