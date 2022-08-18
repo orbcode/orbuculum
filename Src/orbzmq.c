@@ -113,8 +113,8 @@ void _handleSW( struct swMsg *m, struct ITMDecoder *i )
         // formatted output....start with specials
         if ( channel->format == NULL )
         {
-            memcpy( formatted, &m->value, sizeof( m->value ) );
-            size = 4;
+            memcpy( formatted, &m->value, m->len );
+            size = m->len;
         }
         else if ( strstr( channel->format, "%f" ) )
         {
