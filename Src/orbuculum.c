@@ -867,8 +867,10 @@ static void _usb_callback( struct libusb_transfer *t )
             ( t->status != LIBUSB_TRANSFER_CANCELLED )
        )
     {
-        genericsReport( V_WARN, "Errored out with status %d (%s)" EOL, t->status, libusb_error_name( t->status ) );
-        exit( 0 );
+        if ( !_r.errored )
+        {
+            genericsReport( V_WARN, "Errored out with status %d (%s)" EOL, t->status, libusb_error_name( t->status ) );
+        }
 
         _r.errored = true;
     }
