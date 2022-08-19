@@ -186,7 +186,7 @@ Anyway, generically, a configuration looks like this;
 
     # ----------ALTERNATIVELY, FOR GENUINE BMP-----------------------
     monitor traceswo                        <*--- Enable BMP traceswo output
-    prepareSWO ConfigCoreClock 200000 0 1   <*--- Setup SWO timing (BMP case)
+    prepareSWO SystemCoreClock 200000 0 1   <*--- Setup SWO timing (BMP case)
     # ----------END OF ALTERNATIVE-----------------------------------
 
     dwtSamplePC 1                           <-
@@ -332,6 +332,8 @@ For `orbuculum`, the specific command line options of note are;
  `-m, --monitor`: Monitor interval (in mS) for reporting on state of the link. If baudrate is specified (using `-a`) and is greater than 100bps then the percentage link occupancy is also reported.
 
   `-o, --output-file [filename]`: Record trace data locally. This is unfettered data directly from the source device, can be useful for replay purposes or other tool testing.
+
+  `-O "<options>" Run orbtrace on each detected connection of a probe, with the specified options.
   
   `-p, --serial-port [serialPort]`: to use. If not specified then the program defaults to Blackmagic probe.
 

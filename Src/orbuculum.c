@@ -57,6 +57,10 @@
 /* How many transfer buffers from the source to allocate */
 #define NUM_RAW_BLOCKS (32)
 
+#define MAX_LINE_LEN (1024)
+#define ORBTRACE "orbtrace"
+#define ORBTRACEENVNAME "ORBTRACE"
+
 /* Record for options, either defaults or from command line */
 struct Options
 {
@@ -73,7 +77,7 @@ struct Options
     char *file;                                          /* File host connection */
     bool fileTerminate;                                  /* Terminate when file read isn't successful */
     char *outfile;                                       /* Output file for raw data dumping */
-
+    char *otcl;                                          /* Orbtrace command line options */
     uint32_t intervalReportTime;                         /* If we want interval reports about performance */
 
     char *channelList;                                   /* List of TPIU channels to be serviced */
@@ -363,6 +367,7 @@ void _printHelp( const char *const progName )
     genericsPrintf( "    -l, --listen-port:  <port> Listen port for the incoming connections (defaults to %d)" EOL, NWCLIENT_SERVER_PORT );
     genericsPrintf( "    -m, --monitor:      <interval> Output monitor information about the link at <interval>ms" EOL );
     genericsPrintf( "    -o, --output-file:  <filename> to be used for dump file" EOL );
+    genericsPrintf( "    -O, --orbtrace:  \"<options>\" run orbtrace with specified options on each new ORBTrace device connect" EOL );
     genericsPrintf( "    -p, --serial-port:  <serialPort> to use" EOL );
     genericsPrintf( "    -s, --server:       <Server>:<Port> to use" EOL );
     genericsPrintf( "    -t, --tpiu:         <Channel , ...> Use TPIU channels (and strip TPIU framing from output flows)" EOL );
@@ -386,6 +391,7 @@ static struct option _longOptions[] =
     {"listen-port", required_argument, NULL, 'l'},
     {"monitor", required_argument, NULL, 'm'},
     {"output-file", required_argument, NULL, 'o'},
+    {"orbtrace", required_argument, NULL, 'O'},
     {"serial-port", required_argument, NULL, 'p'},
     {"server", required_argument, NULL, 's'},
     {"tpiu", required_argument, NULL, 't'},
@@ -400,7 +406,7 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
     int c, optionIndex = 0;
 #define DELIMITER ','
 
-    while ( ( c = getopt_long ( argc, argv, "a:Ef:hVl:m:no:p:s:t:v:", _longOptions, &optionIndex ) ) != -1 )
+    while ( ( c = getopt_long ( argc, argv, "a:Ef:hVl:m:no:O:p:s:t:v:", _longOptions, &optionIndex ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -446,6 +452,12 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
 
             case 'o':
                 r->options->outfile = optarg;
+                break;
+
+            // ------------------------------------
+
+            case 'O':
+                r->options->otcl = optarg;
                 break;
 
             // ------------------------------------
@@ -552,6 +564,11 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
     else
     {
         genericsReport( V_INFO, "Use/Strip TPIU : False" EOL );
+    }
+
+    if ( r->options->otcl )
+    {
+        genericsReport( V_INFO, "Orbtrace CL    : %s" EOL, r->options->otcl );
     }
 
     if ( r->options->file )
@@ -887,6 +904,7 @@ static int _usbFeeder( struct RunTime *r )
 
 {
     libusb_device_handle *handle = NULL;
+    char commandLine[MAX_LINE_LEN];
     libusb_device *dev;
     const struct deviceList *p = NULL;
     uint8_t iface;
@@ -937,6 +955,28 @@ static int _usbFeeder( struct RunTime *r )
         }
 
         genericsReport( V_INFO, "Found %s" EOL, p->name );
+
+        /* If we have any configuration to do on this device, go ahead */
+        if ( r->options->otcl )
+        {
+            if ( getenv( ORBTRACEENVNAME ) )
+            {
+                snprintf( commandLine, MAX_LINE_LEN, "%s %s", getenv( ORBTRACEENVNAME ), r->options->otcl );
+            }
+            else
+            {
+                snprintf( commandLine, MAX_LINE_LEN, ORBTRACE " %s", r->options->otcl );
+            }
+
+            genericsReport( V_INFO, "%s" EOL, commandLine );
+            err = system( commandLine );
+
+            if ( err )
+            {
+	      genericsReport( V_ERROR, "Invoking orbtrace failed" EOL);
+                return -err;
+            }
+        }
 
         if ( !( dev = libusb_get_device( handle ) ) )
         {
