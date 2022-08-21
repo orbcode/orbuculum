@@ -223,6 +223,7 @@ Dependencies
 ------------
 * libusb-1.0
 * libczmq-dev
+* ncurses
 
 Note that `objdump`  version at least 2.33.1 is also required. By default the suite will run `arm-none-eabi-objdump` but another binary or pathname can be
 subsituted via the OBJDUMP environment variable.
