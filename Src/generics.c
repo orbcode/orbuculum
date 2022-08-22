@@ -11,6 +11,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/time.h>
+#ifndef WIN32
+    #include <libgen.h>
+    #include <unistd.h>
+#endif
 
 #include "generics.h"
 
@@ -230,6 +234,79 @@ const char *genericsBasenameN( const char *n, int c )
     }
 
     return p;
+}
+// ====================================================================================================
+char *genericsGetBaseDirectory( void )
+{
+#ifdef WIN32
+    size_t currentSize = MAX_PATH;
+    char *exePath = malloc( currentSize );
+
+    while ( true )
+    {
+        DWORD n = GetModuleFileNameA( NULL, exePath, currentSize );
+
+        if ( n < ( currentSize - 1 ) )
+        {
+            break;
+        }
+
+        currentSize *= 2;
+        exePath = realloc( exePath, currentSize );
+    }
+
+    char *dirPath = malloc( currentSize );
+    char drive[_MAX_DRIVE];
+    _splitpath_s( exePath, drive, sizeof( drive ), dirPath, currentSize, NULL, 0, NULL, 0 );
+    free( exePath );
+
+    size_t pathLen = strlen( drive ) + strlen( dirPath );
+    char *concatPath = malloc( strlen( drive ) + strlen( dirPath ) + 1 );
+    *concatPath = '\0';
+    strcat( concatPath, drive );
+    strcat( concatPath, dirPath );
+    free( dirPath );
+    return concatPath;
+#else
+    size_t currentSize = 256;
+    char *exePath = malloc( currentSize );
+
+    if ( !exePath )
+    {
+        return NULL;
+    }
+
+    while ( true )
+    {
+        ssize_t n = readlink( "/proc/self/exe", exePath, currentSize - 1 );
+
+        if ( n == -1 )
+        {
+            // Failed to resolve path to current executable, let's hope it is not needed to correctly resolve orbtrace path
+            // https://stackoverflow.com/a/933996/995351
+            strcpy( exePath, "" );
+            return exePath;
+        }
+
+        if ( n < ( currentSize - 1 ) )
+        {
+            // readlink does not insert null terminator
+            exePath[n] = 0;
+            break;
+        }
+
+        currentSize *= 2;
+        exePath = realloc( exePath, currentSize );
+    }
+
+    const char *dirPath = dirname( exePath );
+    char *path = malloc( strlen( dirPath ) + 2 );
+    *path = 0;
+    strcat( path, dirPath );
+    strcat( path, "/" );
+    free( exePath );
+    return path;
+#endif
 }
 // ====================================================================================================
 void genericsReport( enum verbLevel l, const char *fmt, ... )

@@ -18,6 +18,7 @@
     #include <netinet/in.h>
     #include <netdb.h>
     #include <arpa/inet.h>
+    #include <libgen.h>
 #endif
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -971,7 +972,15 @@ static int _usbFeeder( struct RunTime *r )
             }
             else
             {
-                snprintf( commandLine, MAX_LINE_LEN, ORBTRACE " %s", r->options->otcl );
+                char *baseDirectory = genericsGetBaseDirectory( );
+
+                if ( !baseDirectory )
+                {
+                    genericsExit( -1, "Failed to establish base directory" EOL );
+                }
+
+                snprintf( commandLine, MAX_LINE_LEN, "%s" ORBTRACE " %s", baseDirectory, r->options->otcl );
+                free( baseDirectory );
             }
 
             genericsReport( V_INFO, "%s" EOL, commandLine );
