@@ -500,6 +500,12 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
 
             // ------------------------------------
             case 'v':
+                if ( !isdigit( *optarg ) )
+                {
+                    genericsReport( V_ERROR, "-v requires a numeric argument." EOL );
+                    return false;
+                }
+
                 genericsSetReportLevel( atoi( optarg ) );
                 break;
 
@@ -973,7 +979,7 @@ static int _usbFeeder( struct RunTime *r )
 
             if ( err )
             {
-	      genericsReport( V_ERROR, "Invoking orbtrace failed" EOL);
+                genericsReport( V_ERROR, "Invoking orbtrace failed" EOL );
                 return -err;
             }
         }

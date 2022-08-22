@@ -356,6 +356,12 @@ static int _processOptions( struct RunTime *r, int argc, char *argv[]  )
 
             // ------------------------------------
             case 'v':
+                if ( !isdigit( *optarg ) )
+                {
+                    genericsReport( V_ERROR, "-v requires a numeric argument." EOL );
+                    return false;
+                }
+
                 genericsSetReportLevel( atoi( optarg ) );
                 break;
 
