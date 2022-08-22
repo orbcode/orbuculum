@@ -78,6 +78,7 @@ uint64_t genericsTimestampuS( void );
 uint32_t genericsTimestampmS( void );
 void genericsSetReportLevel( enum verbLevel lset );
 void genericsPrintf( const char *fmt, ... );
+char *genericsGetBaseDirectory( void );
 const char *genericsBasename( const char *n );
 const char *genericsBasenameN( const char *n, int c );
 void genericsReport( enum verbLevel l, const char *fmt, ... );
