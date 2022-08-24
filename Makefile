@@ -1,14 +1,20 @@
 # Build configuration
 VERBOSE?=0
-DEBUG=1
+
+# Set DEBUG=0 for release version
+DEBUG?=1
 SCREEN_HANDLING=1
 MAKE_EXPERIMENTAL=1
+
+ORBLIB=orb
+LIBSONAME=lib$(ORBLIB).so.1
+LIBVER=0
 
 # Set your preferred screen colours here, or create a new palette by copying the file to a new one
 SCREEN_PALETTE="uicolours_default.h"
 #SCREEN_PALETTE="uicolours_mono.h"
 
-CFLAGS=-DVERSION="\"2.0.0Beta2InProgress\""
+CFLAGS=
 
 # Add these flags to be evil, but in a nice way
 #CFLAGS+=-fsanitize=address -static-libasan
@@ -18,7 +24,6 @@ INSTALL_ROOT?=/usr/local/
 
 CROSS_COMPILE=
 # Output Files
-ORBLIB = orb
 ORBUCULUM = orbuculum
 ORBCAT    = orbcat
 ORBFIFO   = orbfifo
@@ -57,7 +62,7 @@ endif
 ##########################################################################
 
 # Overall system defines for compilation
-ifdef DEBUG
+ifeq ($(DEBUG),1)
 GCC_DEFINE= -DDEBUG
 DEBUG_OPTS = -g3 -gdwarf-2 -ggdb3
 OPT_LEVEL = -Og
@@ -94,14 +99,14 @@ OLOC = ofiles
 
 ifdef OSX
 INCLUDE_PATHS += -I/usr/local/include/libusb-1.0
-LDLIBS = -L. -L/usr/local/lib -lusb-1.0 -ldl -lncurses -lpthread -lintl -L$(OLOC) -l$(ORBLIB)
+LDLIBS = -L.  -L$(OLOC) -l$(ORBLIB) -L/usr/local/lib -lusb-1.0 -ldl -lncurses -lpthread -lintl
 else
 	ifdef WINDOWS
 		INCLUDE_PATHS += -I/usr/local/include/libusb-1.0
-		LDLIBS = -L. -L/usr/local/lib -lusb-1.0 -lncursesw -lpthread -lintl -L$(OLOC) -l$(ORBLIB)
+		LDLIBS = -L. -L$(OLOC) -l$(ORBLIB) -L/usr/local/lib -lusb-1.0 -lncursesw -lpthread -lintl 
 	else
 		INCLUDE_PATHS += -I/usr/local/include/libusb-1.0
-		LDLIBS = -L. -L/usr/local/lib -lusb-1.0 -ldl -lncurses -L$(OLOC) -l$(ORBLIB)
+		LDLIBS = -L. -L$(OLOC) -l$(ORBLIB) -L/usr/local/lib -lusb-1.0 -ldl -lncurses 
 	endif
 endif
 
@@ -152,6 +157,7 @@ AS = $(CROSS_COMPILE)gcc
 CC = $(CROSS_COMPILE)gcc
 LD = $(CROSS_COMPILE)gcc
 AR = $(CROSS_COMPILE)ar
+LN = ln
 GDB = $(CROSS_COMPILE)gdb
 OBJCOPY = $(CROSS_COMPILE)objcopy
 OBJDUMP = $(CROSS_COMPILE)objdump
@@ -239,30 +245,47 @@ PDEPS += $(ORBZMQ_POBJS:.o=.d)
 
 CFILES += $(App_DIR)/generics.c
 
+BUILDABLES = $(ORBUCULUM) $(ORBCAT) $(ORBTOP) $(ORBDUMP) $(ORBMORTEM) $(ORBPROFILE) $(ORBTRACE) $(ORBSTAT) $(ORBZMQ)
+ifndef WINDOWS
+BUILDABLES += $(ORBFIFO)
+endif
+
 ##########################################################################
 ##########################################################################
 ##########################################################################
 
 all : build
 
+.PHONY: get_version
 get_version:
 	$(Q)mkdir -p $(OLOC)
 	$(Q)echo "#define GIT_DESCRIBE \"`git describe --tags --always --dirty`\"" > $(OLOC)/$(GIT_HASH_FILENAME).comp
 	$(Q)diff -q $(OLOC)/$(GIT_HASH_FILENAME).comp $(OLOC)/$(GIT_HASH_FILENAME) > /dev/null 2>&1 || cp $(OLOC)/$(GIT_HASH_FILENAME).comp $(OLOC)/$(GIT_HASH_FILENAME)
+
+.PHONY: check_debug
+check_debug:
+	$(Q)mkdir -p $(OLOC)
+ifeq ($(DEBUG),1)
+	$(Q)touch $(OLOC)/.isdebug
+	@echo Perform \"LD_LIBRARY_PATH=$(PWD)/$(OLOC)\"
+else
+	@echo Perform "export LD_LIBRARY_PATH="
+endif
 
 $(OLOC)/%.o : %.c
 	$(Q)mkdir -p $(basename $@)
 	$(call cmd, \$(CC) -c $(CFLAGS) -MMD -MP -o $@ $< ,\
 	Compiling $<)
 
-ifdef WINDOWS
-build: $(ORBUCULUM)            $(ORBCAT) $(ORBTOP) $(ORBDUMP) $(ORBMORTEM) $(ORBPROFILE) $(ORBTRACE) $(ORBSTAT) $(ORBZMQ)
-else
-build: $(ORBUCULUM) $(ORBFIFO) $(ORBCAT) $(ORBTOP) $(ORBDUMP) $(ORBMORTEM) $(ORBPROFILE) $(ORBTRACE) $(ORBSTAT) $(ORBZMQ)
-endif
+build: check_debug $(BUILDABLES)
+
+$(ORBLIB_POBJS): CFLAGS += -fPIC
 
 $(ORBLIB) : get_version $(ORBLIB_POBJS)
-	$(Q)$(AR) rcs $(OLOC)/lib$(ORBLIB).a  $(ORBLIB_POBJS)
+	$(Q)$(CC) -shared -Wl,-soname,$(LIBSONAME) -o $(OLOC)/$(LIBSONAME).$(LIBVER) $(ORBLIB_POBJS) -lc
+	$(Q)$(RM) -f $(OLOC)/lib$(ORBLIB).so
+	$(Q)ldconfig -n $(OLOC)
+	$(Q)$(LN) -s $(LIBSONAME) $(OLOC)/lib$(ORBLIB).so
 	-@echo "Completed build of" $(ORBLIB)
 
 $(ORBUCULUM) : $(ORBLIB) $(ORBUCULUM_POBJS)
@@ -306,6 +329,9 @@ $(ORBZMQ) : $(ORBLIB) $(ORBZMQ_POBJS)
 	-@echo "Completed build of" $(ORBZMQ)
 
 install:
+ifneq ("$(wildcard $(OLOC)/.isdebug)","")
+	$(error Please build non-debug version prior to install)
+endif
 	$(Q)install -D $(OLOC)/$(ORBUCULUM) --target-directory=$(DESTDIR)$(INSTALL_ROOT)bin
 	$(Q)install -D $(OLOC)/$(ORBCAT) --target-directory=$(DESTDIR)$(INSTALL_ROOT)bin
 	$(Q)install -D $(OLOC)/$(ORBTOP) --target-directory=$(DESTDIR)$(INSTALL_ROOT)bin
@@ -315,6 +341,10 @@ install:
 	$(Q)install -D $(OLOC)/$(ORBSTAT) --target-directory=$(DESTDIR)$(INSTALL_ROOT)bin
 	$(Q)install -D $(OLOC)/$(ORBDUMP) --target-directory=$(DESTDIR)$(INSTALL_ROOT)bin
 	$(Q)install -D $(OLOC)/$(ORBZMQ) --target-directory=$(DESTDIR)$(INSTALL_ROOT)bin
+	$(Q)install -D $(OLOC)/$(LIBSONAME).$(LIBVER) --target-directory=$(DESTDIR)$(INSTALL_ROOT)lib
+	$(Q)ldconfig
+	$(Q)$(LN) -sf $(LIBSONAME) $(DESTDIR)$(INSTALL_ROOT)lib/lib$(ORBLIB).so
+
 ifndef WINDOWS
 	$(Q)install -D $(OLOC)/$(ORBFIFO) --target-directory=$(DESTDIR)$(INSTALL_ROOT)bin
 	$(Q)install -D $(OLOC)/$(ORBSTAT) --target-directory=$(DESTDIR)$(INSTALL_ROOT)bin
@@ -347,22 +377,17 @@ uninstall:
 		$(DESTDIR)$(INSTALL_ROOT)bin/$(ORBPROFILE) \
 		$(DESTDIR)$(INSTALL_ROOT)bin/$(ORBTRACE) \
 		$(DESTDIR)$(INSTALL_ROOT)bin/$(ORBZMQ) \
-		$(DESTDIR)$(INSTALL_ROOT)share/orbcode/gdbtrace.init
-
+		$(DESTDIR)$(INSTALL_ROOT)share/orbcode/gdbtrace.init \
+		$(DESTDIR)$(INSTALL_ROOT)lib/lib$(ORBLIB).so*
 	-@echo "Uninstall complete"
 
 clean:
-	-$(call cmd, \rm -f $(POBJS) $(LD_TEMP) $(ORBUCULUM) $(ORBFIFO) $(ORBCAT) $(ORBDUMP) $(ORBSTAT) $(ORBMORTEM) $(ORBPROFILE) $(ORBTRACE) $(ORBZMQ) $(OUTFILE).map $(EXPORT) ,\
+	-$(call cmd, \rm -rf $(OLOC) $(EXPORT) ,\
 	Cleaning )
 	$(Q)-rm -rf SourceDoc/*
 	$(Q)-rm -rf *~ core
-	$(Q)-rm -rf $(OLOC)/*
 	$(Q)-rm -rf config/*~
 	$(Q)-rm -rf TAGS
-
-$(generated_dir)/git_head_revision.c:
-	mkdir -p $(dir $@)
-	../Tools/git_hash_to_c.sh > $@
 
 doc:
 	doxygen $(DOXCONFIG)

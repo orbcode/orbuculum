@@ -170,10 +170,7 @@ struct Options _options =
     .nwserverHost = NWSERVER_HOST,
 };
 
-struct RunTime _r =
-{
-    .options = &_options
-};
+struct RunTime _r;
 
 // ====================================================================================================
 // ====================================================================================================
@@ -1437,6 +1434,9 @@ static int _fileFeeder( struct RunTime *r )
 int main( int argc, char *argv[] )
 
 {
+    /* This is set here to avoid huge .data section in startup image */
+    _r.options = &_options;
+
 #ifdef WIN32
     WSADATA wsaData;
     WSAStartup( MAKEWORD( 2, 2 ), &wsaData );

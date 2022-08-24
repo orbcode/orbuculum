@@ -125,10 +125,7 @@ struct RunTime
     uint64_t highOrdert;                /* High order bits */
     uint64_t tcount;                    /* Constructed current count */
     uint64_t starttcount;               /* Count at which we started */
-} _r =
-{
-    .options = &_options
-};
+} _r;
 
 // ====================================================================================================
 // ====================================================================================================
@@ -711,6 +708,9 @@ int main( int argc, char *argv[] )
 
     /* Have a basic name and search string set up */
     _r.progName = genericsBasename( argv[0] );
+
+    /* This is set here to avoid huge .data section in startup image */
+    _r.options = &_options;
 
     if ( !_processOptions( argc, argv, &_r ) )
     {

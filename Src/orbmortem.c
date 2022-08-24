@@ -120,10 +120,7 @@ struct RunTime
     struct opConstruct op;              /* The mechanical elements for creating the output buffer */
 
     struct Options *options;            /* Our runtime configuration */
-} _r =
-{
-    .options = &_options
-};
+} _r;
 
 /* For opening the editor (Shift-Right-Arrow) the following command lines work for a few editors;
  *
@@ -1198,6 +1195,9 @@ int main( int argc, char *argv[] )
 
     /* Have a basic name and search string set up */
     _r.progName = genericsBasename( argv[0] );
+
+    /* This is set here to avoid huge .data section in startup image */
+    _r.options = &_options;
 
     if ( !_processOptions( argc, argv, &_r ) )
     {
