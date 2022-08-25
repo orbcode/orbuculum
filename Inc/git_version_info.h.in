@@ -1,0 +1,1 @@
+#define GIT_DESCRIBE "@VCS_TAG@"
