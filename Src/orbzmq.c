@@ -47,8 +47,9 @@ struct
     /* Source information */
     int port;
     char *server;
+    bool mono;                                          /* Supress colour in output */
 
-    char *file;                                          /* File host connection */
+    char *file;                                         /* File host connection */
     bool endTerminate;                                  /* Terminate when file/socket "ends" */
 
 } options =
@@ -460,24 +461,25 @@ void _protocolPump( uint8_t c )
 void _printHelp( const char *const progName )
 
 {
-    fprintf( stdout, "Usage: %s [options]" EOL, progName );
-    fprintf( stdout, "    -c, --channel:    <Number>,<Name>,<Format> of channel to populate (repeat per channel)" EOL );
-    fprintf( stdout, "    -e, --hwevent:    Comma-separated list of published hwevents" EOL );
-    fprintf( stdout, "    -E, --eof:        Terminate when the file/socket ends/is closed, otherwise wait to reconnect" EOL );
-    fprintf( stdout, "    -f, --input-file: <filename> Take input from specified file" EOL );
-    fprintf( stdout, "    -h, --help:       This help" EOL );
-    fprintf( stdout, "    -n, --itm-sync:   Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
-    fprintf( stdout, "    -s, --server:     <Server>:<Port> to use, default %s:%d" EOL, options.server, options.port );
-    fprintf( stdout, "    -t, --tpiu:       <channel>: Use TPIU decoder on specified channel (normally 1)" EOL );
-    fprintf( stdout, "    -v, --verbose:    <level> Verbose mode 0(errors)..3(debug)" EOL );
-    fprintf( stdout, "    -V, --version:    Print version and exit" EOL );
-    fprintf( stdout, "    -z, --zbind:      <url>: ZeroMQ bind URL, default %s" EOL, options.bindUrl );
-    fprintf( stdout, EOL );
-    fprintf( stdout, "Available HW events: " EOL );
-    fprintf( stdout, "      all  - All hwevents          TS   - Timestamp" EOL );
-    fprintf( stdout, "      EXCP - Exception entry/exit  PC   - PC sampling" EOL );
-    fprintf( stdout, "      DWT  - DWT event             RWWT - Read/write watchpoint" EOL );
-    fprintf( stdout, "      AWP  - Access watchpoint     OFS  - Data offset" EOL );
+    genericsPrintf( "Usage: %s [options]" EOL, progName );
+    genericsPrintf( "    -c, --channel:    <Number>,<Name>,<Format> of channel to populate (repeat per channel)" EOL );
+    genericsPrintf( "    -e, --hwevent:    Comma-separated list of published hwevents" EOL );
+    genericsPrintf( "    -E, --eof:        Terminate when the file/socket ends/is closed, otherwise wait to reconnect" EOL );
+    genericsPrintf( "    -f, --input-file: <filename> Take input from specified file" EOL );
+    genericsPrintf( "    -h, --help:       This help" EOL );
+    genericsPrintf( "    -M, --no-colour:    Supress colour in output" EOL );
+    genericsPrintf( "    -n, --itm-sync:   Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
+    genericsPrintf( "    -s, --server:     <Server>:<Port> to use, default %s:%d" EOL, options.server, options.port );
+    genericsPrintf( "    -t, --tpiu:       <channel>: Use TPIU decoder on specified channel (normally 1)" EOL );
+    genericsPrintf( "    -v, --verbose:    <level> Verbose mode 0(errors)..3(debug)" EOL );
+    genericsPrintf( "    -V, --version:    Print version and exit" EOL );
+    genericsPrintf( "    -z, --zbind:      <url>: ZeroMQ bind URL, default %s" EOL, options.bindUrl );
+    genericsPrintf( EOL );
+    genericsPrintf( "Available HW events: " EOL );
+    genericsPrintf( "      all  - All hwevents          TS   - Timestamp" EOL );
+    genericsPrintf( "      EXCP - Exception entry/exit  PC   - PC sampling" EOL );
+    genericsPrintf( "      DWT  - DWT event             RWWT - Read/write watchpoint" EOL );
+    genericsPrintf( "      AWP  - Access watchpoint     OFS  - Data offset" EOL );
 }
 // ====================================================================================================
 void _printVersion( void )
@@ -549,6 +551,8 @@ static struct option _longOptions[] =
     {"input-file", required_argument, NULL, 'f'},
     {"help", no_argument, NULL, 'h'},
     {"itm-sync", no_argument, NULL, 'n'},
+    {"no-colour", no_argument, NULL, 'M'},
+    {"no-color", no_argument, NULL, 'M'},
     {"server", required_argument, NULL, 's'},
     {"tpiu", required_argument, NULL, 't'},
     {"verbose", required_argument, NULL, 'v'},
@@ -594,6 +598,11 @@ bool _processOptions( int argc, char *argv[] )
             // ------------------------------------
             case 'f':
                 options.file = optarg;
+                break;
+
+            // ------------------------------------
+            case 'M':
+                options.mono = true;
                 break;
 
             // ------------------------------------
@@ -856,12 +865,12 @@ int main( int argc, char *argv[] )
 {
     bool alreadyReported = false;
 
-    genericsInit( true );
-
     if ( !_processOptions( argc, argv ) )
     {
         exit( -1 );
     }
+
+    genericsScreenHandling( !options.mono );
 
     _r.zmqContext = zmq_ctx_new();
     _r.zmqSocket = zmq_socket( _r.zmqContext, ZMQ_PUB );

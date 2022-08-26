@@ -450,12 +450,16 @@ void genericsExit( int status, const char *fmt, ... )
     exit( status );
 }
 // ====================================================================================================
-void genericsInit( bool screenHandling )
+void genericsScreenHandling( bool screenHandling )
 
 {
     if ( screenHandling )
     {
         _screenHandling = ( setupterm( NULL, 1, NULL ) == 0 );
+    }
+    else
+    {
+        _screenHandling = false;
     }
 }
 // ====================================================================================================

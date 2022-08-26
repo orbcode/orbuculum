@@ -92,7 +92,7 @@ const char *genericsBasenameN( const char *n, int c );
 void genericsReport( enum verbLevel l, const char *fmt, ... );
 void genericsExit( int status, const char *fmt, ... );
 
-void genericsInit( bool screenHandling );
+void genericsScreenHandling( bool screenHandling );
 
 // ====================================================================================================
 #ifdef __cplusplus

@@ -44,6 +44,8 @@ struct                                      /* Record for options, either defaul
     /* How long to dump */
     uint32_t timelen;
 
+    /* Supress colour in output */
+    bool mono;
     /* Source information */
     int port;
     char *server;
@@ -158,6 +160,7 @@ void _printHelp( const char *const progName )
     genericsPrintf( "Usage: %s [options]" EOL, progName );
     genericsPrintf( "    -h, --help:         This help" EOL );
     genericsPrintf( "    -l, --length:       <timelen> Length of time in ms to record from point of acheiving sync (defaults to %dmS)" EOL, options.timelen );
+    genericsPrintf( "    -M, --no-colour:    Supress colour in output" EOL );
     genericsPrintf( "    -n, --itm-sync:     Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
     genericsPrintf( "    -o, --output-file:  <filename> to be used for dump file (defaults to %s)" EOL, options.outfile );
     genericsPrintf( "    -p, --port:         <Port> to use" EOL );
@@ -179,6 +182,8 @@ static struct option _longOptions[] =
     {"help", no_argument, NULL, 'h'},
     {"length", required_argument, NULL, 'l'},
     {"itm-sync", no_argument, NULL, 'n'},
+    {"no-colour", no_argument, NULL, 'M'},
+    {"no-color", no_argument, NULL, 'M'},
     {"output-file", required_argument, NULL, 'o'},
     {"port", required_argument, NULL, 'p'},
     {"server", required_argument, NULL, 's'},
@@ -194,7 +199,7 @@ bool _processOptions( int argc, char *argv[] )
 {
     int c, optionIndex = 0;
 
-    while ( ( c = getopt_long ( argc, argv, "hVl:no:p:s:t:v:w", _longOptions, &optionIndex ) ) != -1 )
+    while ( ( c = getopt_long ( argc, argv, "hVl:Mno:p:s:t:v:w", _longOptions, &optionIndex ) ) != -1 )
         switch ( c )
         {
             case 'o':
@@ -203,6 +208,10 @@ bool _processOptions( int argc, char *argv[] )
 
             case 'l':
                 options.timelen = atoi( optarg );
+                break;
+
+            case 'M':
+                options.mono = true;
                 break;
 
             case 'n':
@@ -310,12 +319,12 @@ int main( int argc, char *argv[] )
 
     bool haveSynced = false;
 
-    genericsInit( true );
-
     if ( !_processOptions( argc, argv ) )
     {
         exit( -1 );
     }
+
+    genericsScreenHandling( !options.mono );
 
     /* Reset the TPIU handler before we start */
     TPIUDecoderInit( &_r.t );

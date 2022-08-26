@@ -43,6 +43,7 @@ struct
     /* Source information */
     char *file;                         /* File host connection */
     bool fileTerminate;                 /* Terminate when file read isn't successful */
+    bool mono;                                          /* Supress colour in output */
 
     int port;                           /* Source information */
     char *server;
@@ -75,6 +76,7 @@ static void _printHelp( const char *const progName )
     genericsPrintf( "    -E, --eof:          When reading from file, terminate at end of file rather than waiting for further input" EOL );
     genericsPrintf( "    -f, --input-file:   <filename> Take input from specified file" EOL );
     genericsPrintf( "    -h, --help:         This help" EOL );
+    genericsPrintf( "    -M, --no-colour:    Supress colour in output" EOL );
     genericsPrintf( "    -P, --permanent:    Create permanent files rather than fifos" EOL );
     genericsPrintf( "    -t, --tpiu:         <channel> Use TPIU decoder on specified channel, normally 1" EOL );
     genericsPrintf( "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
@@ -95,6 +97,8 @@ struct option _longOptions[] =
     {"eof", no_argument, NULL, 'E'},
     {"input-file", required_argument, NULL, 'f'},
     {"help", no_argument, NULL, 'h'},
+    {"no-colour", no_argument, NULL, 'M'},
+    {"no-color", no_argument, NULL, 'M'},
     {"permanent", no_argument, NULL, 'P'},
     {"tpiu", required_argument, NULL, 't'},
     {"verbose", required_argument, NULL, 'v'},
@@ -146,7 +150,11 @@ static bool _processOptions( int argc, char *argv[] )
                 return false;
 
             // ------------------------------------
+            case 'M':
+                options.mono = true;
+                break;
 
+            // ------------------------------------
             case 'n':
                 itmfifoSetForceITMSync( _r.f, false );
                 break;
@@ -361,8 +369,6 @@ int main( int argc, char *argv[] )
     struct timeval tv;
     int32_t remainTime;
 
-    genericsInit( true );
-
     /* Setup fifos with forced ITM sync, no TPIU and TPIU on channel 1 if its engaged later */
     _r.f = itmfifoInit( true, false, 1 );
     assert( _r.f );
@@ -372,6 +378,8 @@ int main( int argc, char *argv[] )
         /* processOptions generates its own error messages */
         genericsExit( -1, "" EOL );
     }
+
+    genericsScreenHandling( !options.mono );
 
     itmfifoUsePermafiles( _r.f, options.permafile );
 

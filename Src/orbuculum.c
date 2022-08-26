@@ -80,7 +80,7 @@ struct Options
     char *outfile;                                       /* Output file for raw data dumping */
     char *otcl;                                          /* Orbtrace command line options */
     uint32_t intervalReportTime;                         /* If we want interval reports about performance */
-
+    bool mono;                                           /* Supress colour in output */
     char *channelList;                                   /* List of TPIU channels to be serviced */
 
     /* Network link */
@@ -364,6 +364,7 @@ void _printHelp( const char *const progName )
     genericsPrintf( "    -h, --help:         This help" EOL );
     genericsPrintf( "    -l, --listen-port:  <port> Listen port for the incoming connections (defaults to %d)" EOL, NWCLIENT_SERVER_PORT );
     genericsPrintf( "    -m, --monitor:      <interval> Output monitor information about the link at <interval>ms" EOL );
+    genericsPrintf( "    -M, --no-colour:    Supress colour in output" EOL );
     genericsPrintf( "    -o, --output-file:  <filename> to be used for dump file" EOL );
     genericsPrintf( "    -O, --orbtrace:  \"<options>\" run orbtrace with specified options on each new ORBTrace device connect" EOL );
     genericsPrintf( "    -p, --serial-port:  <serialPort> to use" EOL );
@@ -388,6 +389,8 @@ static struct option _longOptions[] =
     {"help", no_argument, NULL, 'h'},
     {"listen-port", required_argument, NULL, 'l'},
     {"monitor", required_argument, NULL, 'm'},
+    {"no-colour", no_argument, NULL, 'M'},
+    {"no-color", no_argument, NULL, 'M'},
     {"output-file", required_argument, NULL, 'o'},
     {"orbtrace", required_argument, NULL, 'O'},
     {"serial-port", required_argument, NULL, 'p'},
@@ -404,7 +407,7 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
     int c, optionIndex = 0;
 #define DELIMITER ','
 
-    while ( ( c = getopt_long ( argc, argv, "a:Ef:hVl:m:no:O:p:s:t:v:", _longOptions, &optionIndex ) ) != -1 )
+    while ( ( c = getopt_long ( argc, argv, "a:Ef:hVl:m:Mno:O:p:s:t:v:", _longOptions, &optionIndex ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -444,6 +447,12 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
 
             case 'm':
                 r->options->intervalReportTime = atoi( optarg );
+                break;
+
+            // ------------------------------------
+
+            case 'M':
+                r->options->mono = true;
                 break;
 
             // ------------------------------------
@@ -821,7 +830,7 @@ static void *_processBlocksQueue( void *params )
 
     while ( !r->ending )
     {
-      pthread_mutex_lock( &r->dataForClients );
+        pthread_mutex_lock( &r->dataForClients );
 
         if ( r->rp != r->wp )
         {
@@ -1437,8 +1446,6 @@ int main( int argc, char *argv[] )
     /* This is set here to avoid huge .data section in startup image */
     _r.options = &_options;
 
-    genericsInit( true );
-
 #ifdef WIN32
     WSADATA wsaData;
     WSAStartup( MAKEWORD( 2, 2 ), &wsaData );
@@ -1457,6 +1464,8 @@ int main( int argc, char *argv[] )
         /* processOptions generates its own error messages */
         genericsExit( -1, "" EOL );
     }
+
+    genericsScreenHandling( !_r.options->mono );
 
     /* Make sure the network clients get removed at the end */
     atexit( _doExit );

@@ -59,7 +59,7 @@ struct Options                           /* Record for options, either defaults 
     char *dotfile;                       /* File to output dot information */
     char *profile;                       /* File to output profile information */
     int  sampleDuration;                 /* How long we are going to sample for */
-
+    bool mono;                           /* Supress colour in output */
     bool noaltAddr;                      /* Dont use alternate addressing */
     bool useTPIU;                        /* Are we using TPIU, and stripping TPIU frames? */
     int  channel;                        /* When TPIU is in use, which channel to decode? */
@@ -458,6 +458,7 @@ static void _printHelp( const char *const progName )
     genericsPrintf( "    -f, --input-file:   Take input from specified file" EOL );
     genericsPrintf( "    -h, --help:         This help" EOL );
     genericsPrintf( "    -I, --interval:     <Interval> Time between samples (in ms)" EOL );
+    genericsPrintf( "    -M, --no-colour:    Supress colour in output" EOL );
     genericsPrintf( "    -O, --objdump-opts: <options> Options to pass directly to objdump" EOL );
     genericsPrintf( "    -p, --trace-proto:  {ETM35|MTB} trace protocol to use, default is ETM35" EOL );
     genericsPrintf( "    -s, --server:       <Server>:<Port> to use" EOL );
@@ -486,6 +487,8 @@ static struct option _longOptions[] =
     {"input-file", required_argument, NULL, 'f'},
     {"help", no_argument, NULL, 'h'},
     {"interval", required_argument, NULL, 'I'},
+    {"no-colour", no_argument, NULL, 'M'},
+    {"no-color", no_argument, NULL, 'M'},
     {"objdump-opts", required_argument, NULL, 'O'},
     {"trace-proto", required_argument, NULL, 'p'},
     {"server", required_argument, NULL, 's'},
@@ -502,7 +505,7 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
 {
     int c, optionIndex = 0;
 
-    while ( ( c = getopt_long ( argc, argv, "ADd:e:Ef:hVI:O:p:s:Tv:y:z:", _longOptions, &optionIndex ) ) != -1 )
+    while ( ( c = getopt_long ( argc, argv, "ADd:e:Ef:hVI:MO:p:s:Tv:y:z:", _longOptions, &optionIndex ) ) != -1 )
 
         switch ( c )
         {
@@ -540,6 +543,12 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
             case 'h':
                 _printHelp( r->progName );
                 exit( 0 );
+
+            // ------------------------------------
+
+            case 'M':
+                r->options->mono = true;
+                break;
 
             // ------------------------------------
             case 'V':
@@ -745,8 +754,6 @@ int main( int argc, char *argv[] )
     struct Stream *stream = NULL;
     enum symbolErr r;
 
-    genericsInit( true );
-
     DBG_OUT( "This utility is in development. Use at your own risk!!" EOL );
 
     /* Have a basic name and search string set up */
@@ -758,6 +765,8 @@ int main( int argc, char *argv[] )
         /* processOptions generates its own error messages */
         genericsExit( -1, "" EOL );
     }
+
+    genericsScreenHandling( !_r.options->mono );
 
     /* Make sure the fifos get removed at the end */
     atexit( _doExit );

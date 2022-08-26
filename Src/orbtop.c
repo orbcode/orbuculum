@@ -86,7 +86,7 @@ struct                                       /* Record for options, either defau
     char *json;                              /* Output in JSON format rather than human readable, either '-' for screen or filename */
     char *outfile;                           /* File to output current information */
     char *logfile;                           /* File to output historic information */
-
+    bool mono;                               /* Supress colour in output */
     uint32_t cutscreen;                      /* Cut screen output after specified number of lines */
     uint32_t maxRoutines;                    /* Historic information to emit */
     bool lineDisaggregation;                 /* Aggregate per line or per function? */
@@ -924,6 +924,7 @@ void _printHelp( const char *const progName )
     genericsPrintf( "    -I, --interval:     <interval> Display interval in milliseconds (defaults to %d ms)" EOL, TOP_UPDATE_INTERVAL );
     genericsPrintf( "    -j, --json-file:    <filename> Output to file in JSON format (or screen if <filename> is '-')" EOL );
     genericsPrintf( "    -l, --agg-lines:    Aggregate per line rather than per function" EOL );
+    genericsPrintf( "    -M, --no-colour:    Supress colour in output" EOL );
     genericsPrintf( "    -n, --itm-sync:     Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
     genericsPrintf( "    -o, --output-file:  <filename> to be used for output live file" EOL );
     genericsPrintf( "    -O, --objdump-opts: <options> Options to pass directly to objdump" EOL );
@@ -957,6 +958,8 @@ static struct option _longOptions[] =
     {"json-file", required_argument, NULL, 'j'},
     {"agg-lines", no_argument, NULL, 'l'},
     {"itm-sync", no_argument, NULL, 'n'},
+    {"no-colour", no_argument, NULL, 'M'},
+    {"no-color", no_argument, NULL, 'M'},
     {"output-file", required_argument, NULL, 'o'},
     {"objdump-opts", required_argument, NULL, 'O'},
     {"routines", required_argument, NULL, 'r'},
@@ -973,7 +976,7 @@ bool _processOptions( int argc, char *argv[] )
 {
     int c, optionIndex = 0;
 
-    while ( ( c = getopt_long ( argc, argv, "c:d:DEe:f:g:hVI:j:lm:nO:o:r:Rs:t:v:", _longOptions, &optionIndex ) ) != -1 )
+    while ( ( c = getopt_long ( argc, argv, "c:d:DEe:f:g:hVI:j:lMnO:o:r:Rs:t:v:", _longOptions, &optionIndex ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -1029,6 +1032,12 @@ bool _processOptions( int argc, char *argv[] )
             // ------------------------------------
             case 'r':
                 options.maxRoutines = atoi( optarg );
+                break;
+
+            // ------------------------------------
+
+            case 'M':
+                options.mono = true;
                 break;
 
             // ------------------------------------
@@ -1206,8 +1215,6 @@ int main( int argc, char *argv[] )
     size_t receivedSize = 0;
     enum symbolErr r;
 
-    genericsInit( true );
-
     /* Fill in a time to start from */
     lastTime = _timestamp();
 
@@ -1215,6 +1222,8 @@ int main( int argc, char *argv[] )
     {
         exit( -EINVAL );
     }
+
+    genericsScreenHandling( !options.mono );
 
     /* Check we've got _some_ symbols to start from */
     r = SymbolSetCreate( &_r.s, options.elffile, options.deleteMaterial, options.demangle, true, true, options.odoptions );

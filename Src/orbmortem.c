@@ -53,6 +53,7 @@ struct Options
     int channel;                        /* When TPIU is in use, which channel to decode? */
     int port;                           /* Source information */
     char *server;
+    bool mono;                          /* Supress colour in output */
     enum TRACEprotocol protocol;        /* Encoding protocol to use */
     bool noAltAddr;                     /* Flag to *not* use alternate addressing */
     char *openFileCL;                   /* Command line for opening refernced file */
@@ -159,6 +160,7 @@ static void _printHelp( const char *const progName )
     genericsPrintf( "    -E, --eof:          When reading from file, terminate at end of file rather than waiting for further input" EOL );
     genericsPrintf( "    -f, --input-file:   <filename>: Take input from specified file" EOL );
     genericsPrintf( "    -h, --help:         This help" EOL );
+    genericsPrintf( "    -M, --no-colour:    Supress colour in output" EOL );
     genericsPrintf( "    -O, --objdump-opts: <options> Options to pass directly to objdump" EOL );
     genericsPrintf( "    -p, --trace-proto:  {ETM35|MTB} trace protocol to use, default is ETM35" EOL );
     genericsPrintf( "    -s, --server:       <Server>:<Port> to use" EOL );
@@ -188,6 +190,8 @@ static struct option _longOptions[] =
     {"eof", no_argument, NULL, 'E'},
     {"input-file", required_argument, NULL, 'f'},
     {"help", no_argument, NULL, 'h'},
+    {"no-colour", no_argument, NULL, 'M'},
+    {"no-color", no_argument, NULL, 'M'},
     {"objdump-opts", required_argument, NULL, 'O'},
     {"trace-proto", required_argument, NULL, 'p'},
     {"server", required_argument, NULL, 's'},
@@ -202,7 +206,7 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
 {
     int c, optionIndex = 0;
 
-    while ( ( c = getopt_long ( argc, argv, "Ab:C:Dd:Ee:f:hVO:p:s:t:v:", _longOptions, &optionIndex ) ) != -1 )
+    while ( ( c = getopt_long ( argc, argv, "Ab:C:Dd:Ee:f:hVMO:p:s:t:v:", _longOptions, &optionIndex ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -260,6 +264,11 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
 
             // ------------------------------------
 
+            case 'M':
+                r->options->mono = true;
+                break;
+
+            // ------------------------------------
             case 'O':
                 r->options->odoptions = optarg;
                 break;
@@ -1193,8 +1202,6 @@ int main( int argc, char *argv[] )
     struct Stream *stream;              /* Stream that we are collecting data from */
     struct timeval tv;
 
-    genericsInit( true );
-
     /* Have a basic name and search string set up */
     _r.progName = genericsBasename( argv[0] );
 
@@ -1206,6 +1213,8 @@ int main( int argc, char *argv[] )
         /* processOptions generates its own error messages */
         genericsExit( -1, "" EOL );
     }
+
+    genericsScreenHandling( !_r.options->mono );
 
     /* Make sure the fifos get removed at the end */
     atexit( _doExit );

@@ -299,7 +299,7 @@ void nwclientSend( struct nwclientsHandle *h, uint32_t len, uint8_t *ipbuffer )
 
         while ( n )
         {
-	  pthread_mutex_unlock( (pthread_mutex_t *)&n->dataAvailable );
+            pthread_mutex_unlock( ( pthread_mutex_t * )&n->dataAvailable );
             n = n->nextClient;
         }
 

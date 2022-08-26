@@ -60,6 +60,7 @@ struct Options                           /* Record for options, either defaults 
     char *profile;                       /* File to output profile information */
     uint32_t sampleDuration;             /* How long we are going to sample for */
     bool forceITMSync;                   /* Do we assume ITM starts synced? */
+    bool mono;                           /* Supress colour in output */
 
     bool useTPIU;                        /* Are we using TPIU, and stripping TPIU frames? */
     uint32_t tpiuITMChannel;             /* Which TPIU channel to use for ITM */
@@ -475,6 +476,7 @@ static void _printHelp( struct RunTime *r )
     genericsPrintf( "    -h, --help:         This help" EOL );
     genericsPrintf( "    -I, --interval:     <Interval>: Time to sample (in mS)" EOL );
     genericsPrintf( "    -n, --itm-sync:     Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
+    genericsPrintf( "    -M, --no-colour:    Supress colour in output" EOL );
     genericsPrintf( "    -O, --objdump-opts: <options> Options to pass directly to objdump" EOL );
     genericsPrintf( "    -s, --server:       <Server>:<Port> to use" EOL );
     genericsPrintf( "    -t, --tpiu:         <channel>: Use TPIU to strip TPIU on specfied channel (defaults to 1)" EOL );
@@ -504,6 +506,8 @@ static struct option _longOptions[] =
     {"help", no_argument, NULL, 'h'},
     {"interval", required_argument, NULL, 'I'},
     {"itm-sync", no_argument, NULL, 'n'},
+    {"no-colour", no_argument, NULL, 'M'},
+    {"no-color", no_argument, NULL, 'M'},
     {"objdump-opts", required_argument, NULL, 'O'},
     {"server", required_argument, NULL, 's'},
     {"tpiu", required_argument, NULL, 't'},
@@ -566,6 +570,11 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
             // ------------------------------------
             case 'I':
                 r->options->sampleDuration = atoi( optarg );
+                break;
+
+            // ------------------------------------
+            case 'M':
+                r->options->mono = true;
                 break;
 
             // ------------------------------------
@@ -706,8 +715,6 @@ int main( int argc, char *argv[] )
     enum symbolErr r;
     struct timeval tv;
 
-    genericsInit( true );
-
     /* Have a basic name and search string set up */
     _r.progName = genericsBasename( argv[0] );
 
@@ -719,6 +726,8 @@ int main( int argc, char *argv[] )
         /* processOptions generates its own error messages */
         genericsExit( -1, "" EOL );
     }
+
+    genericsScreenHandling( !_r.options->mono );
 
     /* Make sure the fifos get removed at the end */
     atexit( _doExit );

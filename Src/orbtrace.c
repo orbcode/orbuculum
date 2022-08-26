@@ -36,6 +36,7 @@ struct Options
     bool swoMANCH;            /* SWO Manchester output */
     bool swoUART;             /* SWO UART output */
     bool opJSON;              /* Set output to JSON */
+    bool mono;                /* Supress colour in output */
 
     /* Power settings */
     bool forceVoltage;        /* Force application of voltage */
@@ -136,6 +137,7 @@ static void _printHelp( const char *const progName )
     genericsPrintf( "       -e, --power:         <Ch>,<On> Enable or Disable power. Ch is vtref, vtpwr or all" EOL );
     genericsPrintf( "       -h, --help::         This help" EOL );
     genericsPrintf( "       -l, --list:          Show all OrbTrace devices attached to system" EOL );
+    genericsPrintf( "       -M, --no-colour:    Supress colour in output" EOL );
     genericsPrintf( "       -T, --trace-format:  <x> Trace format; 1,2 or 4 bit parallel, m for Manchester SWO, u=UART SWO" EOL );
     genericsPrintf( "       -n, --serial-number: <Serial> any part of serial number to differentiate specific OrbTrace device" EOL );
     genericsPrintf( "       -p, --voltage:       <Ch>,<Voltage> Set voltage in V, Ch is vtref or vtpwr" EOL );
@@ -166,6 +168,8 @@ static struct option _longOptions[] =
     {"help", no_argument, NULL, 'h'},
     {"list", no_argument, NULL, 'l'},
     {"monitor", required_argument, NULL, 'm'},
+    {"no-colour", no_argument, NULL, 'M'},
+    {"no-color", no_argument, NULL, 'M'},
     {"trace-format", required_argument, NULL, 'T'},
     {"serial-number", required_argument, NULL, 'n'},
     {"voltage", required_argument, NULL, 'p'},
@@ -206,7 +210,7 @@ static int _processOptions( struct RunTime *r, int argc, char *argv[]  )
     bool action;
     char *a;
 
-    while ( ( c = getopt_long ( argc, argv, "e:hlp:n:T:v:V", _longOptions, &optionIndex ) ) != -1 )
+    while ( ( c = getopt_long ( argc, argv, "e:hlp:Mn:T:v:V", _longOptions, &optionIndex ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -281,6 +285,11 @@ static int _processOptions( struct RunTime *r, int argc, char *argv[]  )
             // ------------------------------------
             case 'L': /* Lock device */
                 _set_action( r, ACTION_LOCKDEVICE );
+                break;
+
+            // ------------------------------------
+            case 'M':
+                r->options->mono = true;
                 break;
 
             // ------------------------------------
@@ -687,13 +696,13 @@ int main( int argc, char *argv[] )
     int selection = 0;
     int retVal = 0;
 
-    genericsInit( true );
-
     if ( !_processOptions( &_r, argc, argv ) )
     {
         /* processOptions generates its own error messages */
         genericsExit( -1, "" EOL );
     }
+
+    genericsScreenHandling( !_r.options->mono );
 
     /* Make sure everything gets removed at the end */
     atexit( _doExit );
