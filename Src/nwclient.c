@@ -17,8 +17,10 @@
     #include <netinet/in.h>
     #include <netdb.h>
     #include <arpa/inet.h>
-    #include <linux/tcp.h>
     #include <string.h>
+#endif
+#ifdef LINUX
+    #include <linux/tcp.h>
 #endif
 #include <assert.h>
 #include <strings.h>
@@ -30,6 +32,10 @@
 #ifdef WIN32
     // https://stackoverflow.com/a/14388707/995351
     #define SO_REUSEPORT SO_REUSEADDR
+    #define MSG_NOSIGNAL 0
+#endif
+
+#ifdef OSX
     #define MSG_NOSIGNAL 0
 #endif
 
