@@ -3,14 +3,18 @@ project('orbuculum', 'c')
 dependencies = [
     dependency('threads'),
     dependency('libusb-1.0'),
-    dependency('ncurses'),
     dependency('libzmq'),
+    dependency('ncurses', 'ncursesw')
 ]
 
 incdirs = include_directories(['Inc', 'Inc/external'])
+cc = meson.get_compiler('c')
 
 if host_machine.system() == 'windows'
-    # TODO
+    winsock2 = cc.find_library('ws2_32')
+    dependencies += [
+        winsock2
+    ]
 elif host_machine.system() == 'darwin'
     add_global_arguments('-DOSX', language: 'c')
 else
@@ -67,18 +71,20 @@ executable('orbuculum',
     install: true,
 )
 
-executable('orbfifo',
-    sources: [
-        'Src/orbfifo.c',
-        'Src/filewriter.c',
-        'Src/itmfifos.c',
-        git_version_info_h,
-    ],
-    include_directories: incdirs,
-    dependencies: dependencies,
-    link_with: liborb,
-    install: true,
-)
+if host_machine.system() != 'windows'
+    executable('orbfifo',
+        sources: [
+            'Src/orbfifo.c',
+            'Src/filewriter.c',
+            'Src/itmfifos.c',
+            git_version_info_h,
+        ],
+        include_directories: incdirs,
+        dependencies: dependencies,
+        link_with: liborb,
+        install: true,
+    )
+endif
 
 executable('orbcat',
     sources: [
