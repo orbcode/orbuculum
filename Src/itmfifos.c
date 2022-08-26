@@ -15,7 +15,7 @@
 #include <assert.h>
 #include <stdint.h>
 #include <inttypes.h>
-#include <threads.h>
+#include <pthread.h>
 #include <signal.h>
 
 #include "git_version_info.h"
@@ -43,7 +43,7 @@ struct Channel                               /* Information for an individual ch
 
     /* Runtime state */
     int handle;                              /* Handle to the fifo */
-    thrd_t thread;                          /* Thread on which it's running */
+    pthread_t thread;                        /* Thread on which it's running */
     struct runThreadParams params;           /* Parameters for running thread */
     char *fifoName;                          /* Constructed fifo name (from chanPath and name) */
 };
@@ -85,7 +85,7 @@ struct itmfifosHandle
 // ====================================================================================================
 // Handlers for the fifos
 // ====================================================================================================
-static int _runFifo( void *arg )
+static void *_runFifo( void *arg )
 
 /* This is the control loop for the channel fifos (for each software port) */
 
@@ -109,7 +109,7 @@ static int _runFifo( void *arg )
         /* This is a 'conventional' fifo, so it must be created */
         if ( mkfifo( c->fifoName, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH ) < 0 )
         {
-            thrd_exit( 0 );
+            pthread_exit( NULL );
         }
     }
 
@@ -178,10 +178,10 @@ static int _runFifo( void *arg )
     }
     while ( readDataLen > 0 );
 
-    thrd_exit( 0 );
+    pthread_exit( NULL );
 }
 // ====================================================================================================
-static int _runHWFifo( void *arg )
+static void *_runHWFifo( void *arg )
 
 /* This is the control loop for the hardware fifo */
 
@@ -200,7 +200,7 @@ static int _runHWFifo( void *arg )
         /* This is a 'conventional' fifo, so it must be created */
         if ( mkfifo( c->fifoName, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH ) < 0 )
         {
-            thrd_exit( 0 );
+            pthread_exit( NULL );
         }
     }
 
@@ -231,13 +231,13 @@ static int _runHWFifo( void *arg )
     }
     while ( readDataLen > 0 );
 
-    thrd_exit( 0 );
+    pthread_exit( NULL );
 }
 // ====================================================================================================
 static void _intEINTRHandler( int sig )
 
 {
-    thrd_exit( 0 );
+    pthread_exit( NULL );
 }
 // ====================================================================================================
 // Decoders for each message
@@ -734,7 +734,7 @@ bool itmfifoCreate( struct itmfifosHandle *f )
                 strcpy( f->c[t].fifoName, f->chanPath );
                 strcat( f->c[t].fifoName, f->c[t].chanName );
 
-                if ( thrd_success != thrd_create( &( f->c[t].thread ), &_runFifo, &( f->c[t].params ) ) )
+                if ( pthread_create( &( f->c[t].thread ), NULL, &_runFifo, &( f->c[t].params ) ) )
                 {
                     return false;
                 }
@@ -765,7 +765,7 @@ bool itmfifoCreate( struct itmfifosHandle *f )
             strcpy( f->c[t].fifoName, f->chanPath );
             strcat( f->c[t].fifoName, HWFIFO_NAME );
 
-            if ( thrd_success != thrd_create( &( f->c[t].thread ), &_runHWFifo, &( f->c[t].params ) ) )
+            if ( pthread_create( &( f->c[t].thread ), NULL, &_runHWFifo, &( f->c[t].params ) ) )
             {
                 return false;
             }
@@ -791,6 +791,7 @@ void itmfifoShutdown( struct itmfifosHandle *f )
         if ( f->c[t].handle > 0 )
         {
             close( f->c[t].handle );
+            pthread_kill ( f->c[t].thread, EINTR );
         }
     }
 
@@ -799,7 +800,7 @@ void itmfifoShutdown( struct itmfifosHandle *f )
     {
         if ( f->c[t].handle > 0 )
         {
-            thrd_join( f->c[t].thread, NULL );
+            pthread_join( f->c[t].thread, NULL );
 
             if ( ! f->permafile )
             {
