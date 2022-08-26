@@ -1,0 +1,1 @@
+meson.add_install_script('install_dlls.sh')
