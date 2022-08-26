@@ -38,6 +38,10 @@ else
     ]
 endif
 
+if host_machine.system() == 'windows'
+    subdir('win32')
+endif
+
 git_version_info_h = vcs_tag(
     command: ['git', 'describe', '--tags', '--always', '--dirty'],
     input: 'Inc/git_version_info.h.in',
