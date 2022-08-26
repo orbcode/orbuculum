@@ -11,19 +11,26 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/time.h>
+
 #ifdef WIN32
     #include <Windows.h>
 #else
     #include <libgen.h>
     #include <unistd.h>
 #endif
+#include <curses.h>
+#include <term.h>
 
 #include "generics.h"
 
-#define MAX_STRLEN (4096) // Maximum length of debug string
 #if defined(WIN32)
     #define _POSIX_ARG_MAX 4096
 #endif
+
+#define MAX_STRLEN (_POSIX_ARG_MAX) // Maximum length of debug string
+
+/* Flag indicating if active screen handling is in use */
+bool _screenHandling;
 
 // ====================================================================================================
 char *genericsEscape( char *str )
@@ -188,19 +195,20 @@ uint32_t genericsTimestampmS( void )
     return ( te.tv_sec * 1000LL + ( te.tv_usec / 1000 ) );
 }
 // ====================================================================================================
-void genericsPrintf( const char *fmt, ... )
-
-/* Print to output stream */
+static int _htoi( char c )
 
 {
-    static char op[MAX_STRLEN];
+    if ( ( c >= '0' ) && ( c <= '9' ) )
+    {
+        return c - '0';
+    }
 
-    va_list va;
-    va_start( va, fmt );
-    vsnprintf( op, MAX_STRLEN, fmt, va );
-    va_end( va );
-    fputs( op, stdout );
-    fflush( stdout );
+    if ( ( c >= 'a' ) && ( c <= 'f' ) )
+    {
+        return c - 'a' + 10;
+    }
+
+    return 0;
 }
 // ====================================================================================================
 const char *genericsBasename( const char *n )
@@ -311,6 +319,97 @@ char *genericsGetBaseDirectory( void )
 #endif
 }
 // ====================================================================================================
+static int _putchare( int c )
+
+{
+    return putc( c, stderr );
+}
+// ====================================================================================================
+void genericsPrintf( const char *fmt, ... )
+
+/* Print to output stream */
+
+{
+    static char op[MAX_STRLEN];
+    char *p = op;
+
+    va_list va;
+    va_start( va, fmt );
+    vsnprintf( op, MAX_STRLEN, fmt, va );
+    va_end( va );
+
+    while ( *p )
+    {
+        if ( *p != CMD_ALERT[0] )
+        {
+            putc( *p++, stderr );
+        }
+        else
+        {
+            p++;
+
+            switch ( *p )
+            {
+                case '0'...'9':
+                case 'a'...'f':
+                    if ( _screenHandling )
+                    {
+                        tputs( tparm( tigetstr( "setaf" ), _htoi( *p )  ), 1, _putchare );
+                    }
+
+                    p++;
+                    break;
+
+                case 'u':
+                    if ( _screenHandling )
+                    {
+                        tputs( tigetstr( "cuu1" ), 1, _putchare );
+                    }
+
+                    p++;
+                    break;
+
+                case 'U':
+                    if ( _screenHandling )
+                    {
+                        tputs( tigetstr( "el" ), 1, _putchare );
+                    }
+
+                    p++;
+                    break;
+
+                case 'r':
+                    if ( _screenHandling )
+                    {
+                        tputs( tigetstr( "op" ), 1, _putchare );
+                    }
+
+                    p++;
+                    break;
+
+                case 'z':
+                    if ( _screenHandling )
+                    {
+                        tputs( tigetstr( "clear" ), 1, _putchare );
+                    }
+                    else
+                    {
+                        /* We'll take a flyer on it being vt100 compatible */
+                        tputs( "\033[H\033[J", 1, _putchare );
+                    }
+
+                    p++;
+                    break;
+
+                default:
+                    break;
+            }
+        }
+    }
+
+    fflush( stdout );
+}
+// ====================================================================================================
 void genericsReport( enum verbLevel l, const char *fmt, ... )
 
 /* Debug reporting stream */
@@ -321,15 +420,15 @@ void genericsReport( enum verbLevel l, const char *fmt, ... )
 
     if ( l <= lstore )
     {
-        fputs( colours[l], stderr );
+        fflush( stdout );
+        genericsPrintf( colours[l] );
         va_list va;
         va_start( va, fmt );
         vsnprintf( op, MAX_STRLEN, fmt, va );
         va_end( va );
-        fputs( op, stderr );
-        fputs( C_RESET, stderr );
+        genericsPrintf( op );
+        genericsPrintf( C_RESET );
         fflush( stderr );
-        fflush( stdout );
     }
 }
 // ====================================================================================================
@@ -338,16 +437,25 @@ void genericsExit( int status, const char *fmt, ... )
 {
     static char op[MAX_STRLEN];
 
+    fflush( stdout );
     va_list va;
     va_start( va, fmt );
     vsnprintf( op, MAX_STRLEN, fmt, va );
     va_end( va );
-    fputs( C_VERB_ERROR, stderr );
-    fputs( op, stderr );
-    fputs( C_RESET, stderr );
+    genericsPrintf( C_VERB_ERROR );
+    genericsPrintf( op );
+    genericsPrintf( C_RESET );
     fflush( stderr );
-    fflush( stdout );
 
     exit( status );
+}
+// ====================================================================================================
+void genericsInit( bool screenHandling )
+
+{
+    if ( screenHandling )
+    {
+        _screenHandling = ( setupterm( NULL, 1, NULL ) == 0 );
+    }
 }
 // ====================================================================================================

@@ -1193,6 +1193,8 @@ int main( int argc, char *argv[] )
     struct Stream *stream;              /* Stream that we are collecting data from */
     struct timeval tv;
 
+    genericsInit( true );
+
     /* Have a basic name and search string set up */
     _r.progName = genericsBasename( argv[0] );
 

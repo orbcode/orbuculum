@@ -1437,6 +1437,8 @@ int main( int argc, char *argv[] )
     /* This is set here to avoid huge .data section in startup image */
     _r.options = &_options;
 
+    genericsInit( true );
+
 #ifdef WIN32
     WSADATA wsaData;
     WSAStartup( MAKEWORD( 2, 2 ), &wsaData );

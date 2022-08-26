@@ -1206,6 +1206,8 @@ int main( int argc, char *argv[] )
     size_t receivedSize = 0;
     enum symbolErr r;
 
+    genericsInit( true );
+
     /* Fill in a time to start from */
     lastTime = _timestamp();
 

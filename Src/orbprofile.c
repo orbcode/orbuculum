@@ -745,6 +745,8 @@ int main( int argc, char *argv[] )
     struct Stream *stream = NULL;
     enum symbolErr r;
 
+    genericsInit( true );
+
     DBG_OUT( "This utility is in development. Use at your own risk!!" EOL );
 
     /* Have a basic name and search string set up */

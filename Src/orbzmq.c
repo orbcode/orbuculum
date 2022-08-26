@@ -856,6 +856,8 @@ int main( int argc, char *argv[] )
 {
     bool alreadyReported = false;
 
+    genericsInit( true );
+
     if ( !_processOptions( argc, argv ) )
     {
         exit( -1 );

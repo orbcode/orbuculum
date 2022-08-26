@@ -361,6 +361,8 @@ int main( int argc, char *argv[] )
     struct timeval tv;
     int32_t remainTime;
 
+    genericsInit( true );
+
     /* Setup fifos with forced ITM sync, no TPIU and TPIU on channel 1 if its engaged later */
     _r.f = itmfifoInit( true, false, 1 );
     assert( _r.f );

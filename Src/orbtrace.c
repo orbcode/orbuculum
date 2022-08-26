@@ -687,6 +687,8 @@ int main( int argc, char *argv[] )
     int selection = 0;
     int retVal = 0;
 
+    genericsInit( true );
+
     if ( !_processOptions( &_r, argc, argv ) )
     {
         /* processOptions generates its own error messages */

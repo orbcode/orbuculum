@@ -10,9 +10,7 @@ ORBLIB=orb
 LIBSONAME=lib$(ORBLIB).so.1
 LIBVER=0
 
-# Set your preferred screen colours here, or create a new palette by copying the file to a new one
 SCREEN_PALETTE="uicolours_default.h"
-#SCREEN_PALETTE="uicolours_mono.h"
 
 CFLAGS=
 

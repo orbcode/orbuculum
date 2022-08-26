@@ -706,6 +706,8 @@ int main( int argc, char *argv[] )
     enum symbolErr r;
     struct timeval tv;
 
+    genericsInit( true );
+
     /* Have a basic name and search string set up */
     _r.progName = genericsBasename( argv[0] );
 

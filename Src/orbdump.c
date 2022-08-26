@@ -310,6 +310,8 @@ int main( int argc, char *argv[] )
 
     bool haveSynced = false;
 
+    genericsInit( true );
+
     if ( !_processOptions( argc, argv ) )
     {
         exit( -1 );
