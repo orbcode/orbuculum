@@ -130,7 +130,7 @@ struct RunTime
 
     /* Subprocess control and interworking */
     pthread_t processThread;                    /* Thread handling received data flow */
-    sem_t     dataForClients;                   /* Semaphore counting data for clients */
+    pthread_mutex_t dataForClients;             /* Semaphore counting data for clients */
 
     /* Ring buffer for samples ... this 'pads' the rate data arrive and how fast they can be processed */
     int wp;                                     /* Read and write pointers into transfer buffers */
@@ -699,7 +699,7 @@ static void *_processBlocks( void *params )
 
     while ( true )
     {
-        sem_wait( &r->dataForClients );
+        pthread_mutex_lock( &r->dataForClients );
 
         if ( r->rp != ( volatile int )r->wp )
         {
@@ -871,7 +871,7 @@ int main( int argc, char *argv[] )
             }
 
             _r.wp = nwp;
-            sem_post( &_r.dataForClients );
+            pthread_mutex_unlock( &_r.dataForClients );
 
             /* Update the intervals */
             if ( ( ( volatile bool ) _r.sampling ) && ( ( genericsTimestampmS() - ( volatile uint32_t )_r.starttime ) > _r.options->sampleDuration ) )
@@ -888,7 +888,7 @@ int main( int argc, char *argv[] )
 
                 _r.rawBlock[_r.wp].fillLevel = 0;
                 _r.wp = nwp;
-                sem_post( &_r.dataForClients );
+                pthread_mutex_unlock( &_r.dataForClients );
             }
         }
 

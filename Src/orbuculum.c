@@ -111,7 +111,7 @@ struct RunTime
 
     pthread_t intervalThread;                            /* Thread reporting on intervals */
     pthread_t processThread;                             /* Thread for processing prior to distributing to clients */
-    sem_t     dataForClients;                            /* Semaphore counting data for clients */
+    pthread_mutex_t dataForClients;                      /* Semaphore counting data for clients */
     bool      ending;                                    /* Flag indicating app is terminating */
     bool      errored;                                   /* Flag indicating problem in reception process */
     bool      conn;                                      /* Flag indicating that we have a good connection */
@@ -821,7 +821,7 @@ static void *_processBlocksQueue( void *params )
 
     while ( !r->ending )
     {
-        sem_wait( &r->dataForClients );
+      pthread_mutex_lock( &r->dataForClients );
 
         if ( r->rp != r->wp )
         {
@@ -1189,7 +1189,7 @@ static int _nwserverFeeder( struct RunTime *r )
             }
 
             r->wp = ( r->wp + 1 ) % NUM_RAW_BLOCKS;
-            sem_post( &r->dataForClients );
+            pthread_mutex_unlock( &r->dataForClients );
         }
 
         r->conn = false;
@@ -1278,7 +1278,7 @@ static int _serialFeeder( struct RunTime *r )
             }
 
             r->wp = ( r->wp + 1 ) % NUM_RAW_BLOCKS;
-            sem_post( &r->dataForClients );
+            pthread_mutex_unlock( &r->dataForClients );
         }
 
         r->conn = false;
@@ -1353,7 +1353,7 @@ static int _serialFeeder( struct RunTime *r )
             }
 
             r->wp = ( r->wp + 1 ) % NUM_RAW_BLOCKS;
-            sem_post( &r->dataForClients );
+            pthread_mutex_unlock( &r->dataForClients );
         }
 
         r->conn = false;
@@ -1401,7 +1401,7 @@ static int _fileFeeder( struct RunTime *r )
         }
 
         /* We can probably read from file faster than we can process.... */
-        sem_post( &r->dataForClients );
+        pthread_mutex_unlock( &r->dataForClients );
         int nwp = ( r->wp + 1 ) % NUM_RAW_BLOCKS;
 
         /* Spin waiting for buffer space to become available */
@@ -1447,7 +1447,7 @@ int main( int argc, char *argv[] )
     /* Setup TPIU in case we call it into service later */
     TPIUDecoderInit( &_r.t );
 
-    if ( sem_init( &_r.dataForClients, 0, 0 ) < 0 )
+    if ( pthread_mutex_init( &_r.dataForClients, NULL ) != 0 )
     {
         genericsExit( -1, "Failed to establish semaphore" EOL );
     }
