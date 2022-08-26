@@ -97,11 +97,11 @@ OLOC = ofiles
 
 ifdef OSX
 INCLUDE_PATHS += -I/usr/local/include/libusb-1.0
-LDLIBS = -L.  -L$(OLOC) -l$(ORBLIB) -L/usr/local/lib -lusb-1.0 -ldl -lncurses -lpthread -lintl
+LDLIBS = -L.  -L$(OLOC) -l$(ORBLIB) -L/usr/local/lib -lusb-1.0 -ldl -lncurses -lintl
 else
 	ifdef WINDOWS
 		INCLUDE_PATHS += -I/usr/local/include/libusb-1.0
-		LDLIBS = -L. -L$(OLOC) -l$(ORBLIB) -L/usr/local/lib -lusb-1.0 -lncursesw -lpthread -lintl 
+		LDLIBS = -L. -L$(OLOC) -l$(ORBLIB) -L/usr/local/lib -lusb-1.0 -lncursesw -lintl 
 	else
 		INCLUDE_PATHS += -I/usr/local/include/libusb-1.0
 		LDLIBS = -L. -L$(OLOC) -l$(ORBLIB) -L/usr/local/lib -lusb-1.0 -ldl -lncurses 
@@ -113,7 +113,7 @@ LDLIBS += -lWs2_32
 endif
 
 ifdef LINUX
-LDLIBS += -lpthread -ldl
+LDLIBS += -ldl
 endif
 
 ##########################################################################

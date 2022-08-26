@@ -24,7 +24,7 @@
 #include <sys/stat.h>
 #include <strings.h>
 #include <string.h>
-#include <pthread.h>
+#include <threads.h>
 #include <getopt.h>
 #if defined OSX
     #include <sys/ioctl.h>
@@ -109,9 +109,9 @@ struct RunTime
 
     long int  intervalBytes;                             /* Number of bytes transferred in current interval */
 
-    pthread_t intervalThread;                            /* Thread reporting on intervals */
-    pthread_t processThread;                             /* Thread for processing prior to distributing to clients */
-    sem_t     dataForClients;                            /* Semaphore counting data for clients */
+    thrd_t    intervalThread;                            /* Thread reporting on intervals */
+    thrd_t    processThread;                             /* Thread for processing prior to distributing to clients */
+    mtx_t     dataForClients;                            /* counting data for clients */
     bool      ending;                                    /* Flag indicating app is terminating */
     bool      errored;                                   /* Flag indicating problem in reception process */
     bool      conn;                                      /* Flag indicating that we have a good connection */
@@ -604,7 +604,7 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
     return true;
 }
 // ====================================================================================================
-void *_checkInterval( void *params )
+int _checkInterval( void *params )
 
 /* Perform any interval reporting that may be needed */
 
@@ -673,7 +673,7 @@ void *_checkInterval( void *params )
         genericsPrintf( C_RESET EOL );
     }
 
-    return NULL;
+    return 0;
 }
 // ====================================================================================================
 static void _purgeBlock( struct RunTime *r )
@@ -812,7 +812,7 @@ static void _processBlock( struct RunTime *r, ssize_t fillLevel, uint8_t *buffer
 }
 
 // ====================================================================================================
-static void *_processBlocksQueue( void *params )
+static int _processBlocksQueue( void *params )
 
 /* Generic block processor task for received data */
 
@@ -821,7 +821,7 @@ static void *_processBlocksQueue( void *params )
 
     while ( !r->ending )
     {
-        sem_wait( &r->dataForClients );
+        mtx_lock( &r->dataForClients );
 
         if ( r->rp != r->wp )
         {
@@ -830,9 +830,15 @@ static void *_processBlocksQueue( void *params )
         }
     }
 
-    return NULL;
+    return 0;
 }
 
+// ====================================================================================================
+static void _dataAvailable( struct RunTime *r )
+
+{
+    mtx_unlock( &r->dataForClients );
+}
 // ====================================================================================================
 static void _usb_callback( struct libusb_transfer *t )
 
@@ -1189,7 +1195,7 @@ static int _nwserverFeeder( struct RunTime *r )
             }
 
             r->wp = ( r->wp + 1 ) % NUM_RAW_BLOCKS;
-            sem_post( &r->dataForClients );
+            _dataAvailable( r );
         }
 
         r->conn = false;
@@ -1278,7 +1284,7 @@ static int _serialFeeder( struct RunTime *r )
             }
 
             r->wp = ( r->wp + 1 ) % NUM_RAW_BLOCKS;
-            sem_post( &r->dataForClients );
+            _dataAvailable( r );
         }
 
         r->conn = false;
@@ -1353,7 +1359,7 @@ static int _serialFeeder( struct RunTime *r )
             }
 
             r->wp = ( r->wp + 1 ) % NUM_RAW_BLOCKS;
-            sem_post( &r->dataForClients );
+            _dataAvailable( r );
         }
 
         r->conn = false;
@@ -1401,7 +1407,7 @@ static int _fileFeeder( struct RunTime *r )
         }
 
         /* We can probably read from file faster than we can process.... */
-        sem_post( &r->dataForClients );
+        _dataAvailable( r );
         int nwp = ( r->wp + 1 ) % NUM_RAW_BLOCKS;
 
         /* Spin waiting for buffer space to become available */
@@ -1447,9 +1453,9 @@ int main( int argc, char *argv[] )
     /* Setup TPIU in case we call it into service later */
     TPIUDecoderInit( &_r.t );
 
-    if ( sem_init( &_r.dataForClients, 0, 0 ) < 0 )
+    if ( thrd_success != mtx_init( &_r.dataForClients, mtx_plain ) )
     {
-        genericsExit( -1, "Failed to establish semaphore" EOL );
+        genericsExit( -1, "Failed to establish condition variable mutex" EOL );
     }
 
     if ( !_processOptions( argc, argv, &_r ) )
@@ -1534,7 +1540,11 @@ int main( int argc, char *argv[] )
 
     if ( _r.options->intervalReportTime )
     {
-        pthread_create( &_r.intervalThread, NULL, &_checkInterval, &_r );
+
+        if ( thrd_success != thrd_create( &_r.intervalThread, &_checkInterval, &_r ) )
+        {
+            genericsExit( -1, "Failed to initialise interval thread" EOL );
+        }
     }
 
     if ( _r.options->outfile )
@@ -1551,7 +1561,10 @@ int main( int argc, char *argv[] )
     if ( ( _r.options->nwserverPort ) || ( _r.options->port ) || ( _r.options->file ) )
     {
         /* Start the distribution task */
-        pthread_create( &_r.processThread, NULL, &_processBlocksQueue, &_r );
+        if ( thrd_success != thrd_create( &_r.processThread, &_processBlocksQueue, &_r ) )
+        {
+            genericsExit( -1, "Couldn't start process Thread" EOL );
+        }
 
         if ( _r.options->nwserverPort )
         {
