@@ -130,7 +130,8 @@ struct RunTime
 
     /* Subprocess control and interworking */
     pthread_t processThread;                    /* Thread handling received data flow */
-    pthread_mutex_t dataForClients;             /* Semaphore counting data for clients */
+    pthread_cond_t dataForClients;              /* Semaphore counting data for clients */
+    pthread_mutex_t dataForClients_m;           /* Mutex for counting data for clients */
 
     /* Ring buffer for samples ... this 'pads' the rate data arrive and how fast they can be processed */
     int wp;                                     /* Read and write pointers into transfer buffers */
@@ -708,7 +709,7 @@ static void *_processBlocks( void *params )
 
     while ( true )
     {
-        pthread_mutex_lock( &r->dataForClients );
+        pthread_cond_wait( &r->dataForClients, &r->dataForClients_m );
 
         if ( r->rp != ( volatile int )r->wp )
         {
@@ -759,6 +760,16 @@ int main( int argc, char *argv[] )
     /* Have a basic name and search string set up */
     _r.progName = genericsBasename( argv[0] );
     _r.options = &_options;
+
+    if ( pthread_mutex_init( &_r.dataForClients_m, NULL ) != 0 )
+    {
+        genericsExit( -1, "Failed to establish mutex for condition variablee" EOL );
+    }
+
+    if ( pthread_cond_init( &_r.dataForClients, NULL ) != 0 )
+    {
+        genericsExit( -1, "Failed to establish condition variablee" EOL );
+    }
 
     if ( !_processOptions( argc, argv, &_r ) )
     {
@@ -880,7 +891,7 @@ int main( int argc, char *argv[] )
             }
 
             _r.wp = nwp;
-            pthread_mutex_unlock( &_r.dataForClients );
+            pthread_cond_signal( &_r.dataForClients );
 
             /* Update the intervals */
             if ( ( ( volatile bool ) _r.sampling ) && ( ( genericsTimestampmS() - ( volatile uint32_t )_r.starttime ) > _r.options->sampleDuration ) )
@@ -897,7 +908,7 @@ int main( int argc, char *argv[] )
 
                 _r.rawBlock[_r.wp].fillLevel = 0;
                 _r.wp = nwp;
-                pthread_mutex_unlock( &_r.dataForClients );
+                pthread_cond_signal( &_r.dataForClients );
             }
         }
 

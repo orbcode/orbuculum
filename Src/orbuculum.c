@@ -56,7 +56,7 @@
 #include "nwclient.h"
 
 /* How many transfer buffers from the source to allocate */
-#define NUM_RAW_BLOCKS (32)
+#define NUM_RAW_BLOCKS (8)
 
 #define MAX_LINE_LEN (1024)
 #define ORBTRACE "orbtrace"
@@ -111,7 +111,8 @@ struct RunTime
 
     pthread_t intervalThread;                            /* Thread reporting on intervals */
     pthread_t processThread;                             /* Thread for processing prior to distributing to clients */
-    pthread_mutex_t dataForClients;                      /* Semaphore counting data for clients */
+    pthread_cond_t dataForClients;                       /* Semaphore counting data for clients */
+    pthread_mutex_t dataForClients_m;                    /* Mutex for counting data for clients */
     bool      ending;                                    /* Flag indicating app is terminating */
     bool      errored;                                   /* Flag indicating problem in reception process */
     bool      conn;                                      /* Flag indicating that we have a good connection */
@@ -830,7 +831,7 @@ static void *_processBlocksQueue( void *params )
 
     while ( !r->ending )
     {
-        pthread_mutex_lock( &r->dataForClients );
+        pthread_cond_wait( &r->dataForClients, &r->dataForClients_m );
 
         if ( r->rp != r->wp )
         {
@@ -842,6 +843,12 @@ static void *_processBlocksQueue( void *params )
     return NULL;
 }
 
+// ====================================================================================================
+static void _dataAvailable( struct RunTime *r )
+
+{
+    pthread_cond_signal( &r->dataForClients );
+}
 // ====================================================================================================
 static void _usb_callback( struct libusb_transfer *t )
 
@@ -1198,7 +1205,7 @@ static int _nwserverFeeder( struct RunTime *r )
             }
 
             r->wp = ( r->wp + 1 ) % NUM_RAW_BLOCKS;
-            pthread_mutex_unlock( &r->dataForClients );
+            _dataAvailable( r );
         }
 
         r->conn = false;
@@ -1287,7 +1294,7 @@ static int _serialFeeder( struct RunTime *r )
             }
 
             r->wp = ( r->wp + 1 ) % NUM_RAW_BLOCKS;
-            pthread_mutex_unlock( &r->dataForClients );
+            _dataAvailable( &r );
         }
 
         r->conn = false;
@@ -1362,7 +1369,7 @@ static int _serialFeeder( struct RunTime *r )
             }
 
             r->wp = ( r->wp + 1 ) % NUM_RAW_BLOCKS;
-            pthread_mutex_unlock( &r->dataForClients );
+            _dataAvailable( r );
         }
 
         r->conn = false;
@@ -1410,7 +1417,7 @@ static int _fileFeeder( struct RunTime *r )
         }
 
         /* We can probably read from file faster than we can process.... */
-        pthread_mutex_unlock( &r->dataForClients );
+        _dataAvailable( r );
         int nwp = ( r->wp + 1 ) % NUM_RAW_BLOCKS;
 
         /* Spin waiting for buffer space to become available */
@@ -1454,9 +1461,14 @@ int main( int argc, char *argv[] )
     /* Setup TPIU in case we call it into service later */
     TPIUDecoderInit( &_r.t );
 
-    if ( pthread_mutex_init( &_r.dataForClients, NULL ) != 0 )
+    if ( pthread_mutex_init( &_r.dataForClients_m, NULL ) != 0 )
     {
-        genericsExit( -1, "Failed to establish semaphore" EOL );
+        genericsExit( -1, "Failed to establish mutex for condition variablee" EOL );
+    }
+
+    if ( pthread_cond_init( &_r.dataForClients, NULL ) != 0 )
+    {
+        genericsExit( -1, "Failed to establish condition variablee" EOL );
     }
 
     if ( !_processOptions( argc, argv, &_r ) )

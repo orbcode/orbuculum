@@ -61,17 +61,18 @@ struct nwclientsHandle
 struct nwClient
 
 {
-    int                       handle;         /* Handle to client */
-    pthread_t                 thread;         /* Execution thread */
-    struct nwclientsHandle   *parent;         /* Who owns this list */
+    int                       handle;            /* Handle to client */
+    pthread_t                 thread;            /* Execution thread */
+    struct nwclientsHandle   *parent;            /* Who owns this list */
     volatile struct nwClient *nextClient;
     volatile struct nwClient *prevClient;
-    bool                      finish;        /* Flag indicating it's time to cease operation */
-    pthread_mutex_t           dataAvailable; /* Semaphore to say there's stuff to process */
+    bool                      finish;            /* Flag indicating it's time to cease operation */
+    pthread_cond_t            dataAvailable;     /* Semaphore counting data for clients */
+    pthread_mutex_t           dataAvailable_m;   /* Mutex for counting data for clients */
 
     /* Parameters used to run the client */
-    int                       portNo;        /* Port of connection */
-    int                       rp;            /* Current read pointer in data stream */
+    int                       portNo;            /* Port of connection */
+    int                       rp;                /* Current read pointer in data stream */
 };
 
 // ====================================================================================================
@@ -152,7 +153,7 @@ static void *_client( void *args )
     while ( !c->finish )
     {
         /* Spin until we're told there's something to send along */
-        pthread_mutex_lock( &c->dataAvailable );
+        pthread_cond_wait( &c->dataAvailable, &c->dataAvailable_m );
 
         while ( c->rp != c->parent->wp )
         {
@@ -225,9 +226,14 @@ static void *_listenTask( void *arg )
         client->portNo = newsockfd;
         client->rp     = h->wp;
 
-        if ( pthread_mutex_init( &client->dataAvailable, NULL ) != 0 )
+        if ( pthread_mutex_init( &client->dataAvailable_m, NULL ) != 0 )
         {
-            genericsExit( -1, "Failed to establish semaphore" EOL );
+            genericsExit( -1, "Failed to establish mutex for condition variablee" EOL );
+        }
+
+        if ( pthread_cond_init( &client->dataAvailable, NULL ) != 0 )
+        {
+            genericsExit( -1, "Failed to establish condition variablee" EOL );
         }
 
         if ( pthread_create( &( client->thread ), NULL, &_client, client ) )
@@ -299,7 +305,7 @@ void nwclientSend( struct nwclientsHandle *h, uint32_t len, uint8_t *ipbuffer )
 
         while ( n )
         {
-            pthread_mutex_unlock( ( pthread_mutex_t * )&n->dataAvailable );
+            pthread_cond_signal( ( pthread_cond_t * )&n->dataAvailable );
             n = n->nextClient;
         }
 
