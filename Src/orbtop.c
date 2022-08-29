@@ -302,12 +302,10 @@ void _handleException( struct excMsg *m, struct ITMDecoder *i )
             break;
 
         case EXEVENT_RESUME: /* Unwind all levels of exception (deals with tail chaining) */
-            while ( ( _r.currentException != NO_EXCEPTION ) && ( _r.erDepth ) )
+            while ( ( _r.currentException != m->exceptionNumber ) && ( _r.erDepth ) )
             {
                 _exitEx( _r.timeStamp );
             }
-
-            _r.currentException = NO_EXCEPTION;
             break;
 
         case EXEVENT_EXIT: /* Exit single level of exception */
