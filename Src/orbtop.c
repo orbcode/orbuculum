@@ -248,7 +248,8 @@ void _exitEx( int64_t ts )
     }
 
     const int64_t walltime = _r.er[_r.currentException].thisTime + _r.er[_r.currentException].stealTime;
-    if (walltime > _r.er[_r.currentException].maxWallTime )
+
+    if ( walltime > _r.er[_r.currentException].maxWallTime )
     {
         _r.er[_r.currentException].maxWallTime = walltime;
     }
@@ -319,6 +320,7 @@ void _handleException( struct excMsg *m, struct ITMDecoder *i )
             {
                 _exitEx( _r.timeStamp );
             }
+
             break;
 
         case EXEVENT_EXIT: /* Exit single level of exception */
@@ -714,10 +716,11 @@ static void _outputTop( uint32_t total, uint32_t reportLines, struct reportLine 
                     snprintf( exceptionName, sizeof( exceptionName ), "(IRQ %d)", e - 16 );
                 }
 
-								const float util_percent = (float)_r.er[e].totalTime / (_r.timeStamp - _r.lastReportTicks) * 100.0f;
+                const float util_percent = ( float )_r.er[e].totalTime / ( _r.timeStamp - _r.lastReportTicks ) * 100.0f;
                 genericsPrintf( C_DATA "%3" PRId32 " %-14s" C_RESET " | " C_DATA "%8" PRIu64 C_RESET " |" C_DATA " %5"
-                                PRIu32 C_RESET " | "C_DATA " %9" PRIu64 C_RESET "  |" C_DATA "%6.1f" C_RESET " |  " C_DATA "%9" PRIu64 C_RESET " | " C_DATA "%9" PRIu64 C_RESET "  | " C_DATA" %9" PRIu64 C_RESET " | " C_DATA "%9" PRIu64 C_RESET EOL,
-                                e, exceptionName, _r.er[e].visits, _r.er[e].maxDepth, _r.er[e].totalTime, util_percent,_r.er[e].totalTime / _r.er[e].visits, _r.er[e].minTime, _r.er[e].maxTime, _r.er[e].maxWallTime );
+                                PRIu32 C_RESET " | "C_DATA " %9" PRIu64 C_RESET "  |" C_DATA "%6.1f" C_RESET " |  " C_DATA "%9" PRIu64 C_RESET " | " C_DATA "%9" PRIu64 C_RESET "  | " C_DATA" %9" PRIu64 C_RESET " | " C_DATA "%9"
+                                PRIu64 C_RESET EOL,
+                                e, exceptionName, _r.er[e].visits, _r.er[e].maxDepth, _r.er[e].totalTime, util_percent, _r.er[e].totalTime / _r.er[e].visits, _r.er[e].minTime, _r.er[e].maxTime, _r.er[e].maxWallTime );
             }
         }
     }
