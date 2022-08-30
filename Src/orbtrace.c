@@ -37,6 +37,7 @@ struct Options
     bool swoUART;             /* SWO UART output */
     bool opJSON;              /* Set output to JSON */
     bool mono;                /* Supress colour in output */
+    uint32_t serial_speed;    /* Speed of serial communication via SWO */
 
     /* Power settings */
     bool forceVoltage;        /* Force application of voltage */
@@ -49,6 +50,7 @@ struct Options
 enum Actions { ACTION_BRIGHTNESS, ACTION_ENCHANGE_VTREF, ACTION_ENCHANGE_VTPWR, ACTION_LIST_DEVICES,
                ACTION_LOCKDEVICE, ACTION_SETNICK, ACTION_VCHANGE_VTREF, ACTION_VCHANGE_VTPWR, ACTION_SN,
                ACTION_UNLOCK, ACTION_WRITE_PARAMS, ACTION_READ_PARAMS, ACTION_RESET_PARAMS, ACTION_SET_TRACE,
+               ACTION_SERIAL_SPEED,
                ACTION_ENCHANGE_ALL
              };
 
@@ -134,11 +136,13 @@ static void _printHelp( const char *const progName )
 
 {
     genericsPrintf( "Usage: %s [options]" EOL, progName );
+    genericsPrintf( "       -a, --serial-speed:  <serialSpeed> to use (when SWO UART is selected)" EOL );
     genericsPrintf( "       -e, --power:         <Ch>,<On> Enable or Disable power. Ch is vtref, vtpwr or all" EOL );
     genericsPrintf( "       -h, --help::         This help" EOL );
     genericsPrintf( "       -l, --list:          Show all OrbTrace devices attached to system" EOL );
     genericsPrintf( "       -M, --no-colour:    Supress colour in output" EOL );
     genericsPrintf( "       -T, --trace-format:  <x> Trace format; 1,2 or 4 bit parallel, m for Manchester SWO, u=UART SWO" EOL );
+    genericsPrintf( "       -                         For UART, follow with speed, e.g. -Tu for Manchester SWO, u=UART SWO" EOL );
     genericsPrintf( "       -n, --serial-number: <Serial> any part of serial number to differentiate specific OrbTrace device" EOL );
     genericsPrintf( "       -p, --voltage:       <Ch>,<Voltage> Set voltage in V, Ch is vtref or vtpwr" EOL );
     genericsPrintf( "       -v, --verbose:       <level> Verbose mode 0(errors)..3(debug)" EOL );
@@ -164,6 +168,7 @@ void _printVersion( void )
 // ====================================================================================================
 static struct option _longOptions[] =
 {
+    {"serial-speed", required_argument, NULL, 'a'},
     {"power", required_argument, NULL, 'e'},
     {"help", no_argument, NULL, 'h'},
     {"list", no_argument, NULL, 'l'},
@@ -210,9 +215,15 @@ static int _processOptions( struct RunTime *r, int argc, char *argv[]  )
     bool action;
     char *a;
 
-    while ( ( c = getopt_long ( argc, argv, "e:hlp:Mn:T:v:V", _longOptions, &optionIndex ) ) != -1 )
+    while ( ( c = getopt_long ( argc, argv, "a:e:hlp:Mn:T:v:V", _longOptions, &optionIndex ) ) != -1 )
         switch ( c )
         {
+            // ------------------------------------
+            case 'a': /* Serial Speed */
+                r->options->serial_speed = atoi( optarg );
+                _set_action( r, ACTION_SERIAL_SPEED );
+                break;
+
             // ------------------------------------
             case 'b': /* Brightness */
                 r->options->brightness = atoi( optarg );
@@ -413,6 +424,13 @@ static int _processOptions( struct RunTime *r, int argc, char *argv[]  )
     if ( _tst_action( r, ACTION_RESET_PARAMS ) && ( _num_actions( r ) > 1 ) )
     {
         genericsReport( V_ERROR, "Resetting parameters is an exclusive operation" EOL );
+        return false;
+    }
+
+    if ( ( ( r->options->serial_speed ) && ( !r->options->swoUART ) ) &&
+            ( ( !r->options->serial_speed ) && ( r->options->swoUART ) ) )
+    {
+        genericsReport( V_ERROR, "For SWO/UART both baudrate and mode need to be set" EOL );
         return false;
     }
 
@@ -642,6 +660,22 @@ static int _performActions( struct RunTime *r )
     // -----------------------------------------------------------------------------------
     if ( _tst_action( r, ACTION_SETNICK ) )
     {
+    }
+
+    // -----------------------------------------------------------------------------------
+    if ( _tcl_action( r, ACTION_SERIAL_SPEED ) )
+    {
+        genericsReport( V_INFO, "Setting baudrate to %d bps" EOL, r->options->serial_speed );
+
+        if ( OrbtraceIfSetSWOBaudrate( r->dev, r->options->serial_speed ) )
+        {
+            genericsReport( V_INFO, "OK" EOL );
+        }
+        else
+        {
+            genericsReport( V_ERROR, "Setting serial speed failed" EOL );
+            retVal |= -1;
+        }
     }
 
     // -----------------------------------------------------------------------------------

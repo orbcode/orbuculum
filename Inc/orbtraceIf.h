@@ -109,6 +109,8 @@ enum Channel OrbtraceIfNameToChannel( char *x );
 /* Device manipulation */
 bool OrbtraceIfSetTraceWidth( struct OrbtraceIf *o, int width );
 bool OrbtraceIfSetTraceSWO( struct OrbtraceIf *o, bool isMANCH );
+bool OrbtraceIfSetSWOBaudrate( struct OrbtraceIf *o, uint32_t speed );
+
 bool OrbtraceIfVoltage( struct OrbtraceIf *o, enum Channel ch, int voltage );
 bool OrbtraceIfSetVoltageEn( struct OrbtraceIf *o, enum Channel ch, bool isOn );
 

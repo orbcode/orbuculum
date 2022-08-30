@@ -26,8 +26,10 @@ static const struct OrbtraceInterfaceType _validDevices[] =
 
 #define RQ_CLASS       (0x41)
 #define RQ_INTERFACE   (0x01)
+
 /* Commands for Trace Endpoint */
 #define RQ_SET_TWIDTH  (1)
+#define RQ_SET_SPEED   (2)
 
 /* Commands for Power Endpoint */
 #define RQ_SET_ENABLE  (1)
@@ -150,7 +152,8 @@ uint16_t _getInterface( struct OrbtraceIf *o, char intType )
     return iface;
 }
 // ====================================================================================================
-static bool _doInterfaceControlTransfer( struct OrbtraceIf *o, uint8_t interface, uint16_t request, uint16_t value, uint8_t indexUpperHalf )
+static bool _doInterfaceControlTransfer( struct OrbtraceIf *o, uint8_t interface, uint16_t request, uint16_t value, uint8_t indexUpperHalf, uint8_t dlen, void *data )
+
 {
     if ( !o->handle )
     {
@@ -177,8 +180,8 @@ static bool _doInterfaceControlTransfer( struct OrbtraceIf *o, uint8_t interface
                             request,
                             value,
                             ( indexUpperHalf << 8 ) | interface,
-                            NULL,
-                            0,
+                            data,
+                            dlen,
                             0
                 ) >= 0;
 
@@ -361,7 +364,9 @@ bool OrbtraceIfSetTraceWidth( struct OrbtraceIf *o, int width )
                        OrbtraceIfGetTraceIF( o, OrbtraceIfGetActiveDevnum( o ) ),
                        RQ_SET_TWIDTH,
                        d,
-                       0
+                       0,
+                       0,
+                       NULL
            );
 }
 // ====================================================================================================
@@ -373,7 +378,25 @@ bool OrbtraceIfSetTraceSWO( struct OrbtraceIf *o, bool isMANCH )
                        OrbtraceIfGetTraceIF( o, OrbtraceIfGetActiveDevnum( o ) ),
                        RQ_SET_TWIDTH,
                        isMANCH ? 0x10 : 0x12,
-                       0
+                       0,
+                       0,
+                       NULL
+           );
+}
+// ====================================================================================================
+bool OrbtraceIfSetSWOBaudrate( struct OrbtraceIf *o, uint32_t speed )
+
+{
+    uint8_t speed_le[4] = { ( speed & 0xff ), ( speed >> 8 ) & 0xff, ( speed >> 16 ) & 0xff, ( speed >> 24 ) & 0xff };
+
+    return _doInterfaceControlTransfer(
+                       o,
+                       OrbtraceIfGetTraceIF( o, OrbtraceIfGetActiveDevnum( o ) ),
+                       RQ_SET_SPEED,
+                       0,
+                       0,
+                       4,
+                       &speed_le
            );
 }
 // ====================================================================================================
@@ -412,7 +435,9 @@ bool OrbtraceIfVoltage( struct OrbtraceIf *o, enum Channel ch, int voltage )
                        OrbtraceIfGetPowerIF( o, OrbtraceIfGetActiveDevnum( o ) ),
                        RQ_SET_VOLTAGE,
                        voltage,
-                       ch
+                       ch,
+                       0,
+                       NULL
            );
 }
 
@@ -430,7 +455,9 @@ bool OrbtraceIfSetVoltageEn( struct OrbtraceIf *o, enum Channel ch, bool isOn )
                        OrbtraceIfGetPowerIF( o, OrbtraceIfGetActiveDevnum( o ) ),
                        RQ_SET_ENABLE,
                        isOn,
-                       ch
+                       ch,
+                       0,
+                       NULL
            );
 }
 // ====================================================================================================
