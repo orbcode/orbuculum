@@ -18,8 +18,6 @@
     #include <libgen.h>
     #include <unistd.h>
 #endif
-#include <curses.h>
-#include <term.h>
 
 #include "generics.h"
 
@@ -319,12 +317,6 @@ char *genericsGetBaseDirectory( void )
 #endif
 }
 // ====================================================================================================
-static int _putchare( int c )
-
-{
-    return putc( c, stderr );
-}
-// ====================================================================================================
 void genericsPrintf( const char *fmt, ... )
 
 /* Print to output stream */
@@ -354,7 +346,7 @@ void genericsPrintf( const char *fmt, ... )
                 case 'a'...'f':
                     if ( _screenHandling )
                     {
-                        tputs( tparm( tigetstr( "setaf" ), _htoi( *p )  ), 1, _putchare );
+                        fprintf( stderr, CC_COLOUR, _htoi( *p ) > 7, _htoi( *p ) & 7 );
                     }
 
                     p++;
@@ -363,7 +355,7 @@ void genericsPrintf( const char *fmt, ... )
                 case 'u':
                     if ( _screenHandling )
                     {
-                        tputs( tigetstr( "cuu1" ), 1, _putchare );
+                        fprintf( stderr, CC_PREV_LN );
                     }
 
                     p++;
@@ -372,7 +364,7 @@ void genericsPrintf( const char *fmt, ... )
                 case 'U':
                     if ( _screenHandling )
                     {
-                        tputs( tigetstr( "el" ), 1, _putchare );
+                        fprintf( stderr, CC_CLR_LN );
                     }
 
                     p++;
@@ -381,23 +373,15 @@ void genericsPrintf( const char *fmt, ... )
                 case 'r':
                     if ( _screenHandling )
                     {
-                        tputs( tigetstr( "op" ), 1, _putchare );
+                        fprintf( stderr, CC_RES );
                     }
 
                     p++;
                     break;
 
                 case 'z':
-                    if ( _screenHandling )
-                    {
-                        tputs( tigetstr( "clear" ), 1, _putchare );
-                    }
-                    else
-                    {
-                        /* We'll take a flyer on it being vt100 compatible */
-                        tputs( "\033[H\033[J", 1, _putchare );
-                    }
-
+                    /* We'll take a flyer on it being vt100 compatible */
+                    fprintf( stderr, CC_CLEAR_SCREEN );
                     p++;
                     break;
 
@@ -453,13 +437,6 @@ void genericsExit( int status, const char *fmt, ... )
 void genericsScreenHandling( bool screenHandling )
 
 {
-    if ( screenHandling )
-    {
-        _screenHandling = ( setupterm( NULL, 1, NULL ) == 0 );
-    }
-    else
-    {
-        _screenHandling = false;
-    }
+    _screenHandling = screenHandling;
 }
 // ====================================================================================================

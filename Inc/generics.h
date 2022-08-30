@@ -67,6 +67,13 @@ extern "C" {
 #define C_PREV_LN    CMD_ALERT "u"
 #define C_CLR_LN     CMD_ALERT "U"
 
+/* The actual control codes that do the work */
+#define CC_CLEAR_SCREEN  "\033[2J\033[;H"
+#define CC_PREV_LN       "\033[1F"
+#define CC_CLR_LN        "\033[K"
+#define CC_COLOUR        "\033[%d;3%dm"
+#define CC_RES           "\033[0m"
+
 #define ALWAYS_INLINE inline __attribute__((always_inline))
 
 #define MEMCHECK(x,y) if ( NULL == (x))                 \
