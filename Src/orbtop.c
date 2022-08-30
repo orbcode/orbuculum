@@ -57,11 +57,13 @@ struct exceptionRecord                       /* Record of exception activity */
     int64_t totalTime;
     int64_t minTime;
     int64_t maxTime;
+    int64_t maxWallTime;
     uint32_t maxDepth;
 
     /* Elements used in calcuation */
     int64_t entryTime;
     int64_t thisTime;
+    int64_t stealTime;
     uint32_t prev;
 };
 
@@ -224,7 +226,10 @@ void _exitEx( int64_t ts )
     }
 
     /* Calculate total time for this exception as we're leaving it */
-    _r.er[_r.currentException].thisTime += ts - _r.er[_r.currentException].entryTime;
+    int64_t thisTime = ts - _r.er[_r.currentException].entryTime;
+    int64_t thisStealTime = _r.er[_r.currentException].stealTime;
+
+    _r.er[_r.currentException].thisTime += thisTime;
     _r.er[_r.currentException].visits++;
     _r.er[_r.currentException].totalTime += _r.er[_r.currentException].thisTime;
 
@@ -242,6 +247,12 @@ void _exitEx( int64_t ts )
         _r.er[_r.currentException].maxTime = _r.er[_r.currentException].thisTime;
     }
 
+    const int64_t walltime = _r.er[_r.currentException].thisTime + _r.er[_r.currentException].stealTime;
+    if (walltime > _r.er[_r.currentException].maxWallTime )
+    {
+        _r.er[_r.currentException].maxWallTime = walltime;
+    }
+
     if ( _r.erDepth > _r.er[_r.currentException].maxDepth )
     {
         _r.er[_r.currentException].maxDepth = _r.erDepth;
@@ -255,6 +266,7 @@ void _exitEx( int64_t ts )
     if ( _r.currentException != NO_EXCEPTION )
     {
         _r.er[_r.currentException].entryTime = ts;
+        _r.er[_r.currentException].stealTime += thisTime + thisStealTime;
     }
 }
 // ====================================================================================================
@@ -298,16 +310,15 @@ void _handleException( struct excMsg *m, struct ITMDecoder *i )
             _r.currentException = m->exceptionNumber;
             _r.er[m->exceptionNumber].entryTime = _r.timeStamp;
             _r.er[m->exceptionNumber].thisTime = 0;
+            _r.er[m->exceptionNumber].stealTime = 0;
             _r.erDepth++;
             break;
 
         case EXEVENT_RESUME: /* Unwind all levels of exception (deals with tail chaining) */
-            while ( ( _r.currentException != NO_EXCEPTION ) && ( _r.erDepth ) )
+            while ( ( _r.currentException != m->exceptionNumber ) && ( _r.erDepth ) )
             {
                 _exitEx( _r.timeStamp );
             }
-
-            _r.currentException = NO_EXCEPTION;
             break;
 
         case EXEVENT_EXIT: /* Exit single level of exception */
@@ -526,6 +537,9 @@ static void _outputJson( FILE *f, uint32_t total, uint32_t reportLines, struct r
             jsonElement = cJSON_CreateNumber( _r.er[e].maxTime );
             assert( jsonElement );
             cJSON_AddItemToObject( jsonTableEntry, "maxt", jsonElement );
+            jsonElement = cJSON_CreateNumber( _r.er[e].maxWallTime );
+            assert( jsonElement );
+            cJSON_AddItemToObject( jsonTableEntry, "maxwt", jsonElement );
         }
     }
 
@@ -681,8 +695,8 @@ static void _outputTop( uint32_t total, uint32_t reportLines, struct reportLine 
             genericsPrintf( EOL );
         }
 
-        genericsPrintf( EOL " Exception         |   Count  |  MaxD | TotalTicks  |  AveTicks  |  minTicks  |  maxTicks  " EOL );
-        genericsPrintf( /**/"-------------------+----------+-------+-------------+------------+------------+------------" EOL );
+        genericsPrintf( EOL " Exception         |   Count  |  MaxD | TotalTicks  |   %%   |  AveTicks  |  minTicks  |  maxTicks  |  maxWall " EOL );
+        genericsPrintf( /**/"-------------------+----------+-------+-------------+-------+------------+------------+------------+----------" EOL );
 
         for ( uint32_t e = 0; e < MAX_EXCEPTIONS; e++ )
         {
@@ -700,9 +714,10 @@ static void _outputTop( uint32_t total, uint32_t reportLines, struct reportLine 
                     snprintf( exceptionName, sizeof( exceptionName ), "(IRQ %d)", e - 16 );
                 }
 
+								const float util_percent = (float)_r.er[e].totalTime / (_r.timeStamp - _r.lastReportTicks) * 100.0f;
                 genericsPrintf( C_DATA "%3" PRId32 " %-14s" C_RESET " | " C_DATA "%8" PRIu64 C_RESET " |" C_DATA " %5"
-                                PRIu32 C_RESET " | "C_DATA " %9" PRIu64 C_RESET "  |  " C_DATA "%9" PRIu64 C_RESET " | " C_DATA "%9" PRIu64 C_RESET "  | " C_DATA" %9" PRIu64 C_RESET EOL,
-                                e, exceptionName, _r.er[e].visits, _r.er[e].maxDepth, _r.er[e].totalTime, _r.er[e].totalTime / _r.er[e].visits, _r.er[e].minTime, _r.er[e].maxTime );
+                                PRIu32 C_RESET " | "C_DATA " %9" PRIu64 C_RESET "  |" C_DATA "%6.1f" C_RESET " |  " C_DATA "%9" PRIu64 C_RESET " | " C_DATA "%9" PRIu64 C_RESET "  | " C_DATA" %9" PRIu64 C_RESET " | " C_DATA "%9" PRIu64 C_RESET EOL,
+                                e, exceptionName, _r.er[e].visits, _r.er[e].maxDepth, _r.er[e].totalTime, util_percent,_r.er[e].totalTime / _r.er[e].visits, _r.er[e].minTime, _r.er[e].maxTime, _r.er[e].maxWallTime );
             }
         }
     }
@@ -1392,7 +1407,7 @@ int main( int argc, char *argv[] )
                 /* ...and zero the exception records */
                 for ( uint32_t e = 0; e < MAX_EXCEPTIONS; e++ )
                 {
-                    _r.er[e].visits = _r.er[e].maxDepth = _r.er[e].totalTime = _r.er[e].minTime = _r.er[e].maxTime = 0;
+                    _r.er[e].visits = _r.er[e].maxDepth = _r.er[e].totalTime = _r.er[e].minTime = _r.er[e].maxTime = _r.er[e].maxWallTime = 0;
                 }
 
                 /* It's safe to update these here because the ticks won't be updated until more

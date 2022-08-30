@@ -37,7 +37,7 @@
         #if defined TCGETS2
             #include <asm/termios.h>
             /* Manual declaration to avoid conflict. */
-            extern int ioctl ( int __fd, unsigned long int __request, ... ) __THROW;
+            extern int ioctl ( int __fd, unsigned long int __request, ... ) ;
         #else
             #include <sys/ioctl.h>
             #include <termios.h>
