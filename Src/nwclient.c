@@ -17,7 +17,9 @@
     #include <netinet/in.h>
     #include <netdb.h>
     #include <arpa/inet.h>
+#ifndef OSX
     #include <linux/tcp.h>
+#endif
     #include <string.h>
 #endif
 #include <assert.h>
