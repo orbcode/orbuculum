@@ -71,7 +71,7 @@ either using NRZ (UART) or RZ (Manchester) formats.  The pin is a
 dedicated one that would be used for TDO when the debug interface is
 in JTAG mode. We've demonstrated
 ITM feeds of around 4.3MBytes/sec on a STM32F427 via SWO with Manchester
-encoding running at 48Mbps.
+encoding running at 48Mbps. SWO with UART encoding is good for 62Mbaud.
 
 The data flowing from the TRACE pins is clocked using a separate TRACECLK pin. There can
 be 1-4 TRACE pins which obviously give you much higher bandwidth than the single SWO. We've demonstrated
@@ -247,6 +247,7 @@ Building on OSX
 Recipie instructions courtesy of FrankTheTank;
 
 * `brew install libusb`
+* `brew install zmq`
 
 and finally;
 
@@ -324,9 +325,9 @@ For `orbuculum`, the specific command line options of note are;
  `-a, --serial-speed: [serialSpeed]`: Use serial port and set device speed.
 
  `-E, --eof`: When reading from file, ignore eof.
- 
+
  `-f, --input-file [filename]`: Take input from file rather than device.
- 
+
  `-h, --help`: Brief help.
 
  `-m, --monitor`: Monitor interval (in mS) for reporting on state of the link. If baudrate is specified (using `-a`) and is greater than 100bps then the percentage link occupancy is also reported.
@@ -616,33 +617,33 @@ configured to stream parallel trace info (clue; the `startETM` option).
 The command line options of note are;
 
  `-a, --alt-addr-enc`: Don't use alternate address encoding. Select this if decodes don't seem to arrive correctly. You can discover if you need this option by using the `describeETM` command inside the debugger.
- 
+
  `-b, --buffer-len [Length]`: Set length of post-mortem buffer, in KBytes (Default 32 KBytes)
- 
+
  `-c, --editor-cmd [command]`: Set command line for external editor (0.000000 = filename, % = line). A few examples are;
- 
+
      * emacs; `-c emacs "+%l %f"`
      * codium/VSCode; `-c codium  -g "%f:%l"`
      * eclipse; `-c eclipse "%f:%l"`
-     
+
  `-D, --no-demangle`: Switch off C++ symbol demangling
- 
+
  `-d, --del-prefix [String]`: Material to delete off front of filenames
- 
+
  `-e, --elf-file [ElfFile]`: to use for symbols and source
- 
+
  `-E, --eof`: When reading from file, terminate at end of file rather than waiting for further input
- 
+
  `-f, --input-file [filename]`: Take input from specified file rather than live from a probe (useful for ETB decode)
 
  `-h, --help`: Provide brief help
- 
+
  `-p, --trace-proto [protocol]`: to use, where protocols are MTB or ETM35 (default). Note that MTB only makes sense from a file.
- 
+
  `-s, --server [Server:Port]`: to use
- 
+
  `-t, --tpiu [channel]`: Use TPIU to strip TPIU on specfied channel (normally best to let `orbuculum` handle this
- 
+
 
 Once it's running you will receive an indication at the lower right of the screen that it's capturing data. Hitting `H` will hold the capture and it will decode whatever is currently in the buffer. More usefully, if the capture stream is lost (e.g. because of debugger entry) then it will auto-hold and decode the buffer, showing you the last instructions executed. You can use the arrow keys to move around this buffer and dive into individual source files. Hit the `?` key for a quick overview of available commands.
 
