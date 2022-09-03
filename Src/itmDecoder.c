@@ -10,6 +10,7 @@
  */
 
 #include <string.h>
+#include <stdlib.h>
 #include "itmDecoder.h"
 #include "msgDecoder.h"
 
@@ -28,6 +29,14 @@
 #define DEFAULT_PAGE_REGISTER (0x07)
 
 // Define this to get transitions printed out
+// ====================================================================================================
+struct ITMDecoder *ITMDecoderCreate( void )
+
+{
+    struct ITMDecoder *i = ( struct ITMDecoder * )calloc( 1, sizeof( struct ITMDecoder ) );
+    i->selfAllocated = true;
+    return i;
+}
 // ====================================================================================================
 void ITMDecoderInit( struct ITMDecoder *i, bool startSynced )
 

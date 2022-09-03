@@ -8,6 +8,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 #ifdef DEBUG
     #include "generics.h"
 #else
@@ -36,11 +37,25 @@
 #define STAT_SYNC_BYTE (0xA6)            // Sync header for status
 
 // ====================================================================================================
+struct TPIUDecoder *TPIUDecoderCreate( void )
+
+{
+    struct TPIUDecoder *i = ( struct TPIUDecoder * )calloc( 1, sizeof( struct TPIUDecoder ) );
+    i->selfAllocated = true;
+    return i;
+}
+// ====================================================================================================
 void TPIUDecoderInit( struct TPIUDecoder *t )
 
 /* Reset a TPIUDecoder instance */
 
 {
+    if ( !t )
+    {
+        t = calloc( 1, sizeof( struct TPIUDecoder ) );
+        t->selfAllocated = true;
+    }
+
     t->state = TPIU_UNSYNCED;
     t->syncMonitor = 0;
     TPIUDecoderZeroStats( t );

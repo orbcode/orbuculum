@@ -122,6 +122,7 @@ struct ITMDecoder
     uint8_t contextIDlen;                /* Number of octets in a contextID (zero for no contextID) */
     int targetCount;                     /* Number of bytes to be collected */
     uint64_t syncStat;                   /* Sync monitor status */
+    bool selfAllocated;                  /* Flag indicating that memory was allocated by the library */
 
     struct ITMPacket pk;                 /* Packet under construction */
     struct ITMDecoderStats stats;        /* Record of the statistics */
@@ -141,6 +142,7 @@ bool ITMGetDecodedPacket( struct ITMDecoder *i, struct msg *decoded );
 
 enum ITMPumpEvent ITMPump( struct ITMDecoder *i, uint8_t c );
 
+struct ITMDecoder *ITMDecoderCreate( void );
 void ITMDecoderInit( struct ITMDecoder *i, bool startSynced );
 // ====================================================================================================
 #ifdef __cplusplus

@@ -56,7 +56,7 @@
 #include "nwclient.h"
 
 /* How many transfer buffers from the source to allocate */
-#define NUM_RAW_BLOCKS (8)
+#define NUM_RAW_BLOCKS (32)
 
 #define MAX_LINE_LEN (1024)
 #define ORBTRACE "orbtrace"
