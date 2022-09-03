@@ -6,7 +6,7 @@
 
 ![Screenshot](https://raw.githubusercontent.com/orbcode/orbuculum/main/Docs/title.png)
 
-This is the development branch for V2.0.0 which includes parallel trace support as well as all the SWO goodness that Orbuculum has always offered. It is pretty close to being labelled as 2.0.0 with only a few minor issues outstanding.
+This is the development branch for V2.1.0. This includes nice things like Python support and the ninja/meson build system.
 
 ORBTrace (the FPGA trace interface) has now been moved into its own separate repository as it's grown considerably and really needs its own identity. History for orbtrace until the split point is maintained here for provenance purposes, but new work is now done over in the new location.
 
@@ -24,7 +24,7 @@ You can find information about using this suite at [Orbcode](https://www.orbcode
 
 For the current development status you will need to use the `Devel` branch. Fixes are made on main and Devel.
 
-The code is in daily use now and small issues are patched as they are found. The software runs on Linux, OSX and Windows and the whole suite is working OK on most workloads. Any bugs found now will be treated as high priority issues. Functional enhancements will also be folded in as time permits. Currently progress is reasonably rapid, and patches are always welcome.
+The code is in daily use and small issues are patched as they are found. The software runs on Linux, OSX and Windows. Any bugs in a release version are treated as high priority issues and are fixed on main. Functional enhancements will also be folded in as time permits. Currently progress is reasonably rapid, and patches are always welcome.
 
 What is it?
 ===========
@@ -61,6 +61,8 @@ is a very powerful code performance analysis tool.
 * orbtrace: The fpga configuration controller.
 
 * orbzmq: ZeroMQ server.
+
+There is also embryonic Python support in the `Python` directory.
 
 A few simple use cases are documented in the last section of this
 document, as are example outputs of using orbtop to report on the
@@ -232,7 +234,8 @@ Build
 
 The command line to build the Orbuculum tool suite is:
 
->make
+>meson setup build
+>ninja -C build
 
 You may need to change the paths to your libusb files, depending on how well your build environment is set up.
 

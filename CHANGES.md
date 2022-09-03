@@ -1,6 +1,9 @@
-Version 2.0.0 in Progress
+Version 2.1.0 in Progress
 
-* Addition of orbzmq for ZeroMQ support
+* Move to ninja/meson build system
+* Python support
+
+ (Version 2.0.0)
 * Significant simplifications to the orbuculum mux to reduce load/improve throughput
 * New longopts & some name changes to options
 * makefile install and uninstall capability
