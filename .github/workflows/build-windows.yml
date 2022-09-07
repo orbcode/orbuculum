@@ -22,12 +22,14 @@ jobs:
             mingw-w64-x86_64-zeromq
             git
             zip
+            mingw-w64-x86_64-meson
       - uses: actions/checkout@v2
-      - run: make build
-      - run: make install install-mingw-deps DESTDIR=ofiles/dist_win INSTALL_ROOT=/
+      - run: meson setup ./build --prefix A:/
+      - run: ninja -C ./build
+      - run: meson install -C ./build --destdir ./install --strip
       - uses: actions/upload-artifact@v3
         with:
           name: orbuculum-win64
-          path: ofiles/dist_win/**/*.*
+          path: build/install/**/*.*
           if-no-files-found: error
 
