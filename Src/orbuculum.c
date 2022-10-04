@@ -57,6 +57,10 @@
 /* How many transfer buffers from the source to allocate */
 #define NUM_RAW_BLOCKS (32)
 
+#if defined __APPLE__
+#define SEM_DATA_FOR_CLIENTS "/semDataC"
+#endif
+
 /* Record for options, either defaults or from command line */
 struct Options
 {
@@ -106,7 +110,11 @@ struct RunTime
 
     pthread_t intervalThread;                            /* Thread reporting on intervals */
     pthread_t processThread;                             /* Thread for processing prior to distributing to clients */
+#if defined OSX
+    sem_t     *dataForClients;                           /* Semaphore counting data for clients */
+#else
     sem_t     dataForClients;                            /* Semaphore counting data for clients */
+#endif
     bool      ending;                                    /* Flag indicating app is terminating */
     bool      errored;                                   /* Flag indicating problem in reception process */
     bool      conn;                                      /* Flag indicating that we have a good connection */
@@ -800,7 +808,11 @@ static void *_processBlocksQueue( void *params )
 
     while ( !r->ending )
     {
+#if defined OSX
+        sem_wait( r->dataForClients );
+#else
         sem_wait( &r->dataForClients );
+#endif
 
         if ( r->rp != r->wp )
         {
@@ -1137,7 +1149,11 @@ static int _nwserverFeeder( struct RunTime *r )
             }
 
             r->wp = ( r->wp + 1 ) % NUM_RAW_BLOCKS;
+#if defined OSX
+            sem_post( r->dataForClients );
+#else
             sem_post( &r->dataForClients );
+#endif
         }
 
         r->conn = false;
@@ -1301,7 +1317,11 @@ static int _serialFeeder( struct RunTime *r )
             }
 
             r->wp = ( r->wp + 1 ) % NUM_RAW_BLOCKS;
+#if defined OSX
+            sem_post( r->dataForClients );
+#else
             sem_post( &r->dataForClients );
+#endif
         }
 
         r->conn = false;
@@ -1349,7 +1369,11 @@ static int _fileFeeder( struct RunTime *r )
         }
 
         /* We can probably read from file faster than we can process.... */
+#if defined OSX
+        sem_post( r->dataForClients );
+#else
         sem_post( &r->dataForClients );
+#endif
         int nwp = ( r->wp + 1 ) % NUM_RAW_BLOCKS;
 
         /* Spin waiting for buffer space to become available */
@@ -1390,7 +1414,12 @@ int main( int argc, char *argv[] )
     /* Setup TPIU in case we call it into service later */
     TPIUDecoderInit( &_r.t );
 
+#if defined OSX
+    sem_unlink(SEM_DATA_FOR_CLIENTS);
+    if ((_r.dataForClients = sem_open(SEM_DATA_FOR_CLIENTS, O_CREAT | O_EXCL, 0644, 0)) == SEM_FAILED)
+#else
     if ( sem_init( &_r.dataForClients, 0, 0 ) < 0 )
+#endif
     {
         genericsExit( -1, "Failed to establish semaphore" EOL );
     }

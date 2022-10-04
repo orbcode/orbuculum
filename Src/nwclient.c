@@ -38,6 +38,10 @@
 /* Shared ring buffer for data */
 #define SHARED_BUFFER_SIZE (8*TRANSFER_SIZE)
 
+#if defined OSX
+#define SEM_DATA_AVAILABLE "/semDataAv"
+#endif
+
 /* Master structure for the set of nwclients */
 struct nwclientsHandle
 
@@ -63,7 +67,11 @@ struct nwClient
     volatile struct nwClient *nextClient;
     volatile struct nwClient *prevClient;
     bool                      finish;        /* Flag indicating it's time to cease operation */
+#if defined OSX
+    sem_t                     *dataAvailable; /* Semaphore to say there's stuff to process */
+#else
     sem_t                     dataAvailable; /* Semaphore to say there's stuff to process */
+#endif
 
     /* Parameters used to run the client */
     int                       portNo;        /* Port of connection */
@@ -148,7 +156,11 @@ static void *_client( void *args )
     while ( !c->finish )
     {
         /* Spin until we're told there's something to send along */
+#if defined OSX
+        sem_wait( c->dataAvailable );
+#else
         sem_wait( &c->dataAvailable );
+#endif
 
         while ( c->rp != c->parent->wp )
         {
@@ -221,7 +233,12 @@ static void *_listenTask( void *arg )
         client->portNo = newsockfd;
         client->rp     = h->wp;
 
+#if defined OSX
+        sem_unlink(SEM_DATA_AVAILABLE);
+        if ((client->dataAvailable = sem_open(SEM_DATA_AVAILABLE, O_CREAT | O_EXCL, 0644, 0)) == SEM_FAILED)
+#else
         if ( sem_init( &client->dataAvailable, 0, 0 ) < 0 )
+#endif
         {
             genericsExit( -1, "Failed to establish semaphore" EOL );
         }
@@ -295,7 +312,11 @@ void nwclientSend( struct nwclientsHandle *h, uint32_t len, uint8_t *ipbuffer )
 
         while ( n )
         {
+#if defined OSX
+            sem_post(n->dataAvailable );
+#else
             sem_post( ( sem_t * )&n->dataAvailable );
+#endif
             n = n->nextClient;
         }
 
