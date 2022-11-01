@@ -6,7 +6,7 @@
 
 ![Screenshot](https://raw.githubusercontent.com/orbcode/orbuculum/main/Docs/title.png)
 
-This is the development branch for V2.1.0. This includes nice things like Python support and the ninja/meson build system.
+This main) is the development branch for V2.1.0. This includes nice things like Python support and the ninja/meson build system. Development is generally done in feature branches and folded into main as those features mature.
 
 ORBTrace (the FPGA trace interface) has now been moved into its own separate repository as it's grown considerably and really needs its own identity. History for orbtrace until the split point is maintained here for provenance purposes, but new work is now done over in the new location.
 

@@ -1,6 +1,12 @@
 Version 2.1.0 in Progress
 
+* Stability improvements
 * Move to ninja/meson build system
+* Changes to usb transfer arrangments for improved performance
+* Orbtop gains wall time and interrupt utilisation percentage
+* Support for SWO over UART speed setting on ORBTRrace
+* Improved OSX support
+* Improved windows support
 * Python support
 
  (Version 2.0.0)
