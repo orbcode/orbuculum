@@ -1360,7 +1360,7 @@ int main( int argc, char *argv[] )
                 switch ( r )
                 {
                     case SYMBOL_NOELF:
-                        genericsExit( -1, "Elf file or symbols in it not found" EOL );
+                        genericsReport( V_WARN, "Elf file or symbols in it not found" EOL );
                         break;
 
                     case SYMBOL_NOOBJDUMP:
@@ -1375,6 +1375,11 @@ int main( int argc, char *argv[] )
                         break;
                 }
 
+		if ( SYMBOL_NOELF == r)
+		  {
+		    usleep(1000000L);
+		    continue;
+		  }
                 genericsReport( V_WARN, "Loaded %s" EOL, options.elffile );
             }
 
