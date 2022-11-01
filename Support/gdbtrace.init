@@ -250,8 +250,8 @@ define prepareSWO
   set *($ITMBASE+0xfb0) = 0xc5acce55
   set *($ETMBASE+0xfb0) = 0xc5acce55
 
-  # Enable DEMCR TRCENA
-  set *($CDBBASE+0xC)|=(1<<24)
+  # Disable DEMCR TRCENA while we make changes
+  set *($CDBBASE+0xC)&=~(1<<24)
 
   if ($useMan==0)
     # Use Async mode pin protocol (TPIU_SPPR)
@@ -275,7 +275,7 @@ define prepareSWO
   end
 
   # Flush all initial configuration
-  set *($CDBBASE+0xC) |= 0x1000000
+  set *($CDBBASE+0xC)|=(1<<24)
   set *($DWTBASE) = 0
   set *($ITMBASE+0xe80) = 0
 end
@@ -293,13 +293,6 @@ define enableIMXRT102XSWO
   _setAddressesIMXRT
   # Store the CPU we are using
   set $CPU=$CPU_IMXRT102X
-
-  # Enable Trace Clocks
-  set *0x400FC068|=(3<<22)
-
-  # Set Trace clock input to be from PLL2 PFD0
-  set *0x400Fc018&=~(3<<14)
-  set *0x400Fc018|=(2<<14)
 
   # Set AD_B0_04 to be an input, and no drive (defaults to JTAG otherwise)
   set *0x401f80cc=5
@@ -322,19 +315,27 @@ define enableIMXRT106XSWO
   # Store the CPU we are using
   set $CPU=$CPU_IMXRT106X
 
-  # Enable Trace Clocks
-  set *0x400FC068|=(3<<22)
+  # Disable Trace Clocks while we change them (CCM_CCGR0)
+#  set *0x400FC068&=~(3<<22)
+    set *0x400FC068|=(3<<22)
 
-  # Set Trace clock input to be from PLL2 PFD0
+  # Set Trace clock input to be from PLL2 PFD2 (CBCMR1, 396 MHz)
   set *0x400Fc018&=~(3<<14)
-  set *0x400Fc018|=(2<<14)
+  set *0x400Fc018|=(1<<14)
+
+  # Set divider to be 3 (CSCDR1, 132 MHz)
+  set *0x400Fc024&=~(3<<25)
+  set *0x400Fc024|=(2<<25)
+
+  # Enable Trace Clocks (CCGR0)
+  set *0x400FC068|=(3<<22)
 
   # Set AD_B0_10 to be SWO, with specific output characteristics (MUX_CTL & PAD_CTL)
   set *0x401F80E4=9
-  set *0x401F82D4=0xB0A0
+  set *0x401F82D4=0xB0A1
 end
 document enableIMXRT106XSWO
-enableIMXRT1021SWO Configure output pin on IMXRT1021 for SWO use.
+enableIMXRT1021SWO Configure output pin on IMXRT1060 for SWO use.
 end
 # ====================================================================
 
