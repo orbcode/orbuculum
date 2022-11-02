@@ -219,6 +219,12 @@ replace them with the following;
 we're here it's worth mentioning the `startETM` command too, that outputs tracing data. That is
 needed for `orbmortem`.
 
+In-code configuration
+---------------------
+Trace components might also be configured directly from code running on MCU. Such approach is useful for setting up more invasive tracing or logging output.
+
+CMSIS-compatible headers, provided by many chip vendors include all necessary type definitions and constants. However they are not the most straightforward, so it might be easier to use Orbcode's libtrace library: https://orbcode.github.io/libtrace/
+
 Building on Linux
 =================
 
