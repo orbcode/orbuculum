@@ -273,12 +273,18 @@ you need to do is move the homebrew binutils out of the way while you do the bui
 Building on Windows
 ===================
 
-MinGW-w64 from MSys2 is recommended as environment for building Windows distribution.
+MinGW-w64 from MSys2 is recommended as environment for building Windows distribution. Easiest way to get proper MSys2/MinGW-w64 environment is to use Chocolatey (https://community.chocolatey.org/packages/msys2).
 
 Dependencies
 ------------
 * mingw-w64-x86_64-libusb
 * mingw-w64-x86_64-zeromq
+* mingw-w64-x86_64-meson
+* mingw-w64-x86_64-toolchain (Ada and Fortran are not needed)
+* ninja
+* git
+
+In MSys2/MinGW-w64 run command: `pacman -S mingw-w64-x86_64-meson ninja mingw-w64-x86_64-libusb mingw-w64-x86_64-toolchain mingw-w64-x86_64-zeromq git` to install all required dependencies.
 
 Build
 -----
@@ -286,16 +292,20 @@ Build
 The command line to build the Orbuculum tool suite is:
 
 ```
->make
+>meson setup build
+>ninja -C build
 ```
 
 In order to get single folder with Orbuculum and MinGW dependencies run:
 
 ```
->make install install-mingw-deps DESTDIR=<directory1> INSTALL_ROOT=/<directory2>
+>meson configure build --prefix A:/
+>meson install -C ./build --destdir ./install --strip
 ```
 
-Everything will be installed into `directory1/directory2` and can be transfered to different machine or used outside of MSys2 shell.
+`--prefix A:/` is required to workaround how Meson constructs install directory. Without it deeply nested path will be generated instead of clean `build/install`.
+
+Orbuculum executables along with MinGW-w64 dependencies will be installed into `build/install` and can be transfered to different machine or used outside of MSys2 shell.
 
 Using
 =====
@@ -348,7 +358,7 @@ For `orbuculum`, the specific command line options of note are;
   `-o, --output-file [filename]`: Record trace data locally. This is unfettered data directly from the source device, can be useful for replay purposes or other tool testing.
 
   `-O "<options>"`: Run orbtrace on each detected connection of a probe, with the specified options.
-  
+
   `-p, --serial-port [serialPort]`: to use. If not specified then the program defaults to Blackmagic probe.
 
   `-s, --server [address]:[port]`: Set address for explicit TCP Source connection, (default none:2332).
