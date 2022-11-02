@@ -268,7 +268,6 @@ char *genericsGetBaseDirectory( void )
     _splitpath_s( exePath, drive, sizeof( drive ), dirPath, currentSize, NULL, 0, NULL, 0 );
     free( exePath );
 
-    size_t pathLen = strlen( drive ) + strlen( dirPath );
     char *concatPath = malloc( strlen( drive ) + strlen( dirPath ) + 1 );
     *concatPath = '\0';
     strcat( concatPath, drive );
