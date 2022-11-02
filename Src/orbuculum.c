@@ -1293,7 +1293,7 @@ static int _serialFeeder( struct RunTime *r )
             }
 
             r->wp = ( r->wp + 1 ) % NUM_RAW_BLOCKS;
-            _dataAvailable( &r );
+            _dataAvailable( r );
         }
 
         r->conn = false;
