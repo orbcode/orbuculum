@@ -121,7 +121,7 @@ bool MSGSeqPump( struct MSGSeq *d, uint8_t c )
 
         // ------------------------------------
         case ITM_EV_OVERFLOW:
-            genericsReport( V_WARN, "ITM Overflow (%d)" EOL, ITMDecoderGetStats( d->i )->overflow );
+            genericsReport( V_INFO, "ITM Overflow (%d)" EOL, ITMDecoderGetStats( d->i )->overflow );
             break;
 
         // ------------------------------------

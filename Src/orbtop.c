@@ -329,7 +329,7 @@ void _handleException( struct excMsg *m, struct ITMDecoder *i )
 
         default:
         case EXEVENT_UNKNOWN:
-            genericsReport( V_ERROR, "Unrecognised exception event (%d,%d)" EOL, m->eventType, m->exceptionNumber );
+            genericsReport( V_INFO, "Unrecognised exception event (%d,%d)" EOL, m->eventType, m->exceptionNumber );
             break;
     };
 }

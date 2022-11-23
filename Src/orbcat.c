@@ -244,7 +244,7 @@ void _itmPumpProcess( char c )
             break;
 
         case ITM_EV_OVERFLOW:
-            genericsReport( V_WARN, "ITM Overflow" EOL );
+            genericsReport( V_INFO, "ITM Overflow" EOL );
             break;
 
         case ITM_EV_ERROR:
