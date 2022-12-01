@@ -4,6 +4,7 @@ dependencies = [
     dependency('threads'),
     dependency('libusb-1.0'),
     dependency('libzmq'),
+    dependency('SDL2'),
     dependency('ncurses', 'ncursesw')
 ]
 
@@ -180,6 +181,17 @@ executable('orbtrace',
 executable('orbzmq',
     sources: [
         'Src/orbzmq.c',
+        git_version_info_h,
+    ],
+    include_directories: incdirs,
+    dependencies: dependencies,
+    link_with: liborb,
+    install: true,
+)
+
+executable('orblcd',
+    sources: [
+        'Src/orblcd.c',
         git_version_info_h,
     ],
     include_directories: incdirs,

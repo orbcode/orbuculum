@@ -250,8 +250,7 @@ define prepareSWO
   set *($ITMBASE+0xfb0) = 0xc5acce55
   set *($ETMBASE+0xfb0) = 0xc5acce55
 
-  # Disable DEMCR TRCENA while we make changes
-  set *($CDBBASE+0xC)&=~(1<<24)
+  set *($CDBBASE+0xC)|=(1<<24)
 
   if ($useMan==0)
     # Use Async mode pin protocol (TPIU_SPPR)

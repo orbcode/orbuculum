@@ -8,6 +8,7 @@ Version 2.1.0 in Progress
 * Improved OSX support
 * Improved windows support
 * Python support
+* Addition of orblcd utility for host-side emulation of lcd panels.
 
  (Version 2.0.0)
 * Significant simplifications to the orbuculum mux to reduce load/improve throughput

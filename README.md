@@ -60,6 +60,8 @@ is a very powerful code performance analysis tool.
 
 * orbzmq: ZeroMQ server.
 
+* orblcd: LCD emulator on the host computer.
+
 There is also embryonic Python support in the `Python` directory.
 
 A few simple use cases are documented in the last section of this
@@ -503,6 +505,56 @@ Command line options are:
  `-V, --version`:      Print version and exit
 
  `-z, --zbind [url]`:         ZeroMQ bind URL
+
+Orblcd
+------
+
+orblcd lets you emulate an LCD panel on the host computer. This is useful for test and development purposes.
+Communication between the target and host occurs over two ITM channels, using a protocol defined in `orblcd_protocol.h`.
+
+1, 16, 24 and 32 bit lcd depths are supported, but not year well rested beyond 1 bit. On the target side, all that
+needs to be done is to tell the host the characteristics of the panel;
+
+```
+ITM_Send32(LCD_COMMAND_CHANNEL,ORBLCD_OPEN_SCREEN(XSIZE*8,YSIZE*16,ORBLCD_DEPTH_1));
+```
+
+Once the characteristics have been established, this command will render any data received. To reduce the load on the host
+is is worthwhile sending a clear LCD command immediately after the open;
+
+```
+ITM_Send32(LCD_COMMAND_CHANNEL,ORBLCD_CLEAR);
+```
+
+Once the link is established, then the target simply streams data to the host;
+
+```
+ITM_Send32(LCD_DATA_CHANNEL,<data word>);
+```
+There is no limit on the amount of data that may be sent - the screen will not be rendered at the host until the next `OPEN_SCREEN` message is received. The target is free to move around the virtual lcd panel to update the contents (and new manipulation commands may be added into the shared header file `orblcd_protocol.h`.
+
+By operating in this way, even if the host connects late it will quickly establish good quality comms with the target. See
+the `vidout` example in orbmule for an example of how to use the utility.
+
+ `-c, --channel [Number]`: of first channel in pair containing display data (channel+1 is the command channel).
+
+ `-f, --input-file [filename]`: Take input from specified file.
+ 
+ `-h, --help`: Get help.
+
+ `-n, --itm-sync`: Enforce sync requirement for ITM (i.e. ITM needsd to issue syncs).
+
+ `-s, --server [Server]:[Port]`: to use.
+
+ `-S, --sbcolour [Colour]`: to be used for single bit renders, ignored for other bit depths.
+
+ `-t, --tpiu [channel]`: Use TPIU decoder on specified channel (normally 1).
+
+ `-v, --verbose [level]`: Verbose mode 0(errors)..3(debug).
+
+ `-V, --version`: Print version and exit.
+ 
+ `-z, --size [Scale(float)]`: Set relative size of output window (normally 1).
 
 
 Orbcat
