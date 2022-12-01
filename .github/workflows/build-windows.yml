@@ -20,10 +20,10 @@ jobs:
             mingw-w64-x86_64-libusb
             mingw-w64-x86_64-toolchain
             mingw-w64-x86_64-zeromq
+            mingw-w64-x86_64-SDL2
             git
             zip
             mingw-w64-x86_64-meson
-            sdl2
       - uses: actions/checkout@v3
       - run: meson setup ./build --prefix A:/
       - run: ninja -C ./build

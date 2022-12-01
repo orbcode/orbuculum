@@ -235,6 +235,7 @@ Dependencies
 * libusb-1.0
 * libczmq-dev
 * ncurses
+* libsdl
 
 Note that `objdump`  version at least 2.33.1 is also required. By default the suite will run `arm-none-eabi-objdump` but another binary or pathname can be subsituted via the OBJDUMP environment variable.
 
@@ -288,11 +289,12 @@ Dependencies
 * mingw-w64-x86_64-libusb
 * mingw-w64-x86_64-zeromq
 * mingw-w64-x86_64-meson
+* mingw-w64-x86_64-SDL2
 * mingw-w64-x86_64-toolchain (Ada and Fortran are not needed)
 * ninja
 * git
 
-In MSys2/MinGW-w64 run command: `pacman -S mingw-w64-x86_64-meson ninja mingw-w64-x86_64-libusb mingw-w64-x86_64-toolchain mingw-w64-x86_64-zeromq git` to install all required dependencies.
+In MSys2/MinGW-w64 run command: `pacman -S mingw-w64-x86_64-meson mingw-w64-x86_64-SDL2 ninja mingw-w64-x86_64-libusb mingw-w64-x86_64-toolchain mingw-w64-x86_64-zeromq git` to install all required dependencies.
 
 Build
 -----
