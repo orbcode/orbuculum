@@ -23,6 +23,7 @@ jobs:
             git
             zip
             mingw-w64-x86_64-meson
+            sdl2
       - uses: actions/checkout@v3
       - run: meson setup ./build --prefix A:/
       - run: ninja -C ./build
