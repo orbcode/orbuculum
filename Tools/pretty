@@ -1,0 +1,2 @@
+#!/bin/sh
+astyle --options=config/astyle.conf "Inc/*.h" "Src/*.c"

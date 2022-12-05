@@ -511,32 +511,39 @@ Command line options are:
 Orblcd
 ------
 
-orblcd lets you emulate an LCD panel on the host computer. This is useful for test and development purposes.
-Communication between the target and host occurs over two ITM channels, using a protocol defined in `orblcd_protocol.h`.
+orblcd lets you emulate an LCD panel on a host computer. This is useful for test and development purposes.
+Communication between the target and host occurs over two ITM channels, using a protocol defined in `orblcd_protocol.h`. You need
+to share a common version of this file between `orblcd` and your target.
 
-1, 16, 24 and 32 bit lcd depths are supported, but not year well rested beyond 1 bit. On the target side, all that
-needs to be done is to tell the host the characteristics of the panel;
+1, 8, 16 and 24/32 bit lcd depths are supported. 1 and 24/32 bit are well tested, but 16 and 8 need a little bit more proving. There
+is no functional difference between 24 and 32 bit operation (there is no Alpha channel, although it's trivial to add if you want it).
+
+On the target side, all that needs to be done is to tell the host the characteristics of the panel;
 
 ```
 ITM_Send32(LCD_COMMAND_CHANNEL,ORBLCD_OPEN_SCREEN(XSIZE*8,YSIZE*16,ORBLCD_DEPTH_1));
 ```
 
-Once the characteristics have been established, this command will render any data received. To reduce the load on the host
-is is worthwhile sending a clear LCD command immediately after the open;
-
-```
-ITM_Send32(LCD_COMMAND_CHANNEL,ORBLCD_CLEAR);
-```
+Once the characteristics have been established, this same command will render any data received.
 
 Once the link is established, then the target simply streams data to the host;
 
 ```
 ITM_Send32(LCD_DATA_CHANNEL,<data word>);
 ```
-There is no limit on the amount of data that may be sent - the screen will not be rendered at the host until the next `OPEN_SCREEN` message is received. The target is free to move around the virtual lcd panel to update the contents (and new manipulation commands may be added into the shared header file `orblcd_protocol.h`.
+
+For 1, 8 and 16 bit lcds multiple pixels are encoded into a single 32-bit word. Any pixels left at the end of a line are discarded. If that
+doesn't suit, then use the 24/32 bit channel mode to transfer pixels.
+
+There is no limit on the amount of data that may be sent - the screen will not be rendered at the host until the next `OPEN_SCREEN` message is received. The target is free to move around the virtual lcd panel to update the contents anywhere it wishes (and new manipulation commands may be added into the shared header file `orblcd_protocol.h`).
 
 By operating in this way, even if the host connects late it will quickly establish good quality comms with the target. See
-the `vidout` example in orbmule for an example of how to use the utility.
+the `vidout` example in orbmule for an example of how to use the utility for 1-bit operation, or build the `lcd_demo` application
+with the orblcd video device as output for a 24-bit example with;
+
+```
+make GRAPHIC_LIBRARY=ORBLCD
+```
 
  `-c, --channel [Number]`: of first channel in pair containing display data (channel+1 is the command channel).
 
@@ -596,6 +603,7 @@ options for orbcat are;
 
  `-v, --verbose [x]`: Verbose mode level 0..3.
 
+ `-w, --window [string]`: Title for on-screen window.
 Orbtop
 ------
 

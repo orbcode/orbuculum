@@ -1121,10 +1121,10 @@ static int _usbFeeder( struct RunTime *r )
         /* Remove transfers from list and release the memory */
         for ( uint32_t t = 0; t < NUM_RAW_BLOCKS; t++ )
         {
-	  if ( r->rawBlock[t].usbtfr )
-	    {
-	      libusb_cancel_transfer( r->rawBlock[t].usbtfr );
-	      libusb_free_transfer( r->rawBlock[t].usbtfr );
+            if ( r->rawBlock[t].usbtfr )
+            {
+                libusb_cancel_transfer( r->rawBlock[t].usbtfr );
+                libusb_free_transfer( r->rawBlock[t].usbtfr );
             }
 
             r->rawBlock[t].usbtfr = NULL;

@@ -1375,11 +1375,12 @@ int main( int argc, char *argv[] )
                         break;
                 }
 
-		if ( SYMBOL_NOELF == r)
-		  {
-		    usleep(1000000L);
-		    continue;
-		  }
+                if ( SYMBOL_NOELF == r )
+                {
+                    usleep( 1000000L );
+                    continue;
+                }
+
                 genericsReport( V_WARN, "Loaded %s" EOL, options.elffile );
             }
 

@@ -5,9 +5,9 @@
 #define LCD_COMMAND_CHANNEL (LCD_DATA_CHANNEL+1)
 
 #define ORBLCD_DEPTH_1  (0)
-#define ORBLCD_DEPTH_16 (1)
-#define ORBLCD_DEPTH_24 (2)
-#define ORBLCD_DEPTH_32 (3)
+#define ORBLCD_DEPTH_8  (1)
+#define ORBLCD_DEPTH_16 (2)
+#define ORBLCD_DEPTH_24 (3)
 
 #define ORBLCD_CMD_INIT_LCD     (1)
 #define ORBLCD_CMD_CLOSE_SCREEN (2)
@@ -23,8 +23,8 @@
 #define ORBLCD_DECODE_D(x) ((x>>24)&0x03)
 #define ORBLCD_DECODE_C(x) ((x>>26)&0x3f)
 
-#define ORBLCD_GET_DEPTH(x)  (((int[]){1,8,16,32})[ORBLCD_DECODE_D(x)])
-#define ORBLCD_BITS_PER_WORD(x)  (((int[]){32,2,1,1})[ORBLCD_DECODE_D(x)])
+#define ORBLCD_GET_DEPTH(x)        (((int[]){1,8,16,24})[ORBLCD_DECODE_D(x)])
+#define ORBLCD_PIXELS_PER_WORD(x)  (((int[]){32,4,2,1})[ORBLCD_DECODE_D(x)])
 
 #define ORBLCD_OPEN_SCREEN(x,y,d) (ORBLCD_ENCODE_C(ORBLCD_CMD_INIT_LCD)|ORBLCD_ENCODE_D(d)|ORBLCD_ENCODE_X(x)|ORBLCD_ENCODE_Y(y))
 #define ORBLCD_CLOSE_SCREEN       (ORBLCD_ENCODE_C(ORBLCD_CMD_CLOSE_SCREEN))

@@ -18,7 +18,7 @@
 #include <ctype.h>
 #include <unistd.h>
 #include <SDL.h>
-
+#include <SDL_thread.h>
 
 #include "git_version_info.h"
 #include "generics.h"
@@ -38,26 +38,26 @@ struct TApp
     int sbcolour;                                         /* Colour to be used for single bit renders */
 
     /* Operational stuff */
-    int depth;                                            /* Bitdepth of the source */
     int x;                                                /* Current X pos */
     int y;                                                /* Current Y pos */
     float scale;                                          /* Scale for output window */
-    bool fresh;                                           /* Is this a clear screen I only need to paint new data onto? */
-    int modeDescriptor;
-    int h;
-    int w;
+    int modeDescriptor;                                   /* Descriptor for source mode */
+    char *windowTitle;                                    /* Title for SDL output window */
 
     /* SDL stuff */
-    SDL_Window   *mainWindow;
-    SDL_Renderer *renderer;
-    SDL_Surface  *screen;                                 /* The output screen being rendered onto */
-    SDL_Surface  *content;                                /* The content being rendered */
+    SDL_Window   *mainWindow;                             /* Output window */
+    SDL_Renderer *renderer;                               /* Renderer onto output window */
+    SDL_Texture  *texture;                                /* Texture used for construction of image */
+    uint8_t       *pixels;                                /* Pixel buffer in texture */
+    uint32_t      map8to24bit[256];                       /* Colour index table for 8 to 24 bit mapping */
+    int pwidth;                                           /* Width of one line of pixel buffer */
 
 } _app =
 {
-    .chan     = LCD_DATA_CHANNEL,
-    .sbcolour = 0x00ff00,
-    .scale    = 1.5f
+    .chan        = LCD_DATA_CHANNEL,
+    .sbcolour    = 0x00ff00,
+    .scale       = 1.5f,
+    .windowTitle = "ORBLcd Output Window"
 
 };
 /************** APPLICATION SPECIFIC ENDS ***************************************************************/
@@ -101,99 +101,61 @@ struct RunTime
 /************** APPLICATION SPECIFIC ******************************************************************/
 // Target application specifics
 // ====================================================================================================
+
 static void _paintPixels( struct swMsg *m, struct RunTime *r )
 
 {
     /* This is LCD data */
     int d = m->value;
+    int y;
 
-    if ( r->app->depth == ORBLCD_DEPTH_1 )
+    for ( int b = ORBLCD_PIXELS_PER_WORD( r->app->modeDescriptor ) - 1; b >= 0; b-- )
     {
-        /* 32 bit word representing 32 mono output bits */
-        for ( int w = 0; w < 4; w++ )
+        switch ( ORBLCD_DECODE_D( r->app->modeDescriptor ) )
         {
-            for ( int b = 7; b >= 0; b-- )
-            {
-                if ( r->app->fresh )
+            case ORBLCD_DEPTH_1:
+                y = ( d & ( 1 << ( b % 8 ) ) ) ? r->app->sbcolour : 0;
+
+                if ( !( b % 8 ) )
                 {
-                    /* This is a fresh screen, so only need to write the 1's */
-                    if ( d & ( 1 << b ) )
-                    {
-                        SDL_RenderDrawPoint( r->app->renderer, r->app->x, r->app->y );
-                    }
-                }
-                else
-                {
-                    if ( d & ( 1 << b ) )
-                    {
-                        SDL_SetRenderDrawColor( r->app->renderer,
-                                                r->app->sbcolour & 0xff,
-                                                ( r->app->sbcolour >> 8 ) & 0xff,
-                                                ( r->app->sbcolour >> 16 ) & 0xff,
-                                                0xff - ( ( r->app->sbcolour >> 24 ) & 0xff ) );
-                    }
-                    else
-                    {
-                        SDL_SetRenderDrawColor( r->app->renderer, 0, 0, 0, 0xff );
-                    }
-
-                    SDL_RenderDrawPoint( r->app->renderer, r->app->x, r->app->y );
-                }
-
-                if ( ++r->app->x >= r->app->w )
-                {
-                    r->app->y++;
-                    r->app->x = 0;
-
-                    if ( r->app->y == r->app->h )
-                    {
-                        r->app->y = 0;
-                    }
-
-                    /* Anything left over in a word at the end of a line is thrown away */
-                    w = 4;
-                    break;
-                }
-            }
-
-            d >>= 8;
-        }
-    }
-    else
-    {
-        for ( int b = ORBLCD_BITS_PER_WORD( r->app->depth ); b >= 0; b-- )
-        {
-            switch ( r->app->depth )
-            {
-                case ORBLCD_DEPTH_16:
-                    SDL_SetRenderDrawColor( r->app->renderer, d & 0x1f, ( d >> 5 ) & 0x3f, ( d >> 11 ) & 0x1f, 0xff );
-                    break;
-
-                case ORBLCD_DEPTH_32:
-                case ORBLCD_DEPTH_24:
-                    SDL_SetRenderDrawColor( r->app->renderer, d & 0xff, ( d >> 8 ) & 0xff, ( d >> 16 ) & 0xff, ( r->app->depth == ORBLCD_DEPTH_24 ) ? 0xff : ( b >> 24 ) & 0xff );
-                    break;
-
-                default:
-                    break;
-            }
-
-            SDL_RenderDrawPoint( r->app->renderer, r->app->x, r->app->y );
-
-            if ( ++r->app->x >= r->app->w )
-            {
-                r->app->y++;
-                r->app->x = 0;
-
-                if ( r->app->y == r->app->h )
-                {
-                    r->app->y = 0;
+                    d >>= 8;
                 }
 
                 break;
+
+            case ORBLCD_DEPTH_8:
+                y = r->app->map8to24bit[d & 0xff];
+                d >>= 8;
+                break;
+
+            case ORBLCD_DEPTH_16:
+                y = ( ( d & 0xF100 ) << 8 ) | ( ( d & 0x07e0 ) << 5 )  | ( d & 0x001f );
+                d >>= 16;
+                break;
+
+            case ORBLCD_DEPTH_24:
+                y = d;
+                break;
+
+            default:
+                y = 0xff;
+                break;
+        }
+
+        /* Output bitdepth is always the same, so span calculation is too */
+        *( uint32_t * )&r->app->pixels[r->app->x * 4 + r->app->y * r->app->pwidth] = y | 0xff000000;
+
+        if ( ++r->app->x >= ORBLCD_DECODE_X( r->app->modeDescriptor ) )
+        {
+            r->app->y++;
+            r->app->x = 0;
+
+            if ( r->app->y == ORBLCD_DECODE_Y( r->app->modeDescriptor ) )
+            {
+                r->app->y = 0;
             }
 
-            d >>= 16;
+            break;
         }
     }
 }
@@ -214,9 +176,6 @@ static void _handleCommand( struct swMsg *m, struct RunTime *r )
                                 ( r->app->modeDescriptor ) ? "Replacement" : "New",
                                 ORBLCD_DECODE_X( m->value ), ORBLCD_DECODE_Y( m->value ), ORBLCD_GET_DEPTH( m->value ) );
                 r->app->modeDescriptor = m->value;
-                r->app->depth          = ORBLCD_DECODE_D( m->value );
-                r->app->h              = ORBLCD_DECODE_Y( m->value );
-                r->app->w              = ORBLCD_DECODE_X( m->value );
 
                 /* If this is due to a resize activity then destroy the old stuff */
                 if ( r->app->renderer )
@@ -229,19 +188,30 @@ static void _handleCommand( struct swMsg *m, struct RunTime *r )
                     SDL_DestroyWindow( r->app->mainWindow );
                 }
 
-                r->app->mainWindow    = SDL_CreateWindow( "ORBLcd Output Window",
+                r->app->mainWindow    = SDL_CreateWindow( r->app->windowTitle,
                                         SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
-                                        r->app->w * r->app->scale, r->app->h * r->app->scale, SDL_WINDOW_SHOWN );
+                                        ORBLCD_DECODE_X( r->app->modeDescriptor ) * r->app->scale, ORBLCD_DECODE_Y( r->app->modeDescriptor ) * r->app->scale, SDL_WINDOW_SHOWN );
                 r->app->renderer      = SDL_CreateRenderer( r->app->mainWindow, -1, SDL_RENDERER_ACCELERATED );
-                SDL_RenderSetLogicalSize( r->app->renderer, r->app->w, r->app->h );
-                SDL_SetRenderDrawColor( r->app->renderer, 0, 0, 0, 0 );
-                SDL_RenderClear( r->app->renderer );
+                SDL_RenderSetLogicalSize( r->app->renderer, ORBLCD_DECODE_X( r->app->modeDescriptor ), ORBLCD_DECODE_Y( r->app->modeDescriptor ) );
+                r->app->texture         = SDL_CreateTexture( r->app->renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, ORBLCD_DECODE_X( r->app->modeDescriptor ),
+                                          ORBLCD_DECODE_Y( r->app->modeDescriptor ) );
+
+                if ( SDL_SetTextureBlendMode( r->app->texture,
+                                              SDL_ComposeCustomBlendMode( SDL_BLENDFACTOR_SRC_ALPHA, SDL_BLENDFACTOR_ONE_MINUS_SRC_ALPHA, SDL_BLENDOPERATION_ADD,
+                                                      SDL_BLENDFACTOR_ONE, SDL_BLENDFACTOR_ONE, SDL_BLENDOPERATION_ADD ) ) )
+                {
+                    genericsReport( V_WARN, "Render construction problem: %s\r\n", SDL_GetError() );
+                }
+
+                SDL_LockTexture( r->app->texture, NULL, ( void ** )&r->app->pixels, ( int * )&r->app->pwidth );
             }
             else
             {
                 /* Repaint the SDL window */
+                SDL_UnlockTexture( r->app->texture );
+                SDL_RenderCopy( r->app->renderer, r->app->texture, NULL, NULL );
                 SDL_RenderPresent( r->app->renderer );
-                r->app->fresh = false;
+                SDL_LockTexture( r->app->texture, NULL, ( void ** )&r->app->pixels, &r->app->pwidth );
             }
 
             r->app->x = r->app->y = 0;
@@ -250,21 +220,15 @@ static void _handleCommand( struct swMsg *m, struct RunTime *r )
         case ORBLCD_CMD_CLEAR: // -------------------------------------------------------------
             SDL_SetRenderDrawColor( r->app->renderer, 0, 0, 0, 0 );
             SDL_RenderClear( r->app->renderer );
-            SDL_SetRenderDrawColor( r->app->renderer,
-                                    r->app->sbcolour & 0xff,
-                                    ( r->app->sbcolour >> 8 ) & 0xff,
-                                    ( r->app->sbcolour >> 16 ) & 0xff,
-                                    0xff - ( ( r->app->sbcolour >> 24 ) & 0xff ) );
-            r->app->fresh = true;
             break;
 
         case ORBLCD_CMD_GOTOXY: // ------------------------------------------------------------
-            if ( ORBLCD_DECODE_X( m->value ) < r->app->w )
+            if ( ORBLCD_DECODE_X( m->value ) < ORBLCD_DECODE_X( r->app->modeDescriptor ) )
             {
                 r->app->x = ORBLCD_DECODE_X( m->value );
             }
 
-            if ( ORBLCD_DECODE_Y( m->value ) < r->app->h )
+            if ( ORBLCD_DECODE_Y( m->value ) < ORBLCD_DECODE_Y( r->app->modeDescriptor ) )
             {
                 r->app->y = ORBLCD_DECODE_Y( m->value );
             }
@@ -282,7 +246,7 @@ static void _handleCommand( struct swMsg *m, struct RunTime *r )
 static void _handleSW( struct swMsg *m, struct RunTime *r )
 
 {
-    if ( ( m->srcAddr == r->app->chan ) && ( r->app->mainWindow ) )
+    if ( ( m->srcAddr == r->app->chan ) && ( r->app->pixels ) )
     {
         _paintPixels( m, r );
     }
@@ -466,6 +430,7 @@ void _printHelp( const char *const progName )
     genericsPrintf( "    -t, --tpiu:         <channel>: Use TPIU decoder on specified channel (normally 1)" EOL );
     genericsPrintf( "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
     genericsPrintf( "    -V, --version:      Print version and exit" EOL );
+    genericsPrintf( "    -w, --window:       <string> Set title for output window" EOL );
     genericsPrintf( "    -z, --size:         <Scale(float)> Set relative size of output window (normally 1)" EOL );
 }
 
@@ -489,6 +454,7 @@ static struct option _longOptions[] =
     {"tpiu", required_argument, NULL, 't'},
     {"verbose", required_argument, NULL, 'v'},
     {"version", no_argument, NULL, 'V'},
+    {"window", required_argument, NULL, 'w'},
     {"size", required_argument, NULL, 'z'},
     {NULL, no_argument, NULL, 0}
 };
@@ -498,7 +464,7 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
 {
     int c, optionIndex = 0;
 
-    while ( ( c = getopt_long ( argc, argv, "c:Ef:hns:S:t:v:Vz:", _longOptions, &optionIndex ) ) != -1 )
+    while ( ( c = getopt_long ( argc, argv, "c:Ef:hns:S:t:v:Vw:z:", _longOptions, &optionIndex ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -579,6 +545,11 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
                 break;
 
             // ------------------------------------
+            case 'w':
+                r->app->windowTitle = optarg;
+                break;
+
+            // ------------------------------------
             case 'z':
                 r->app->scale = atof( optarg );
                 break;
@@ -609,6 +580,7 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
     genericsReport( V_INFO, "App Channel    : Data=%d, Control=%d" EOL, r->app->chan, r->app->chan + 1 );
     genericsReport( V_INFO, "SB Colour      : 0x%x" EOL, r->app->sbcolour );
     genericsReport( V_INFO, "Relative Scale : %1.2f:1" EOL, r->app->scale );
+    genericsReport( V_INFO, "Window Title   : %s" EOL, r->app->windowTitle );
 
     if ( r->options->port )
     {
@@ -670,6 +642,12 @@ int main( int argc, char *argv[] )
     if ( SDL_Init( SDL_INIT_VIDEO ) < 0 )
     {
         genericsExit( -1, "Could not initailise SDL" );
+    }
+
+    /* Load up default colour index map R3G3B2 */
+    for ( int i = 0; i < 256; i++ )
+    {
+        _r.app->map8to24bit[i] = ( ( i & 0xE0 ) << 21 ) | ( ( i & 0x1c ) << 13 ) | ( i << 6 );
     }
 
     while ( true )
