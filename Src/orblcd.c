@@ -46,7 +46,9 @@ struct TApp
 
     /* SDL stuff */
     SDL_Window   *mainWindow;                             /* Output window */
+    SDL_Texture  *ctexture;                               /* Texture used for holding current image */
     SDL_Renderer *renderer;                               /* Renderer onto output window */
+
     SDL_Texture  *texture;                                /* Texture used for construction of image */
     uint8_t       *pixels;                                /* Pixel buffer in texture */
     uint32_t      map8to24bit[256];                       /* Colour index table for 8 to 24 bit mapping */
@@ -108,6 +110,12 @@ static void _paintPixels( struct swMsg *m, struct RunTime *r )
     /* This is LCD data */
     int d = m->value;
     int y;
+
+    if ( !r->app->pixels )
+    {
+        /* For whatever reason we aren't initialised yet */
+        return;
+    }
 
     for ( int b = ORBLCD_PIXELS_PER_WORD( r->app->modeDescriptor ) - 1; b >= 0; b-- )
     {
@@ -188,38 +196,39 @@ static void _handleCommand( struct swMsg *m, struct RunTime *r )
                     SDL_DestroyWindow( r->app->mainWindow );
                 }
 
-                r->app->mainWindow    = SDL_CreateWindow( r->app->windowTitle,
-                                        SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
-                                        ORBLCD_DECODE_X( r->app->modeDescriptor ) * r->app->scale, ORBLCD_DECODE_Y( r->app->modeDescriptor ) * r->app->scale, SDL_WINDOW_SHOWN );
-                r->app->renderer      = SDL_CreateRenderer( r->app->mainWindow, -1, SDL_RENDERER_ACCELERATED );
-                SDL_RenderSetLogicalSize( r->app->renderer, ORBLCD_DECODE_X( r->app->modeDescriptor ), ORBLCD_DECODE_Y( r->app->modeDescriptor ) );
-                r->app->texture         = SDL_CreateTexture( r->app->renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, ORBLCD_DECODE_X( r->app->modeDescriptor ),
-                                          ORBLCD_DECODE_Y( r->app->modeDescriptor ) );
-
-                if ( SDL_SetTextureBlendMode( r->app->texture,
-                                              SDL_ComposeCustomBlendMode( SDL_BLENDFACTOR_SRC_ALPHA, SDL_BLENDFACTOR_ONE_MINUS_SRC_ALPHA, SDL_BLENDOPERATION_ADD,
-                                                      SDL_BLENDFACTOR_ONE, SDL_BLENDFACTOR_ONE, SDL_BLENDOPERATION_ADD ) ) )
+                if ( r->app->pixels )
                 {
-                    genericsReport( V_WARN, "Render construction problem: %s\r\n", SDL_GetError() );
+                    free( r->app->pixels );
                 }
 
-                SDL_LockTexture( r->app->texture, NULL, ( void ** )&r->app->pixels, ( int * )&r->app->pwidth );
+                r->app->mainWindow    = SDL_CreateWindow( r->app->windowTitle,
+                                        SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
+                                        ORBLCD_DECODE_X( r->app->modeDescriptor ) * r->app->scale, ORBLCD_DECODE_Y( r->app->modeDescriptor ) * r->app->scale, SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE );
+                r->app->renderer      = SDL_CreateRenderer( r->app->mainWindow, -1, SDL_RENDERER_ACCELERATED );
+                SDL_RenderSetLogicalSize( r->app->renderer, ORBLCD_DECODE_X( r->app->modeDescriptor ), ORBLCD_DECODE_Y( r->app->modeDescriptor ) );
+                r->app->texture       = SDL_CreateTexture( r->app->renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STATIC, ORBLCD_DECODE_X( r->app->modeDescriptor ), ORBLCD_DECODE_Y( r->app->modeDescriptor ) );
+
+                /* Create the memory for drawing the image */
+                r->app->pwidth        = sizeof( uint32_t ) * ORBLCD_DECODE_X( r->app->modeDescriptor );
+                r->app->pixels        = ( uint8_t * )calloc( ORBLCD_DECODE_Y( r->app->modeDescriptor ) * r->app->pwidth, 1 );
             }
             else
             {
                 /* Repaint the SDL window */
-                SDL_UnlockTexture( r->app->texture );
+                SDL_UpdateTexture( r->app->texture, NULL, r->app->pixels, r->app->pwidth );
                 SDL_RenderCopy( r->app->renderer, r->app->texture, NULL, NULL );
                 SDL_RenderPresent( r->app->renderer );
-                SDL_LockTexture( r->app->texture, NULL, ( void ** )&r->app->pixels, &r->app->pwidth );
             }
 
             r->app->x = r->app->y = 0;
             break;
 
         case ORBLCD_CMD_CLEAR: // -------------------------------------------------------------
-            SDL_SetRenderDrawColor( r->app->renderer, 0, 0, 0, 0 );
-            SDL_RenderClear( r->app->renderer );
+            if ( r->app->pixels )
+            {
+                memset( r->app->pixels, 0, ORBLCD_DECODE_X( r->app->modeDescriptor ) * r->app->pwidth );
+            }
+
             break;
 
         case ORBLCD_CMD_GOTOXY: // ------------------------------------------------------------
