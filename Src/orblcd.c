@@ -204,6 +204,7 @@ static void _handleCommand( struct swMsg *m, struct RunTime *r )
                 r->app->mainWindow    = SDL_CreateWindow( r->app->windowTitle,
                                         SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
                                         ORBLCD_DECODE_X( r->app->modeDescriptor ) * r->app->scale, ORBLCD_DECODE_Y( r->app->modeDescriptor ) * r->app->scale, SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE );
+		SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1");
                 r->app->renderer      = SDL_CreateRenderer( r->app->mainWindow, -1, SDL_RENDERER_ACCELERATED );
                 SDL_RenderSetLogicalSize( r->app->renderer, ORBLCD_DECODE_X( r->app->modeDescriptor ), ORBLCD_DECODE_Y( r->app->modeDescriptor ) );
                 r->app->texture       = SDL_CreateTexture( r->app->renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STATIC, ORBLCD_DECODE_X( r->app->modeDescriptor ), ORBLCD_DECODE_Y( r->app->modeDescriptor ) );
