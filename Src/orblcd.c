@@ -371,7 +371,7 @@ static bool _feedStream( struct Stream *stream, struct RunTime *r )
         enum ReceiveResult result = stream->receive( stream, cbw, TRANSFER_SIZE, &t, &receivedSize );
 
         /* Check for SDL close */
-        if ( SDL_PollEvent( &e ) != 0 )
+        while ( SDL_PollEvent( &e ) != 0 )
         {
             if ( e.type == SDL_QUIT )
             {
