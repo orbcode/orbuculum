@@ -227,7 +227,7 @@ static void _handleCommand( struct swMsg *m, struct RunTime *r )
         case ORBLCD_CMD_CLEAR: // -------------------------------------------------------------
             if ( r->app->pixels )
             {
-                memset( r->app->pixels, 0, ORBLCD_DECODE_X( r->app->modeDescriptor ) * r->app->pwidth );
+                memset( r->app->pixels, 0, ORBLCD_DECODE_Y( r->app->modeDescriptor ) * r->app->pwidth );
             }
 
             break;
