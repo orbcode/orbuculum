@@ -36,7 +36,9 @@
 #endif
 
 #ifdef OSX
-    #define MSG_NOSIGNAL 0
+    #ifndef MSG_NOSIGNAL
+        #define MSG_NOSIGNAL 0
+    #endif
 #endif
 
 /* Shared ring buffer for data */
