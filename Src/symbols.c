@@ -19,7 +19,6 @@
 
 #define MAX_LINE_LEN (4096)
 #define ELF_RELOAD_DELAY_TIME 1000000   /* Time before elf reload will be attempted when its been lost */
-#define ELF_CHECK_DELAY_TIME  100000    /* Time that elf file has to be stable before it's considered complete */
 
 #define OBJDUMP "arm-none-eabi-objdump"
 #define OBJENVNAME "OBJDUMP"
@@ -1072,10 +1071,12 @@ enum symbolErr SymbolSetCreate( struct SymbolSet **ss, const char *filename, con
 
         while ( 1 )
         {
+	    usleep( ELF_RELOAD_DELAY_TIME );
             if ( stat( filename, &newstatbuf ) == 0 )
             {
                 /* We check filesize, modification time and status change time for any differences */
                 if (
+                            ( !newstatbuf.st_size ) ||
                             ( memcmp( &statbuf.st_size, &newstatbuf.st_size, sizeof( off_t ) ) ) ||
 #ifdef OSX
                             ( memcmp( &statbuf.st_mtimespec, &newstatbuf.st_mtimespec, sizeof( struct timespec ) ) ) ||
@@ -1091,8 +1092,6 @@ enum symbolErr SymbolSetCreate( struct SymbolSet **ss, const char *filename, con
                 {
                     /* Make this the version we check next time around */
                     memcpy( &statbuf, &newstatbuf, sizeof( struct stat ) );
-
-                    usleep( ELF_RELOAD_DELAY_TIME );
                     continue;
                 }
                 else
