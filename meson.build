@@ -21,6 +21,8 @@ elif host_machine.system() == 'darwin'
 else
     add_global_arguments('-DLINUX', language: 'c')
     add_global_arguments('-D_GNU_SOURCE', language: 'c')
+    install_data('Support/60-orbcode.rules', install_dir : '/etc/udev/rules.d')
+    install_data('Support/gdbtrace.init', install_dir : 'share/orbcode')
 endif
 
 add_global_arguments('-DSCREEN_HANDLING', language: 'c')
