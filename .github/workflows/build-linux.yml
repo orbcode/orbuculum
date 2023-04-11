@@ -16,7 +16,7 @@ jobs:
       - uses: actions/upload-artifact@v3
         with:
           name: orbuculum-linux
-          path: build/install/**/*.*
+          path: build/install/**/*
           if-no-files-found: error
 
 
