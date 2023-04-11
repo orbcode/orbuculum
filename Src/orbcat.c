@@ -459,13 +459,22 @@ bool _processOptions( int argc, char *argv[] )
                     chanIndex++;
                 }
 
+		/* Step over delimiter */
+		chanIndex++;
+
+		/* Scan past any whitespace */
+		while ( ( *chanIndex ) && ( isspace( *chanIndex ) ) )
+		{
+		    chanIndex++;
+		}
+
                 if ( !*chanIndex )
                 {
-                    genericsReport( V_ERROR, "No output format for channel %d" EOL, chan );
+                    genericsReport( V_ERROR, "No output format for channel %d (avoid spaces before the output spec)" EOL, chan );
                     return false;
                 }
 
-                *chanIndex++ = 0;
+                //*chanIndex++ = 0;
                 options.presFormat[chan] = strdup( genericsUnescape( chanIndex ) );
                 break;
 
