@@ -409,7 +409,7 @@ void genericsReport( enum verbLevel l, const char *fmt, ... )
         va_start( va, fmt );
         vsnprintf( op, MAX_STRLEN, fmt, va );
         va_end( va );
-        genericsPrintf( op );
+        genericsPrintf( "%s", op );
         genericsPrintf( C_RESET );
         fflush( stderr );
     }

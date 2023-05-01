@@ -588,10 +588,18 @@ options for orbcat are;
      formatting. Note that the `Name` component is missing in this format because
      orbcat does not create fifos.
 
+ `-C, --cpufreq [Frequency in KHz]`: Set speed of the CPU to convert CPU timestamps into time timestamps. When
+      this option is set `-Ts` and `-Tt` will generate output in milliseconds and thousandths of a millisecond
+      for an effective resolution of 1us, provided your target has been configured to generate timestamps.
+
  `-E, --eof`: When reading from file, terminate when file exhausts, rather than waiting for more data to arrive.
 
  `-f, --input-file [filename]`: Take input from specified file (CTRL-C to abort from this).
 
+ `-g, --trigger [char]:` Character to use to trigger timestamp generation. Default is newline. Target character is
+     removed from the output stream and replaced with a newline followed by a timestamp in the format specified
+     by `-Tx`. Control characters (e.g. newline \\n or tab \\t) can be specified as the trigger.
+    
  `-h, --help`: Brief help.
 
  `-n, --itm-sync`: Enforce sync requirement for ITM (i.e. ITM needsd to issue syncs)
@@ -600,6 +608,11 @@ options for orbcat are;
 
  `-t, --tpiu`: Use TPIU decoder.  This will not sync if TPIU is not configured, so you won't see
      packets in that case.
+
+ `-T, --timestamp [a|r|d|s|t]`: Add absolute, relative (to session start), delta, system timestamp or system timestamp delta to output. Note that
+    system timestamp and system timestamp delta are only available if your target is generating timestamps, otherwise they will read back
+    as zero. A timestamp is generated on reception of the first character following the trigger char (Set with `-gx`). This means that even if the
+    output is lengthy it is timestamped from when it started.
 
  `-v, --verbose [x]`: Verbose mode level 0..3.
 

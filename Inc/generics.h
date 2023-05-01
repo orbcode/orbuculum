@@ -17,7 +17,7 @@
 #if defined LINUX
     #define EOL "\n"
 #else
-    #define EOL "\n\r"
+    #define EOL "\r\n"
 #endif
 #ifdef __cplusplus
 extern "C" {
