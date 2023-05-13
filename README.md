@@ -588,9 +588,11 @@ options for orbcat are;
      formatting. Note that the `Name` component is missing in this format because
      orbcat does not create fifos.
 
- `-C, --cpufreq [Frequency in KHz]`: Set speed of the CPU to convert CPU timestamps into time timestamps. When
+ `-C, --cpufreq [Frequency in KHz]`: Set (scaled) speed of the CPU to convert CPU timestamps into time timestamps. When
       this option is set `-Ts` and `-Tt` will generate output in milliseconds and thousandths of a millisecond
-      for an effective resolution of 1us, provided your target has been configured to generate timestamps.
+      for an effective resolution of 1us, provided your target has been configured to generate timestamps. **Note
+      the frequency you set should be scaled according to the setting in the ITM Control register (/1, /4,
+      /16 or /64).**
 
  `-E, --eof`: When reading from file, terminate when file exhausts, rather than waiting for more data to arrive.
 

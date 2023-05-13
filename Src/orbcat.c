@@ -34,13 +34,15 @@
 #define MSG_REORDER_BUFLEN  (10)          /* Maximum number of samples to re-order for timekeeping */
 
 /* Formats for timestamping */
-#define REL_FORMAT      "%6ld.%03ld|"
-#define REL_FORMAT_INIT "   Initial|"
-#define DEL_FORMAT      "%3ld.%03ld|"
-#define DEL_FORMAT_CTD  "      +|"
-#define DEL_FORMAT_INIT "Initial|"
+#define REL_FORMAT            "%6ld.%03ld|"
+#define REL_FORMAT_INIT       "   Initial|"
+#define DEL_FORMAT            "%3ld.%03ld|"
+#define DEL_FORMAT_CTD           "      +|"
+#define DEL_FORMAT_INIT          "Initial|"
 #define ABS_FORMAT      "%d/%b/%y %H:%M:%S"
-#define STAMP_FORMAT    "%12ld|"
+#define STAMP_FORMAT               "%12ld|"
+#define STAMP_FORMAT_MS       "%8ld.%03ld|"
+#define STAMP_FORMAT_MS_DELTA "%5ld.%03ld|"
 
 enum TSType { TSNone, TSAbsolute, TSRelative, TSDelta, TSStamp, TSStampDelta, TSNumTypes };
 const char *tsTypeString[TSNumTypes] = { "None", "Absolute", "Relative", "Delta", "System Timestamp", "System Timestamp Delta" };
@@ -76,7 +78,7 @@ struct
 {
     /* The decoders and the packets from them */
     struct ITMDecoder i;
-    struct MSGSeq    d;                  /* Message (re-)sequencer */
+    struct MSGSeq    d;
     struct ITMPacket h;
     struct TPIUDecoder t;
     struct TPIUPacket p;
@@ -163,7 +165,7 @@ static void _outputTimestamp( void )
         case TSStamp: // -----------------------------------------------------------------------
             if ( options.cps )
             {
-                fprintf( stdout, "%8ld.%03ld|", _r.timeStamp / options.cps, ( _r.timeStamp % options.cps ) / 1000 );
+                fprintf( stdout, STAMP_FORMAT_MS, _r.timeStamp / options.cps, ( _r.timeStamp % options.cps ) / 1000 );
             }
             else
             {
@@ -184,7 +186,7 @@ static void _outputTimestamp( void )
 
             if ( options.cps )
             {
-                fprintf( stdout, "%5ld.%03ld|", delta / options.cps, ( delta % options.cps ) / 1000 );
+                fprintf( stdout, STAMP_FORMAT_MS_DELTA, delta / options.cps, ( delta % options.cps ) / 1000 );
             }
             else
             {
@@ -236,7 +238,7 @@ static void _outputText( char *p )
     }
 }
 // ====================================================================================================
-void _handleSW( struct swMsg *m, struct ITMDecoder *i )
+static void _handleSW( struct swMsg *m, struct ITMDecoder *i )
 
 {
     assert( m->msgtype == MSG_SOFTWARE );
@@ -276,17 +278,18 @@ void _handleSW( struct swMsg *m, struct ITMDecoder *i )
         }
     }
 
+    /* Whatever we have, it can be sent for output */
     _outputText( opConstruct );
 }
 // ====================================================================================================
-void _handleTS( struct TSMsg *m, struct ITMDecoder *i )
+static void _handleTS( struct TSMsg *m, struct ITMDecoder *i )
 
 {
     assert( m->msgtype == MSG_TS );
     _r.timeStamp += m->timeInc;
 }
 // ====================================================================================================
-void _itmPumpProcess( char c )
+static void _itmPumpProcess( char c )
 
 {
     struct msg *p;
@@ -335,7 +338,7 @@ void _itmPumpProcess( char c )
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
-void _protocolPump( uint8_t c )
+static void _protocolPump( uint8_t c )
 
 {
     if ( options.useTPIU )
@@ -388,25 +391,27 @@ void _protocolPump( uint8_t c )
     }
 }
 // ====================================================================================================
-void _printHelp( const char *const progName )
+static void _printHelp( const char *const progName )
 
 {
     fprintf( stdout, "Usage: %s [options]" EOL, progName );
     fprintf( stdout, "    -c, --channel:      <Number>,<Format> of channel to add into output stream (repeat per channel)" EOL );
-    fprintf( stdout, "    -C, --cpufreq:      <Frequency in KHz> Speed of the CPU" EOL );
-    fprintf( stdout, "    -E, --eof:          Terminate when the file/socket ends/is closed, or attempt to wait for more / reconnect" EOL );
+    fprintf( stdout, "    -C, --cpufreq:      <Frequency in KHz> (Scaled) speed of the CPU" EOL
+                     "                        generally /1, /4, /16 or /64 of the real CPU speed," EOL );
+    fprintf( stdout, "    -E, --eof:          Terminate when the file/socket ends/is closed, or wait for more/reconnect" EOL );
     fprintf( stdout, "    -f, --input-file:   <filename> Take input from specified file" EOL );
     fprintf( stdout, "    -g, --trigger:      <char> to use to trigger timestamp (default is newline)" EOL );
     fprintf( stdout, "    -h, --help:         This help" EOL );
-    fprintf( stdout, "    -n, --itm-sync:     Enforce sync requirement for ITM (i.e. ITM needsd to issue syncs)" EOL );
+    fprintf( stdout, "    -n, --itm-sync:     Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
     fprintf( stdout, "    -s, --server:       <Server>:<Port> to use" EOL );
     fprintf( stdout, "    -t, --tpiu:         <channel>: Use TPIU decoder on specified channel (normally 1)" EOL );
-    fprintf( stdout, "    -T, --timestamp:    <a|r|d|s|t>: Add absolute, relative (to session start), delta, system timestamp or system timestamp delta to output" EOL );
+    fprintf( stdout, "    -T, --timestamp:    <a|r|d|s|t>: Add absolute, relative (to session start)," EOL
+                     "                        delta, system timestamp or system timestamp delta to output" EOL );
     fprintf( stdout, "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
     fprintf( stdout, "    -V, --version:      Print version and exit" EOL );
 }
 // ====================================================================================================
-void _printVersion( void )
+static void _printVersion( void )
 
 {
     genericsPrintf( "orbcat version " GIT_DESCRIBE EOL );
@@ -619,7 +624,7 @@ bool _processOptions( int argc, char *argv[] )
 
     if ( options.cps )
     {
-        genericsReport( V_INFO, "CPU Speed  : %d KHz" EOL, options.cps );
+        genericsReport( V_INFO, "S-CPU Speed: %d KHz" EOL, options.cps );
     }
 
     if ( options.tsType != TSNone )
@@ -665,7 +670,6 @@ bool _processOptions( int argc, char *argv[] )
     return true;
 }
 // ====================================================================================================
-
 static struct Stream *_tryOpenStream()
 {
     if ( options.file != NULL )
