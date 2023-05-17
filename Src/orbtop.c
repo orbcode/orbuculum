@@ -263,7 +263,11 @@ void _exitEx( int64_t ts )
 
     /* Step out of this exception */
     _r.currentException = _r.er[_r.currentException].prev;
-    _r.erDepth--;
+
+    if ( _r.erDepth )
+    {
+        _r.erDepth--;
+    }
 
     /* If we are still in an exception then carry on accounting */
     if ( _r.currentException != NO_EXCEPTION )
@@ -1229,6 +1233,7 @@ int main( int argc, char *argv[] )
     bool alreadyReported = false;
 
     int64_t remainTime;
+    int64_t thisTime;
     struct timeval tv;
     enum ReceiveResult receiveResult = RECEIVE_RESULT_OK;
     size_t receivedSize = 0;
@@ -1318,18 +1323,17 @@ int main( int argc, char *argv[] )
         /* ...just in case we have any readings from a previous incantation */
         _flushHash( );
 
-
         _r.lastReportus = _timestamp();
 
         while ( 1 )
         {
-            remainTime = ( ( _r.lastReportus + options.displayInterval - _timestamp() ) );
+            thisTime = _timestamp();
+            remainTime = ( ( _r.lastReportus + options.displayInterval - thisTime ) ) + 500;
 
             if ( remainTime > 0 )
             {
-                tv.tv_sec = remainTime / 1000000000;
-                tv.tv_usec  = remainTime % 1000000000;
-
+                tv.tv_sec = remainTime / 1000000;
+                tv.tv_usec  = remainTime % 1000000;
                 receiveResult = stream->receive( stream, cbw, TRANSFER_SIZE, &tv, &receivedSize );
             }
             else
@@ -1396,7 +1400,6 @@ int main( int argc, char *argv[] )
             /* See if its time to post-process it */
             if ( receiveResult == RECEIVE_RESULT_TIMEOUT || remainTime <= 0 )
             {
-                int64_t thisTime = _timestamp();
                 /* Create the report that we will output */
                 total = _consolodateReport( &report, &reportLines );
 
@@ -1421,6 +1424,12 @@ int main( int argc, char *argv[] )
 
                 /* It's safe to update these here because the ticks won't be updated until more
                  * records arrive. */
+                if ( _r.ITMoverflows != ITMDecoderGetStats( &_r.i )->overflow )
+                {
+                    /* We had an overflow, so can't safely track max depth ... reset it */
+                    _r.erDepth = 0;
+                }
+
                 _r.ITMoverflows = ITMDecoderGetStats( &_r.i )->overflow;
                 _r.SWPkt = ITMDecoderGetStats( &_r.i )->SWPkt;
                 _r.TSPkt = ITMDecoderGetStats( &_r.i )->TSPkt;
