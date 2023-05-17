@@ -110,7 +110,7 @@ struct                                       /* Record for options, either defau
     .lineDisaggregation = false,
     .maxRoutines = 8,
     .demangle = true,
-    .displayInterval = TOP_UPDATE_INTERVAL*1000,
+    .displayInterval = TOP_UPDATE_INTERVAL * 1000,
     .port = NWCLIENT_SERVER_PORT,
     .server = "localhost"
 };
@@ -136,7 +136,7 @@ struct
     uint32_t erDepth;                                  /* Current depth of exception stack */
     char *depthList;                                   /* Record of maximum depth of exceptions */
 
-    int64_t lastReportuS;                              /* Last time an output report was generated, in microseconds */
+    int64_t lastReportus;                              /* Last time an output report was generated, in microseconds */
     int64_t lastReportTicks;                           /* Last time an output report was generated, in ticks */
     uint32_t ITMoverflows;                             /* Has an ITM overflow been detected? */
     uint32_t SWPkt;                                    /* Number of SW Packets received */
@@ -144,13 +144,9 @@ struct
     uint32_t HWPkt;                                    /* Number of HW Packets received */
 
     FILE *jsonfile;                                    /* File where json output is being dumped */
-    uint32_t sleeps;                                   /* Number of sleeps reported in this sample interval */
-
-    struct sigaction sig_action;                       /* Time interval maintenance */
-    struct sigaction old_action;                       /* Old sigaction for reversal */
-    struct itimerval timeout;                          /* Interval timer timeout */
-    int64_t lastTime;                                  /* Time duration of last interval */
-    volatile bool intervalEnd;                         /* End of the currently accumulated interval */
+    uint32_t interrupts;
+    uint32_t sleeps;
+    uint32_t notFound;
 } _r;
 
 // ====================================================================================================
@@ -454,7 +450,7 @@ static void _outputJson( FILE *f, uint32_t total, uint32_t reportLines, struct r
     jsonElement = cJSON_CreateNumber( total );
     assert( jsonElement );
     cJSON_AddItemToObject( jsonStore, "elements", jsonElement );
-    jsonElement = cJSON_CreateNumber( timeStamp - _r.lastReportuS );
+    jsonElement = cJSON_CreateNumber( timeStamp - _r.lastReportus );
     assert( jsonElement );
     cJSON_AddItemToObject( jsonStore, "interval", jsonElement );
 
@@ -739,10 +735,10 @@ static void _outputTop( uint32_t total, uint32_t reportLines, struct reportLine 
 
     if ( _r.lastReportTicks )
         genericsPrintf( "Interval = " C_DATA "%" PRIu64 "mS " C_RESET "/ "C_DATA "%" PRIu64 C_RESET " (~" C_DATA "%" PRIu64 C_RESET " Ticks/mS)" EOL,
-                        ((lastTime - _r.lastReportuS)+500)/1000, _r.timeStamp - _r.lastReportTicks, (( _r.timeStamp - _r.lastReportTicks )*1000) / ( lastTime - _r.lastReportuS ) );
+                        ( ( lastTime - _r.lastReportus ) + 500 ) / 1000, _r.timeStamp - _r.lastReportTicks, ( ( _r.timeStamp - _r.lastReportTicks ) * 1000 ) / ( lastTime - _r.lastReportus ) );
     else
     {
-      genericsPrintf( C_RESET "Interval = " C_DATA "%" PRIu64 C_RESET "mS" EOL, ((lastTime - _r.lastReportuS)+500)/1000 );
+        genericsPrintf( C_RESET "Interval = " C_DATA "%" PRIu64 C_RESET "mS" EOL, ( ( lastTime - _r.lastReportus ) + 500 ) / 1000 );
     }
 
     genericsReport( V_INFO, "         Ovf=%3d  ITMSync=%3d TPIUSync=%3d ITMErrors=%3d" EOL,
@@ -1040,7 +1036,7 @@ bool _processOptions( int argc, char *argv[] )
 
             // ------------------------------------
             case 'I':
-                options.displayInterval = ( int64_t ) ( atof( optarg ) )*1000;
+                options.displayInterval = ( int64_t ) ( atof( optarg ) ) * 1000;
                 break;
 
             // ------------------------------------
@@ -1185,7 +1181,7 @@ bool _processOptions( int argc, char *argv[] )
     genericsReport( V_INFO, "Elf File         : %s" EOL, options.elffile );
     genericsReport( V_INFO, "ForceSync        : %s" EOL, options.forceITMSync ? "true" : "false" );
     genericsReport( V_INFO, "C++ Demangle     : %s" EOL, options.demangle ? "true" : "false" );
-    genericsReport( V_INFO, "Display Interval : %d mS" EOL, options.displayInterval/1000 );
+    genericsReport( V_INFO, "Display Interval : %d mS" EOL, options.displayInterval / 1000 );
     genericsReport( V_INFO, "Log File         : %s" EOL, options.logfile ? options.logfile : "None" );
     genericsReport( V_INFO, "Objdump options  : %s" EOL, options.odoptions ? options.odoptions : "None" );
 
@@ -1200,14 +1196,6 @@ bool _processOptions( int argc, char *argv[] )
 
     return OK;
 }
-// ====================================================================================================
-static void _handle_tick( int signal )
-
-{
-  _r.intervalEnd = true;
-  _r.lastTime = _timestamp();
-}
-
 // ====================================================================================================
 
 static struct Stream *_openStream()
@@ -1239,8 +1227,9 @@ int main( int argc, char *argv[] )
     uint32_t reportLines = 0;
     struct reportLine *report;
     bool alreadyReported = false;
-    struct timeval timeout = {0};
 
+    int64_t remainTime;
+    struct timeval tv;
     enum ReceiveResult receiveResult = RECEIVE_RESULT_OK;
     size_t receivedSize = 0;
     enum symbolErr r;
@@ -1281,7 +1270,7 @@ int main( int argc, char *argv[] )
     MSGSeqInit( &_r.d, &_r.i, MSG_REORDER_BUFLEN );
 
     /* First interval will be from startup to first packet arriving */
-    _r.lastReportuS = _timestamp();
+    _r.lastReportus = _timestamp();
     _r.currentException = NO_EXCEPTION;
 
     /* Open file for JSON output if we have one */
@@ -1329,43 +1318,38 @@ int main( int argc, char *argv[] )
         /* ...just in case we have any readings from a previous incantation */
         _flushHash( );
 
-	/* Setup timeout action */
-	memset(&_r.sig_action, 0, sizeof(_r.sig_action));
-	_r.sig_action.sa_handler = _handle_tick;
-	_r.sig_action.sa_flags = 0;
-	sigemptyset(&_r.sig_action.sa_mask);
-	sigaction(SIGALRM, &_r.sig_action, &_r.old_action);
 
-	/* ...and set up the timer tick */
-	_r.timeout.it_value.tv_sec = _r.timeout.it_interval.tv_sec = options.displayInterval/1000000;
-	_r.timeout.it_value.tv_usec = _r.timeout.it_interval.tv_usec = options.displayInterval%1000000;
-        _r.lastTime = _timestamp();
-	setitimer(ITIMER_REAL,&_r.timeout,NULL);
+        _r.lastReportus = _timestamp();
 
         while ( 1 )
         {
-	  /* This will break when either data are received or a signal is */
-	  receiveResult = stream->receive( stream, cbw, TRANSFER_SIZE, NULL, &receivedSize );
+            remainTime = ( ( _r.lastReportus + options.displayInterval - _timestamp() ) );
 
-	  if ( receiveResult == RECEIVE_RESULT_ERROR )
+            if ( remainTime > 0 )
             {
-	      /* Something went wrong in the receive..if this wasn't the signal then let's end */
-	      if (! _r.intervalEnd)
-		{
-		  break;
-		}
+                tv.tv_sec = remainTime / 1000000000;
+                tv.tv_usec  = remainTime % 1000000000;
 
-	      /* We are at the end of an interval...just check there's not anything incomplete waiting for us */
-	      receiveResult = stream->receive( stream, cbw, TRANSFER_SIZE, &timeout, &receivedSize );
+                receiveResult = stream->receive( stream, cbw, TRANSFER_SIZE, &tv, &receivedSize );
+            }
+            else
+            {
+                receiveResult = RECEIVE_RESULT_OK;
+                receivedSize = 0;
+            }
+
+            if ( receiveResult == RECEIVE_RESULT_ERROR )
+            {
+                /* Something went wrong in the receive */
+                break;
             }
 
             if ( receiveResult == RECEIVE_RESULT_EOF )
             {
                 /* We are at EOF, hopefully next loop will get more data. */
-                continue;
             }
 
-	    /* Check to make sure our symbols are still appropriate */
+            /* Check to make sure our symbols are still appropriate */
             if ( !SymbolSetValid( &_r.s, options.elffile ) )
             {
                 /* Make sure old references are invalidated */
@@ -1403,28 +1387,27 @@ int main( int argc, char *argv[] )
             /* Pump all of the data through the protocol handler */
             uint8_t *c = cbw;
 
-            while ( receivedSize-- )
+            while ( receivedSize > 0 )
             {
                 _protocolPump( *c++ );
+                receivedSize--;
             }
 
             /* See if its time to post-process it */
-            if ( _r.intervalEnd)
+            if ( receiveResult == RECEIVE_RESULT_TIMEOUT || remainTime <= 0 )
             {
-	      /* Get ready for the next interval */
-	      _r.intervalEnd = false;
-
+                int64_t thisTime = _timestamp();
                 /* Create the report that we will output */
                 total = _consolodateReport( &report, &reportLines );
 
                 if ( options.json )
                 {
-                    _outputJson( _r.jsonfile, total, reportLines, report, _r.lastTime );
+                    _outputJson( _r.jsonfile, total, reportLines, report, thisTime );
                 }
 
                 if ( ( !options.json ) || ( options.json[0] != '-' ) )
                 {
-		  _outputTop( total, reportLines, report, _r.lastTime );
+                    _outputTop( total, reportLines, report, thisTime );
                 }
 
                 /* ... and we are done with the report now, get rid of it */
@@ -1442,7 +1425,7 @@ int main( int argc, char *argv[] )
                 _r.SWPkt = ITMDecoderGetStats( &_r.i )->SWPkt;
                 _r.TSPkt = ITMDecoderGetStats( &_r.i )->TSPkt;
                 _r.HWPkt = ITMDecoderGetStats( &_r.i )->HWPkt;
-                _r.lastReportuS = _r.lastTime;
+                _r.lastReportus =  thisTime;
                 _r.lastReportTicks = _r.timeStamp;
 
                 /* Check to make sure there's not an unexpected TPIU in here */

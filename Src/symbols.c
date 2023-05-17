@@ -1071,7 +1071,8 @@ enum symbolErr SymbolSetCreate( struct SymbolSet **ss, const char *filename, con
 
         while ( 1 )
         {
-	    usleep( ELF_RELOAD_DELAY_TIME );
+            usleep( ELF_RELOAD_DELAY_TIME );
+
             if ( stat( filename, &newstatbuf ) == 0 )
             {
                 /* We check filesize, modification time and status change time for any differences */
