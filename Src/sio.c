@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
+#include <inttypes.h>
 #if defined(WIN32)
     #include <ncurses/ncurses.h>
 #else
@@ -704,15 +705,15 @@ static void _outputStatus( struct SIOInstance *sio, uint64_t oldintervalBytes )
             {
                 if ( oldintervalBytes < 9999 )
                 {
-                    mvwprintw( sio->statusWindow, 1, COLS - 45, "%ld Bps (~%ld Ips)", oldintervalBytes, ( oldintervalBytes * 8 ) / 11 );
+                    mvwprintw( sio->statusWindow, 1, COLS - 45, "%" PRIu64 " Bps (~%" PRIu64 " Ips)", oldintervalBytes, ( oldintervalBytes * 8 ) / 11 );
                 }
                 else if ( oldintervalBytes < 9999999 )
                 {
-                    mvwprintw( sio->statusWindow, 1, COLS - 45, "%ld KBps (~%ld KIps)", oldintervalBytes / 1000, oldintervalBytes * 8 / 1120 );
+                    mvwprintw( sio->statusWindow, 1, COLS - 45, "%" PRIu64 " KBps (~%" PRIu64 " KIps)", oldintervalBytes / 1000, oldintervalBytes * 8 / 1120 );
                 }
                 else
                 {
-                    mvwprintw( sio->statusWindow, 1, COLS - 45, "%ld MBps (~%ld MIps)", oldintervalBytes / 1000000, ( oldintervalBytes * 8 ) / 1120000 );
+                    mvwprintw( sio->statusWindow, 1, COLS - 45, "%" PRIu64 " MBps (~%" PRIu64 " MIps)", oldintervalBytes / 1000000, ( oldintervalBytes * 8 ) / 1120000 );
                 }
             }
 
