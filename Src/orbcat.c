@@ -32,17 +32,18 @@
 #define DEFAULT_TS_TRIGGER '\n'           /* Default trigger character for timestamp output */
 
 #define MSG_REORDER_BUFLEN  (10)          /* Maximum number of samples to re-order for timekeeping */
+#define ONE_SEC_IN_USEC     (1000000)     /* Used for time conversions...usec in one sec */
 
 /* Formats for timestamping */
-#define REL_FORMAT            "%6ld.%03ld|"
+#define REL_FORMAT            "%6ld.%01ld|"
 #define REL_FORMAT_INIT       "   Initial|"
 #define DEL_FORMAT            "%3ld.%03ld|"
 #define DEL_FORMAT_CTD           "      +|"
 #define DEL_FORMAT_INIT          "Initial|"
 #define ABS_FORMAT      "%d/%b/%y %H:%M:%S"
-#define STAMP_FORMAT               "%12ld|"
-#define STAMP_FORMAT_MS       "%8ld.%03ld|"
-#define STAMP_FORMAT_MS_DELTA "%5ld.%03ld|"
+#define STAMP_FORMAT          "%12" PRIu64 "|"
+#define STAMP_FORMAT_MS        "%8" PRIu64 ".%03" PRIu64 "_%03" PRIu64 "|"
+#define STAMP_FORMAT_MS_DELTA  "%5" PRIu64 ".%03" PRIu64 "_%03" PRIu64 "|"
 
 enum TSType { TSNone, TSAbsolute, TSRelative, TSDelta, TSStamp, TSStampDelta, TSNumTypes };
 const char *tsTypeString[TSNumTypes] = { "None", "Absolute", "Relative", "Delta", "System Timestamp", "System Timestamp Delta" };
@@ -54,7 +55,7 @@ struct
     bool useTPIU;
     uint32_t tpiuChannel;
     bool forceITMSync;
-    uint32_t cps;                        /* Cycles per second for target CPU */
+    uint64_t cps;                            /* Cycles per second for target CPU */
 
     enum TSType tsType;
     char *tsLineFormat;
@@ -67,12 +68,17 @@ struct
     int port;
     char *server;
 
-    char *file;                                          /* File host connection */
-    bool endTerminate;                                  /* Terminate when file/socket "ends" */
+    char *file;                              /* File host connection */
+    bool endTerminate;                       /* Terminate when file/socket "ends" */
 
-} options = {.forceITMSync = true, .tpiuChannel = 1, .port = NWCLIENT_SERVER_PORT, .server = "localhost",
-             .tsTrigger = DEFAULT_TS_TRIGGER
-            };
+} options =
+{
+    .forceITMSync = true,
+    .tpiuChannel = 1,
+    .port = NWCLIENT_SERVER_PORT,
+    .server = "localhost",
+    .tsTrigger = DEFAULT_TS_TRIGGER
+};
 
 struct
 {
@@ -85,12 +91,20 @@ struct
     enum timeDelay timeStatus;           /* Indicator of if this time is exact */
     uint64_t timeStamp;                  /* Latest received time */
     uint64_t lastTimeStamp;              /* Last received time */
-    struct timeval te;                   /* Time on host side for line stamping */
+    uint64_t te;                         /* Time on host side for line stamping */
     bool gotte;                          /* Flag that we have the initial time */
     bool inLine;                         /* We are in progress with a line that has been timestamped already */
-    struct timeval oldte;                /* Old time for interval calculation */
+    uint64_t oldte;                      /* Old time for interval calculation */
 } _r;
 
+// ====================================================================================================
+int64_t _timestamp( void )
+
+{
+    struct timeval te;
+    gettimeofday( &te, NULL ); // get current time
+    return te.tv_sec * ONE_SEC_IN_USEC + te.tv_usec;
+}
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
@@ -103,9 +117,9 @@ static void _outputTimestamp( void )
 {
     /* Lets output a timestamp */
     char opConstruct[MAX_STRING_LENGTH];
-    struct timeval res;
-    struct timeval now;
+    uint64_t res;
     struct tm tm;
+    time_t td;
 
     switch ( options.tsType )
     {
@@ -116,43 +130,43 @@ static void _outputTimestamp( void )
             if ( !_r.gotte )
             {
                 /* Get the starting time */
-                gettimeofday( &_r.oldte, NULL );
+                _r.oldte = _timestamp();
                 _r.gotte = true;
                 fprintf( stdout, REL_FORMAT_INIT );
             }
             else
             {
-                gettimeofday( &now, NULL );
-                timersub( &now, &_r.oldte, &res );
-                fprintf( stdout, REL_FORMAT, res.tv_sec, res.tv_usec / 1000 );
+                res = _r.oldte - _timestamp();
+                fprintf( stdout, REL_FORMAT, res / ONE_SEC_IN_USEC, ( res / ( ONE_SEC_IN_USEC / 1000 ) ) % 1000 );
             }
 
             break;
 
         case TSAbsolute: // -------------------------------------------------------------------
-            gettimeofday( &now, NULL );
-            localtime_r( &now.tv_sec, &tm );
+            res = _timestamp();
+            td = ( time_t )res / ONE_SEC_IN_USEC;
+            localtime_r( &td, &tm );
             strftime( opConstruct, MAX_STRING_LENGTH, ABS_FORMAT, &tm );
-            fprintf( stdout, "%s.%03ld|", opConstruct, now.tv_usec / 1000 );
+            fprintf( stdout, "%s.%01ld|", opConstruct, ( res / ( ONE_SEC_IN_USEC / 1000 ) ) % 1000 );
             break;
 
         case TSDelta: // ----------------------------------------------------------------------
             if ( !_r.gotte )
             {
                 /* Get the starting time */
-                gettimeofday( &_r.oldte, NULL );
+                _r.oldte = _timestamp();
                 _r.gotte = true;
                 fprintf( stdout, DEL_FORMAT_INIT );
             }
             else
             {
-                gettimeofday( &now, NULL );
-                timersub( &now, &_r.oldte, &res );
-                memcpy( &_r.oldte, &now, sizeof( struct timeval ) );
+                uint64_t t = _timestamp();
+                res = t - _r.oldte;
+                _r.oldte = t;
 
-                if ( ( res.tv_sec ) || ( res.tv_usec / 1000 ) )
+                if ( res / 1000 )
                 {
-                    fprintf( stdout, DEL_FORMAT, res.tv_sec, res.tv_usec / 1000 );
+                    fprintf( stdout, DEL_FORMAT, res / ONE_SEC_IN_USEC, ( res / 1000 ) % 1000 );
                 }
                 else
                 {
@@ -165,7 +179,8 @@ static void _outputTimestamp( void )
         case TSStamp: // -----------------------------------------------------------------------
             if ( options.cps )
             {
-                fprintf( stdout, STAMP_FORMAT_MS, _r.timeStamp / options.cps, ( _r.timeStamp % options.cps ) / 1000 );
+                uint64_t tms = ( _r.timeStamp * 1000000 ) / options.cps;
+                fprintf( stdout, STAMP_FORMAT_MS, tms / 1000000, ( tms / 1000 ) % 1000, tms % 1000 );
             }
             else
             {
@@ -186,7 +201,8 @@ static void _outputTimestamp( void )
 
             if ( options.cps )
             {
-                fprintf( stdout, STAMP_FORMAT_MS_DELTA, delta / options.cps, ( delta % options.cps ) / 1000 );
+                uint64_t tms = ( delta * 1000000 ) / options.cps;
+                fprintf( stdout, STAMP_FORMAT_MS_DELTA, tms / 1000000, ( tms / 1000 ) % 1000, tms % 1000 );
             }
             else
             {
@@ -397,7 +413,7 @@ static void _printHelp( const char *const progName )
     fprintf( stdout, "Usage: %s [options]" EOL, progName );
     fprintf( stdout, "    -c, --channel:      <Number>,<Format> of channel to add into output stream (repeat per channel)" EOL );
     fprintf( stdout, "    -C, --cpufreq:      <Frequency in KHz> (Scaled) speed of the CPU" EOL
-                     "                        generally /1, /4, /16 or /64 of the real CPU speed," EOL );
+             "                        generally /1, /4, /16 or /64 of the real CPU speed," EOL );
     fprintf( stdout, "    -E, --eof:          Terminate when the file/socket ends/is closed, or wait for more/reconnect" EOL );
     fprintf( stdout, "    -f, --input-file:   <filename> Take input from specified file" EOL );
     fprintf( stdout, "    -g, --trigger:      <char> to use to trigger timestamp (default is newline)" EOL );
@@ -406,7 +422,7 @@ static void _printHelp( const char *const progName )
     fprintf( stdout, "    -s, --server:       <Server>:<Port> to use" EOL );
     fprintf( stdout, "    -t, --tpiu:         <channel>: Use TPIU decoder on specified channel (normally 1)" EOL );
     fprintf( stdout, "    -T, --timestamp:    <a|r|d|s|t>: Add absolute, relative (to session start)," EOL
-                     "                        delta, system timestamp or system timestamp delta to output" EOL );
+             "                        delta, system timestamp or system timestamp delta to output" EOL );
     fprintf( stdout, "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
     fprintf( stdout, "    -V, --version:      Print version and exit" EOL );
 }
@@ -447,7 +463,7 @@ bool _processOptions( int argc, char *argv[] )
         {
             // ------------------------------------
             case 'C':
-                options.cps = atoi( optarg );
+                options.cps = atoi( optarg ) * 1000;
                 break;
 
             // ------------------------------------
@@ -684,12 +700,15 @@ static struct Stream *_tryOpenStream()
 // ====================================================================================================
 static void _feedStream( struct Stream *stream )
 {
+    struct timeval t;
     unsigned char cbw[TRANSFER_SIZE];
 
     while ( true )
     {
         size_t receivedSize;
-        enum ReceiveResult result = stream->receive( stream, cbw, TRANSFER_SIZE, NULL, &receivedSize );
+
+        t.tv_usec = 0;
+        enum ReceiveResult result = stream->receive( stream, cbw, TRANSFER_SIZE, &t, &receivedSize );
 
         if ( result != RECEIVE_RESULT_OK )
         {
