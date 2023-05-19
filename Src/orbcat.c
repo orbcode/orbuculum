@@ -35,12 +35,13 @@
 #define ONE_SEC_IN_USEC     (1000000)     /* Used for time conversions...usec in one sec */
 
 /* Formats for timestamping */
-#define REL_FORMAT            "%6ld.%01ld|"
+#define REL_FORMAT            "%6" PRIu64 ".%01" PRIu64 "|"
 #define REL_FORMAT_INIT       "   Initial|"
-#define DEL_FORMAT            "%3ld.%03ld|"
+#define DEL_FORMAT            "%3" PRIu64 ".%03" PRIu64 "|"
 #define DEL_FORMAT_CTD           "      +|"
 #define DEL_FORMAT_INIT          "Initial|"
-#define ABS_FORMAT      "%d/%b/%y %H:%M:%S"
+#define ABS_FORMAT_TM   "%d/%b/%y %H:%M:%S"
+#define ABS_FORMAT              "%s.%03ld|"
 #define STAMP_FORMAT          "%12" PRIu64 "|"
 #define STAMP_FORMAT_MS        "%8" PRIu64 ".%03" PRIu64 "_%03" PRIu64 "|"
 #define STAMP_FORMAT_MS_DELTA  "%5" PRIu64 ".%03" PRIu64 "_%03" PRIu64 "|"
@@ -146,8 +147,8 @@ static void _outputTimestamp( void )
             res = _timestamp();
             td = ( time_t )res / ONE_SEC_IN_USEC;
             localtime_r( &td, &tm );
-            strftime( opConstruct, MAX_STRING_LENGTH, ABS_FORMAT, &tm );
-            fprintf( stdout, "%s.%01ld|", opConstruct, ( res / ( ONE_SEC_IN_USEC / 1000 ) ) % 1000 );
+            strftime( opConstruct, MAX_STRING_LENGTH, ABS_FORMAT_TM, &tm );
+            fprintf( stdout, ABS_FORMAT, opConstruct, ( res / ( ONE_SEC_IN_USEC / 1000 ) ) % 1000 );
             break;
 
         case TSDelta: // ----------------------------------------------------------------------
@@ -308,7 +309,8 @@ static void _handleTS( struct TSMsg *m, struct ITMDecoder *i )
 static void _itmPumpProcess( char c )
 
 {
-    struct msg *p;
+    struct msg p;
+    struct msg *pp;
 
     typedef void ( *handlers )( void *decoded, struct ITMDecoder * i );
 
@@ -330,20 +332,44 @@ static void _itmPumpProcess( char c )
         /* MSG_TS */              ( handlers )_handleTS
     };
 
-    /* Pump messages into the store until we get a time message, then we can read them out */
-    if ( !MSGSeqPump( &_r.d, c ) )
-    {
-        return;
-    }
+    /* For any mode except the ones where we collect timestamps from the target we need to send */
+    /* the samples out directly to give the host a chance of having accurate timing info. For   */
+    /* target-based timestamps we need to re-sequence the messages so that the timestamps are   */
+    /* issued _before_ the data they apply to.  These are the two cases.                        */
 
-    /* We are synced timewise, so empty anything that has been waiting */
-    while ( ( p = MSGSeqGetPacket( &_r.d ) ) )
+    if ( ( options.tsType != TSStamp ) && ( options.tsType != TSStampDelta ) )
     {
-        assert( p->genericMsg.msgtype < MSG_NUM_MSGS );
-
-        if ( h[p->genericMsg.msgtype] )
+        if ( ITM_EV_PACKET_RXED == ITMPump( &_r.i, c ) )
         {
-            ( h[p->genericMsg.msgtype] )( p, &_r.i );
+            if ( ITMGetDecodedPacket( &_r.i, &p )  )
+            {
+                assert( p.genericMsg.msgtype < MSG_NUM_MSGS );
+
+                if ( h[p.genericMsg.msgtype] )
+                {
+                    ( h[p.genericMsg.msgtype] )( &p, &_r.i );
+                }
+            }
+        }
+    }
+    else
+    {
+
+        /* Pump messages into the store until we get a time message, then we can read them out */
+        if ( !MSGSeqPump( &_r.d, c ) )
+        {
+            return;
+        }
+
+        /* We are synced timewise, so empty anything that has been waiting */
+        while ( ( pp = MSGSeqGetPacket( &_r.d ) ) )
+        {
+            assert( pp->genericMsg.msgtype < MSG_NUM_MSGS );
+
+            if ( h[pp->genericMsg.msgtype] )
+            {
+                ( h[pp->genericMsg.msgtype] )( pp, &_r.i );
+            }
         }
     }
 }
@@ -422,7 +448,8 @@ static void _printHelp( const char *const progName )
     fprintf( stdout, "    -s, --server:       <Server>:<Port> to use" EOL );
     fprintf( stdout, "    -t, --tpiu:         <channel>: Use TPIU decoder on specified channel (normally 1)" EOL );
     fprintf( stdout, "    -T, --timestamp:    <a|r|d|s|t>: Add absolute, relative (to session start)," EOL
-             "                        delta, system timestamp or system timestamp delta to output" EOL );
+             "                        delta, system timestamp or system timestamp delta to output. Note" EOL
+             "                        a,r & d are host dependent and you may need to run orbuculum with -H." EOL );
     fprintf( stdout, "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
     fprintf( stdout, "    -V, --version:      Print version and exit" EOL );
 }
@@ -707,7 +734,8 @@ static void _feedStream( struct Stream *stream )
     {
         size_t receivedSize;
 
-        t.tv_usec = 0;
+        t.tv_sec = 0;
+        t.tv_usec = 10000;
         enum ReceiveResult result = stream->receive( stream, cbw, TRANSFER_SIZE, &t, &receivedSize );
 
         if ( result != RECEIVE_RESULT_OK )
@@ -719,10 +747,6 @@ static void _feedStream( struct Stream *stream )
             else if ( result == RECEIVE_RESULT_ERROR )
             {
                 break;
-            }
-            else
-            {
-                usleep( 100000 );
             }
         }
 

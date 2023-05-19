@@ -82,6 +82,7 @@ struct Options
     uint32_t intervalReportTime;                         /* If we want interval reports about performance */
     bool mono;                                           /* Supress colour in output */
     char *channelList;                                   /* List of TPIU channels to be serviced */
+    bool hiresTime;                                      /* Use hiresolution time (shorter timeouts...more accurate but higher load */
 
     /* Network link */
     int listenPort;                                      /* Listening port for network */
@@ -142,6 +143,7 @@ struct RunTime
 #define NUM_TPIU_CHANNELS 0x80
 
 /* Table of known devices to try opening */
+enum orb_device_list { ORBDEV_ORBTRACE, ORBDEV_BMP, ORBDEV_NUM_DEVS };
 static const struct deviceList
 {
     uint32_t vid;
@@ -150,12 +152,10 @@ static const struct deviceList
     uint8_t iface;
     uint8_t ep;
     char *name;
-} _deviceList[] =
+} _deviceList[ORBDEV_NUM_DEVS] =
 {
-    { 0x1209, 0x3443, true,  0, 0x81, "Orbtrace"         },
-    { 0x1d50, 0x6018, false, 5, 0x85, "Blackmagic Probe" },
-    { 0x2b3e, 0xc610, false, 3, 0x85, "Phywhisperer-UDT" },
-    { 0, 0, 0, 0, 0 }
+  /* ORBDEV_ORBTRACE */ { 0x1209, 0x3443, true,  0, 0x81, "Orbtrace"         },
+  /* ORBDEV_BMP      */ { 0x1d50, 0x6018, false, 5, 0x85, "Blackmagic Probe" },
 };
 
 #define INTERVAL_100US (100U)
@@ -363,6 +363,7 @@ void _printHelp( const char *const progName )
     genericsPrintf( "    -E, --eof:          When reading from file, terminate at end of file" EOL );
     genericsPrintf( "    -f, --input-file:   <filename> Take input from specified file" EOL );
     genericsPrintf( "    -h, --help:         This help" EOL );
+    genericsPrintf( "    -H, --hires:        High resolution time (much higher CPU load though!)" EOL );
     genericsPrintf( "    -l, --listen-port:  <port> Listen port for the incoming connections (defaults to %d)" EOL, NWCLIENT_SERVER_PORT );
     genericsPrintf( "    -m, --monitor:      <interval> Output monitor information about the link at <interval>ms" EOL );
     genericsPrintf( "    -M, --no-colour:    Supress colour in output" EOL );
@@ -388,6 +389,7 @@ static struct option _longOptions[] =
     {"eof", no_argument, NULL, 'E'},
     {"input-file", required_argument, NULL, 'f'},
     {"help", no_argument, NULL, 'h'},
+    {"hires", no_argument, NULL, 'H'},
     {"listen-port", required_argument, NULL, 'l'},
     {"monitor", required_argument, NULL, 'm'},
     {"no-colour", no_argument, NULL, 'M'},
@@ -408,7 +410,7 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
     int c, optionIndex = 0;
 #define DELIMITER ','
 
-    while ( ( c = getopt_long ( argc, argv, "a:Ef:hVl:m:Mno:O:p:s:t:v:", _longOptions, &optionIndex ) ) != -1 )
+    while ( ( c = getopt_long ( argc, argv, "a:Ef:hHVl:m:Mno:O:p:s:t:v:", _longOptions, &optionIndex ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -432,6 +434,11 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
             case 'h':
                 _printHelp( argv[0] );
                 return false;
+
+            // ------------------------------------
+            case 'H':
+                r->options->hiresTime = true;
+                break;
 
             // ------------------------------------
             case 'V':
@@ -583,6 +590,11 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
     if ( r->options->otcl )
     {
         genericsReport( V_INFO, "Orbtrace CL    : %s" EOL, r->options->otcl );
+    }
+
+    if ( r->options->hiresTime )
+    {
+        genericsReport( V_INFO, "High Res Time" EOL );
     }
 
     if ( r->options->file )
@@ -920,19 +932,276 @@ static void _usb_callback( struct libusb_transfer *t )
     }
 }
 // ====================================================================================================
+static bool _find_usb_device( struct RunTime *r, libusb_device_handle** handle, uint8_t* iface, uint8_t *ep)
+
+{
+  const struct deviceList *p = _deviceList;
+  libusb_device *dev;
+  uint8_t altsetting = 0;
+  uint8_t num_altsetting = 0;
+  char commandLine[MAX_LINE_LEN];
+  int32_t err;
+
+  while ( p->vid != 0 )
+    {
+      genericsReport( V_DEBUG, "Looking for %s (%04x:%04x)" EOL, p->name, p->vid, p->pid );
+      
+      if ( ( *handle = libusb_open_device_with_vid_pid( NULL, p->vid, p->pid ) ) )
+	{
+	  break;
+	}
+      p++;
+    }
+
+  if ( r->ending || r->errored || p->vid == 0 )
+    {
+      *handle = NULL;
+      return false;
+    }
+
+  genericsReport( V_INFO, "Found %s" EOL, p->name );
+
+  /* If we have any configuration to do on this device, go ahead */
+  if ( r->options->otcl )
+    {
+      if ( getenv( ORBTRACEENVNAME ) )
+	{
+	  snprintf( commandLine, MAX_LINE_LEN, "%s %s", getenv( ORBTRACEENVNAME ), r->options->otcl );
+	}
+      else
+	{
+	  char *baseDirectory = genericsGetBaseDirectory( );
+
+	  if ( !baseDirectory )
+	    {
+	      genericsExit( -1, "Failed to establish base directory" EOL );
+	    }
+
+	  snprintf( commandLine, MAX_LINE_LEN, "%s" ORBTRACE " %s", baseDirectory, r->options->otcl );
+	  free( baseDirectory );
+	}
+
+      genericsReport( V_INFO, "%s" EOL, commandLine );
+      err = system( commandLine );
+
+      if ( err )
+	{
+	  genericsReport( V_ERROR, "Invoking orbtrace failed" EOL );
+	  return -err;
+	}
+    }
+
+  
+  if ( !( dev = libusb_get_device( *handle ) ) )
+    {
+      return false;
+    }
+
+  *iface = p->iface;
+  *ep = p->ep;
+
+  if ( p->autodiscover )
+    {
+      genericsReport( V_DEBUG, "Searching for trace interface" EOL );
+
+      struct libusb_config_descriptor *config;
+
+      if ( ( err = libusb_get_active_config_descriptor( dev, &config ) ) < 0 )
+	{
+	  genericsReport( V_WARN, "Failed to get config descriptor (%d)" EOL, err );
+	  return false;
+	}
+
+      bool interface_found = false;
+
+      for ( int if_num = 0; if_num < config->bNumInterfaces && !interface_found; if_num++ )
+	{
+	  for ( int alt_num = 0; alt_num < config->interface[if_num].num_altsetting && !interface_found; alt_num++ )
+	    {
+	      const struct libusb_interface_descriptor *i = &config->interface[if_num].altsetting[alt_num];
+	      
+	      if (
+		  i->bInterfaceClass != 0xff ||
+		  i->bInterfaceSubClass != 0x54 ||
+		  ( i->bInterfaceProtocol != 0x00 && i->bInterfaceProtocol != 0x01 ) ||
+		  i->bNumEndpoints != 0x01 )
+		{
+		  continue;
+		}
+
+	      *iface = i->bInterfaceNumber;
+	      altsetting = i->bAlternateSetting;
+	      num_altsetting = config->interface[if_num].num_altsetting;
+	      *ep = i->endpoint[0].bEndpointAddress;
+
+	      genericsReport( V_DEBUG, "Found interface %#x with altsetting %#x and ep %#x" EOL, iface, altsetting, ep );
+
+	      interface_found = true;
+	    }
+	}
+
+      if ( !interface_found )
+	{
+	  genericsReport( V_DEBUG, "No supported interfaces found, falling back to hardcoded values" EOL );
+	}
+
+      libusb_free_config_descriptor( config );
+    }
+
+  if ( ( err = libusb_claim_interface ( *handle, *iface ) ) < 0 )
+    {
+      genericsReport( V_DEBUG, "Failed to claim interface (%d)" EOL, err );
+      return false;
+    }
+
+  if ( num_altsetting > 1 && ( err = libusb_set_interface_alt_setting ( *handle, *iface, altsetting ) ) < 0 )
+    {
+      genericsReport( V_WARN, "Failed to set altsetting (%d)" EOL, err );
+      return false;
+    }
+
+  return true;
+}
+// ====================================================================================================
+static bool _find_bmp( struct RunTime *r, libusb_device_handle** handle, uint8_t* iface, uint8_t *ep)
+
+{
+  const struct deviceList *p = _deviceList;
+  libusb_device *dev;
+  uint8_t altsetting = 0;
+  uint8_t num_altsetting = 0;
+  char commandLine[MAX_LINE_LEN];
+  int32_t err;
+
+  while ( p->vid != 0 )
+    {
+      genericsReport( V_DEBUG, "Looking for %s (%04x:%04x)" EOL, p->name, p->vid, p->pid );
+      
+      if ( ( *handle = libusb_open_device_with_vid_pid( NULL, p->vid, p->pid ) ) )
+	{
+	  break;
+	}
+      p++;
+    }
+
+  if ( r->ending || r->errored || p->vid == 0 )
+    {
+      *handle = NULL;
+      return false;
+    }
+
+  genericsReport( V_INFO, "Found %s" EOL, p->name );
+
+  /* If we have any configuration to do on this device, go ahead */
+  if ( r->options->otcl )
+    {
+      if ( getenv( ORBTRACEENVNAME ) )
+	{
+	  snprintf( commandLine, MAX_LINE_LEN, "%s %s", getenv( ORBTRACEENVNAME ), r->options->otcl );
+	}
+      else
+	{
+	  char *baseDirectory = genericsGetBaseDirectory( );
+
+	  if ( !baseDirectory )
+	    {
+	      genericsExit( -1, "Failed to establish base directory" EOL );
+	    }
+
+	  snprintf( commandLine, MAX_LINE_LEN, "%s" ORBTRACE " %s", baseDirectory, r->options->otcl );
+	  free( baseDirectory );
+	}
+
+      genericsReport( V_INFO, "%s" EOL, commandLine );
+      err = system( commandLine );
+
+      if ( err )
+	{
+	  genericsReport( V_ERROR, "Invoking orbtrace failed" EOL );
+	  return -err;
+	}
+    }
+
+  
+  if ( !( dev = libusb_get_device( *handle ) ) )
+    {
+      return false;
+    }
+
+  *iface = p->iface;
+  *ep = p->ep;
+
+  if ( p->autodiscover )
+    {
+      genericsReport( V_DEBUG, "Searching for trace interface" EOL );
+
+      struct libusb_config_descriptor *config;
+
+      if ( ( err = libusb_get_active_config_descriptor( dev, &config ) ) < 0 )
+	{
+	  genericsReport( V_WARN, "Failed to get config descriptor (%d)" EOL, err );
+	  return false;
+	}
+
+      bool interface_found = false;
+
+      for ( int if_num = 0; if_num < config->bNumInterfaces && !interface_found; if_num++ )
+	{
+	  for ( int alt_num = 0; alt_num < config->interface[if_num].num_altsetting && !interface_found; alt_num++ )
+	    {
+	      const struct libusb_interface_descriptor *i = &config->interface[if_num].altsetting[alt_num];
+	      
+	      if (
+		  i->bInterfaceClass != 0xff ||
+		  i->bInterfaceSubClass != 0x54 ||
+		  ( i->bInterfaceProtocol != 0x00 && i->bInterfaceProtocol != 0x01 ) ||
+		  i->bNumEndpoints != 0x01 )
+		{
+		  continue;
+		}
+
+	      *iface = i->bInterfaceNumber;
+	      altsetting = i->bAlternateSetting;
+	      num_altsetting = config->interface[if_num].num_altsetting;
+	      *ep = i->endpoint[0].bEndpointAddress;
+
+	      genericsReport( V_DEBUG, "Found interface %#x with altsetting %#x and ep %#x" EOL, iface, altsetting, ep );
+
+	      interface_found = true;
+	    }
+	}
+
+      if ( !interface_found )
+	{
+	  genericsReport( V_DEBUG, "No supported interfaces found, falling back to hardcoded values" EOL );
+	}
+
+      libusb_free_config_descriptor( config );
+    }
+
+  if ( ( err = libusb_claim_interface ( *handle, *iface ) ) < 0 )
+    {
+      genericsReport( V_DEBUG, "Failed to claim interface (%d)" EOL, err );
+      return false;
+    }
+
+  if ( num_altsetting > 1 && ( err = libusb_set_interface_alt_setting ( *handle, *iface, altsetting ) ) < 0 )
+    {
+      genericsReport( V_WARN, "Failed to set altsetting (%d)" EOL, err );
+      return false;
+    }
+
+  return true;
+}
+
+// ====================================================================================================
 static int _usbFeeder( struct RunTime *r )
 
 {
     libusb_device_handle *handle = NULL;
-    char commandLine[MAX_LINE_LEN];
-    libusb_device *dev;
-    const struct deviceList *p = NULL;
     uint8_t iface;
     uint8_t ep;
-    uint8_t altsetting = 0;
-    uint8_t num_altsetting = 0;
-    int32_t err;
-
+    
     while ( !r->ending )
     {
         r->errored = false;
@@ -943,138 +1212,12 @@ static int _usbFeeder( struct RunTime *r )
             return ( -1 );
         }
 
-        /* Snooze waiting for the device to appear .... this is useful for when they come and go */
-        while ( !r->ending )
-        {
-            p = _deviceList;
-
-            while ( p->vid != 0 )
-            {
-                genericsReport( V_DEBUG, "Looking for %s (%04x:%04x)" EOL, p->name, p->vid, p->pid );
-
-                if ( ( handle = libusb_open_device_with_vid_pid( NULL, p->vid, p->pid ) ) )
-                {
-                    break;
-                }
-
-                p++;
-            }
-
-            if ( handle )
-            {
-                break;
-            }
-
-            /* Take a pause before looking again */
-            usleep( INTERVAL_100MS );
-        }
-
-        if ( r->ending || r->errored )
-        {
-            break;
-        }
-
-        genericsReport( V_INFO, "Found %s" EOL, p->name );
-
-        /* If we have any configuration to do on this device, go ahead */
-        if ( r->options->otcl )
-        {
-            if ( getenv( ORBTRACEENVNAME ) )
-            {
-                snprintf( commandLine, MAX_LINE_LEN, "%s %s", getenv( ORBTRACEENVNAME ), r->options->otcl );
-            }
-            else
-            {
-                char *baseDirectory = genericsGetBaseDirectory( );
-
-                if ( !baseDirectory )
-                {
-                    genericsExit( -1, "Failed to establish base directory" EOL );
-                }
-
-                snprintf( commandLine, MAX_LINE_LEN, "%s" ORBTRACE " %s", baseDirectory, r->options->otcl );
-                free( baseDirectory );
-            }
-
-            genericsReport( V_INFO, "%s" EOL, commandLine );
-            err = system( commandLine );
-
-            if ( err )
-            {
-                genericsReport( V_ERROR, "Invoking orbtrace failed" EOL );
-                return -err;
-            }
-        }
-
-        if ( !( dev = libusb_get_device( handle ) ) )
-        {
-            /* We didn't get the device, so try again in a while */
-            continue;
-        }
-
-        iface = p->iface;
-        ep = p->ep;
-
-        if ( p->autodiscover )
-        {
-            genericsReport( V_DEBUG, "Searching for trace interface" EOL );
-
-            struct libusb_config_descriptor *config;
-
-            if ( ( err = libusb_get_active_config_descriptor( dev, &config ) ) < 0 )
-            {
-                genericsReport( V_WARN, "Failed to get config descriptor (%d)" EOL, err );
-                continue;
-            }
-
-            bool interface_found = false;
-
-            for ( int if_num = 0; if_num < config->bNumInterfaces && !interface_found; if_num++ )
-            {
-                for ( int alt_num = 0; alt_num < config->interface[if_num].num_altsetting && !interface_found; alt_num++ )
-                {
-                    const struct libusb_interface_descriptor *i = &config->interface[if_num].altsetting[alt_num];
-
-                    if (
-                                i->bInterfaceClass != 0xff ||
-                                i->bInterfaceSubClass != 0x54 ||
-                                ( i->bInterfaceProtocol != 0x00 && i->bInterfaceProtocol != 0x01 ) ||
-                                i->bNumEndpoints != 0x01 )
-                    {
-                        continue;
-                    }
-
-                    iface = i->bInterfaceNumber;
-                    altsetting = i->bAlternateSetting;
-                    num_altsetting = config->interface[if_num].num_altsetting;
-                    ep = i->endpoint[0].bEndpointAddress;
-
-                    genericsReport( V_DEBUG, "Found interface %#x with altsetting %#x and ep %#x" EOL, iface, altsetting, ep );
-
-                    interface_found = true;
-                }
-            }
-
-            if ( !interface_found )
-            {
-                genericsReport( V_DEBUG, "No supported interfaces found, falling back to hardcoded values" EOL );
-            }
-
-            libusb_free_config_descriptor( config );
-        }
-
-        if ( ( err = libusb_claim_interface ( handle, iface ) ) < 0 )
-        {
-            genericsReport( V_DEBUG, "Failed to claim interface (%d)" EOL, err );
-            usleep( INTERVAL_100MS );
-            continue;
-        }
-
-        if ( num_altsetting > 1 && ( err = libusb_set_interface_alt_setting ( handle, iface, altsetting ) ) < 0 )
-        {
-            genericsReport( V_WARN, "Failed to set altsetting (%d)" EOL, err );
-        }
-
+	while (! _find_usb_device( r, &handle, &iface, &ep))
+	  {
+	    printf("Searching..." EOL);
+	    usleep(INTERVAL_100MS);
+	  }
+	
         genericsReport( V_DEBUG, "USB Interface claimed, ready for data" EOL );
 
         for ( uint32_t t = 0; ( ( t < NUM_RAW_BLOCKS ) && !r->errored ); t++ )
@@ -1090,7 +1233,7 @@ static int _usbFeeder( struct RunTime *r )
                                         TRANSFER_SIZE,
                                         _usb_callback,
                                         &r->rawBlock[t].usbtfr,
-                                        0
+                                        r->options->hiresTime ? 1 : 0 /* Use timeout if hires mode */
                                       );
 
             int ret = libusb_submit_transfer( r->rawBlock[t].usbtfr );
@@ -1112,7 +1255,6 @@ static int _usbFeeder( struct RunTime *r )
             if ( ( ret ) && ( ret != LIBUSB_ERROR_INTERRUPTED ) )
             {
                 genericsReport( V_ERROR, "Error waiting for USB requests to complete %d" EOL, ret );
-                _doExit();
             }
         }
 

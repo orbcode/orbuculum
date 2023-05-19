@@ -20,3 +20,6 @@
 #define C_VERB_DEBUG C_LGREEN      /* Verbal level debug */
 #define C_DATA       C_YELLOW      /* Output data value */
 #define C_DEFAULT    C_WHITE
+
+#define C_SEL        C_LCYAN       /* Element selection */
+#define C_ELEMENT    C_YELLOW      /* Data */

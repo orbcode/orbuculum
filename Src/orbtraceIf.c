@@ -38,6 +38,8 @@ static const struct OrbtraceInterfaceType _validDevices[] =
 /* Maximum descriptor length from USB specification */
 #define MAX_USB_DESC_LEN (256)
 
+/* String on front of version number to remove */
+#define VERSION_FRONTMATTER "Version: "
 static const struct
 {
     const char *name;
@@ -71,6 +73,11 @@ static void _flushDeviceList( struct OrbtraceIf *o )
         if ( o->devices[i].product )
         {
             free( o->devices[i].product );
+        }
+
+        if ( o->devices[i].version )
+        {
+            free( o->devices[i].version );
         }
     }
 
@@ -128,7 +135,7 @@ static int _compareFunc( const void *vd1, const void *vd2 )
     return d1->pid - d2->pid;
 }
 // ====================================================================================================
-uint16_t _getInterface( struct OrbtraceIf *o, char intType )
+uint16_t _getInterface( struct OrbtraceIf *o, char intType, int *nameIndex )
 
 {
     struct libusb_config_descriptor *config;
@@ -143,6 +150,13 @@ uint16_t _getInterface( struct OrbtraceIf *o, char intType )
             if ( ( i->bInterfaceClass == 0xff ) && ( i->bInterfaceSubClass == intType ) )
             {
                 iface = i->bInterfaceNumber;
+
+                if ( nameIndex != NULL )
+                {
+                    /* Return the name index of this interface too */
+                    *nameIndex = i->iInterface;
+                }
+
                 libusb_free_config_descriptor( config );
                 break;
             }
@@ -246,9 +260,10 @@ int OrbtraceIfGetDeviceList( struct OrbtraceIf *o, char *sn )
 /* Get list of devices that match (partial) serial number, VID and PID */
 
 {
-    size_t y;
     char tfrString[MAX_USB_DESC_LEN];
     struct OrbtraceIfDevice *d;
+    int versionIndex;
+    size_t y;
 
     assert( o );
 
@@ -286,8 +301,8 @@ int OrbtraceIfGetDeviceList( struct OrbtraceIf *o, char *sn )
 
             if ( !libusb_open( o->list[i], &o->handle ) )
             {
-                d->powerIf = _getInterface( o, 'P' );
-                d->traceIf = _getInterface( o, 'T' );
+                d->powerIf = _getInterface( o, 'P', NULL );
+                d->traceIf = _getInterface( o, 'T', NULL );
 
                 if ( desc.iSerialNumber )
                 {
@@ -312,6 +327,20 @@ int OrbtraceIfGetDeviceList( struct OrbtraceIf *o, char *sn )
                     }
 
                     d->product = strdup( desc.iProduct ? tfrString : "" );
+
+                    /* Collect the probe version from the version interface */
+                    d->versionIf = _getInterface( o, 'V', &versionIndex );
+
+                    if ( versionIndex )
+                    {
+                        libusb_get_string_descriptor_ascii( o->handle, versionIndex, ( unsigned char * )tfrString, MAX_USB_DESC_LEN );
+                        /* If string contains 'Version: ' at the start then remove it */
+                        d->version = strdup( ( strstr( tfrString, VERSION_FRONTMATTER ) ) ? &tfrString[strlen( VERSION_FRONTMATTER )] : "" );
+                    }
+                    else
+                    {
+                        d->version = strdup( "" );
+                    }
 
                     d->devIndex = i;
                 }

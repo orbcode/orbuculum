@@ -51,10 +51,12 @@ struct OrbtraceIfDevice
     char *sn;
     char *manufacturer;
     char *product;
+    char *version;
     int vid;
     int pid;
     int traceIf;
     int powerIf;
+    int versionIf;
     size_t devIndex;
     const struct OrbtraceInterfaceType *type;
 };
@@ -82,6 +84,10 @@ static inline char *OrbtraceIfGetManufacturer( struct OrbtraceIf *o, unsigned in
 static inline char *OrbtraceIfGetProduct( struct OrbtraceIf *o, unsigned int e )
 {
     return ( ( e < o->numDevices ) && ( o->devices[e].product ) ) ? o->devices[e].product : "";
+}
+static inline char *OrbtraceIfGetVersion( struct OrbtraceIf *o, unsigned int e )
+{
+    return ( ( e < o->numDevices ) && ( o->devices[e].version ) ) ? o->devices[e].version : "";
 }
 static inline char *OrbtraceIfGetSN( struct OrbtraceIf *o, unsigned int e )
 {

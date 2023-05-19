@@ -23,6 +23,9 @@
 #define MIN(a,b) (((a)<(b))?(a):(b))
 #define MAX(a,b) (((a)>(b))?(a):(b))
 
+/* Length of a short string for construction purposes */
+#define SCRATCH_STRINGLEN (255)
+
 /* Record for options, either defaults or from command line */
 struct Options
 {
@@ -386,8 +389,11 @@ static int _processOptions( struct RunTime *r, int argc, char *argv[]  )
 
             // ------------------------------------
             case 'V':
+                /* Print the version of this utility, and schedule to get the version of the probes */
                 _printVersion();
-                return false;
+                genericsPrintf( EOL "Attached Probe(s);" EOL);
+                _set_action( r, ACTION_LIST_DEVICES );
+                break;
 
             // ------------------------------------
             case 'w': /* Write parameters to NVRAM */
@@ -441,7 +447,7 @@ static int _processOptions( struct RunTime *r, int argc, char *argv[]  )
         return false;
     }
 
-    if ( _tst_action( r, ACTION_LIST_DEVICES ) && ( _num_actions( r ) > 1 ) )
+    if ( _tst_action( r, ACTION_LIST_DEVICES ) && ( ( _num_actions( r ) > 1 ) ) )
     {
         genericsReport( V_ERROR, "Listing devices is an exclusive operation" EOL );
         return false;
@@ -472,72 +478,43 @@ static void _doExit( void )
 {
     _r.ending = true;
 }
+
 // ====================================================================================================
-static int _selectDevice( struct RunTime *r, bool listOnly )
+
+static void _listDevices( struct RunTime *r )
 
 {
-    int descWidth = 0;
-    int selection = 0;
+    char printConstruct[SCRATCH_STRINGLEN];
 
-    if ( ( !listOnly ) && ( r->ndevices == 1 ) )
-    {
-        return r->ndevices - 1;
-    }
+    /* Get longest line */
+    genericsPrintf( C_RESET " Id |          Description           |      Serial      |           Version" EOL );
+    genericsPrintf( " ---+--------------------------------+------------------+----------------------------" EOL );
 
     for ( int i = 0; i < r->ndevices; i++ )
     {
-        int l = MAX( 11, strlen( OrbtraceIfGetManufacturer( r->dev, i ) ) + strlen( OrbtraceIfGetProduct( r->dev, i ) ) ) + MAX( 6, strlen( OrbtraceIfGetSN( r->dev, i ) ) );
-
-        if ( l > descWidth )
-        {
-            descWidth = l;
-        }
+        snprintf( printConstruct, SCRATCH_STRINGLEN, "%s %s", OrbtraceIfGetManufacturer( r->dev, i ), OrbtraceIfGetProduct( r->dev, i ) ) ;
+        genericsPrintf( C_SEL " %2d " C_RESET "|"C_ELEMENT" %-30s "C_RESET"|"C_ELEMENT" %16s "C_RESET"|"C_ELEMENT" %s" C_RESET EOL,
+			i+1, printConstruct, OrbtraceIfGetSN( r->dev, i ), OrbtraceIfGetVersion( r->dev, i ) );
     }
+}
 
-    descWidth += 1;
+// ====================================================================================================
+static int _selectDevice( struct RunTime *r )
 
-    fprintf( stdout, "Id | " );
+{
+    int selection = r->ndevices;
 
-    for ( int i = 0; i < ( ( descWidth + 1 ) / 2 - 6 ); i++ )
+    if ( r->ndevices > 1 )
     {
-        fprintf( stdout, " " );
-    }
+        _listDevices( r );
 
-    fprintf( stdout, "Description" );
-
-    for ( int i = 0; i < ( descWidth / 2 - 6 ); i++ )
-    {
-        fprintf( stdout, " " );
-    }
-
-    fprintf( stdout, " | Serial" EOL );
-
-    for ( int i = 0; i < ( descWidth + 5 + 10 ); i++ )
-    {
-        fprintf( stdout, "-" );
-    }
-
-    fprintf( stdout, EOL );
-
-    for ( int i = 0; i < r->ndevices; i++ )
-    {
-        int thisWidth = strlen( OrbtraceIfGetManufacturer( r->dev, i ) ) + strlen( OrbtraceIfGetProduct( r->dev, i ) ) + 1;
-        printf( "%2i | %s %s", i + 1, OrbtraceIfGetManufacturer( r->dev, i ), OrbtraceIfGetProduct( r->dev, i ) );
-
-        for ( int j = thisWidth; j < descWidth; j++ )
-        {
-            fprintf( stdout, " " );
-        }
-
-        fprintf( stdout, "| %s" EOL, OrbtraceIfGetSN( r->dev, i ) );
-    }
-
-    if ( !listOnly )
+	selection = 0;
         while ( ( selection < 1 ) || ( selection > r->ndevices ) )
         {
-            fprintf( stdout, EOL "Selection>" );
+            genericsPrintf( EOL C_SEL "Selection>" C_RESET );
             scanf( "%d", &selection );
         }
+    }
 
     return selection - 1;
 }
@@ -759,30 +736,36 @@ int main( int argc, char *argv[] )
     else
     {
         /* Allow option to choose between devices if there's more than one found */
-        int seldevice = _selectDevice( &_r, _tcl_action ( &_r, ACTION_LIST_DEVICES ) );
-
-        if ( _num_actions( &_r ) )
+        if ( _tcl_action ( &_r, ACTION_LIST_DEVICES ) )
         {
-            genericsReport( V_INFO, "Got device [%s %s, S/N %s]" EOL,
-                            OrbtraceIfGetManufacturer( _r.dev, selection ),
-                            OrbtraceIfGetProduct( _r.dev, selection ),
-                            OrbtraceIfGetSN( _r.dev, selection ) );
-
-            if ( !OrbtraceIfOpenDevice( _r.dev, seldevice ) )
-            {
-                genericsExit( -1, "Couldn't open device" EOL );
-            }
-
-            /* Check voltages now we know what interface we're connected to */
-            if ( !_checkVoltages( &_r ) )
-            {
-                genericsExit( -2, "Specified interface voltage check failed" EOL );
-            }
-
-            retVal = _performActions( &_r );
+            _listDevices( &_r );
         }
+        else
+        {
+            selection = _selectDevice( &_r );
+            if ( _num_actions( &_r ) )
+            {
+                genericsReport( V_INFO, "Got device [%s %s, S/N %s]" EOL,
+                                OrbtraceIfGetManufacturer( _r.dev, selection ),
+                                OrbtraceIfGetProduct( _r.dev, selection ),
+                                OrbtraceIfGetSN( _r.dev, selection ) );
 
-        OrbtraceIfCloseDevice( _r.dev );
+                if ( !OrbtraceIfOpenDevice( _r.dev, selection ) )
+                {
+                    genericsExit( -1, "Couldn't open device" EOL );
+                }
+
+                /* Check voltages now we know what interface we're connected to */
+                if ( !_checkVoltages( &_r ) )
+                {
+                    genericsExit( -2, "Specified interface voltage check failed" EOL );
+                }
+
+                retVal = _performActions( &_r );
+            }
+
+            OrbtraceIfCloseDevice( _r.dev );
+        }
     }
 
     return retVal;
