@@ -367,6 +367,8 @@ For `orbuculum`, the specific command line options of note are;
 
  `-m, --monitor`: Monitor interval (in mS) for reporting on state of the link. If baudrate is specified (using `-a`) and is greater than 100bps then the percentage link occupancy is also reported.
 
+ `-n, --serial-number`: Set a specific serial number for the ORBTrace or BMP device to connect to. Any unambigious sequence is sufficient. Ignored for other probe types.
+
   `-o, --output-file [filename]`: Record trace data locally. This is unfettered data directly from the source device, can be useful for replay purposes or other tool testing.
 
   `-O "<options>"`: Run orbtrace on each detected connection of a probe, with the specified options.

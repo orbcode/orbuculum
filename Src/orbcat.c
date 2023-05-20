@@ -41,7 +41,7 @@
 #define DEL_FORMAT_CTD           "      +|"
 #define DEL_FORMAT_INIT          "Initial|"
 #define ABS_FORMAT_TM   "%d/%b/%y %H:%M:%S"
-#define ABS_FORMAT              "%s.%03ld|"
+#define ABS_FORMAT              "%s.%03" PRIu64" |"
 #define STAMP_FORMAT          "%12" PRIu64 "|"
 #define STAMP_FORMAT_MS        "%8" PRIu64 ".%03" PRIu64 "_%03" PRIu64 "|"
 #define STAMP_FORMAT_MS_DELTA  "%5" PRIu64 ".%03" PRIu64 "_%03" PRIu64 "|"

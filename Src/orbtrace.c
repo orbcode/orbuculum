@@ -23,9 +23,6 @@
 #define MIN(a,b) (((a)<(b))?(a):(b))
 #define MAX(a,b) (((a)>(b))?(a):(b))
 
-/* Length of a short string for construction purposes */
-#define SCRATCH_STRINGLEN (255)
-
 /* Record for options, either defaults or from command line */
 struct Options
 {
@@ -391,7 +388,7 @@ static int _processOptions( struct RunTime *r, int argc, char *argv[]  )
             case 'V':
                 /* Print the version of this utility, and schedule to get the version of the probes */
                 _printVersion();
-                genericsPrintf( EOL "Attached Probe(s);" EOL);
+                genericsPrintf( EOL "Attached Probe(s);" EOL );
                 _set_action( r, ACTION_LIST_DEVICES );
                 break;
 
@@ -480,44 +477,6 @@ static void _doExit( void )
 }
 
 // ====================================================================================================
-
-static void _listDevices( struct RunTime *r )
-
-{
-    char printConstruct[SCRATCH_STRINGLEN];
-
-    /* Get longest line */
-    genericsPrintf( C_RESET " Id |          Description           |      Serial      |           Version" EOL );
-    genericsPrintf( " ---+--------------------------------+------------------+----------------------------" EOL );
-
-    for ( int i = 0; i < r->ndevices; i++ )
-    {
-        snprintf( printConstruct, SCRATCH_STRINGLEN, "%s %s", OrbtraceIfGetManufacturer( r->dev, i ), OrbtraceIfGetProduct( r->dev, i ) ) ;
-        genericsPrintf( C_SEL " %2d " C_RESET "|"C_ELEMENT" %-30s "C_RESET"|"C_ELEMENT" %16s "C_RESET"|"C_ELEMENT" %s" C_RESET EOL,
-			i+1, printConstruct, OrbtraceIfGetSN( r->dev, i ), OrbtraceIfGetVersion( r->dev, i ) );
-    }
-}
-
-// ====================================================================================================
-static int _selectDevice( struct RunTime *r )
-
-{
-    int selection = r->ndevices;
-
-    if ( r->ndevices > 1 )
-    {
-        _listDevices( r );
-
-	selection = 0;
-        while ( ( selection < 1 ) || ( selection > r->ndevices ) )
-        {
-            genericsPrintf( EOL C_SEL "Selection>" C_RESET );
-            scanf( "%d", &selection );
-        }
-    }
-
-    return selection - 1;
-}
 
 // ====================================================================================================
 static int _performActions( struct RunTime *r )
@@ -727,7 +686,7 @@ int main( int argc, char *argv[] )
 
     assert( _r.dev );
 
-    _r.ndevices = OrbtraceIfGetDeviceList( _r.dev, _r.options->sn );
+    _r.ndevices = OrbtraceIfGetDeviceList( _r.dev, _r.options->sn, DEVTYPE( DEVICE_ORBTRACE_MINI ) );
 
     if ( !_r.ndevices )
     {
@@ -738,11 +697,12 @@ int main( int argc, char *argv[] )
         /* Allow option to choose between devices if there's more than one found */
         if ( _tcl_action ( &_r, ACTION_LIST_DEVICES ) )
         {
-            _listDevices( &_r );
+            OrbtraceIfListDevices( _r.dev );
         }
         else
         {
-            selection = _selectDevice( &_r );
+            selection = OrbtraceIfSelectDevice( _r.dev );
+
             if ( _num_actions( &_r ) )
             {
                 genericsReport( V_INFO, "Got device [%s %s, S/N %s]" EOL,
