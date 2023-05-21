@@ -457,6 +457,9 @@ int main( int argc, char *argv[] )
         if ( options.fileTerminate )
         {
             _r.ending = true;
+	    itmfifoShutdown( _r.f );
+	    /* Give them a bit of time, then we're leaving anyway */
+	    usleep( 200 );
         }
     }
 
