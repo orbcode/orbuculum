@@ -162,7 +162,14 @@ static void _printHelp( const char *const progName )
     genericsPrintf( "    -h, --help:         This help" EOL );
     genericsPrintf( "    -M, --no-colour:    Supress colour in output" EOL );
     genericsPrintf( "    -O, --objdump-opts: <options> Options to pass directly to objdump" EOL );
-    genericsPrintf( "    -p, --trace-proto:  {ETM35|MTB} trace protocol to use, default is ETM35" EOL );
+    genericsPrintf( "    -p, --trace-proto:  { " );
+
+    for ( int i = TRACE_PROT_LIST_START; i < TRACE_PROT_LIST_END; i++ )
+    {
+        genericsPrintf( "%s ", TRACEDecodeProtocolName( i ) );
+    }
+
+    genericsPrintf( "} trace protocol to use, default is %s" EOL, TRACEDecodeProtocolName( TRACE_PROT_LIST_START ) );
     genericsPrintf( "    -s, --server:       <Server>:<Port> to use" EOL );
     genericsPrintf( "    -t, --tpiu:         <channel>: Use TPIU to strip TPIU on specfied channel" EOL );
     genericsPrintf( "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
@@ -278,7 +285,7 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
 
                 /* Index through protocol strings looking for match or end of list */
                 for ( r->options->protocol = TRACE_PROT_LIST_START;
-                        ( ( r->options->protocol != TRACE_PROT_LIST_END ) && strcasecmp( optarg, TRACEprotocolString[r->options->protocol] ) );
+                        ( ( r->options->protocol != TRACE_PROT_LIST_END ) && strcasecmp( optarg, TRACEDecodeProtocolName( r->options->protocol ) ) );
                         r->options->protocol++ )
                 {}
 
@@ -359,7 +366,7 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
     }
     else
     {
-        genericsReport( V_INFO, "Protocol %s" EOL, TRACEprotocolString[r->options->protocol] );
+        genericsReport( V_INFO, "Protocol %s" EOL, TRACEDecodeProtocolName( r->options->protocol ) );
     }
 
     if ( ( r->options->protocol == TRACE_PROT_MTB ) && ( !r->options->file ) )
@@ -1278,7 +1285,7 @@ int main( int argc, char *argv[] )
     }
 
     /* Put a record of the protocol in use on screen */
-    SIOtagText( _r.sio, TRACEprotocolString[_r.options->protocol] );
+    SIOtagText( _r.sio, TRACEDecodeProtocolName( _r.options->protocol ) );
 
     while ( !_r.ending )
     {

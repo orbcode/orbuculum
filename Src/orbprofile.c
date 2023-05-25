@@ -573,7 +573,7 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
 
                 /* Index through protocol strings looking for match or end of list */
                 for ( r->options->protocol = TRACE_PROT_LIST_START;
-                        ( ( r->options->protocol != TRACE_PROT_LIST_END ) && strcasecmp( optarg, TRACEprotocolString[r->options->protocol] ) );
+                        ( ( r->options->protocol != TRACE_PROT_LIST_END ) && strcasecmp( optarg, TRACEDecodeProtocolName( r->options->protocol ) ) );
                         r->options->protocol++ )
                 {}
 
@@ -671,7 +671,7 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
     genericsReport( V_INFO, "Delete Material : %s" EOL, r->options->deleteMaterial ? r->options->deleteMaterial : "None" );
     genericsReport( V_INFO, "Elf File        : %s (%s Names)" EOL, r->options->elffile, r->options->truncateDeleteMaterial ? "Truncate" : "Don't Truncate" );
     genericsReport( V_INFO, "Objdump options : %s" EOL, r->options->odoptions ? r->options->odoptions : "None" );
-    genericsReport( V_INFO, "Protocol        : %s" EOL, TRACEprotocolString[r->options->protocol] );
+    genericsReport( V_INFO, "Protocol        : %s" EOL, TRACEDecodeProtocolName( r->options->protocol ) );
     genericsReport( V_INFO, "DOT file        : %s" EOL, r->options->dotfile ? r->options->dotfile : "None" );
     genericsReport( V_INFO, "Sample Duration : %d mS" EOL, r->options->sampleDuration );
 
