@@ -70,6 +70,7 @@ executable('orbuculum',
     sources: [
         'Src/orbuculum.c',
         'Src/nwclient.c',
+        'Src/orbtraceIf.c',
         git_version_info_h,
     ],
     include_directories: incdirs,

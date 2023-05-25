@@ -54,6 +54,7 @@
 #include "generics.h"
 #include "tpiuDecoder.h"
 #include "nwclient.h"
+#include "orbtraceIf.h"
 
 /* How many transfer buffers from the source to allocate */
 #define NUM_RAW_BLOCKS (32)
@@ -82,17 +83,10 @@ struct Options
     uint32_t intervalReportTime;                         /* If we want interval reports about performance */
     bool mono;                                           /* Supress colour in output */
     char *channelList;                                   /* List of TPIU channels to be serviced */
-
+    bool hiresTime;                                      /* Use hiresolution time (shorter timeouts...more accurate but higher load */
+    char *sn;                                            /* Any part serial number for identifying a specific device */
     /* Network link */
     int listenPort;                                      /* Listening port for network */
-};
-
-
-struct dataBlock
-{
-    ssize_t fillLevel;                                   /* How full this block is */
-    uint8_t buffer[TRANSFER_SIZE];                       /* Block buffer */
-    struct libusb_transfer *usbtfr;                      /* USB Transfer handle */
 };
 
 struct handlers
@@ -106,11 +100,13 @@ struct handlers
 struct RunTime
 {
     struct TPIUDecoder t;                                /* TPIU decoder instance, in case we need it */
+    struct OrbtraceIf  *o;                               /* For accessing ORBTrace devices + BMPs */
 
     long int  intervalBytes;                             /* Number of bytes transferred in current interval */
 
     pthread_t intervalThread;                            /* Thread reporting on intervals */
     pthread_t processThread;                             /* Thread for processing prior to distributing to clients */
+    pthread_t usbThread;                                 /* Thread for usb thread (this sometimes dies, so needs restarting) */
     pthread_cond_t dataForClients;                       /* Semaphore counting data for clients */
     pthread_mutex_t dataForClients_m;                    /* Mutex for counting data for clients */
     bool      ending;                                    /* Flag indicating app is terminating */
@@ -129,6 +125,7 @@ struct RunTime
     int numHandlers;                                     /* Number of TPIU channel handlers in use */
     struct handlers *handler;
     struct nwclientsHandle *n;                           /* Link to the network client subsystem (used for non-TPIU case) */
+    char *sn;                                            /* Serial number for any device we've established contact with */
 };
 
 #ifdef WIN32
@@ -140,23 +137,6 @@ struct RunTime
 #define NWSERVER_PORT (2332)
 
 #define NUM_TPIU_CHANNELS 0x80
-
-/* Table of known devices to try opening */
-static const struct deviceList
-{
-    uint32_t vid;
-    uint32_t pid;
-    bool autodiscover;
-    uint8_t iface;
-    uint8_t ep;
-    char *name;
-} _deviceList[] =
-{
-    { 0x1209, 0x3443, true,  0, 0x81, "Orbtrace"         },
-    { 0x1d50, 0x6018, false, 5, 0x85, "Blackmagic Probe" },
-    { 0x2b3e, 0xc610, false, 3, 0x85, "Phywhisperer-UDT" },
-    { 0, 0, 0, 0, 0 }
-};
 
 #define INTERVAL_100US (100U)
 #define INTERVAL_1MS   (10*INTERVAL_100US)
@@ -359,20 +339,22 @@ void _printHelp( const char *const progName )
 
 {
     genericsPrintf( "Usage: %s [options]" EOL, progName );
-    genericsPrintf( "    -a, --serial-speed: <serialSpeed> to use" EOL );
-    genericsPrintf( "    -E, --eof:          When reading from file, terminate at end of file" EOL );
-    genericsPrintf( "    -f, --input-file:   <filename> Take input from specified file" EOL );
-    genericsPrintf( "    -h, --help:         This help" EOL );
-    genericsPrintf( "    -l, --listen-port:  <port> Listen port for the incoming connections (defaults to %d)" EOL, NWCLIENT_SERVER_PORT );
-    genericsPrintf( "    -m, --monitor:      <interval> Output monitor information about the link at <interval>ms" EOL );
-    genericsPrintf( "    -M, --no-colour:    Supress colour in output" EOL );
-    genericsPrintf( "    -o, --output-file:  <filename> to be used for dump file" EOL );
-    genericsPrintf( "    -O, --orbtrace:  \"<options>\" run orbtrace with specified options on each new ORBTrace device connect" EOL );
-    genericsPrintf( "    -p, --serial-port:  <serialPort> to use" EOL );
-    genericsPrintf( "    -s, --server:       <Server>:<Port> to use" EOL );
-    genericsPrintf( "    -t, --tpiu:         <Channel , ...> Use TPIU channels (and strip TPIU framing from output flows)" EOL );
-    genericsPrintf( "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
-    genericsPrintf( "    -V, --version:      Print version and exit" EOL );
+    genericsPrintf( "    -a, --serial-speed:  <serialSpeed> to use" EOL );
+    genericsPrintf( "    -E, --eof:           When reading from file, terminate at end of file" EOL );
+    genericsPrintf( "    -f, --input-file:    <filename> Take input from specified file" EOL );
+    genericsPrintf( "    -h, --help:          This help" EOL );
+    genericsPrintf( "    -H, --hires:         High resolution time (much higher CPU load though!)" EOL );
+    genericsPrintf( "    -l, --listen-port:   <port> Listen port for the incoming connections (defaults to %d)" EOL, NWCLIENT_SERVER_PORT );
+    genericsPrintf( "    -m, --monitor:       <interval> Output monitor information about the link at <interval>ms" EOL );
+    genericsPrintf( "    -M, --no-colour:     Supress colour in output" EOL );
+    genericsPrintf( "    -n, --serial-number: <Serial> any part of serial number to differentiate specific OrbTrace device" EOL );
+    genericsPrintf( "    -o, --output-file:   <filename> to be used for dump file" EOL );
+    genericsPrintf( "    -O, --orbtrace:      \"<options>\" run orbtrace with specified options on each new ORBTrace device connect" EOL );
+    genericsPrintf( "    -p, --serial-port:   <serialPort> to use" EOL );
+    genericsPrintf( "    -s, --server:        <Server>:<Port> to use" EOL );
+    genericsPrintf( "    -t, --tpiu:          <Channel , ...> Use TPIU channels (and strip TPIU framing from output flows)" EOL );
+    genericsPrintf( "    -v, --verbose:       <level> Verbose mode 0(errors)..3(debug)" EOL );
+    genericsPrintf( "    -V, --version:       Print version and exit" EOL );
 }
 
 // ====================================================================================================
@@ -388,10 +370,12 @@ static struct option _longOptions[] =
     {"eof", no_argument, NULL, 'E'},
     {"input-file", required_argument, NULL, 'f'},
     {"help", no_argument, NULL, 'h'},
+    {"hires", no_argument, NULL, 'H'},
     {"listen-port", required_argument, NULL, 'l'},
     {"monitor", required_argument, NULL, 'm'},
     {"no-colour", no_argument, NULL, 'M'},
     {"no-color", no_argument, NULL, 'M'},
+    {"serial-number", required_argument, NULL, 'n'},
     {"output-file", required_argument, NULL, 'o'},
     {"orbtrace", required_argument, NULL, 'O'},
     {"serial-port", required_argument, NULL, 'p'},
@@ -408,7 +392,7 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
     int c, optionIndex = 0;
 #define DELIMITER ','
 
-    while ( ( c = getopt_long ( argc, argv, "a:Ef:hVl:m:Mno:O:p:s:t:v:", _longOptions, &optionIndex ) ) != -1 )
+    while ( ( c = getopt_long ( argc, argv, "a:Ef:hHVl:m:Mn:o:O:p:s:t:v:", _longOptions, &optionIndex ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -434,6 +418,11 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
                 return false;
 
             // ------------------------------------
+            case 'H':
+                r->options->hiresTime = true;
+                break;
+
+            // ------------------------------------
             case 'V':
                 _printVersion();
                 return false;
@@ -454,6 +443,12 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
 
             case 'M':
                 r->options->mono = true;
+                break;
+
+            // ------------------------------------
+
+            case 'n':
+                r->options->sn = optarg;
                 break;
 
             // ------------------------------------
@@ -556,6 +551,11 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
         genericsReport( V_INFO, "Serial Speed   : %d baud" EOL, r->options->speed );
     }
 
+    if ( r->options->sn )
+    {
+        genericsReport( V_INFO, "Serial Nummber : %s" EOL, r->options->sn );
+    }
+
     if ( r->options->dataSpeed )
     {
         genericsReport( V_INFO, "Max Data Rt    : %d bps" EOL, r->options->dataSpeed );
@@ -583,6 +583,11 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
     if ( r->options->otcl )
     {
         genericsReport( V_INFO, "Orbtrace CL    : %s" EOL, r->options->otcl );
+    }
+
+    if ( r->options->hiresTime )
+    {
+        genericsReport( V_INFO, "High Res Time" EOL );
     }
 
     if ( r->options->file )
@@ -631,14 +636,11 @@ void *_checkInterval( void *params )
         snapInterval = r->intervalBytes * 1000 / r->options->intervalReportTime;
 
         snapInterval *= 8;
-        genericsPrintf( C_PREV_LN C_CLR_LN C_DATA );
 
-        if ( ! r->conn )
+        if ( r->conn )
         {
-            genericsPrintf( " No active connection" );
-        }
-        else
-        {
+            genericsPrintf( C_PREV_LN C_CLR_LN C_DATA );
+
             if ( snapInterval / 1000000 )
             {
                 genericsPrintf( "%4d.%d " C_RESET "MBits/sec ", snapInterval / 1000000, ( snapInterval * 1 / 100000 ) % 10 );
@@ -678,9 +680,9 @@ void *_checkInterval( void *params )
                 uint32_t fullPercent = ( snapInterval * 100 ) / r->options->dataSpeed;
                 genericsPrintf( "(" C_DATA " %3d%% " C_RESET "full)", ( fullPercent > 100 ) ? 100 : fullPercent );
             }
-        }
 
-        genericsPrintf( C_RESET EOL );
+            genericsPrintf( C_RESET EOL );
+        }
     }
 
     return NULL;
@@ -920,225 +922,122 @@ static void _usb_callback( struct libusb_transfer *t )
     }
 }
 // ====================================================================================================
+
+void _actionOrbtraceCommand( struct RunTime *r, char *sn, enum ORBTraceDevice d )
+
+{
+    char commandLine[MAX_LINE_LEN];
+
+    /* If we have any configuration to do on this device, go ahead */
+    if ( r->options->otcl )
+    {
+        if ( getenv( ORBTRACEENVNAME ) )
+        {
+            snprintf( commandLine, MAX_LINE_LEN, "%s %s %s %s", getenv( ORBTRACEENVNAME ), r->options->otcl, sn ? ( ( d == DEVICE_ORBTRACE_MINI ) ? "-n " : "-s " ) : "", sn ? sn : "" );
+        }
+        else
+        {
+            char *baseDirectory = genericsGetBaseDirectory( );
+
+            if ( !baseDirectory )
+            {
+                genericsExit( -1, "Failed to establish base directory" EOL );
+            }
+
+            snprintf( commandLine, MAX_LINE_LEN, "%s" ORBTRACE " %s %s %s", baseDirectory, r->options->otcl, sn ? ( ( d == DEVICE_ORBTRACE_MINI ) ? "-n " : "-s " ) : "", sn ? sn : "" );
+            free( baseDirectory );
+        }
+
+        genericsReport( V_INFO, "%s" EOL, commandLine );
+
+        if (  system( commandLine ) )
+        {
+            genericsReport( V_ERROR, "Invoking orbtrace failed" EOL );
+        }
+    }
+}
+
+// ====================================================================================================
 static int _usbFeeder( struct RunTime *r )
 
 {
-    libusb_device_handle *handle = NULL;
-    char commandLine[MAX_LINE_LEN];
-    libusb_device *dev;
-    const struct deviceList *p = NULL;
-    uint8_t iface;
-    uint8_t ep;
-    uint8_t altsetting = 0;
-    uint8_t num_altsetting = 0;
-    int32_t err;
+    int workingDev;
+
+    /* Copy any part serial number across */
+    if ( r->options->sn )
+    {
+        r->sn = strdup( r->options->sn );
+    }
 
     while ( !r->ending )
     {
         r->errored = false;
 
-        if ( libusb_init( NULL ) )
+        /* ...just in case we had a context */
+        OrbtraceIfDestroyContext( r->o );
+        r->o = OrbtraceIfCreateContext();
+        assert( r->o );
+
+        while ( 0 == OrbtraceIfGetDeviceList( r->o, r->sn, DEVTYPE_ALL ) )
         {
-            genericsReport( V_ERROR, "Failed to initalise USB interface" EOL );
-            return ( -1 );
+            usleep( INTERVAL_1S );
         }
 
-        /* Snooze waiting for the device to appear .... this is useful for when they come and go */
-        while ( !r->ending )
+        genericsReport( V_INFO, "Found device" EOL );
+        workingDev = OrbtraceIfSelectDevice( r->o );
+
+        if ( !OrbtraceIfOpenDevice( r->o, workingDev ) )
         {
-            p = _deviceList;
-
-            while ( p->vid != 0 )
-            {
-                genericsReport( V_DEBUG, "Looking for %s (%04x:%04x)" EOL, p->name, p->vid, p->pid );
-
-                if ( ( handle = libusb_open_device_with_vid_pid( NULL, p->vid, p->pid ) ) )
-                {
-                    break;
-                }
-
-                p++;
-            }
-
-            if ( handle )
-            {
-                break;
-            }
-
-            /* Take a pause before looking again */
-            usleep( INTERVAL_100MS );
-        }
-
-        if ( r->ending || r->errored )
-        {
+            genericsReport( V_INFO, "Couldn't open device" EOL );
             break;
         }
 
-        genericsReport( V_INFO, "Found %s" EOL, p->name );
-
-        /* If we have any configuration to do on this device, go ahead */
-        if ( r->options->otcl )
+        /* Take a record of what device we're using...we'll use that next time around to re-connect */
+        if ( r->sn )
         {
-            if ( getenv( ORBTRACEENVNAME ) )
-            {
-                snprintf( commandLine, MAX_LINE_LEN, "%s %s", getenv( ORBTRACEENVNAME ), r->options->otcl );
-            }
-            else
-            {
-                char *baseDirectory = genericsGetBaseDirectory( );
-
-                if ( !baseDirectory )
-                {
-                    genericsExit( -1, "Failed to establish base directory" EOL );
-                }
-
-                snprintf( commandLine, MAX_LINE_LEN, "%s" ORBTRACE " %s", baseDirectory, r->options->otcl );
-                free( baseDirectory );
-            }
-
-            genericsReport( V_INFO, "%s" EOL, commandLine );
-            err = system( commandLine );
-
-            if ( err )
-            {
-                genericsReport( V_ERROR, "Invoking orbtrace failed" EOL );
-                return -err;
-            }
+            free( r->sn );
         }
 
-        if ( !( dev = libusb_get_device( handle ) ) )
+        r->sn = strdup( OrbtraceIfGetSN( r->o, workingDev ) );
+
+        /* Before we open, perform any orbtrace configuration that is needed */
+        _actionOrbtraceCommand( r, r->sn, OrbtraceIfGetDevtype( r->o, workingDev ) );
+
+        if ( !OrbtraceGetIfandEP( r->o ) )
         {
-            /* We didn't get the device, so try again in a while */
-            continue;
-        }
-
-        iface = p->iface;
-        ep = p->ep;
-
-        if ( p->autodiscover )
-        {
-            genericsReport( V_DEBUG, "Searching for trace interface" EOL );
-
-            struct libusb_config_descriptor *config;
-
-            if ( ( err = libusb_get_active_config_descriptor( dev, &config ) ) < 0 )
-            {
-                genericsReport( V_WARN, "Failed to get config descriptor (%d)" EOL, err );
-                continue;
-            }
-
-            bool interface_found = false;
-
-            for ( int if_num = 0; if_num < config->bNumInterfaces && !interface_found; if_num++ )
-            {
-                for ( int alt_num = 0; alt_num < config->interface[if_num].num_altsetting && !interface_found; alt_num++ )
-                {
-                    const struct libusb_interface_descriptor *i = &config->interface[if_num].altsetting[alt_num];
-
-                    if (
-                                i->bInterfaceClass != 0xff ||
-                                i->bInterfaceSubClass != 0x54 ||
-                                ( i->bInterfaceProtocol != 0x00 && i->bInterfaceProtocol != 0x01 ) ||
-                                i->bNumEndpoints != 0x01 )
-                    {
-                        continue;
-                    }
-
-                    iface = i->bInterfaceNumber;
-                    altsetting = i->bAlternateSetting;
-                    num_altsetting = config->interface[if_num].num_altsetting;
-                    ep = i->endpoint[0].bEndpointAddress;
-
-                    genericsReport( V_DEBUG, "Found interface %#x with altsetting %#x and ep %#x" EOL, iface, altsetting, ep );
-
-                    interface_found = true;
-                }
-            }
-
-            if ( !interface_found )
-            {
-                genericsReport( V_DEBUG, "No supported interfaces found, falling back to hardcoded values" EOL );
-            }
-
-            libusb_free_config_descriptor( config );
-        }
-
-        if ( ( err = libusb_claim_interface ( handle, iface ) ) < 0 )
-        {
-            genericsReport( V_DEBUG, "Failed to claim interface (%d)" EOL, err );
-            usleep( INTERVAL_100MS );
-            continue;
-        }
-
-        if ( num_altsetting > 1 && ( err = libusb_set_interface_alt_setting ( handle, iface, altsetting ) ) < 0 )
-        {
-            genericsReport( V_WARN, "Failed to set altsetting (%d)" EOL, err );
+            genericsReport( V_INFO, "Couldn't get IF and EP" EOL );
+            break;
         }
 
         genericsReport( V_DEBUG, "USB Interface claimed, ready for data" EOL );
 
-        for ( uint32_t t = 0; ( ( t < NUM_RAW_BLOCKS ) && !r->errored ); t++ )
-        {
-            /* Allocate memory if it's not already provisioned */
-            if ( !r->rawBlock[t].usbtfr )
-            {
-                r->rawBlock[t].usbtfr = libusb_alloc_transfer( 0 );
-            }
+        /* Create the USB transfer blocks .. if we are connected depends on if there was an error submitting the requests */
+        r->errored = !( r->conn = OrbtraceIfSetupTransfers( r->o, r->options->hiresTime, r->rawBlock, NUM_RAW_BLOCKS, _usb_callback ) );
 
-            libusb_fill_bulk_transfer ( r->rawBlock[t].usbtfr, handle, ep,
-                                        r->rawBlock[t].buffer,
-                                        TRANSFER_SIZE,
-                                        _usb_callback,
-                                        &r->rawBlock[t].usbtfr,
-                                        0
-                                      );
-
-            int ret = libusb_submit_transfer( r->rawBlock[t].usbtfr );
-
-            if ( ret )
-            {
-                genericsReport( V_INFO, "Error submitting USB requests %d" EOL, ret );
-                r->errored = true;
-            }
-        }
-
-        /* If we are connected depends on if there was an error submitting the requests */
-        r->conn = !r->errored;
-
+        /* =========================== The main dispatch loop ======================================= */
         while ( ( !r->ending )  && ( !r->errored ) )
         {
-            int ret = libusb_handle_events_completed( NULL, NULL );
+            int ret =   OrbtraceIfHandleEvents( r->o );
 
             if ( ( ret ) && ( ret != LIBUSB_ERROR_INTERRUPTED ) )
             {
                 genericsReport( V_ERROR, "Error waiting for USB requests to complete %d" EOL, ret );
-                _doExit();
             }
         }
+
+        /* ========================================================================================= */
 
         r->conn = false;
 
         /* Remove transfers from list and release the memory */
-        for ( uint32_t t = 0; t < NUM_RAW_BLOCKS; t++ )
-        {
-            if ( r->rawBlock[t].usbtfr )
-            {
-                libusb_cancel_transfer( r->rawBlock[t].usbtfr );
-                libusb_free_transfer( r->rawBlock[t].usbtfr );
-            }
-
-            r->rawBlock[t].usbtfr = NULL;
-        }
+        OrbtraceIfCloseTransfers( r->o );
 
         if ( !r->ending )
         {
             genericsReport( V_INFO, "USB connection lost" EOL );
         }
 
-        //libusb_close( handle );
-        libusb_exit( NULL );
         genericsReport( V_INFO, "USB Interface closed" EOL );
-        usleep( INTERVAL_100MS );
     }
 
     return 0;
@@ -1198,7 +1097,7 @@ static int _nwserverFeeder( struct RunTime *r )
         {
             struct dataBlock *rxBlock = &r->rawBlock[r->wp];
 
-            if ( ( rxBlock->fillLevel = read( r->f, rxBlock->buffer, TRANSFER_SIZE ) ) <= 0 )
+            if ( ( rxBlock->fillLevel = read( r->f, rxBlock->buffer, USB_TRANSFER_SIZE ) ) <= 0 )
             {
                 break;
             }
@@ -1277,9 +1176,9 @@ static int _serialFeeder( struct RunTime *r )
 
             DWORD transferSize = stats.cbInQue;
 
-            if ( transferSize > TRANSFER_SIZE )
+            if ( transferSize > USB_TRANSFER_SIZE )
             {
-                transferSize = TRANSFER_SIZE;
+                transferSize = USB_TRANSFER_SIZE;
             }
 
             DWORD readBytes = 0;
@@ -1362,7 +1261,7 @@ static int _serialFeeder( struct RunTime *r )
         {
             struct dataBlock *rxBlock = &r->rawBlock[r->wp];
 
-            if ( ( rxBlock->fillLevel = read( r->f, rxBlock->buffer, TRANSFER_SIZE ) ) <= 0 )
+            if ( ( rxBlock->fillLevel = read( r->f, rxBlock->buffer, USB_TRANSFER_SIZE ) ) <= 0 )
             {
                 break;
             }
@@ -1399,7 +1298,7 @@ static int _fileFeeder( struct RunTime *r )
     while ( !r->ending )
     {
         struct dataBlock *rxBlock = &r->rawBlock[r->wp];
-        rxBlock->fillLevel = read( r->f, rxBlock->buffer, TRANSFER_SIZE );
+        rxBlock->fillLevel = read( r->f, rxBlock->buffer, USB_TRANSFER_SIZE );
 
         if ( !rxBlock->fillLevel )
         {
@@ -1422,7 +1321,7 @@ static int _fileFeeder( struct RunTime *r )
         /* Spin waiting for buffer space to become available */
         while ( nwp == r->rp )
         {
-            usleep( INTERVAL_100US );
+            usleep( INTERVAL_100MS );
         }
 
         r->wp = nwp;

@@ -9,6 +9,8 @@
 #include <fcntl.h>
 #include <ctype.h>
 #include <sys/types.h>
+#include <sys/time.h>
+#include <signal.h>
 #include <sys/stat.h>
 #include <stdio.h>
 #include <assert.h>
@@ -108,7 +110,7 @@ struct                                       /* Record for options, either defau
     .lineDisaggregation = false,
     .maxRoutines = 8,
     .demangle = true,
-    .displayInterval = TOP_UPDATE_INTERVAL,
+    .displayInterval = TOP_UPDATE_INTERVAL * 1000,
     .port = NWCLIENT_SERVER_PORT,
     .server = "localhost"
 };
@@ -134,7 +136,7 @@ struct
     uint32_t erDepth;                                  /* Current depth of exception stack */
     char *depthList;                                   /* Record of maximum depth of exceptions */
 
-    int64_t lastReportmS;                              /* Last time an output report was generated, in milliseconds */
+    int64_t lastReportus;                              /* Last time an output report was generated, in microseconds */
     int64_t lastReportTicks;                           /* Last time an output report was generated, in ticks */
     uint32_t ITMoverflows;                             /* Has an ITM overflow been detected? */
     uint32_t SWPkt;                                    /* Number of SW Packets received */
@@ -159,8 +161,8 @@ int64_t _timestamp( void )
 {
     struct timeval te;
     gettimeofday( &te, NULL ); // get current time
-    int64_t milliseconds = te.tv_sec * 1000LL + ( te.tv_usec + 500 ) / 1000; // caculate milliseconds
-    return milliseconds;
+    int64_t microseconds = te.tv_sec * 1000000LL + ( te.tv_usec ); // accumulate microseconds
+    return microseconds;
 }
 // ====================================================================================================
 int _addresses_sort_fn( void *a, void *b )
@@ -261,7 +263,11 @@ void _exitEx( int64_t ts )
 
     /* Step out of this exception */
     _r.currentException = _r.er[_r.currentException].prev;
-    _r.erDepth--;
+
+    if ( _r.erDepth )
+    {
+        _r.erDepth--;
+    }
 
     /* If we are still in an exception then carry on accounting */
     if ( _r.currentException != NO_EXCEPTION )
@@ -448,7 +454,7 @@ static void _outputJson( FILE *f, uint32_t total, uint32_t reportLines, struct r
     jsonElement = cJSON_CreateNumber( total );
     assert( jsonElement );
     cJSON_AddItemToObject( jsonStore, "elements", jsonElement );
-    jsonElement = cJSON_CreateNumber( timeStamp - _r.lastReportmS );
+    jsonElement = cJSON_CreateNumber( timeStamp - _r.lastReportus );
     assert( jsonElement );
     cJSON_AddItemToObject( jsonStore, "interval", jsonElement );
 
@@ -731,12 +737,12 @@ static void _outputTop( uint32_t total, uint32_t reportLines, struct reportLine 
                     ( _r.TSPkt != ITMDecoderGetStats( &_r.i )->TSPkt ) ? C_TSTAMP_IND "T" : C_RESET "-",
                     ( _r.HWPkt != ITMDecoderGetStats( &_r.i )->HWPkt ) ? C_HW_IND "H" : C_RESET "-" );
 
-    if ( _r.lastReportTicks )
+    if ( ( _r.lastReportTicks ) && ( lastTime != _r.lastReportus ) )
         genericsPrintf( "Interval = " C_DATA "%" PRIu64 "mS " C_RESET "/ "C_DATA "%" PRIu64 C_RESET " (~" C_DATA "%" PRIu64 C_RESET " Ticks/mS)" EOL,
-                        lastTime - _r.lastReportmS, _r.timeStamp - _r.lastReportTicks, ( _r.timeStamp - _r.lastReportTicks ) / ( lastTime - _r.lastReportmS ) );
+                        ( ( lastTime - _r.lastReportus ) + 500 ) / 1000, _r.timeStamp - _r.lastReportTicks, ( ( _r.timeStamp - _r.lastReportTicks ) * 1000 ) / ( lastTime - _r.lastReportus ) );
     else
     {
-        genericsPrintf( C_RESET "Interval = " C_DATA "%" PRIu64 C_RESET "mS" EOL, lastTime - _r.lastReportmS );
+        genericsPrintf( C_RESET "Interval = " C_DATA "%" PRIu64 C_RESET "mS" EOL, ( ( lastTime - _r.lastReportus ) + 500 ) / 1000 );
     }
 
     genericsReport( V_INFO, "         Ovf=%3d  ITMSync=%3d TPIUSync=%3d ITMErrors=%3d" EOL,
@@ -939,7 +945,7 @@ void _printHelp( const char *const progName )
     genericsPrintf( "    -f, --input-file:   <filename> Take input from specified file" EOL );
     genericsPrintf( "    -g, --record-file:  <LogFile> append historic records to specified file" EOL );
     genericsPrintf( "    -h, --help:         This help" EOL );
-    genericsPrintf( "    -I, --interval:     <interval> Display interval in milliseconds (defaults to %d ms)" EOL, TOP_UPDATE_INTERVAL );
+    genericsPrintf( "    -I, --interval:     <interval> Display interval in milliseconds (defaults to %dms)" EOL, TOP_UPDATE_INTERVAL );
     genericsPrintf( "    -j, --json-file:    <filename> Output to file in JSON format (or screen if <filename> is '-')" EOL );
     genericsPrintf( "    -l, --agg-lines:    Aggregate per line rather than per function" EOL );
     genericsPrintf( "    -M, --no-colour:    Supress colour in output" EOL );
@@ -1034,7 +1040,7 @@ bool _processOptions( int argc, char *argv[] )
 
             // ------------------------------------
             case 'I':
-                options.displayInterval = ( int64_t ) ( atof( optarg ) );
+                options.displayInterval = ( int64_t ) ( atof( optarg ) ) * 1000;
                 break;
 
             // ------------------------------------
@@ -1179,7 +1185,7 @@ bool _processOptions( int argc, char *argv[] )
     genericsReport( V_INFO, "Elf File         : %s" EOL, options.elffile );
     genericsReport( V_INFO, "ForceSync        : %s" EOL, options.forceITMSync ? "true" : "false" );
     genericsReport( V_INFO, "C++ Demangle     : %s" EOL, options.demangle ? "true" : "false" );
-    genericsReport( V_INFO, "Display Interval : %d mS" EOL, options.displayInterval );
+    genericsReport( V_INFO, "Display Interval : %d mS" EOL, options.displayInterval / 1000 );
     genericsReport( V_INFO, "Log File         : %s" EOL, options.logfile ? options.logfile : "None" );
     genericsReport( V_INFO, "Objdump options  : %s" EOL, options.odoptions ? options.odoptions : "None" );
 
@@ -1219,7 +1225,6 @@ int main( int argc, char *argv[] )
 
 {
     uint8_t cbw[TRANSFER_SIZE];
-    int64_t lastTime;
 
     /* Output variables for interval report */
     uint32_t total;
@@ -1228,13 +1233,11 @@ int main( int argc, char *argv[] )
     bool alreadyReported = false;
 
     int64_t remainTime;
+    int64_t thisTime;
     struct timeval tv;
     enum ReceiveResult receiveResult = RECEIVE_RESULT_OK;
     size_t receivedSize = 0;
     enum symbolErr r;
-
-    /* Fill in a time to start from */
-    lastTime = _timestamp();
 
     if ( OK != _processOptions( argc, argv ) )
     {
@@ -1272,7 +1275,7 @@ int main( int argc, char *argv[] )
     MSGSeqInit( &_r.d, &_r.i, MSG_REORDER_BUFLEN );
 
     /* First interval will be from startup to first packet arriving */
-    _r.lastReportmS = _timestamp();
+    _r.lastReportus = _timestamp();
     _r.currentException = NO_EXCEPTION;
 
     /* Open file for JSON output if we have one */
@@ -1320,17 +1323,17 @@ int main( int argc, char *argv[] )
         /* ...just in case we have any readings from a previous incantation */
         _flushHash( );
 
-        lastTime = _timestamp();
+        _r.lastReportus = _timestamp();
 
         while ( 1 )
         {
-            remainTime = ( ( lastTime + options.displayInterval - _timestamp() ) * 1000 ) - 500;
+            thisTime = _timestamp();
+            remainTime = ( ( _r.lastReportus + options.displayInterval - thisTime ) ) + 500;
 
             if ( remainTime > 0 )
             {
                 tv.tv_sec = remainTime / 1000000;
                 tv.tv_usec  = remainTime % 1000000;
-
                 receiveResult = stream->receive( stream, cbw, TRANSFER_SIZE, &tv, &receivedSize );
             }
             else
@@ -1350,6 +1353,7 @@ int main( int argc, char *argv[] )
                 /* We are at EOF, hopefully next loop will get more data. */
             }
 
+            /* Check to make sure our symbols are still appropriate */
             if ( !SymbolSetValid( &_r.s, options.elffile ) )
             {
                 /* Make sure old references are invalidated */
@@ -1387,9 +1391,10 @@ int main( int argc, char *argv[] )
             /* Pump all of the data through the protocol handler */
             uint8_t *c = cbw;
 
-            while ( receivedSize-- )
+            while ( receivedSize > 0 )
             {
                 _protocolPump( *c++ );
+                receivedSize--;
             }
 
             /* See if its time to post-process it */
@@ -1398,16 +1403,14 @@ int main( int argc, char *argv[] )
                 /* Create the report that we will output */
                 total = _consolodateReport( &report, &reportLines );
 
-                lastTime = _timestamp();
-
                 if ( options.json )
                 {
-                    _outputJson( _r.jsonfile, total, reportLines, report, lastTime );
+                    _outputJson( _r.jsonfile, total, reportLines, report, thisTime );
                 }
 
                 if ( ( !options.json ) || ( options.json[0] != '-' ) )
                 {
-                    _outputTop( total, reportLines, report, lastTime );
+                    _outputTop( total, reportLines, report, thisTime );
                 }
 
                 /* ... and we are done with the report now, get rid of it */
@@ -1421,11 +1424,17 @@ int main( int argc, char *argv[] )
 
                 /* It's safe to update these here because the ticks won't be updated until more
                  * records arrive. */
+                if ( _r.ITMoverflows != ITMDecoderGetStats( &_r.i )->overflow )
+                {
+                    /* We had an overflow, so can't safely track max depth ... reset it */
+                    _r.erDepth = 0;
+                }
+
                 _r.ITMoverflows = ITMDecoderGetStats( &_r.i )->overflow;
                 _r.SWPkt = ITMDecoderGetStats( &_r.i )->SWPkt;
                 _r.TSPkt = ITMDecoderGetStats( &_r.i )->TSPkt;
                 _r.HWPkt = ITMDecoderGetStats( &_r.i )->HWPkt;
-                _r.lastReportmS = lastTime;
+                _r.lastReportus =  thisTime;
                 _r.lastReportTicks = _r.timeStamp;
 
                 /* Check to make sure there's not an unexpected TPIU in here */

@@ -456,7 +456,7 @@ int main( int argc, char *argv[] )
 
         if ( options.fileTerminate )
         {
-            _r.ending = true;
+            break;
         }
     }
 

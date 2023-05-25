@@ -14,6 +14,7 @@
 #include <assert.h>
 #include <inttypes.h>
 #include <getopt.h>
+#include <time.h>
 
 #include "nw.h"
 #include "git_version_info.h"
@@ -21,11 +22,32 @@
 #include "tpiuDecoder.h"
 #include "itmDecoder.h"
 #include "msgDecoder.h"
+#include "msgSeq.h"
 #include "stream.h"
+
 #define NUM_CHANNELS  32
 #define HW_CHANNEL    (NUM_CHANNELS)      /* Make the hardware fifo on the end of the software ones */
 
 #define MAX_STRING_LENGTH (100)           /* Maximum length that will be output from a fifo for a single event */
+#define DEFAULT_TS_TRIGGER '\n'           /* Default trigger character for timestamp output */
+
+#define MSG_REORDER_BUFLEN  (10)          /* Maximum number of samples to re-order for timekeeping */
+#define ONE_SEC_IN_USEC     (1000000)     /* Used for time conversions...usec in one sec */
+
+/* Formats for timestamping */
+#define REL_FORMAT            "%6" PRIu64 ".%01" PRIu64 "|"
+#define REL_FORMAT_INIT       "   Initial|"
+#define DEL_FORMAT            "%3" PRIu64 ".%03" PRIu64 "|"
+#define DEL_FORMAT_CTD           "      +|"
+#define DEL_FORMAT_INIT          "Initial|"
+#define ABS_FORMAT_TM   "%d/%b/%y %H:%M:%S"
+#define ABS_FORMAT              "%s.%03" PRIu64" |"
+#define STAMP_FORMAT          "%12" PRIu64 "|"
+#define STAMP_FORMAT_MS        "%8" PRIu64 ".%03" PRIu64 "_%03" PRIu64 "|"
+#define STAMP_FORMAT_MS_DELTA  "%5" PRIu64 ".%03" PRIu64 "_%03" PRIu64 "|"
+
+enum TSType { TSNone, TSAbsolute, TSRelative, TSDelta, TSStamp, TSStampDelta, TSNumTypes };
+const char *tsTypeString[TSNumTypes] = { "None", "Absolute", "Relative", "Delta", "System Timestamp", "System Timestamp Delta" };
 
 // Record for options, either defaults or from command line
 struct
@@ -34,7 +56,11 @@ struct
     bool useTPIU;
     uint32_t tpiuChannel;
     bool forceITMSync;
-    uint32_t hwOutputs;
+    uint64_t cps;                            /* Cycles per second for target CPU */
+
+    enum TSType tsType;
+    char *tsLineFormat;
+    char tsTrigger;
 
     /* Sink information */
     char *presFormat[NUM_CHANNELS + 1];
@@ -43,21 +69,43 @@ struct
     int port;
     char *server;
 
-    char *file;                                          /* File host connection */
-    bool endTerminate;                                  /* Terminate when file/socket "ends" */
+    char *file;                              /* File host connection */
+    bool endTerminate;                       /* Terminate when file/socket "ends" */
 
-} options = {.forceITMSync = true, .tpiuChannel = 1, .port = NWCLIENT_SERVER_PORT, .server = "localhost"};
+} options =
+{
+    .forceITMSync = true,
+    .tpiuChannel = 1,
+    .port = NWCLIENT_SERVER_PORT,
+    .server = "localhost",
+    .tsTrigger = DEFAULT_TS_TRIGGER
+};
 
 struct
 {
     /* The decoders and the packets from them */
     struct ITMDecoder i;
+    struct MSGSeq    d;
     struct ITMPacket h;
     struct TPIUDecoder t;
     struct TPIUPacket p;
     enum timeDelay timeStatus;           /* Indicator of if this time is exact */
     uint64_t timeStamp;                  /* Latest received time */
+    uint64_t lastTimeStamp;              /* Last received time */
+    uint64_t te;                         /* Time on host side for line stamping */
+    bool gotte;                          /* Flag that we have the initial time */
+    bool inLine;                         /* We are in progress with a line that has been timestamped already */
+    uint64_t oldte;                      /* Old time for interval calculation */
 } _r;
+
+// ====================================================================================================
+int64_t _timestamp( void )
+
+{
+    struct timeval te;
+    gettimeofday( &te, NULL ); // get current time
+    return te.tv_sec * ONE_SEC_IN_USEC + te.tv_usec;
+}
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
@@ -65,102 +113,160 @@ struct
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
-void _handleException( struct excMsg *m, struct ITMDecoder *i )
+static void _outputTimestamp( void )
 
 {
-    assert( m->msgtype == MSG_EXCEPTION );
+    /* Lets output a timestamp */
+    char opConstruct[MAX_STRING_LENGTH];
+    uint64_t res;
+    struct tm tm;
+    time_t td;
 
-    if ( !( options.hwOutputs & ( 1 << HWEVENT_EXCEPTION ) ) )
+    switch ( options.tsType )
     {
-        return;
-    }
+        case TSNone: // -----------------------------------------------------------------------
+            break;
 
-    const char *exNames[] = {"Thread", "Reset", "NMI", "HardFault", "MemManage", "BusFault", "UsageFault", "UNKNOWN_7",
-                             "UNKNOWN_8", "UNKNOWN_9", "UNKNOWN_10", "SVCall", "Debug Monitor", "UNKNOWN_13", "PendSV", "SysTick"
-                            };
-    const char *exEvent[] = {"Enter", "Exit", "Resume"};
-    fprintf( stdout, "%d,%s,%s" EOL, HWEVENT_EXCEPTION, exEvent[m->eventType], exNames[m->exceptionNumber] );
+        case TSRelative: // -------------------------------------------------------------------
+            if ( !_r.gotte )
+            {
+                /* Get the starting time */
+                _r.oldte = _timestamp();
+                _r.gotte = true;
+                fprintf( stdout, REL_FORMAT_INIT );
+            }
+            else
+            {
+                res = _r.oldte - _timestamp();
+                fprintf( stdout, REL_FORMAT, res / ONE_SEC_IN_USEC, ( res / ( ONE_SEC_IN_USEC / 1000 ) ) % 1000 );
+            }
+
+            break;
+
+        case TSAbsolute: // -------------------------------------------------------------------
+            res = _timestamp();
+            td = ( time_t )res / ONE_SEC_IN_USEC;
+            localtime_r( &td, &tm );
+            strftime( opConstruct, MAX_STRING_LENGTH, ABS_FORMAT_TM, &tm );
+            fprintf( stdout, ABS_FORMAT, opConstruct, ( res / ( ONE_SEC_IN_USEC / 1000 ) ) % 1000 );
+            break;
+
+        case TSDelta: // ----------------------------------------------------------------------
+            if ( !_r.gotte )
+            {
+                /* Get the starting time */
+                _r.oldte = _timestamp();
+                _r.gotte = true;
+                fprintf( stdout, DEL_FORMAT_INIT );
+            }
+            else
+            {
+                uint64_t t = _timestamp();
+                res = t - _r.oldte;
+                _r.oldte = t;
+
+                if ( res / 1000 )
+                {
+                    fprintf( stdout, DEL_FORMAT, res / ONE_SEC_IN_USEC, ( res / 1000 ) % 1000 );
+                }
+                else
+                {
+                    fprintf( stdout, DEL_FORMAT_CTD );
+                }
+            }
+
+            break;
+
+        case TSStamp: // -----------------------------------------------------------------------
+            if ( options.cps )
+            {
+                uint64_t tms = ( _r.timeStamp * 1000000 ) / options.cps;
+                fprintf( stdout, STAMP_FORMAT_MS, tms / 1000000, ( tms / 1000 ) % 1000, tms % 1000 );
+            }
+            else
+            {
+                fprintf( stdout, STAMP_FORMAT, _r.timeStamp );
+            }
+
+            break;
+
+        case TSStampDelta: // ------------------------------------------------------------------
+            if ( !_r.gotte )
+            {
+                _r.lastTimeStamp = _r.timeStamp;
+                _r.gotte = true;
+            }
+
+            uint64_t delta = _r.timeStamp - _r.lastTimeStamp;
+            _r.lastTimeStamp = _r.timeStamp;
+
+            if ( options.cps )
+            {
+                uint64_t tms = ( delta * 1000000 ) / options.cps;
+                fprintf( stdout, STAMP_FORMAT_MS_DELTA, tms / 1000000, ( tms / 1000 ) % 1000, tms % 1000 );
+            }
+            else
+            {
+                fprintf( stdout, STAMP_FORMAT, delta );
+            }
+
+            break;
+
+        default: // ----------------------------------------------------------------------------
+            assert( false );
+    }
 }
 // ====================================================================================================
-void _handleDWTEvent( struct dwtMsg *m, struct ITMDecoder *i )
+static void _outputText( char *p )
 
 {
-    assert( m->msgtype == MSG_DWT_EVENT );
+    /* Process the buffer and make sure it gets timestamped correctly as it's output */
 
-    if ( !( options.hwOutputs & ( 1 << HWEVENT_DWT ) ) )
+    char *q;
+
+    while ( *p )
     {
-        return;
-    }
-
-    const char *evName[] = {"CPI", "Exc", "Sleep", "LSU", "Fold", "Cyc"};
-
-    for ( uint32_t i = 0; i < 6; i++ )
-    {
-        if ( m->event & ( 1 << i ) )
+        /* If this is the first character in a new line, then we need to generate a timestamp */
+        if ( !_r.inLine )
         {
-            fprintf( stdout, "%d,%s" EOL, HWEVENT_DWT, evName[m->event] );
+            _outputTimestamp();
+            _r.inLine = true;
         }
+
+        /* See if there is a trigger in these data...if so then output everything prior to it */
+        q = strchr( p, options.tsTrigger );
+
+        if ( q )
+        {
+            *q = 0;
+            fprintf( stdout, "%s" EOL, p );
+            /* Once we've output these data then we're not in a line any more */
+            _r.inLine = false;
+        }
+        else
+        {
+            /* Just output the whole of the data we've got, then we're done */
+            fputs( p, stdout );
+            break;
+        }
+
+        /* Move past this trigger in case there are more data to output ... this will be \0 if not */
+        p = q + 1;
     }
 }
 // ====================================================================================================
-void _handlePCSample( struct pcSampleMsg *m, struct ITMDecoder *i )
-
-{
-    assert( m->msgtype == MSG_PC_SAMPLE );
-
-    if ( !( options.hwOutputs & ( 1 << HWEVENT_PCSample ) ) )
-    {
-        return;
-    }
-
-    fprintf( stdout, "%d,0x%08x" EOL, HWEVENT_PCSample, m->pc );
-}
-// ====================================================================================================
-void _handleDataRWWP( struct watchMsg *m, struct ITMDecoder *i )
-
-{
-    assert( m->msgtype == MSG_DATA_RWWP );
-
-    if ( !( options.hwOutputs & ( 1 << HWEVENT_RWWT ) ) )
-    {
-        return;
-    }
-
-    fprintf( stdout, "%d,%d,%s,0x%x" EOL, HWEVENT_RWWT, m->comp, m->isWrite ? "Write" : "Read", m->data );
-}
-// ====================================================================================================
-void _handleDataAccessWP( struct wptMsg *m, struct ITMDecoder *i )
-
-
-{
-    assert( m->msgtype == MSG_DATA_ACCESS_WP );
-
-    if ( !( options.hwOutputs & ( 1 << HWEVENT_AWP ) ) )
-    {
-        return;
-    }
-
-    fprintf( stdout, "%d,%d,0x%08x" EOL, HWEVENT_AWP, m->comp, m->data );
-}
-// ====================================================================================================
-void _handleDataOffsetWP(  struct oswMsg *m, struct ITMDecoder *i )
-
-{
-    assert( m->msgtype == MSG_OSW );
-
-    if ( !( options.hwOutputs & ( 1 << HWEVENT_OFS ) ) )
-    {
-        return;
-    }
-
-    fprintf( stdout, "%d,%d,0x%04x" EOL, HWEVENT_OFS, m->comp, m->offset );
-}
-// ====================================================================================================
-void _handleSW( struct swMsg *m, struct ITMDecoder *i )
+static void _handleSW( struct swMsg *m, struct ITMDecoder *i )
 
 {
     assert( m->msgtype == MSG_SOFTWARE );
+    char opConstruct[MAX_STRING_LENGTH];
 
+    char *p = opConstruct;
+
+    /* Make sure line is empty by default */
+    *p = 0;
+
+    /* Print anything we want to output into the buffer */
     if ( ( m->srcAddr < NUM_CHANNELS ) && ( options.presFormat[m->srcAddr] ) )
     {
         // formatted output....start with specials
@@ -169,7 +275,7 @@ void _handleSW( struct swMsg *m, struct ITMDecoder *i )
             /* type punning on same host, after correctly building 32bit val
              * only unsafe on systems where u32/float have diff byte order */
             float *nastycast = ( float * )&m->value;
-            fprintf( stdout, options.presFormat[m->srcAddr], *nastycast, *nastycast, *nastycast, *nastycast );
+            p += snprintf( p, MAX_STRING_LENGTH - ( p - opConstruct ), options.presFormat[m->srcAddr], *nastycast, *nastycast, *nastycast, *nastycast );
         }
         else if ( strstr( options.presFormat[m->srcAddr], "%c" ) )
         {
@@ -179,36 +285,32 @@ void _handleSW( struct swMsg *m, struct ITMDecoder *i )
 
             do
             {
-                fprintf( stdout, options.presFormat[m->srcAddr], op[l], op[l], op[l] );
+                p += snprintf( p, MAX_STRING_LENGTH - ( p - opConstruct ), options.presFormat[m->srcAddr], op[l], op[l], op[l] );
             }
             while ( ++l < m->len );
         }
         else
         {
-            fprintf( stdout, options.presFormat[m->srcAddr], m->value, m->value, m->value, m->value );
+            p += snprintf( p, MAX_STRING_LENGTH - ( p - opConstruct ), options.presFormat[m->srcAddr], m->value, m->value, m->value, m->value );
         }
     }
+
+    /* Whatever we have, it can be sent for output */
+    _outputText( opConstruct );
 }
 // ====================================================================================================
-void _handleTS( struct TSMsg *m, struct ITMDecoder *i )
+static void _handleTS( struct TSMsg *m, struct ITMDecoder *i )
 
 {
     assert( m->msgtype == MSG_TS );
-
-    if ( !( options.hwOutputs & ( 1 << HWEVENT_TS ) ) )
-    {
-        return;
-    }
-
     _r.timeStamp += m->timeInc;
-
-    fprintf( stdout, "%d,%d,%" PRIu64 EOL, HWEVENT_TS, _r.timeStatus, _r.timeStamp );
 }
 // ====================================================================================================
-void _itmPumpProcess( char c )
+static void _itmPumpProcess( char c )
 
 {
-    struct msg decoded;
+    struct msg p;
+    struct msg *pp;
 
     typedef void ( *handlers )( void *decoded, struct ITMDecoder * i );
 
@@ -221,50 +323,54 @@ void _itmPumpProcess( char c )
         /* MSG_NONE */            NULL,
         /* MSG_SOFTWARE */        ( handlers )_handleSW,
         /* MSG_NISYNC */          NULL,
-        /* MSG_OSW */             ( handlers )_handleDataOffsetWP,
-        /* MSG_DATA_ACCESS_WP */  ( handlers )_handleDataAccessWP,
-        /* MSG_DATA_RWWP */       ( handlers )_handleDataRWWP,
-        /* MSG_PC_SAMPLE */       ( handlers )_handlePCSample,
-        /* MSG_DWT_EVENT */       ( handlers )_handleDWTEvent,
-        /* MSG_EXCEPTION */       ( handlers )_handleException,
+        /* MSG_OSW */             NULL,
+        /* MSG_DATA_ACCESS_WP */  NULL,
+        /* MSG_DATA_RWWP */       NULL,
+        /* MSG_PC_SAMPLE */       NULL,
+        /* MSG_DWT_EVENT */       NULL,
+        /* MSG_EXCEPTION */       NULL,
         /* MSG_TS */              ( handlers )_handleTS
     };
 
-    switch ( ITMPump( &_r.i, c ) )
+    /* For any mode except the ones where we collect timestamps from the target we need to send */
+    /* the samples out directly to give the host a chance of having accurate timing info. For   */
+    /* target-based timestamps we need to re-sequence the messages so that the timestamps are   */
+    /* issued _before_ the data they apply to.  These are the two cases.                        */
+
+    if ( ( options.tsType != TSStamp ) && ( options.tsType != TSStampDelta ) )
     {
-        case ITM_EV_NONE:
-            break;
-
-        case ITM_EV_UNSYNCED:
-            genericsReport( V_INFO, "ITM Unsynced" EOL );
-            break;
-
-        case ITM_EV_SYNCED:
-            genericsReport( V_INFO, "ITM Synced" EOL );
-            break;
-
-        case ITM_EV_OVERFLOW:
-            genericsReport( V_INFO, "ITM Overflow" EOL );
-            break;
-
-        case ITM_EV_ERROR:
-            genericsReport( V_WARN, "ITM Error" EOL );
-            break;
-
-        case ITM_EV_PACKET_RXED:
-            ITMGetDecodedPacket( &_r.i, &decoded );
-
-            /* See if we decoded a dispatchable match. genericMsg is just used to access */
-            /* the first two members of the decoded structs in a portable way.           */
-            if ( h[decoded.genericMsg.msgtype] )
+        if ( ITM_EV_PACKET_RXED == ITMPump( &_r.i, c ) )
+        {
+            if ( ITMGetDecodedPacket( &_r.i, &p )  )
             {
-                ( h[decoded.genericMsg.msgtype] )( &decoded, &_r.i );
+                assert( p.genericMsg.msgtype < MSG_NUM_MSGS );
+
+                if ( h[p.genericMsg.msgtype] )
+                {
+                    ( h[p.genericMsg.msgtype] )( &p, &_r.i );
+                }
             }
+        }
+    }
+    else
+    {
 
-            break;
+        /* Pump messages into the store until we get a time message, then we can read them out */
+        if ( !MSGSeqPump( &_r.d, c ) )
+        {
+            return;
+        }
 
-        default:
-            break;
+        /* We are synced timewise, so empty anything that has been waiting */
+        while ( ( pp = MSGSeqGetPacket( &_r.d ) ) )
+        {
+            assert( pp->genericMsg.msgtype < MSG_NUM_MSGS );
+
+            if ( h[pp->genericMsg.msgtype] )
+            {
+                ( h[pp->genericMsg.msgtype] )( pp, &_r.i );
+            }
+        }
     }
 }
 // ====================================================================================================
@@ -274,7 +380,7 @@ void _itmPumpProcess( char c )
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
-void _protocolPump( uint8_t c )
+static void _protocolPump( uint8_t c )
 
 {
     if ( options.useTPIU )
@@ -327,22 +433,28 @@ void _protocolPump( uint8_t c )
     }
 }
 // ====================================================================================================
-void _printHelp( const char *const progName )
+static void _printHelp( const char *const progName )
 
 {
     fprintf( stdout, "Usage: %s [options]" EOL, progName );
     fprintf( stdout, "    -c, --channel:      <Number>,<Format> of channel to add into output stream (repeat per channel)" EOL );
-    fprintf( stdout, "    -E, --eof:          Terminate when the file/socket ends/is closed, or attempt to wait for more / reconnect" EOL );
+    fprintf( stdout, "    -C, --cpufreq:      <Frequency in KHz> (Scaled) speed of the CPU" EOL
+             "                        generally /1, /4, /16 or /64 of the real CPU speed," EOL );
+    fprintf( stdout, "    -E, --eof:          Terminate when the file/socket ends/is closed, or wait for more/reconnect" EOL );
     fprintf( stdout, "    -f, --input-file:   <filename> Take input from specified file" EOL );
+    fprintf( stdout, "    -g, --trigger:      <char> to use to trigger timestamp (default is newline)" EOL );
     fprintf( stdout, "    -h, --help:         This help" EOL );
-    fprintf( stdout, "    -n, --itm-sync:     Enforce sync requirement for ITM (i.e. ITM needsd to issue syncs)" EOL );
+    fprintf( stdout, "    -n, --itm-sync:     Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
     fprintf( stdout, "    -s, --server:       <Server>:<Port> to use" EOL );
     fprintf( stdout, "    -t, --tpiu:         <channel>: Use TPIU decoder on specified channel (normally 1)" EOL );
+    fprintf( stdout, "    -T, --timestamp:    <a|r|d|s|t>: Add absolute, relative (to session start)," EOL
+             "                        delta, system timestamp or system timestamp delta to output. Note" EOL
+             "                        a,r & d are host dependent and you may need to run orbuculum with -H." EOL );
     fprintf( stdout, "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
     fprintf( stdout, "    -V, --version:      Print version and exit" EOL );
 }
 // ====================================================================================================
-void _printVersion( void )
+static void _printVersion( void )
 
 {
     genericsPrintf( "orbcat version " GIT_DESCRIBE EOL );
@@ -351,12 +463,15 @@ void _printVersion( void )
 static struct option _longOptions[] =
 {
     {"channel", required_argument, NULL, 'c'},
+    {"cpufreq", required_argument, NULL, 'C'},
     {"eof", no_argument, NULL, 'E'},
     {"input-file", required_argument, NULL, 'f'},
     {"help", no_argument, NULL, 'h'},
+    {"trigger", required_argument, NULL, 'g' },
     {"itm-sync", no_argument, NULL, 'n'},
     {"server", required_argument, NULL, 's'},
     {"tpiu", required_argument, NULL, 't'},
+    {"timestamp", required_argument, NULL, 'T'},
     {"verbose", required_argument, NULL, 'v'},
     {"version", no_argument, NULL, 'V'},
     {NULL, no_argument, NULL, 0}
@@ -370,9 +485,14 @@ bool _processOptions( int argc, char *argv[] )
     char *chanIndex;
 #define DELIMITER ','
 
-    while ( ( c = getopt_long ( argc, argv, "c:Ef:hVns:t:v:", _longOptions, &optionIndex ) ) != -1 )
+    while ( ( c = getopt_long ( argc, argv, "c:C:Ef:g:hVns:t:T:v:", _longOptions, &optionIndex ) ) != -1 )
         switch ( c )
         {
+            // ------------------------------------
+            case 'C':
+                options.cps = atoi( optarg ) * 1000;
+                break;
+
             // ------------------------------------
             case 'h':
                 _printHelp( argv[0] );
@@ -391,6 +511,12 @@ bool _processOptions( int argc, char *argv[] )
             // ------------------------------------
             case 'f':
                 options.file = optarg;
+                break;
+
+            // ------------------------------------
+            case 'g':
+                printf( "%s" EOL, optarg );
+                options.tsTrigger = genericsUnescape( optarg )[0];
                 break;
 
             // ------------------------------------
@@ -430,6 +556,37 @@ bool _processOptions( int argc, char *argv[] )
                 break;
 
             // ------------------------------------
+            case 'T':
+                switch ( *optarg )
+                {
+                    case 'a':
+                        options.tsType = TSAbsolute;
+                        break;
+
+                    case 'r':
+                        options.tsType = TSRelative;
+                        break;
+
+                    case 'd':
+                        options.tsType = TSDelta;
+                        break;
+
+                    case 's':
+                        options.tsType = TSStamp;
+                        break;
+
+                    case 't':
+                        options.tsType = TSStampDelta;
+                        break;
+
+                    default:
+                        genericsReport( V_ERROR, "Unrecognised Timestamp type" EOL );
+                        return false;
+                }
+
+                break;
+
+            // ------------------------------------
             case 'v':
                 if ( !isdigit( *optarg ) )
                 {
@@ -459,14 +616,14 @@ bool _processOptions( int argc, char *argv[] )
                     chanIndex++;
                 }
 
-		/* Step over delimiter */
-		chanIndex++;
+                /* Step over delimiter */
+                chanIndex++;
 
-		/* Scan past any whitespace */
-		while ( ( *chanIndex ) && ( isspace( *chanIndex ) ) )
-		{
-		    chanIndex++;
-		}
+                /* Scan past any whitespace */
+                while ( ( *chanIndex ) && ( isspace( *chanIndex ) ) )
+                {
+                    chanIndex++;
+                }
 
                 if ( !*chanIndex )
                 {
@@ -506,6 +663,18 @@ bool _processOptions( int argc, char *argv[] )
     genericsReport( V_INFO, "orbcat version " GIT_DESCRIBE EOL );
     genericsReport( V_INFO, "Server     : %s:%d" EOL, options.server, options.port );
     genericsReport( V_INFO, "ForceSync  : %s" EOL, options.forceITMSync ? "true" : "false" );
+    genericsReport( V_INFO, "Timestamp  : %s" EOL, tsTypeString[options.tsType] );
+
+    if ( options.cps )
+    {
+        genericsReport( V_INFO, "S-CPU Speed: %d KHz" EOL, options.cps );
+    }
+
+    if ( options.tsType != TSNone )
+    {
+        char unesc[2] = {options.tsTrigger, 0};
+        genericsReport( V_INFO, "TriggerChr : '%s'" EOL, genericsEscape( unesc ) );
+    }
 
     if ( options.file )
     {
@@ -544,7 +713,6 @@ bool _processOptions( int argc, char *argv[] )
     return true;
 }
 // ====================================================================================================
-
 static struct Stream *_tryOpenStream()
 {
     if ( options.file != NULL )
@@ -559,12 +727,16 @@ static struct Stream *_tryOpenStream()
 // ====================================================================================================
 static void _feedStream( struct Stream *stream )
 {
+    struct timeval t;
     unsigned char cbw[TRANSFER_SIZE];
 
     while ( true )
     {
         size_t receivedSize;
-        enum ReceiveResult result = stream->receive( stream, cbw, TRANSFER_SIZE, NULL, &receivedSize );
+
+        t.tv_sec = 0;
+        t.tv_usec = 10000;
+        enum ReceiveResult result = stream->receive( stream, cbw, TRANSFER_SIZE, &t, &receivedSize );
 
         if ( result != RECEIVE_RESULT_OK )
         {
@@ -575,10 +747,6 @@ static void _feedStream( struct Stream *stream )
             else if ( result == RECEIVE_RESULT_ERROR )
             {
                 break;
-            }
-            else
-            {
-                usleep( 100000 );
             }
         }
 
@@ -607,6 +775,7 @@ int main( int argc, char *argv[] )
     /* Reset the TPIU handler before we start */
     TPIUDecoderInit( &_r.t );
     ITMDecoderInit( &_r.i, options.forceITMSync );
+    MSGSeqInit( &_r.d, &_r.i, MSG_REORDER_BUFLEN );
 
     while ( true )
     {
@@ -655,6 +824,7 @@ int main( int argc, char *argv[] )
             break;
         }
     }
+
     return 0;
 }
 // ====================================================================================================

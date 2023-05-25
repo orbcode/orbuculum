@@ -363,7 +363,11 @@ For `orbuculum`, the specific command line options of note are;
 
  `-h, --help`: Brief help.
 
+ `-H, --hires`: Use high resolution time. This limits probe interface timeouts to 1ms, which makes host-side timing more accurate, but at the expense of _much_ higher load (literally perhaps x100). Use sparingly.
+
  `-m, --monitor`: Monitor interval (in mS) for reporting on state of the link. If baudrate is specified (using `-a`) and is greater than 100bps then the percentage link occupancy is also reported.
+
+ `-n, --serial-number`: Set a specific serial number for the ORBTrace or BMP device to connect to. Any unambigious sequence is sufficient. Ignored for other probe types.
 
   `-o, --output-file [filename]`: Record trace data locally. This is unfettered data directly from the source device, can be useful for replay purposes or other tool testing.
 
@@ -588,10 +592,20 @@ options for orbcat are;
      formatting. Note that the `Name` component is missing in this format because
      orbcat does not create fifos.
 
+ `-C, --cpufreq [Frequency in KHz]`: Set (scaled) speed of the CPU to convert CPU timestamps into time timestamps. When
+      this option is set `-Ts` and `-Tt` will generate output in milliseconds and thousandths of a millisecond
+      for an effective resolution of 1us, provided your target has been configured to generate timestamps. **Note
+      the frequency you set should be scaled according to the setting in the ITM Control register (/1, /4,
+      /16 or /64).**
+
  `-E, --eof`: When reading from file, terminate when file exhausts, rather than waiting for more data to arrive.
 
  `-f, --input-file [filename]`: Take input from specified file (CTRL-C to abort from this).
 
+ `-g, --trigger [char]:` Character to use to trigger timestamp generation. Default is newline. Target character is
+     removed from the output stream and replaced with a newline followed by a timestamp in the format specified
+     by `-Tx`. Control characters (e.g. newline \\n or tab \\t) can be specified as the trigger.
+    
  `-h, --help`: Brief help.
 
  `-n, --itm-sync`: Enforce sync requirement for ITM (i.e. ITM needsd to issue syncs)
@@ -600,6 +614,11 @@ options for orbcat are;
 
  `-t, --tpiu`: Use TPIU decoder.  This will not sync if TPIU is not configured, so you won't see
      packets in that case.
+
+ `-T, --timestamp [a|r|d|s|t]`: Add absolute, relative (to session start), delta, system timestamp or system timestamp delta to output. Note that
+    system timestamp and system timestamp delta are only available if your target is generating timestamps, otherwise they will read back
+    as zero. A timestamp is generated on reception of the first character following the trigger char (Set with `-gx`). This means that even if the
+    output is lengthy it is timestamped from when it started.
 
  `-v, --verbose [x]`: Verbose mode level 0..3.
 

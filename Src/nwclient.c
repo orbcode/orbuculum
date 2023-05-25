@@ -235,7 +235,7 @@ static void *_listenTask( void *arg )
 
         if ( pthread_cond_init( &client->dataAvailable, NULL ) != 0 )
         {
-            genericsExit( -1, "Failed to establish condition variablee" EOL );
+            genericsExit( -1, "Failed to establish condition variable" EOL );
         }
 
         if ( pthread_create( &( client->thread ), NULL, &_client, client ) )

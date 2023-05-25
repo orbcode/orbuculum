@@ -16,7 +16,6 @@
 #include <stdint.h>
 #include <inttypes.h>
 #include <pthread.h>
-#include <signal.h>
 
 #include "git_version_info.h"
 #include "generics.h"
@@ -69,6 +68,7 @@ struct itmfifosHandle
     bool forceITMSync;                            /* Is ITM to be forced into sync? */
     bool permafile;                               /* Use permanent files rather than fifos */
     int tpiuITMChannel;                           /* TPIU channel on which ITM appears */
+    bool amEnding;                                /* Flag indicating end is in progress */
 
     struct Channel c[NUM_CHANNELS + 1];           /* Output for each channel */
 };
@@ -231,12 +231,6 @@ static void *_runHWFifo( void *arg )
     }
     while ( readDataLen > 0 );
 
-    pthread_exit( NULL );
-}
-// ====================================================================================================
-static void _intEINTRHandler( int sig )
-
-{
     pthread_exit( NULL );
 }
 // ====================================================================================================
@@ -780,18 +774,20 @@ void itmfifoShutdown( struct itmfifosHandle *f )
 /* Destroy the per-port sub-processes. These will terminate when the fifos close */
 
 {
-    if ( !f )
+    if ( f->amEnding )
     {
         return;
     }
+
+    f->amEnding = true;
 
     /* Firstly go tell everything they're doomed */
     for ( int t = 0; t < NUM_CHANNELS + 1; t++ )
     {
         if ( f->c[t].handle > 0 )
         {
+            /* This will cause the read to end, thus terminating the pthread */
             close( f->c[t].handle );
-            pthread_kill ( f->c[t].thread, EINTR );
         }
     }
 
@@ -814,8 +810,6 @@ void itmfifoShutdown( struct itmfifosHandle *f )
             free( f->c[t].presFormat );
         }
     }
-
-    free( f );
 }
 // ====================================================================================================
 
@@ -848,12 +842,6 @@ struct itmfifosHandle *itmfifoInit( bool forceITMSyncSet, bool useTPIUSet, int T
     f->useTPIU = useTPIUSet;
     f->forceITMSync = forceITMSyncSet;
     f->tpiuITMChannel = TPIUchannelSet;
-
-    /* Trap EINTR so we can use it to interrupt reads/writes in the threads */
-    if ( SIG_ERR == signal( EINTR, _intEINTRHandler ) )
-    {
-        genericsExit( -1, "Failed to establish EINTR handler" EOL );
-    }
 
     return f;
 }
