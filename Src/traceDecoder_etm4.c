@@ -16,13 +16,85 @@
 #include "generics.h"
 
 
+/* Internal states of the protocol machine */
+enum TRACE_ETM4protoState
+{
+    TRACE_WAIT_INFO = TRACE_GET_CONTEXTID + 1,
+    TRACE_GET_INFO_PLCTL,
+    TRACE_GET_INFO_INFO,
+    TRACE_GET_INFO_KEY,
+    TRACE_GET_INFO_SPEC,
+    TRACE_GET_INFO_CYCT,
+    TRACE_EXTENSION,
+    TRACE_GET_TIMESTAMP,
+    TRACE_GET_TS_CC,
+    TRACE_COMMIT,
+    TRACE_GET_SHORT_ADDR,
+    TRACE_GET_32BIT_ADDR,
+    TRACE_GET_64BIT_ADDR,
+    TRACE_GET_CONTEXT,
+    TRACE_GET_VCONTEXT,
+    TRACE_GET_CONTEXT_ID
+};
+
+
 static const char *protoStateName[] =
 {
     "UNSYNCED",       "WAIT_ISYNC",        "IDLE",             "COLLECT_BA_STD",
     "COLLECT_BA_ALT", "COLLECT_EXCEPTION", "WAIT_CONTEXTBYTE", "WAIT_INFOBYTE",
     "WAIT_IADDRESS",  "WAIT_ICYCLECOUNT",  "WAIT_CYCLECOUNT",  "GET_VMID",
-    "GET_TSTAMP",     "GET_CONTEXTID"
+    "GET_TSTAMP",     "GET_CONTEXTID",
+
+    "TRACE_WAIT_INFO",
+    "TRACE_GET_INFO_PLCTL",
+    "TRACE_GET_INFO_INFO",
+    "TRACE_GET_INFO_KEY",
+    "TRACE_GET_INFO_SPEC",
+    "TRACE_GET_INFO_CYCT",
+    "TRACE_EXTENSION",
+    "TRACE_GET_TIMESTAMP",
+    "TRACE_GET_TS_CC",
+    "TRACE_COMMIT",
+    "TRACE_GET_SHORT_ADDR",
+    "TRACE_GET_32BIT_ADDR",
+    "TRACE_GET_64BIT_ADDR",
+    "TRACE_GET_CONTEXT",
+    "TRACE_GET_VCONTEXT",
+    "TRACE_GET_CONTEXT_ID"
 };
+
+#define COND_LOAD_TRACED  1
+#define COND_STORE_TRACED 2
+#define COND_ALL_TRACED   7
+
+/* Word-aligned ARM, Halfword Aligned Thumb, Table 6-19, Pg 6-292 */
+enum InstSet { IS0, IS1 };
+
+struct
+{
+    uint8_t plctl;  /* Payload control - what sections are present in the INFO */
+    bool cc_enabled; /* Indicates cycle counting is enabled */
+    uint8_t cond_enabled; /* What conditional branching and loads/stores are traced */
+    bool load_traced; /* Load instructions are traced explicitly */
+    bool store_traced; /* Store instructions are traced explicitly */
+    bool haveContext;  /* We have context to collect */
+
+    uint32_t context; /* Current machine context */
+    uint32_t vcontext;   /* Virtual machine context */
+
+    uint32_t nextrhkey; /* Next rh key expected in the stream */
+    uint32_t spec;      /* Max speculation depth to be expected */
+    uint32_t cyct;      /* Cycnt threshold */
+
+    bool cc_follows; /* Indication if CC follows from TS */
+    uint8_t idx; /* General counter used for multi-byte payload indexing */
+    uint32_t cntUpdate; /* Count construction for TS packets */
+    struct
+    {
+        uint64_t addr;
+        enum InstSet inst;
+    } q[3];  /* Address queue for pushed addresses */
+} j;
 
 // ====================================================================================================
 // ====================================================================================================
@@ -32,10 +104,34 @@ static const char *protoStateName[] =
 // ====================================================================================================
 // ====================================================================================================
 
-static void _stateChange( struct TRACEDecoder *i, enum TRACEchanges c )
+static void _reportInfo( genericsReportCB report )
+
 {
-    i->cpu.changeRecord |= ( 1 << c );
+    return;
+    report( V_INFO, EOL "Cycle counting is %senabled" EOL, j.cc_enabled ? "" : "not " );
+    report( V_INFO, "Conditional loads are %straced" EOL, ( j.cond_enabled & COND_LOAD_TRACED ) ? "" : "not " );
+    report( V_INFO, "Conditional stores are %straced" EOL, ( j.cond_enabled & COND_STORE_TRACED ) ? "" : "not " );
+    report( V_INFO, "All conditionals are %straced" EOL, ( j.cond_enabled == COND_ALL_TRACED ) ? "" : "not " );
+    report( V_INFO, "Next RH key is %d" EOL, j.nextrhkey );
+    report( V_INFO, "Max speculative execution depth is %d instructions" EOL, j.spec );
+    report( V_INFO, "CYCNT threshold value is %d" EOL, j.cyct );
 }
+
+static void _flushQ( void )
+
+{
+    j.q[2].addr = j.q[1].addr = j.q[0].addr = 0;
+    j.q[2].inst = j.q[1].inst = j.q[0].inst = IS0;
+}
+
+static void _stackQ( void )
+{
+    j.q[2].addr = j.q[1].addr;
+    j.q[1].addr = j.q[0].addr;
+    j.q[2].inst = j.q[1].inst;
+    j.q[1].inst = j.q[0].inst;
+}
+
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
@@ -49,835 +145,483 @@ void ETM4DecoderPumpAction( struct TRACEDecoder *i, uint8_t c, traceDecodeCB cb,
 /* Pump next byte into the protocol decoder */
 
 {
-    bool C;                               /* Is address packet continued? */
-    bool X = false;                       /* Is there exception information following address */
-    int8_t ofs;                           /* Offset for bits in address calculation */
-    uint8_t mask;                         /* Mask for bits in address calculation */
 
     enum TRACEprotoState newState = i->p;
-    struct TRACECPUState *cpu = &i->cpu;
     enum TRACEDecoderPumpEvent retVal = TRACE_EV_NONE;
 
 
-    /* Perform A-Sync accumulation check */
-    if ( ( i->asyncCount >= 5 ) && ( c == 0x80 ) )
+    /* Perform A-Sync accumulation check ( Section 6.4.2 ) */
+    if ( ( i->asyncCount == 11 ) && ( c == 0x80 ) )
     {
         if ( report )
         {
             report( V_DEBUG, "A-Sync Accumulation complete" EOL );
         }
 
-        newState = TRACE_IDLE;
+        i->rxedISYNC = true;
+        newState = TRACE_WAIT_INFO;
     }
     else
     {
         i->asyncCount = c ? 0 : i->asyncCount + 1;
 
-        switch ( i->p )
+        switch ( ( int )i->p )
         {
             // -----------------------------------------------------
             case TRACE_UNSYNCED:
                 break;
 
             // -----------------------------------------------------
-
             case TRACE_IDLE:
-
-                // *************************************************
-                // ************** BRANCH PACKET ********************
-                // *************************************************
-                if ( c & 0b1 )
+                switch ( c )
                 {
-                    /* The lowest order 6 bits of address info... */
-
-                    switch ( cpu->addrMode )
-                    {
-                        case TRACE_ADDRMODE_ARM:
-                            i->addrConstruct = ( i->addrConstruct & ~( 0b11111100 ) ) | ( ( c & 0b01111110 ) << 1 );
-                            break;
-
-                        case TRACE_ADDRMODE_THUMB:
-                            i->addrConstruct = ( i->addrConstruct & ~( 0b01111111 ) ) | ( c & 0b01111110 );
-                            break;
-
-                        case TRACE_ADDRMODE_JAZELLE:
-                            i->addrConstruct = ( i->addrConstruct & ~( 0b00111111 ) ) | ( ( c & 0b01111110 ) >> 1 );
-                            break;
-                    }
-
-                    i->byteCount = 1;
-                    C = ( c & 0x80 ) != 0;
-                    X = false;
-                    _stateChange( i, EV_CH_ADDRESS );
-
-                    newState = ( i->usingAltAddrEncode ) ? TRACE_COLLECT_BA_ALT_FORMAT : TRACE_COLLECT_BA_STD_FORMAT;
-                    goto terminateAddrByte;
-                }
-
-                // *************************************************
-                // ************** A-SYNC PACKET ********************
-                // *************************************************
-                if ( c == 0b00000000 )
-                {
-                    break;
-                }
-
-                // *************************************************
-                // ************ CYCLECOUNT PACKET ******************
-                // *************************************************
-                if ( c == 0b00000100 )
-                {
-                    if ( report )
-                    {
-                        report( V_DEBUG, "CYCCNT " EOL );
-                    }
-
-                    i->byteCount = 0;
-                    i->cycleConstruct = 0;
-                    newState = TRACE_GET_CYCLECOUNT;
-                    break;
-                }
-
-                // *************************************************
-                // ************** ISYNC PACKETS ********************
-                // *************************************************
-                if ( c == 0b00001000 ) /* Normal ISYNC */
-                {
-                    if ( report )
-                    {
-                        report( V_DEBUG, "Normal ISYNC " EOL );
-                    }
-
-                    /* Collect either the context or the Info Byte next */
-                    i->byteCount = 0;
-                    i->contextConstruct = 0;
-                    newState = i->contextBytes ? TRACE_GET_CONTEXTBYTE : TRACE_GET_INFOBYTE;
-
-                    /* We won't start reporting data until a valid ISYNC has been received */
-                    if ( !i->rxedISYNC )
-                    {
-                        if ( report )
-                        {
-                            report( V_DEBUG, "Initial ISYNC" );
-                        }
-
-                        i->cpu.changeRecord = 0;
-                        i->rxedISYNC = true;
-                    }
-
-                    break;
-                }
-
-                if ( c == 0b01110000 ) /* ISYNC with Cycle Count */
-                {
-                    if ( report )
-                    {
-                        report( V_DEBUG, "ISYNC+CYCCNT " EOL );
-                    }
-
-                    /* Collect the cycle count next */
-                    i->byteCount = 0;
-                    i->cycleConstruct = 0;
-                    newState = TRACE_GET_ICYCLECOUNT;
-                    break;
-                }
-
-                // *************************************************
-                // ************** TRIGGER PACKET *******************
-                // *************************************************
-                if ( c == 0b00001100 )
-                {
-                    if ( report )
-                    {
-                        report( V_DEBUG, "TRIGGER " EOL );
-                    }
-
-                    _stateChange( i, EV_CH_TRIGGER );
-                    retVal = TRACE_EV_MSG_RXED;
-                    break;
-                }
-
-                // *************************************************
-                // **************** VMID PACKET ********************
-                // *************************************************
-                if ( c == 0b00111100 )
-                {
-                    if ( report )
-                    {
-                        report( V_DEBUG, "VMID " EOL );
-                    }
-
-                    newState = TRACE_GET_VMID;
-                    break;
-                }
-
-                // *************************************************
-                // *********** TIMESTAMP PACKET ********************
-                // *************************************************
-                if ( ( c & 0b11111011 ) == 0b01000010 )
-                {
-                    if ( report )
-                    {
-                        report( V_DEBUG, "TS " EOL );
-                    }
-
-                    newState = TRACE_GET_TSTAMP;
-
-                    if ( ( c & ( 1 << 2 ) ) != 0 )
-                    {
-                        _stateChange( i, EV_CH_CLOCKSPEED );
-                    }
-
-                    i->byteCount = 0;
-                    break;
-                }
-
-                // *************************************************
-                // ************** IGNORE PACKET ********************
-                // *************************************************
-                if ( c == 0b01100110 )
-                {
-                    if ( report )
-                    {
-                        report( V_DEBUG, "Ignore Packet" EOL );
-                    }
-
-                    break;
-                }
-
-                // *************************************************
-                // ************ CONTEXTID PACKET *******************
-                // *************************************************
-                if ( c == 0b01101110 )
-                {
-                    if ( report )
-                    {
-                        report( V_DEBUG, "CONTEXTID " EOL );
-                    }
-
-                    newState = TRACE_GET_CONTEXTID;
-                    cpu->contextID = 0;
-                    i->byteCount = 0;
-                    break;
-                }
-
-                // *************************************************
-                // ******** EXCEPTION EXIT PACKET ******************
-                // *************************************************
-                if ( c == 0b01110110 )
-                {
-                    if ( report )
-                    {
-                        report( V_DEBUG, "EXCEPT-EXIT " EOL );
-                    }
-
-                    _stateChange( i, EV_CH_EX_EXIT );
-                    retVal = TRACE_EV_MSG_RXED;
-                    break;
-                }
-
-                // *************************************************
-                // ******** EXCEPTION ENTRY PACKET *****************
-                // *************************************************
-                if ( c == 0b01111110 )
-                {
-                    /* Note this is only used on CPUs with data tracing */
-                    if ( report )
-                    {
-                        report( V_DEBUG, "EXCEPT-ENTRY " EOL );
-                    }
-
-                    _stateChange( i, EV_CH_EX_ENTRY );
-                    retVal = TRACE_EV_MSG_RXED;
-                    break;
-                }
-
-                // *************************************************
-                // ************** P-HEADER PACKET ******************
-                // *************************************************
-                if ( ( c & 0b10000001 ) == 0b10000000 )
-                {
-                    if ( !i->cycleAccurate )
-                    {
-                        if ( ( c & 0b10000011 ) == 0b10000000 )
-                        {
-                            /* Format-1 P-header */
-                            cpu->eatoms = ( c & 0x3C ) >> 2;
-                            cpu->natoms = ( c & ( 1 << 6 ) ) ? 1 : 0;
-                            cpu->instCount += cpu->eatoms + cpu->natoms;
-
-                            /* Put a 1 in each element of disposition if was executed */
-                            cpu->disposition = ( 1 << cpu->eatoms ) - 1;
-                            _stateChange( i, EV_CH_ENATOMS );
-                            retVal = TRACE_EV_MSG_RXED;
-
-                            if ( report )
-                            {
-                                report( V_DEBUG, "PHdr FMT1 (%02x E=%d, N=%d)" EOL, c, cpu->eatoms, cpu->natoms );
-                            }
-
-                            break;
-                        }
-
-                        if ( ( c & 0b11110011 ) == 0b10000010 )
-                        {
-                            /* Format-2 P-header */
-                            cpu->eatoms = ( ( c & ( 1 << 2 ) ) == 0 ) + ( ( c & ( 1 << 3 ) ) == 0 );
-                            cpu->natoms = 2 - cpu->eatoms;
-
-                            cpu->disposition = ( ( c & ( 1 << 3 ) ) == 0 ) |
-                                               ( ( ( c & ( 1 << 2 ) ) == 0 ) << 1 );
-
-                            _stateChange( i, EV_CH_ENATOMS );
-                            cpu->instCount += cpu->eatoms + cpu->natoms;
-                            retVal = TRACE_EV_MSG_RXED;
-
-                            if ( report )
-                            {
-                                report( V_DEBUG, "PHdr FMT2 (E=%d, N=%d)" EOL, cpu->eatoms, cpu->natoms );
-                            }
-
-                            break;
-                        }
-
-                        if ( report )
-                        {
-                            report( V_ERROR, "Unprocessed P-Header (%02X)" EOL, c );
-                        }
-                    }
-                    else
-                    {
-                        if ( c == 0b10000000 )
-                        {
-                            /* Format 0 cycle-accurate P-header */
-                            cpu->watoms = 1;
-                            cpu->instCount += cpu->watoms;
-                            cpu->eatoms = cpu->natoms = 0;
-                            _stateChange( i, EV_CH_ENATOMS );
-                            _stateChange( i, EV_CH_WATOMS );
-                            retVal = TRACE_EV_MSG_RXED;
-
-                            if ( report )
-                            {
-                                report( V_DEBUG, "CA PHdr FMT0 (W=%d)" EOL, cpu->watoms );
-                            }
-
-                            break;
-                        }
-
-                        if ( ( c & 0b10100011 ) == 0b10000000 )
-                        {
-                            /* Format 1 cycle-accurate P-header */
-                            cpu->eatoms = ( c & 0x1c ) >> 2;
-                            cpu->natoms = ( c & 0x40 ) != 0;
-                            cpu->watoms = cpu->eatoms + cpu->natoms;
-                            cpu->instCount += cpu->watoms;
-                            cpu->disposition = ( 1 << cpu->eatoms ) - 1;
-                            _stateChange( i, EV_CH_ENATOMS );
-                            _stateChange( i, EV_CH_WATOMS );
-                            retVal = TRACE_EV_MSG_RXED;
-
-                            if ( report )
-                            {
-                                report( V_DEBUG, "CA PHdr FMT1 (E=%d, N=%d)" EOL, cpu->eatoms, cpu->natoms );
-                            }
-
-                            break;
-                        }
-
-                        if ( ( c & 0b11110011 ) == 0b10000010 )
-                        {
-                            /* Format 2 cycle-accurate P-header */
-                            cpu->eatoms = ( ( c & ( 1 << 2 ) ) != 0 ) + ( ( c & ( 1 << 3 ) ) != 0 );
-                            cpu->natoms = 2 - cpu->eatoms;
-                            cpu->watoms = 1;
-                            cpu->instCount += cpu->watoms;
-                            cpu->disposition = ( ( c & ( 1 << 3 ) ) != 0 ) | ( ( c & ( 1 << 2 ) ) != 0 );
-                            _stateChange( i, EV_CH_ENATOMS );
-                            _stateChange( i, EV_CH_WATOMS );
-                            retVal = TRACE_EV_MSG_RXED;
-
-                            if ( report )
-                            {
-                                report( V_DEBUG, "CA PHdr FMT2 (E=%d, N=%d, W=1)" EOL, cpu->eatoms, cpu->natoms );
-                            }
-
-                            break;
-                        }
-
-                        if ( ( c & 0b10100000 ) == 0b10100000 )
-                        {
-                            /* Format 3 cycle-accurate P-header */
-                            cpu->eatoms = ( c & 0x40 ) != 0;
-                            cpu->natoms = 0;
-                            cpu->watoms = ( c & 0x1c ) >> 2;
-                            cpu->instCount += cpu->watoms;
-                            /* Either 1 or 0 eatoms */
-                            cpu->disposition = cpu->eatoms;
-                            _stateChange( i, EV_CH_ENATOMS );
-                            _stateChange( i, EV_CH_WATOMS );
-                            retVal = TRACE_EV_MSG_RXED;
-
-                            if ( report )
-                            {
-                                report( V_DEBUG, "CA PHdr FMT3 (E=%d, N=%d W=%d)" EOL, cpu->eatoms, cpu->natoms, cpu->watoms );
-                            }
-
-                            break;
-                        }
-
-                        if ( ( c & 0b11111011 ) == 0b10010010 )
-                        {
-                            /* Format 4 cycle-accurate P-header */
-                            cpu->eatoms = ( c & 0x4 ) != 0;
-                            cpu->natoms = ( c & 0x4 ) == 0;
-                            cpu->watoms = 0;
-
-                            /* Either 1 or 0 eatoms */
-                            cpu->disposition = cpu->eatoms;
-                            _stateChange( i, EV_CH_ENATOMS );
-                            _stateChange( i, EV_CH_WATOMS );
-                            retVal = TRACE_EV_MSG_RXED;
-
-                            if ( report )
-                            {
-                                report( V_DEBUG, "CA PHdr FMT4 (E=%d, N=%d W=%d)" EOL, cpu->eatoms, cpu->natoms, cpu->watoms );
-                            }
-
-                            break;
-                        }
-
-                        if ( report )
-                        {
-                            report( V_ERROR, "Unprocessed Cycle-accurate P-Header (%02X)" EOL, c );
-                        }
-                    }
-
-                    break;
-                }
-
-                break;
-
-
-            // -----------------------------------------------------
-            // ADDRESS COLLECTION RELATED ACTIVITIES
-            // -----------------------------------------------------
-
-            case TRACE_COLLECT_BA_ALT_FORMAT: /* Collecting a branch address, alt format */
-                C = c & 0x80;
-                /* This is a proper mess. Mask and collect bits according to address mode in use and */
-                /* if it's the last byte of the sequence */
-                mask = C ? 0x7f : 0x3f;
-                ofs = ( cpu->addrMode == TRACE_ADDRMODE_ARM ) ? 1 : ( cpu->addrMode == TRACE_ADDRMODE_THUMB ) ? 0 : -1;
-
-
-                i->addrConstruct = ( i->addrConstruct &   ~( mask << ( 7 * i->byteCount + ofs ) ) )
-                                   | ( ( c & mask ) << ( 7 * i->byteCount + ofs ) );
-                /* There is exception information only if no continuation and bit 6 set */
-                X = ( ( !C ) && ( c & 0x40 ) );
-                i->byteCount++;
-                goto terminateAddrByte;
-
-            // -----------------------------------------------------
-
-            case TRACE_COLLECT_BA_STD_FORMAT: /* Collecting a branch address, standard format */
-                /* This will potentially collect too many bits, but that is OK */
-                ofs = ( cpu->addrMode == TRACE_ADDRMODE_ARM ) ? 1 : ( cpu->addrMode == TRACE_ADDRMODE_THUMB ) ? 0 : -1;
-                i->addrConstruct = ( i->addrConstruct &  ~( 0x7F << ( ( 7 * i->byteCount ) + ofs ) ) ) | ( c & ( 0x7F <<  ( ( 7 * i->byteCount ) + ofs ) ) );
-                i->byteCount++;
-                C = ( i->byteCount < 5 ) ? c & 0x80 : c & 0x40;
-                X = ( i->byteCount == 5 ) && C;
-                goto terminateAddrByte;
-
-                // -----------------------------------------------------
-
-                /* For all cases, see if the address is complete, and process if so */
-                /* this is a continuation of TRACE_COLLECT_BA_???_FORMAT.             */
-            terminateAddrByte:
-
-                /* Check to see if this packet is complete, and encode to return if so */
-                if ( ( !C ) || ( i->byteCount == 5 ) )
-                {
-                    cpu->addr = i->addrConstruct;
-
-                    if ( ( i->byteCount == 5 ) && ( cpu->addrMode == TRACE_ADDRMODE_ARM ) && C )
-                    {
-                        /* There is (legacy) exception information in here */
-                        cpu->exception = ( c >> 4 ) & 0x07;
-                        _stateChange( i, EV_CH_EXCEPTION );
-                        _stateChange( i, ( ( c & 0x40 ) != 0 ) ? EV_CH_CANCELLED : 0 );
-                        newState = TRACE_IDLE;
-                        retVal = TRACE_EV_MSG_RXED;
-
-                        if ( report )
-                        {
-                            report( V_DEBUG, "Branch to %08x with exception %d" EOL, cpu->addr, cpu->exception );
-                        }
-
+                    case 0b00000001:
+                        newState = TRACE_GET_INFO_PLCTL;
                         break;
-                    }
 
-                    if ( ( !C ) & ( !X ) )
-                    {
-                        /* This packet is complete, so can return it */
-                        newState = TRACE_IDLE;
+                    case 0b01110000: /* Ignore packet, Figure 6-30, Pg 6-289 */
+                        break;
+
+                    case 0b11110110 ... 0b11110111: /* Atom Format 1, Figure 6-39, Pg 6-304 */
+                        i->cpu.eatoms = ( 0 != ( c & 1 ) );
+                        i->cpu.natoms = !i->cpu.eatoms;
+                        i->cpu.instCount += 1;
+
+                        /* Put a 1 in each element of disposition if was executed */
+                        i->cpu.disposition = c & 1;
                         retVal = TRACE_EV_MSG_RXED;
+                        TRACEDecodeStateChange( i, EV_CH_ENATOMS );
+                        break;
 
-                        if ( report )
-                        {
-                            report( V_DEBUG, "Branch to %08x" EOL, cpu->addr );
-                        }
-                    }
-                    else
-                    {
-                        /* This packet also contains exception information, so collect it */
-                        i->byteCount = 0; /* Used as a flag of which byte of exception we're collecting */
-                        cpu->resume = 0;
-                        _stateChange( i, EV_CH_EX_ENTRY );
-                        newState = TRACE_COLLECT_EXCEPTION;
-                    }
-                }
+                    case 0b11011000 ... 0b11011011: /* Atom Format 2, Figure 6-40, Pg 6-304 */
+                        i->cpu.eatoms = ( 0 != ( c & 2 ) ) + ( 0 != ( c & 1 ) );
+                        i->cpu.natoms = 2 - i->cpu.eatoms;
+                        i->cpu.instCount += 2;
 
-                break;
-
-            // -----------------------------------------------------
-
-            case TRACE_COLLECT_EXCEPTION: /* Collecting exception information */
-                if ( i->byteCount == 0 )
-                {
-                    if ( ( ( c & ( 1 << 0 ) ) != 0 ) != cpu->nonSecure )
-                    {
-                        cpu->nonSecure = ( ( c & ( 1 << 0 ) ) != 0 );
-                        _stateChange( i, EV_CH_SECURE );
-                    }
-
-                    cpu->exception = ( c >> 1 ) & 0x0f;
-                    _stateChange( i, ( ( c & ( 1 << 5 ) ) != 0 ) ? EV_CH_CANCELLED : 0 );
-
-                    if ( cpu->altISA != ( ( c & ( 1 << 6 ) ) != 0 ) )
-                    {
-                        cpu->altISA = ( ( c & ( 1 << 6 ) ) != 0 );
-                        _stateChange( i, EV_CH_ALTISA );
-                    }
-
-                    if ( c & 0x80 )
-                    {
-                        i->byteCount++;
-                    }
-                    else
-                    {
-                        if ( report )
-                        {
-                            report( V_ERROR, "Exception jump (%d) to 0x%08x" EOL, cpu->exception, cpu->addr );
-                        }
-
-                        newState = TRACE_IDLE;
+                        /* Put a 1 in each element of disposition if was executed */
+                        i->cpu.disposition = c & 3;
                         retVal = TRACE_EV_MSG_RXED;
-                    }
-                }
-                else
-                {
-                    if ( c & 0x80 )
-                    {
-                        /* This is exception byte 1 */
-                        cpu->exception |= ( c & 0x1f ) << 4;
+                        TRACEDecodeStateChange( i, EV_CH_ENATOMS );
+                        break;
 
-                        if ( cpu->hyp != ( ( c & ( 1 << 5 ) ) != 0 ) )
-                        {
-                            cpu->hyp = ( ( c & ( 1 << 5 ) ) != 0 );
-                            _stateChange( i, EV_CH_HYP );
-                        }
+                    case 0b11111000 ... 0b11111000: /* Atom Format 3, Figure 6-41, Pg 6-305 */
+                        i->cpu.eatoms = ( 0 != ( c & 1 ) ) + ( 0 != ( c & 2 ) ) + ( 0 != ( c & 4 ) );
+                        i->cpu.natoms = 3 - i->cpu.eatoms;
+                        i->cpu.instCount += 3;
 
-                        if ( !( c & 0x40 ) )
-                        {
-                            /* There will not be another one along, return idle */
-                            if ( report )
-                            {
-                                report( V_ERROR, "Exception jump (%d) to 0x%08x" EOL, cpu->exception, cpu->addr );
-                            }
-
-                            newState = TRACE_IDLE;
-                            retVal = TRACE_EV_MSG_RXED;
-                        }
-                    }
-                    else
-                    {
-                        /* This is exception byte 2 */
-                        cpu->resume = ( c & 0xf );
-
-                        if ( cpu->resume )
-                        {
-                            _stateChange( i, EV_CH_RESUME );
-                        }
-
-                        /* Exception byte 2 is always the last one, return */
-
-                        if ( report )
-                        {
-                            report( V_ERROR, "Exception jump %s(%d) to 0x%08x" EOL, cpu->resume ? "with resume " : "", cpu->exception, cpu->addr );
-                        }
-
-                        newState = TRACE_IDLE;
+                        /* Put a 1 in each element of disposition if was executed */
+                        i->cpu.disposition = c & 7;
                         retVal = TRACE_EV_MSG_RXED;
-                    }
-                }
+                        TRACEDecodeStateChange( i, EV_CH_ENATOMS );
+                        break;
 
-                break;
-
-
-            // -----------------------------------------------------
-            // VMID RELATED ACTIVITIES
-            // -----------------------------------------------------
-            case TRACE_GET_VMID: /* Collecting virtual machine ID */
-                if ( cpu->vmid != c )
-                {
-                    cpu->vmid = c;
-                    _stateChange( i, EV_CH_VMID );
-                }
-
-                if ( report )
-                {
-                    report( V_ERROR, "VMID Set to (%d)" EOL, cpu->vmid );
-                }
-
-                newState = TRACE_IDLE;
-                retVal = TRACE_EV_MSG_RXED;
-                break;
-
-            // -----------------------------------------------------
-            // TIMESTAMP RELATED ACTIVITIES
-            // -----------------------------------------------------
-
-            case TRACE_GET_TSTAMP: /* Collecting current timestamp */
-                if ( i->byteCount < 8 )
-                {
-                    i->tsConstruct = ( i->tsConstruct & ( ~( 0x7F << i->byteCount ) ) ) | ( ( c & 0x7f ) << i->byteCount );
-                }
-                else
-                {
-                    i->tsConstruct = ( i->tsConstruct & ( ~( 0xff << i->byteCount ) ) ) | ( ( c & 0xff ) << i->byteCount );
-                }
-
-                i->byteCount++;
-
-                if ( ( !( c & 0x80 ) ) || ( i->byteCount == 9 ) )
-                {
-                    newState = TRACE_IDLE;
-                    cpu->ts = i->tsConstruct;
-                    _stateChange( i, EV_CH_TSTAMP );
-
-                    if ( report )
-                    {
-                        report( V_ERROR, "CPU Timestamp %d" EOL, cpu->ts );
-                    }
-
-                    retVal = TRACE_EV_MSG_RXED;
-                }
-
-                break;
-
-            // -----------------------------------------------------
-            // CYCLECOUNT RELATED ACTIVITIES
-            // -----------------------------------------------------
-
-            case TRACE_GET_CYCLECOUNT: /* Collecting cycle count as standalone packet */
-                i->cycleConstruct = ( i->cycleConstruct & ~( 0x7f << ( ( i->byteCount ) * 7 ) ) ) | ( ( c & 0x7f ) << ( ( i->byteCount ) * 7 ) );
-                i->byteCount++;
-
-                if ( ( !( c & ( 1 << 7 ) ) ) || ( i->byteCount == 5 ) )
-                {
-                    newState = TRACE_IDLE;
-                    cpu->cycleCount = i->cycleConstruct;
-                    _stateChange( i, EV_CH_CYCLECOUNT );
-
-                    if ( report )
-                    {
-                        report( V_ERROR, "Cyclecount %d" EOL, cpu->cycleCount );
-                    }
-
-                    retVal = TRACE_EV_MSG_RXED;
-                }
-
-                break;
-
-
-            // -----------------------------------------------------
-            // CONTEXTID RELATED ACTIVITIES
-            // -----------------------------------------------------
-
-            case TRACE_GET_CONTEXTID: /* Collecting contextID */
-                i->contextConstruct = i->contextConstruct + ( c << ( 8 * i->byteCount ) );
-                i->byteCount++;
-
-                if ( i->byteCount == i->contextBytes )
-                {
-                    if ( cpu->contextID != i->contextConstruct )
-                    {
-                        cpu->contextID = i->contextConstruct;
-                        _stateChange( i, EV_CH_CONTEXTID );
-                    }
-
-                    if ( report )
-                    {
-                        report( V_ERROR, "CPU ContextID %d" EOL, cpu->contextID );
-                    }
-
-                    retVal = TRACE_EV_MSG_RXED;
-                    newState = TRACE_IDLE;
-                }
-
-                break;
-
-
-            // -----------------------------------------------------
-            // I-SYNC RELATED ACTIVITIES
-            // -----------------------------------------------------
-
-            case TRACE_WAIT_ISYNC:
-                if ( c == 0b00001000 )
-                {
-                    if ( !i->rxedISYNC )
-                    {
-                        retVal = TRACE_EV_SYNCED;
-                        i->rxedISYNC = true;
-                    }
-
-                    i->byteCount = i->contextBytes;
-                    i->contextConstruct = 0;
-                    newState = i->contextBytes ? TRACE_GET_CONTEXTBYTE : TRACE_GET_INFOBYTE;
-                }
-
-                break;
-
-            // -----------------------------------------------------
-
-            case TRACE_GET_CONTEXTBYTE: /* Collecting I-Sync contextID bytes */
-                i->contextConstruct = i->contextConstruct + ( c << ( 8 * i->byteCount ) );
-                i->byteCount++;
-
-                if ( i->byteCount == i->contextBytes )
-                {
-                    if ( cpu->contextID != i->contextConstruct )
-                    {
-                        cpu->contextID = i->contextConstruct;
-                        _stateChange( i, EV_CH_CONTEXTID );
-                    }
-
-                    newState = TRACE_GET_INFOBYTE;
-                }
-
-                break;
-
-            // -----------------------------------------------------
-
-            case TRACE_GET_INFOBYTE: /* Collecting I-Sync Information byte */
-                if ( ( ( c & 0x10000000 ) != 0 ) != cpu->isLSiP )
-                {
-                    cpu->isLSiP = ( c & 0x10000000 ) != 0;
-                    _stateChange( i, EV_CH_ISLSIP );
-                }
-
-                if ( cpu->reason != ( ( c & 0x01100000 ) >> 5 ) )
-                {
-                    cpu->reason    = ( c & 0x01100000 ) >> 5;
-                    _stateChange( i, EV_CH_REASON );
-                }
-
-                if ( cpu->jazelle   != ( ( c & 0x00010000 ) != 0 ) )
-                {
-                    cpu->jazelle   = ( c & 0x00010000 ) != 0;
-                    _stateChange( i, EV_CH_JAZELLE );
-                }
-
-                if ( cpu->nonSecure != ( ( c & 0x00001000 ) != 0 ) )
-                {
-                    cpu->nonSecure = ( c & 0x00001000 ) != 0;
-                    _stateChange( i, EV_CH_SECURE );
-                }
-
-                if ( cpu->altISA != ( ( c & 0x00000100 ) != 0 ) )
-                {
-                    cpu->altISA    = ( c & 0x00000100 ) != 0;
-                    _stateChange( i, EV_CH_ALTISA );
-                }
-
-                if ( cpu->hyp != ( ( c & 0x00000010 ) != 0 ) )
-                {
-                    cpu->hyp       = ( c & 0x00000010 ) != 0;
-                    _stateChange( i, EV_CH_HYP );
-                }
-
-                i->byteCount = 0;
-
-                if ( i->dataOnlyMode )
-                {
-                    if ( report )
-                    {
-                        report( V_ERROR, "ISYNC in dataOnlyMode" EOL );
-                    }
-
-                    retVal = TRACE_EV_MSG_RXED;
-                    newState = TRACE_IDLE;
-                }
-                else
-                {
-                    newState = TRACE_GET_IADDRESS;
-                }
-
-                break;
-
-            // -----------------------------------------------------
-
-            case TRACE_GET_IADDRESS: /* Collecting I-Sync Address bytes */
-                i->addrConstruct = ( i->addrConstruct & ( ~( 0xff << ( 8 * i->byteCount ) ) ) )  | ( c << ( 8 * i->byteCount ) ) ;
-                i->byteCount++;
-
-                if ( i->byteCount == 4 )
-                {
-                    _stateChange( i, EV_CH_ADDRESS );
-
-                    if ( cpu->jazelle )
-                    {
-                        /* This is Jazelle mode..can ignore the AltISA bit */
-                        /* and bit 0 is bit 0 of the address */
-                        cpu->addrMode = TRACE_ADDRMODE_JAZELLE;
-                        cpu->addr = i->addrConstruct;
-                    }
-                    else
-                    {
-                        if ( ( i->addrConstruct & ( 1 << 0 ) ) ^ ( !cpu->thumb ) )
+                    case 0b11011100 ... 0b11011111: /* Atom Format 4, Figure 6-42, Pg 6-305 */
+                        switch ( c & 3 )
                         {
-                            cpu->thumb     = ( c & 0x00000001 ) != 0;
-                            _stateChange( i, EV_CH_THUMB );
+                            case 0b00:
+                                i->cpu.natoms = 1;
+                                i->cpu.disposition = 0b0111;
+                                break;
+
+                            case 0b01:
+                                i->cpu.natoms = 4;
+                                i->cpu.disposition = 0b0000;
+                                break;
+
+                            case 0b10:
+                                i->cpu.natoms = 2;
+                                i->cpu.disposition = 0b0101;
+                                break;
+
+                            case 0b11:
+                                i->cpu.natoms = 2;
+                                i->cpu.disposition = 1010;
+                                break;
                         }
 
-                        if ( i->addrConstruct & ( 1 << 0 ) )
+                        i->cpu.eatoms = 4 - i->cpu.natoms;
+                        i->cpu.instCount += 4;
+                        retVal = TRACE_EV_MSG_RXED;
+                        TRACEDecodeStateChange( i, EV_CH_ENATOMS );
+                        break;
+
+
+                    case 0b11010101:
+                    case 0b11010110:
+                    case 0b11010111:
+                    case 0b11110101: /* Atom format 5, Figure 6-43, Pg 6-306 ... use bits 5, 1 and 0 */
+                        switch ( ( ( 0 != ( c & ( 1 << 5 ) ) ) << 2 ) | ( ( 0 != ( c & ( 1 << 1 ) ) ) << 1 ) | ( ( 0 != ( c & ( 1 << 0 ) ) ) << 0 ) )
                         {
-                            cpu->addrMode = TRACE_ADDRMODE_THUMB;
-                            i->addrConstruct &= ~( 1 << 0 );
-                            cpu->addr = i->addrConstruct;
+                            case 0b101:
+                                i->cpu.natoms = 1;
+                                i->cpu.disposition = 0b10000;
+                                break;
+
+                            case 0b001:
+                                i->cpu.natoms = 5;
+                                i->cpu.disposition = 0b00000;
+                                break;
+
+                            case 0b010:
+                                i->cpu.natoms = 3;
+                                i->cpu.disposition = 0b01010;
+                                break;
+
+                            case 0b011:
+                                i->cpu.natoms = 2;
+                                i->cpu.disposition = 0b10101;
+                                break;
+
+                            default:
+                                report( V_ERROR, "Illegal value for Atom type 5 (0x%02x)" EOL, c );
+                                break;
+                        }
+
+                        i->cpu.eatoms = 5 - i->cpu.natoms;
+                        i->cpu.instCount += 5;
+                        retVal = TRACE_EV_MSG_RXED;
+                        TRACEDecodeStateChange( i, EV_CH_ENATOMS );
+                        break;
+
+                    case 0b11000000 ... 0b11010100:
+                    case 0b11100000 ... 0b11110100: /* Atom format 6, Figure 6-44, Pg 6.307 */
+                        i->cpu.eatoms = ( c & 0x1f ) + 3;
+                        i->cpu.instCount = i->cpu.eatoms;
+                        i->cpu.disposition = ( 1 << ( i->cpu.eatoms + 1 ) ) - 1;
+
+                        if ( c & ( 1 << 5 ) )
+                        {
+                            i->cpu.disposition &= 0xfffffffe;
+                            i->cpu.eatoms--;
+                            i->cpu.natoms = 1;
                         }
                         else
                         {
-                            cpu->addrMode = TRACE_ADDRMODE_ARM;
-                            cpu->addr = i->addrConstruct & 0xFFFFFFFC;
+                            i->cpu.natoms = 0;
                         }
-                    }
 
-                    if ( cpu->isLSiP )
+                        retVal = TRACE_EV_MSG_RXED;
+                        TRACEDecodeStateChange( i, EV_CH_ENATOMS );
+                        break;
+
+
+                    case 0b10100000 ... 0b10101111: /* Q instruction trace packet, Figure 6-45, Pg 6-308 */
+
+                        break;
+
+                    case 0b01110001 ... 0b01111111: /* Event tracing, Figure 6-31, Pg 6-289 */
+                        if ( c & 0b0001 )
+                        {
+                            TRACEDecodeStateChange( i, EV_CH_EVENT0 );
+                        }
+
+                        if ( c & 0b0010 )
+                        {
+                            TRACEDecodeStateChange( i, EV_CH_EVENT1 );
+                        }
+
+                        if ( c & 0b0100 )
+                        {
+                            TRACEDecodeStateChange( i, EV_CH_EVENT2 );
+                        }
+
+                        if ( c & 0b1000 )
+                        {
+                            TRACEDecodeStateChange( i, EV_CH_EVENT3 );
+                        }
+
+                        break;
+
+                    case 0b00000100: /* Trace On, Figure 6.3, Pg 6-261 */
+                        retVal = TRACE_EV_MSG_RXED;
+                        TRACEDecodeStateChange( i, EV_CH_TRACESTART );
+                        break;
+
+                    case 0b10010000 ... 0b10010011: /* Exact Match Address */
+                        int match = c & 0x03;
+                        assert( c != 3 ); /* This value is reserved */
+                        _stackQ();
+                        i->cpu.addr = j.q[match].addr;
+                        retVal = TRACE_EV_MSG_RXED;
+                        TRACEDecodeStateChange( i, EV_CH_ADDRESS );
+                        break;
+
+                    case 0b10010101: /* Short address, IS0 short, Figure 6-32, Pg 6-294 */
+                        j.idx = 2;
+                        _stackQ();
+                        j.q[0].addr &= 0xFC;
+                        newState = TRACE_GET_SHORT_ADDR;
+                        break;
+
+                    case 0b10010110: /* Short address, IS1 short, Figure 6-32, Pg 6-294 */
+                        j.idx = 1;
+                        _stackQ();
+                        j.q[0].addr &= 0xFE;
+                        newState = TRACE_GET_SHORT_ADDR;
+                        break;
+
+                    case 0b10011010: /* Long address, 32 bit, IS0, Figure 6.33 Pg 6-295 */
+                        j.idx = 2;
+                        j.haveContext = false;
+                        _stackQ();
+                        j.q[0].inst = IS0;
+                        j.q[0].addr &= 0xFFFFFFFC;
+                        newState = TRACE_GET_32BIT_ADDR;
+                        break;
+
+                    case 0b10011011: /* Long address, 32 bit, IS1, Figure 6.33 Pg 6-295 */
+                        j.idx = 1;
+                        j.haveContext = false;
+                        _stackQ();
+                        j.q[0].inst = IS1;
+                        j.q[0].addr &= 0xFFFFFFFE;
+                        newState = TRACE_GET_32BIT_ADDR;
+                        break;
+
+                    case 0b10011101: /* Long address, 64 bit, IS0, Figure 6.34 Pg 6-295 */
+                        j.idx = 2;
+                        j.haveContext = false;
+                        _stackQ();
+                        j.q[0].inst = IS0;
+                        j.q[0].addr &= 0xFFFFFFFC;
+                        newState = TRACE_GET_64BIT_ADDR;
+                        break;
+
+
+                    case 0b10011110: /* Long address, 64 bit, IS0, Figure 6.34 Pg 6-295 */
+                        j.idx = 1;
+                        _stackQ();
+                        j.haveContext = false;
+                        j.q[0].inst = IS1;
+                        j.q[0].addr &= 0xFFFFFFFC;
+                        newState = TRACE_GET_64BIT_ADDR;
+                        break;
+
+                    case 0b10000000: /* Context element with no payload, Figure 6-36, Pg 6-297 */
+                        /* Context is same as prevously, nothing to report */
+                        break;
+
+                    case 0b10000001: /* Context element with payload, Figure 6-36, Pg 6-297*/
+                        newState = TRACE_GET_CONTEXT;
+                        break;
+
+                    case 0b10000010: /* Long address, 32 bit, IS0, Figure 6-37 case 1, Pg 6-299 */
+                        j.haveContext = true;
+                        j.idx = 2;
+                        _stackQ();
+                        j.q[0].inst = IS0;
+                        j.q[0].addr &= 0xFFFFFFFC;
+                        newState = TRACE_GET_32BIT_ADDR;
+                        break;
+
+
+                    case 0b10000011: /* Long address, 32 bit, IS1, Figure 6-37 case 2, Pg 6-299 */
+                        j.idx = 1;
+                        j.haveContext = true;
+                        _stackQ();
+                        j.q[0].inst = IS1;
+                        j.q[0].addr &= 0xFFFFFFFE;
+                        newState = TRACE_GET_32BIT_ADDR;
+                        break;
+
+                    case 0b10000101: /* Long address, 64 bit, IS0, Figure 6-38 case 1, Pg 6-300 */
+                        j.idx = 2;
+                        j.haveContext = true;
+                        _stackQ();
+                        j.q[0].inst = IS0;
+                        j.q[0].addr &= 0xFFFFFFFC;
+                        newState = TRACE_GET_64BIT_ADDR;
+                        break;
+
+
+                    case 0b10000110: /* Long address, 64 bit, IS1, Figure 6-38 case 2, Pg 6-300 */
+                        j.idx = 1;
+                        _stackQ();
+                        j.haveContext = true;
+                        j.q[0].inst = IS1;
+                        j.q[0].addr &= 0xFFFFFFFC;
+                        newState = TRACE_GET_64BIT_ADDR;
+                        break;
+
+                    case 0b00000000:
+                        newState = TRACE_EXTENSION;
+                        break;
+
+                    case 0b00001000: /* Resynchronisation, Figure 6-6, Pg 6-263 */
+                        i->rxedISYNC = false;
+                        newState = TRACE_UNSYNCED;
+                        break;
+
+                    case 0b00000010 ... 0b00000011: /* Timestamp, Figure 6-7, Pg 6-264 */
+                        newState = TRACE_GET_TIMESTAMP;
+                        j.cc_follows = 0 != ( c & 1 );
+                        j.idx = 0;
+                        break;
+
+                    case 0b10001000: /* Timestamp marker element, Figure 6-8, Pg 6-265 */
+                        break;
+
+                    case 0b00000101: /* Function return element, Figure 6-9, Pg 6-265 */
+                        retVal = TRACE_EV_MSG_RXED;
+                        TRACEDecodeStateChange( i, EV_CH_FNRETURN );
+                        break;
+
+                    case 0b00000111: /* Exception Return element, Figure 6-11, Pg 6-271 */
+                        retVal = TRACE_EV_MSG_RXED;
+                        TRACEDecodeStateChange( i, EV_CH_EXRETURN );
+                        break;
+
+                    case 0b00100000 ... 0b00100111: /* Data sync mark, Figure 6-15, Pg 6-275 */
+                        i->cpu.dsync_mark = c & 0x07;
+                        retVal = TRACE_EV_MSG_RXED;
+                        TRACEDecodeStateChange( i, EV_CH_DATASYNC );
+                        break;
+
+                    case 0b00101000 ... 0b00101100: /* Unnumbered data sync mark, Figure 6-16, Pg 6-275 */
+                        i->cpu.udsync_mark = c & 0x07;
+                        retVal = TRACE_EV_MSG_RXED;
+                        TRACEDecodeStateChange( i, EV_CH_UDATASYNC );
+                        break;
+
+                    case 0b00110000 ... 0b00110011: /* Mispredict instruction, Figure 6-21, Pg 6-279 */
+                        break;
+
+                    case 0b00101101: /* Commit instruction trace packet, Figure 6-17, Pg 6-277 */
+                        newState = TRACE_COMMIT;
+                        break;
+
+                    default:
+                        report( V_ERROR, "Unknown element %02x in TRACE_IDLE" EOL, c );
+                        break;
+                }
+
+                break;
+
+            // -----------------------------------------------------
+            case TRACE_GET_CONTEXT: /* Get context information byte, Figure 6-36, Pg 6-297 */
+                i->cpu.exceptionLevel = c & 3;
+                i->cpu.am64bit = ( 0 != ( c & ( 1 << 4 ) ) );
+                i->cpu.amSecure = ( 0 != ( c & ( 1 << 5 ) ) );
+                j.haveContext = ( 0 != ( c & ( 1 << 7 ) ) );
+
+                if ( c & ( 1 << 6 ) )
+                {
+                    j.vcontext = 0;
+                    j.idx = 0;
+                    newState = TRACE_GET_VCONTEXT;
+                }
+                else if ( j.haveContext )
+                {
+                    j.context = 0;
+                    j.idx = 0;
+                    newState = TRACE_GET_CONTEXT_ID;
+                }
+                else
+                {
+                    retVal = TRACE_EV_MSG_RXED;
+                    TRACEDecodeStateChange( i, EV_CH_CONTEXTID );
+                    newState = TRACE_IDLE;
+                }
+
+                break;
+
+            // -----------------------------------------------------
+
+            case TRACE_GET_VCONTEXT:
+                j.vcontext |= c << j.idx;
+                j.idx += 8;
+
+                if ( ( j.idx == 32 ) && ( !j.haveContext ) )
+                {
+                    i->cpu.vmid = j.vcontext;
+                    retVal = TRACE_EV_MSG_RXED;
+                    TRACEDecodeStateChange( i, EV_CH_VMID );
+                    newState = TRACE_IDLE;
+                }
+                else
+                {
+                    j.context = 0;
+                    j.idx = 0;
+                    newState = TRACE_GET_CONTEXT_ID;
+                }
+
+                break;
+
+            // -----------------------------------------------------
+
+            case TRACE_GET_CONTEXT_ID:
+                j.context |= c << j.idx;
+                j.idx += 8;
+
+                if ( j.idx == 32 )
+                {
+                    i->cpu.contextID = j.vcontext;
+                    retVal = TRACE_EV_MSG_RXED;
+                    TRACEDecodeStateChange( i, EV_CH_CONTEXTID );
+                    newState = TRACE_IDLE;
+                }
+
+                break;
+
+            // -----------------------------------------------------
+            case TRACE_GET_SHORT_ADDR: /* Short format address for IS0 or IS1, offset set by idx. Figure 6-32, Pg 6-294 */
+                if ( j.q[0].inst == IS0 )
+                {
+                    /* First byte of received data */
+                    j.q[0].addr = ( j.q[0].addr & ( 0x7F << j.idx ) ) | ( ( c & 0x7f ) << ( j.idx ) );
+                    j.idx += 7;
+                }
+                else
+                {
+                    j.q[0].addr = ( j.q[0].addr & ( 0xFF << j.idx ) ) | ( ( c & 0xFf ) << ( j.idx ) );
+                }
+
+                if ( ( c & 0x80 ) || ( j.idx > 7 ) )
+                {
+                    i->cpu.addr = j.q[0].addr;
+                    retVal = TRACE_EV_MSG_RXED;
+                    TRACEDecodeStateChange( i, EV_CH_ADDRESS );
+                    newState = TRACE_IDLE;
+                }
+
+                break;
+
+            // -----------------------------------------------------
+            case TRACE_GET_32BIT_ADDR: /* Long format 32 bit address for IS0 or IS1, offset set by idx. Figure 6-33, Pg 6-295 */
+                if ( j.idx < 3 )
+                {
+                    /* First byte of received data */
+                    j.q[0].addr = ( j.q[0].addr & ( ~( 0x7F << j.idx ) ) ) | ( ( c & 0x7f ) << ( j.idx ) );
+                    j.idx += 7;
+                }
+                else
+                {
+                    if ( ( j.q[0].inst == IS1 ) && ( j.idx == 8 ) )
                     {
-                        /* If this is an LSiP packet we need to go get the address */
-                        newState = ( i->usingAltAddrEncode ) ? TRACE_COLLECT_BA_ALT_FORMAT : TRACE_COLLECT_BA_STD_FORMAT;
+                        /* Second byte of IS1 case - mask MSB */
+                        j.q[0].addr = ( j.q[0].addr & ( ~( 0x7F << j.idx ) ) ) | ( ( c & 0x7f ) << ( j.idx ) );
+                        j.idx = 16;
                     }
                     else
                     {
-                        if ( report )
-                        {
-                            report( V_ERROR, "ISYNC with IADDRESS 0x%08x" EOL, cpu->addr );
-                        }
+                        j.q[0].addr = ( j.q[0].addr & ( ~( 0xFF << j.idx ) ) ) | ( ( c & 0xFf ) << ( j.idx ) );
+                        j.idx += 8;
+                    }
+                }
 
-                        newState = TRACE_IDLE;
+                if ( j.idx == 32 )
+                {
+                    i->cpu.addr = j.q[0].addr;
+                    TRACEDecodeStateChange( i, EV_CH_ADDRESS );
+
+                    if ( j.haveContext )
+                    {
+                        newState = TRACE_GET_CONTEXT;
+                    }
+                    else
+                    {
                         retVal = TRACE_EV_MSG_RXED;
+                        newState = TRACE_IDLE;
                     }
                 }
 
@@ -885,26 +629,243 @@ void ETM4DecoderPumpAction( struct TRACEDecoder *i, uint8_t c, traceDecodeCB cb,
 
             // -----------------------------------------------------
 
-            case TRACE_GET_ICYCLECOUNT: /* Collecting cycle count on front of ISYNC packet */
-                i->cycleConstruct = ( i->cycleConstruct & ~( 0x7f << ( ( i->byteCount ) * 7 ) ) ) | ( ( c & 0x7f ) << ( ( i->byteCount ) * 7 ) );
-                i->byteCount++;
-
-                if ( ( !( c & ( 1 << 7 ) ) ) || ( i->byteCount == 5 ) )
+            case TRACE_GET_64BIT_ADDR: /* Long format 64 bit address for IS0 or IS1, offset set by idx. Figure 6-34, Pg 6-295 */
+                if ( j.idx < 3 )
                 {
-                    /* Now go to get the rest of the ISYNC packet */
-                    /* Collect either the context or the Info Byte next */
-                    cpu->cycleCount = i->cycleConstruct;
-                    i->byteCount = i->contextBytes;
-                    i->contextConstruct = 0;
-                    _stateChange( i, EV_CH_CYCLECOUNT );
-                    newState = i->contextBytes ? TRACE_GET_CONTEXTBYTE : TRACE_GET_INFOBYTE;
-                    break;
+                    /* First byte of received data */
+                    j.q[0].addr = ( j.q[0].addr & ( 0x7F << j.idx ) ) | ( ( c & 0x7f ) << ( j.idx ) );
+                    j.idx += 7;
+                }
+                else
+                {
+                    if ( ( j.q[0].inst == IS1 ) && ( j.idx == 8 ) )
+                    {
+                        /* Second byte of IS1 case - mask MSB */
+                        j.q[0].addr = ( j.q[0].addr & ( 0x7F << j.idx ) ) | ( ( c & 0x7f ) << ( j.idx ) );
+                        j.idx = 16;
+                    }
+                    else
+                    {
+                        j.q[0].addr = ( j.q[0].addr & ( 0xFF << j.idx ) ) | ( ( c & 0xFf ) << ( j.idx ) );
+                        j.idx += 8;
+                    }
+                }
+
+                if ( j.idx == 64 )
+                {
+                    i->cpu.addr = j.q[0].addr;
+                    TRACEDecodeStateChange( i, EV_CH_ADDRESS );
+
+                    if ( j.haveContext )
+                    {
+                        newState = TRACE_GET_CONTEXT;
+                    }
+                    else
+                    {
+                        retVal = TRACE_EV_MSG_RXED;
+                        newState = TRACE_IDLE;
+                    }
                 }
 
                 break;
 
-                // -----------------------------------------------------
+            // -----------------------------------------------------
+            case TRACE_GET_TIMESTAMP: /* Timestamp, Figure 6-7, Pg 6-264 */
+                if ( j.idx < 8 )
+                {
+                    i->cpu.ts = ( i->cpu.ts & ( 0x7F << ( j.idx * 7 ) ) ) | ( c & 0x7f );
+                }
+                else
+                {
+                    i->cpu.ts = ( i->cpu.ts & ( 0xFF << ( j.idx * 7 ) ) ) | ( c & 0xff );
+                }
 
+                j.idx++;
+
+                if ( ( !( c & 0x80 ) ) || ( j.idx == 9 ) )
+                {
+                    TRACEDecodeStateChange( i, EV_CH_TSTAMP );
+
+                    if ( j.cc_enabled )
+                    {
+                        if ( j.cc_follows )
+                        {
+                            j.idx = 0;
+                            j.cntUpdate = 0;
+                            newState = TRACE_GET_TS_CC;
+                        }
+                        else
+                        {
+                            retVal = TRACE_EV_MSG_RXED;
+                            newState = TRACE_IDLE;
+                        }
+                    }
+                    else
+                    {
+                        retVal = TRACE_EV_MSG_RXED;
+                        newState = TRACE_IDLE;
+                    }
+                }
+
+                break;
+
+            // -----------------------------------------------------
+            case TRACE_GET_TS_CC: /* Part of timestamp, Figure 6-7, Pg 6-264 */
+                if ( j.idx < 2 )
+                {
+                    j.cntUpdate |= ( c & 0x7f ) << ( j.idx * 7 );
+                }
+                else
+                {
+                    j.cntUpdate |= ( c & 0x7f ) << ( j.idx * 7 );
+                }
+
+                j.idx++;
+
+                if ( ( j.idx == 3 ) || ( c & 0x80 ) )
+                {
+
+                    i->cpu.cycleCount += j.cntUpdate;
+                    retVal = TRACE_EV_MSG_RXED;
+                    TRACEDecodeStateChange( i, EV_CH_CYCLECOUNT );
+                    newState = TRACE_IDLE;
+                }
+
+                break;
+
+            // -----------------------------------------------------
+            case TRACE_EXTENSION:
+                switch ( c )
+                {
+                    case 0b00000011: /* Discard packet, Figure 6.4, Pg 6-262 */
+                        TRACEDecodeStateChange( i, EV_CH_DISCARD );
+                        TRACEDecodeStateChange( i, EV_CH_TRACESTOP );
+                        break;
+
+                    case 0b00000101: /* Overflow packet, Figure 6.5, Pg. 6-263 */
+                        TRACEDecodeStateChange( i, EV_CH_OVERFLOW );
+                        break;
+
+                    case 0b00000111: /* Branch future flush */
+                        break;
+
+                    default:
+                        report( V_ERROR, "Reserved extension packet" EOL );
+                        break;
+                }
+
+                retVal = TRACE_EV_MSG_RXED;
+                newState = TRACE_IDLE;
+                break;
+
+            // -----------------------------------------------------
+            case TRACE_WAIT_INFO:
+                if ( c == 0b00000001 )
+                {
+                    newState = TRACE_GET_INFO_PLCTL;
+                }
+
+                break;
+
+            case TRACE_GET_INFO_PLCTL:
+                j.plctl = c;
+                j.nextrhkey = 0;
+                _flushQ(); /* Reset the address stack too ( Section 6.4.12, Pg 6-291 ) */
+
+                if ( j.plctl & ( 1 << 0 ) )
+                {
+                    newState = TRACE_GET_INFO_INFO;
+                }
+                else if ( j.plctl & ( 1 << 1 ) )
+                {
+                    newState = TRACE_GET_INFO_KEY;
+                }
+                else if ( j.plctl & ( 1 << 2 ) )
+                {
+                    newState = TRACE_GET_INFO_SPEC;
+                }
+                else if ( j.plctl & ( 1 << 3 ) )
+                {
+                    newState = TRACE_GET_INFO_CYCT;
+                }
+                else
+                {
+                    _reportInfo( report );
+                    retVal = TRACE_EV_MSG_RXED;
+                    newState = TRACE_IDLE;
+                }
+
+                break;
+
+            case TRACE_GET_INFO_INFO:
+                j.cc_enabled   = ( 0 != ( c & ( 1 << 0 ) ) );
+                j.cond_enabled = ( c << 1 ) & 7;
+                j.load_traced  = ( 0 != ( c & ( 1 << 4 ) ) );
+                j.store_traced = ( 0 != ( c & ( 1 << 5 ) ) );
+
+                if ( j.plctl & ( 1 << 1 ) )
+                {
+                    newState = TRACE_GET_INFO_KEY;
+                }
+                else if ( j.plctl & ( 1 << 2 ) )
+                {
+                    newState = TRACE_GET_INFO_SPEC;
+                }
+                else if ( j.plctl & ( 1 << 3 ) )
+                {
+                    newState = TRACE_GET_INFO_CYCT;
+                }
+                else
+                {
+                    _reportInfo( report );
+                    retVal = TRACE_EV_MSG_RXED;
+                    newState = TRACE_IDLE;
+                }
+
+                break;
+
+            case TRACE_GET_INFO_KEY:
+                j.nextrhkey = c;  // FIXME: Greater than 256 keys???
+
+                if ( j.plctl & ( 1 << 2 ) )
+                {
+                    newState = TRACE_GET_INFO_SPEC;
+                }
+                else if ( j.plctl & ( 1 << 3 ) )
+                {
+                    newState = TRACE_GET_INFO_CYCT;
+                }
+                else
+                {
+                    _reportInfo( report );
+                    retVal = TRACE_EV_MSG_RXED;
+                    newState = TRACE_IDLE;
+                }
+
+                break;
+
+            case TRACE_GET_INFO_SPEC:
+                j.spec = c;
+
+                if ( j.plctl & ( 1 << 3 ) )
+                {
+                    _reportInfo( report );
+                    newState = TRACE_GET_INFO_CYCT;
+                }
+                else
+                {
+                    _reportInfo( report );
+                    retVal = TRACE_EV_MSG_RXED;
+                    newState = TRACE_IDLE;
+                }
+
+                break;
+
+            // -----------------------------------------------------
+
+            default:
+                report( V_WARN, "Case %d not handled in switch" EOL, i->p );
+                break;
         }
     }
 
@@ -912,6 +873,11 @@ void ETM4DecoderPumpAction( struct TRACEDecoder *i, uint8_t c, traceDecodeCB cb,
     {
         if ( report ) report( V_DEBUG, "%02x:%s --> %s %s(%d)", c, ( i->p == TRACE_IDLE ) ? protoStateName[i->p] : "", protoStateName[newState],
                                   ( ( newState == TRACE_IDLE ) ? ( ( retVal == TRACE_EV_NONE ) ? "!!!" : "OK" ) : " : " ), retVal );
+
+        if ( newState == TRACE_IDLE )
+        {
+            report( V_DEBUG, "\r\n" );
+        }
     }
 
     i->p = newState;

@@ -67,8 +67,22 @@ enum TRACEchanges
     EV_CH_LINEAR,
     EV_CH_TRACESTART,
     EV_CH_TRACESTOP,
+
+    EV_CH_DISCARD,
+    EV_CH_OVERFLOW,
+    EV_CH_FNRETURN,
+    EV_CH_EXRETURN,
+    EV_CH_DATASYNC,
+    EV_CH_UDATASYNC,
+    EV_CH_EVENT0,
+    EV_CH_EVENT1,
+    EV_CH_EVENT2,
+    EV_CH_EVENT3,
     EV_CH_NUM_CHANGES
 };
+
+/* Flag for unknown/illegal cycle count */
+#define COUNT_UNKNOWN 0xffffffff
 
 // ============================================================================
 // Messages out of the decoder
@@ -101,6 +115,9 @@ struct TRACECPUState
     uint16_t exception;                  /* Exception type being executed */
     uint16_t resume;                     /* Interrupt resume code */
     uint64_t instCount;                  /* Number of instructions executed */
+    uint8_t exceptionLevel;              /* Current exception level */
+    bool am64bit;                        /* Running in 64 bit mode */
+    bool amSecure;                       /* Running in secure mode */
 
     // I-Sync related
     enum Reason reason;                  /* Why this i-sync was generated */
@@ -110,6 +127,10 @@ struct TRACECPUState
     uint8_t eatoms;                      /* Number of E (executed) atoms in this step */
     uint8_t natoms;                      /* Number of N (non-executed) atoms in this step */
     uint32_t disposition;                /* What happened to condition codes for each instruction? */
+
+    // D-Sync related
+    uint8_t dsync_mark;                  /* Co-ordination mark in data flow */
+    uint8_t udsync_mark;                 /* Co-ordination mark for unnumbered sync in data flow */
 
     // State flags
     bool jazelle;                        /* Executing jazelle mode instructions */

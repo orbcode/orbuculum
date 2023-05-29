@@ -21,6 +21,7 @@
 #include "uthash.h"
 #include "generics.h"
 #include "traceDecoder.h"
+#include "tpiuDecoder.h"
 #include "symbols.h"
 #include "nw.h"
 #include "ext_fileformats.h"
@@ -109,6 +110,7 @@ struct RunTime
 
     /* Subsystem data support */
     struct TRACEDecoder i;
+    struct TPIUDecoder t;
     struct SymbolSet *s;                        /* Symbols read from elf */
 
     /* Calls related info */
@@ -356,6 +358,14 @@ static void _traceCB( void *d )
     static uint32_t incAddr        = 0;
     static uint32_t disposition    = 0;
 
+    if ( TRACEStateChanged( &r->i, EV_CH_ADDRESS ) )
+    {
+        printf( EOL "Address %008x" EOL, r->i.cpu.addr );
+    }
+
+    TRACEStateChanged( &r->i, 0xffffffff );
+    return;
+
     /* This routine gets called when valid data are available */
     /* if these are the first data, then reset counters etc.  */
     if ( !r->sampling )
@@ -461,9 +471,16 @@ static void _printHelp( const char *const progName )
     genericsPrintf( "    -I, --interval:     <Interval> Time between samples (in ms)" EOL );
     genericsPrintf( "    -M, --no-colour:    Supress colour in output" EOL );
     genericsPrintf( "    -O, --objdump-opts: <options> Options to pass directly to objdump" EOL );
-    genericsPrintf( "    -p, --trace-proto:  {ETM35|MTB} trace protocol to use, default is ETM35" EOL );
+    genericsPrintf( "    -p, --trace-proto:  { " );
+
+    for ( int i = TRACE_PROT_LIST_START; i < TRACE_PROT_LIST_END; i++ )
+    {
+        genericsPrintf( "%s ", TRACEDecodeProtocolName( i ) );
+    }
+
+    genericsPrintf( "} trace protocol to use, default is %s" EOL, TRACEDecodeProtocolName( TRACE_PROT_LIST_START ) );
     genericsPrintf( "    -s, --server:       <Server>:<Port> to use" EOL );
-    //genericsPrintf( "    -t, --tpiu:         <channel>: Use TPIU to strip TPIU on specfied channel (defaults to 2)" EOL );
+    genericsPrintf( "    -t, --tpiu:         <channel>: Use TPIU to strip TPIU on specfied channel (defaults to 2)" EOL );
     genericsPrintf( "    -T, --all-truncate: truncate -d material off all references (i.e. make output relative)" EOL );
     genericsPrintf( "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
     genericsPrintf( "    -V, --version:      Print version and exit" EOL );
@@ -493,6 +510,7 @@ static struct option _longOptions[] =
     {"objdump-opts", required_argument, NULL, 'O'},
     {"trace-proto", required_argument, NULL, 'p'},
     {"server", required_argument, NULL, 's'},
+    {"tpiu", required_argument, NULL, 't'},
     {"all-truncate", no_argument, NULL, 'T'},
     {"verbose", required_argument, NULL, 'v'},
     {"version", no_argument, NULL, 'V'},
@@ -506,7 +524,7 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
 {
     int c, optionIndex = 0;
 
-    while ( ( c = getopt_long ( argc, argv, "ADd:e:Ef:hVI:MO:p:s:Tv:y:z:", _longOptions, &optionIndex ) ) != -1 )
+    while ( ( c = getopt_long ( argc, argv, "ADd:e:Ef:hVI:MO:p:s:Tt:v:y:z:", _longOptions, &optionIndex ) ) != -1 )
 
         switch ( c )
         {
@@ -610,6 +628,13 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
                 break;
 
             // ------------------------------------
+            case 't':
+                r->options->useTPIU = true;
+                r->options->channel = atoi( optarg );
+                break;
+
+            // ------------------------------------
+
             case 'v':
                 if ( !isdigit( *optarg ) )
                 {
@@ -738,8 +763,47 @@ static void *_processBlocks( void *params )
             }
 
 #endif
-            /* Pump all of the data through the protocol handler */
-            TRACEDecoderPump( &r->i, r->rawBlock[r->rp].buffer, r->rawBlock[r->rp].fillLevel, _traceCB, genericsReport, &_r );
+
+            if ( r->options->useTPIU )
+            {
+                struct TPIUPacket p;
+                int j = 0;
+
+                for ( int i = 0; i < r->rawBlock[r->rp].fillLevel; i++ )
+                {
+                    /* Strip the TPIU formatting from the block. It can go back into the same block 'cos it will always take less room */
+
+                    if ( TPIU_EV_RXEDPACKET == TPIUPump( &r->t, r->rawBlock[r->rp].buffer[i] ) )
+                    {
+                        if ( !TPIUGetPacket( &r->t, &p ) )
+                        {
+                            genericsReport( V_WARN, "TPIUGetPacket fell over" EOL );
+                        }
+                        else
+                        {
+                            /* Iterate through the packet, putting bytes for TRACE into the processing buffer */
+                            for ( uint32_t g = 0; g < p.len; g++ )
+                            {
+                                if ( r->options->channel == p.packet[g].s )
+                                {
+                                    r->rawBlock[r->rp].buffer[j++] = p.packet[g].d;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if ( j > 0 )
+                {
+                    TRACEDecoderPump( &r->i, r->rawBlock[r->rp].buffer, j, _traceCB, genericsReport, &_r );
+                }
+            }
+            else
+            {
+                /* Pump all of the data through the protocol handler */
+                TRACEDecoderPump( &r->i, r->rawBlock[r->rp].buffer, r->rawBlock[r->rp].fillLevel, _traceCB, genericsReport, &_r );
+
+            }
 
             r->rp = ( r->rp + 1 ) % NUM_RAW_BLOCKS;
         }
@@ -798,7 +862,12 @@ int main( int argc, char *argv[] )
 
 #endif
 
-    TRACEDecoderInit( &_r.i, _r.i.protocol, !_r.options->noaltAddr );
+    TRACEDecoderInit( &_r.i, _r.options->protocol, !_r.options->noaltAddr );
+
+    if ( _r.options->useTPIU )
+    {
+        TPIUDecoderInit( &_r.t );
+    }
 
     while ( !_r.ending )
     {
