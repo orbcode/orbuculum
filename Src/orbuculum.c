@@ -55,6 +55,7 @@
 #include "tpiuDecoder.h"
 #include "nwclient.h"
 #include "orbtraceIf.h"
+#include "stream.h"
 
 /* How many transfer buffers from the source to allocate */
 #define NUM_RAW_BLOCKS (32)
@@ -1044,48 +1045,14 @@ static int _usbFeeder( struct RunTime *r )
 }
 // ====================================================================================================
 static int _nwserverFeeder( struct RunTime *r )
-
 {
-    struct sockaddr_in serv_addr;
-    struct hostent *server;
-
-    int flag = 1;
-
-    memset( ( char * ) &serv_addr, 0, sizeof( serv_addr ) );
-    server = gethostbyname( r->options->nwserverHost );
-
-    if ( !server )
+    while ( true )
     {
-        genericsReport( V_ERROR, "Cannot find host" EOL );
-        return -1;
-    }
+        struct Stream *stream = streamCreateSocket( r->options->nwserverHost, r->options->nwserverPort );
 
-    serv_addr.sin_family = AF_INET;
-    memcpy( ( char * )&serv_addr.sin_addr.s_addr,
-            ( const char * )server->h_addr,
-            server->h_length
-          );
-    serv_addr.sin_port = htons( r->options->nwserverPort );
-
-    while ( !r->ending )
-    {
-        r->f = socket( AF_INET, SOCK_STREAM, 0 );
-        setsockopt( r->f, SOL_SOCKET, SO_REUSEPORT, ( const void * )&flag, sizeof( flag ) );
-
-        if ( r->f < 0 )
+        if ( stream == NULL )
         {
-            genericsReport( V_ERROR, "Error creating socket" EOL );
-            return -1;
-        }
-
-        while ( ( !r->ending ) && ( connect( r->f, ( struct sockaddr * ) &serv_addr, sizeof( serv_addr ) ) < 0 ) )
-        {
-            usleep( INTERVAL_100MS );
-        }
-
-        if ( r->ending )
-        {
-            break;
+            continue;
         }
 
         genericsReport( V_INFO, "Established NW Server Link" EOL );
@@ -1093,30 +1060,32 @@ static int _nwserverFeeder( struct RunTime *r )
         r->conn = true;
 
         while ( !r->ending )
-
         {
             struct dataBlock *rxBlock = &r->rawBlock[r->wp];
 
-            if ( ( rxBlock->fillLevel = read( r->f, rxBlock->buffer, USB_TRANSFER_SIZE ) ) <= 0 )
+            size_t receivedSize;
+            enum ReceiveResult result = stream->receive( stream, rxBlock->buffer, USB_TRANSFER_SIZE, NULL, &receivedSize );
+
+            if ( result != RECEIVE_RESULT_OK )
             {
                 break;
             }
 
+            rxBlock->fillLevel = receivedSize;
             r->wp = ( r->wp + 1 ) % NUM_RAW_BLOCKS;
             _dataAvailable( r );
         }
 
-        r->conn = false;
-
-        close( r->f );
-
-        if ( ! r->ending )
+        if ( !r->ending )
         {
             genericsReport( V_INFO, "Lost NW Server Link" EOL );
         }
+
+        r->conn = false;
+        free( stream );
     }
 
-    return -2;
+    return 0;
 }
 // ====================================================================================================
 
