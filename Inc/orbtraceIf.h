@@ -20,7 +20,7 @@
     #if defined LINUX
         #include <libusb-1.0/libusb.h>
     #elif defined WIN32
-        #include <libusb-1.0/libusb.h>
+        #include <libusb.h>
     #else
         #error "Unknown OS"
     #endif

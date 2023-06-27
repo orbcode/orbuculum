@@ -1019,3 +1019,17 @@ and then;
 
 However, that's probably over-complicated now...just use the orbuculum -s option to hook to any source that
 is pumping out clean SWO data. This information is just left here to show the flexibilities you have got available.
+
+
+Windows: concurrent debug and Orbuculum usage with Orbtrace
+===========================================================
+
+Due to issue in Libusb (https://github.com/libusb/libusb/issues/1177 and https://github.com/libusb/libusb/pull/1181) running orbuculum or OpenOCD (or any other tool using libusb to access CMSIS-DAP) will claim exclusively entrie Orbtrace device preventing other application from running (e.g. while orbuculum is running OpenOCD will fail to find debug probe). Some debug software might be able to fallback to HID interface of CMSIS-DAP, however this will be much slower than "proper" USB Bulk interface.
+
+In order to ease pain of this issue, Orbuculum distribution for Windows built on Github (https://github.com/orbcode/orbuculum/actions/workflows/build-windows.yml?query=branch%3Amain) is built with patched libusb. While this alone might not be enough for debug applications to work properly (with USB build interface) at least Orbuculum itselt will not act hostile to other applications. In order to get debug application working with patched libusb there are two options:
+* Rebuild application with patched libusb (https://github.com/Novakov/libusb/tree/winusb-lazy-create-file) - harder to do but have the greatest chance of success
+* Replace `libusb-1.0.dll` bundled with debug application in use with `libusb-1.0.dll` from Orbuculum distribution - easier to do but might not work with all applications.
+
+The later approach (file replacement) works fine for PyOCD (replace `libusb-1.0.dll` file in `<venv>/Lib/site-packages/libusb_package`) and fails to work with xPack OpenOCD (due to the way `libftdi.dll` is built).
+
+Please report both success (this will increase chances of merging patch to upstream libusb) and failures (so we will be able to identify and fix issues introduced by patch) with this approach.
