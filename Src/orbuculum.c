@@ -43,7 +43,7 @@
             #include <termios.h>
         #endif
     #elif defined WIN32
-        #include <libusb-1.0/libusb.h>
+        #include <libusb.h>
     #else
         #error "Unknown OS"
     #endif
