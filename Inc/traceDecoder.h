@@ -82,7 +82,8 @@ enum TRACEchanges
 };
 
 /* Flag for unknown/illegal cycle count */
-#define COUNT_UNKNOWN 0xffffffff
+#define COUNT_UNKNOWN 0xffffffffffffffffL
+#define ADDRESS_UNKNOWN 0xffffffffffffffffL
 
 // ============================================================================
 // Messages out of the decoder
@@ -105,13 +106,13 @@ struct TRACECPUState
 
     // Gross processor state...
     uint64_t ts;                         /* Latest timestamp */
-    uint32_t addr;                       /* Latest fully computed address */
-    uint32_t toAddr;                     /* Address to run to in linear mode (MTB) */
-    uint32_t nextAddr;                   /* Next address to run from in linear mode (MTB) */
+    uint64_t addr;                       /* Latest fully computed address */
+    uint64_t toAddr;                     /* Address to run to in linear mode (MTB) */
+    uint64_t nextAddr;                   /* Next address to run from in linear mode (MTB) */
     enum Mode addrMode;                  /* What kind of addressing are we using at the moment? */
     uint32_t contextID;                  /* Currently executing context */
     uint8_t vmid;                        /* Current virtual machine ID */
-    uint32_t cycleCount;                 /* Cycle Count for exact mode */
+    uint64_t cycleCount;                 /* Cycle Count for exact mode */
     uint16_t exception;                  /* Exception type being executed */
     uint16_t resume;                     /* Interrupt resume code */
     uint64_t instCount;                  /* Number of instructions executed */

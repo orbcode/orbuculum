@@ -48,6 +48,7 @@ struct assyLineEntry
     bool isJump;                            /* This is a potential jump */
     bool isSubCall;                         /* this is a subrouine call (BL/BLX) */
     bool isReturn;                          /* this is a return instruction (i.e. branch to LR or pop into PC) */
+    bool etm4branch;                        /* Will this be traced as an endpoint for ETM4 decode? */
     uint32_t jumpdest;                      /* If this is an absolute jump, the destination */
 };
 

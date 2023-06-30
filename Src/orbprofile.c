@@ -360,7 +360,7 @@ static void _traceCB( void *d )
 
     if ( TRACEStateChanged( &r->i, EV_CH_ADDRESS ) )
     {
-        printf( EOL "Address %008x" EOL, r->i.cpu.addr );
+        printf( EOL "Address 0x%08lx" EOL, r->i.cpu.addr );
     }
 
     TRACEStateChanged( &r->i, 0xffffffff );
@@ -417,7 +417,7 @@ static void _traceCB( void *d )
                 {
                     if ( TRACEStateChanged( &r->i, EV_CH_ADDRESS ) )
                     {
-                        DBG_OUT( "New addr %08x" EOL, cpu->addr );
+                        DBG_OUT( "New addr %08lx" EOL, cpu->addr );
                         r->op.workingAddr = cpu->addr;
                     }
 
@@ -435,7 +435,7 @@ static void _traceCB( void *d )
             }
 
             r->op.workingAddr = cpu->addr;
-            DBG_OUT( "A:%08x" EOL, cpu->addr );
+            DBG_OUT( "A:%08lx" EOL, cpu->addr );
         }
 
         /* ================================================ */

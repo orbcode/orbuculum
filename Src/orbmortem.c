@@ -655,7 +655,10 @@ static void _traceCB( void *d )
 
     if ( TRACEStateChanged( &r->i, EV_CH_TSTAMP ) )
     {
+      if (cpu->ts != COUNT_UNKNOWN)
         _appendToOPBuffer( r, r->op.currentLine, LT_EVENT, "*** Timestamp %ld", cpu->ts );
+      else
+	_appendToOPBuffer( r, r->op.currentLine, LT_EVENT, "*** Timestamp unknown" );
     }
 
     if ( TRACEStateChanged( &r->i, EV_CH_TRIGGER ) )
@@ -717,8 +720,6 @@ static void _traceCB( void *d )
 
     while ( ( incAddr && !linearRun ) || ( ( r->op.workingAddr <= targetAddr ) && linearRun ) )
     {
-        incAddr--;
-
         if ( SymbolLookup( r->s, r->op.workingAddr, &n ) )
         {
             /* If we have changed file or function put a header line in */
@@ -770,17 +771,36 @@ static void _traceCB( void *d )
             /* If this line has assembly then output it */
             if ( n.assyLine != ASSY_NOT_FOUND )
             {
-                /* Instructions are executed based on disposition for ETM */
-                /* Everything except jumps are executed for MTB */
-                /* jumps are executed only if they are the last instruction in a run */
-                bool insExecuted = (  ( ( !linearRun ) & ( disposition & 1 ) ) ||
-                                      ( ( linearRun ) &&
-                                        ( ( ( r->op.workingAddr != targetAddr ) && ( !n.assy[n.assyLine].isJump ) && ( !n.assy[n.assyLine].isSubCall ) )  ||
-                                          ( r->op.workingAddr == targetAddr )
+                /* ETM3.5: Instructions are executed based on disposition */
+	        /* ETM4: ETM4 everything up to a branch is executed...decision about that branch is based on disposition */
+                /* MTB: Everything except jumps are executed, jumps are executed only if they are the last instruction in a run */
+                bool insExecuted = (
+				    /* ETM3.5 case - dependent on disposition */
+				    ( ( !linearRun )  && ( r->i.protocol==TRACE_PROT_ETM35 ) && ( disposition & 1 ) ) ||
+
+				    /* ETM4 case - either not a branch or disposition is 1 */
+				    ( ( !linearRun ) && ( r->i.protocol==TRACE_PROT_ETM4 ) && (( !n.assy[n.assyLine].etm4branch ) || (disposition & 1 ) )) ||
+
+				    /* MTB case - a linear run to last address */
+				    ( ( linearRun ) &&
+				      ( ( ( r->op.workingAddr != targetAddr ) && ( !n.assy[n.assyLine].isJump ) && ( !n.assy[n.assyLine].isSubCall ) )  ||
+					( r->op.workingAddr == targetAddr )
                                         ) ) );
 
                 _appendRefToOPBuffer( r, r->op.currentLine, insExecuted ? LT_ASSEMBLY : LT_NASSEMBLY, n.assy[n.assyLine].lineText );
 
+
+		/* Move addressing along */
+		if ((r->i.protocol != TRACE_PROT_ETM4 ) || (n.assy[n.assyLine].etm4branch ))
+		  {
+		    if ( r->i.protocol == TRACE_PROT_ETM4 )
+		      {
+			_traceReport( V_DEBUG,"Consumed, %sexecuted",disposition&1?"":"not ");
+		      }
+		    disposition >>= 1;
+		    incAddr--;
+		  }
+		
                 if ( n.assy[n.assyLine].isJump || n.assy[n.assyLine].isSubCall )
                 {
                     _appendToOPBuffer( r, r->op.currentLine, LT_DEBUG, "%sTAKEN %s", insExecuted ? "" : "NOT ", n.assy[n.assyLine].isJump ? "JUMP" : "SUBCALL"  );
@@ -797,6 +817,8 @@ static void _traceCB( void *d )
             {
                 _appendRefToOPBuffer( r, r->op.currentLine, LT_ASSEMBLY, "\t\tASSEMBLY NOT FOUND" EOL );
                 r->op.workingAddr += 2;
+		disposition >>= 1;
+		incAddr--;
             }
         }
         else
@@ -804,9 +826,10 @@ static void _traceCB( void *d )
             /* We didn't have a symbol for this address, so let's just assume a short instruction */
             _appendRefToOPBuffer( r, r->op.currentLine, LT_DEBUG, "*** No Symbol found ***" EOL );
             r->op.workingAddr += 2;
+	    disposition >>= 1;
+	    incAddr--;
         }
 
-        disposition >>= 1;
     }
 }
 // ====================================================================================================

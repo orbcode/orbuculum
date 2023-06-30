@@ -36,6 +36,8 @@ void TRACEDecoderInit( struct TRACEDecoder *i, enum TRACEprotocol protocol, bool
 {
     memset( i, 0, sizeof( struct TRACEDecoder ) );
     TRACEDecoderZeroStats( i );
+    i->cpu.addr = ADDRESS_UNKNOWN;
+    i->cpu.cycleCount = COUNT_UNKNOWN;
     TRACEDecodeUsingAltAddrEncode( i, usingAltAddrEncodeSet );
     TRACEDecodeProtocol( i, protocol );
 }

@@ -11,6 +11,7 @@
 
 #include <string.h>
 #include <assert.h>
+#include <stdio.h>
 #include "msgDecoder.h"
 #include "traceDecoder.h"
 #include "generics.h"
@@ -186,11 +187,15 @@ void ETM4DecoderPumpAction( struct TRACEDecoder *i, uint8_t c, traceDecodeCB cb,
                         i->cpu.eatoms = ( 0 != ( c & 1 ) );
                         i->cpu.natoms = !i->cpu.eatoms;
                         i->cpu.instCount += 1;
-
-                        /* Put a 1 in each element of disposition if was executed */
                         i->cpu.disposition = c & 1;
-                        retVal = TRACE_EV_MSG_RXED;
-                        TRACEDecodeStateChange( i, EV_CH_ENATOMS );
+		      report( V_DEBUG,"Atom Format 1 [%b]",i->cpu.disposition);
+
+			
+			if (i->cpu.addr != ADDRESS_UNKNOWN)
+			  {
+			    retVal = TRACE_EV_MSG_RXED;
+			    TRACEDecodeStateChange( i, EV_CH_ENATOMS );
+			  }
                         break;
 
                     case 0b11011000 ... 0b11011011: /* Atom Format 2, Figure 6-40, Pg 6-304 */
@@ -200,19 +205,27 @@ void ETM4DecoderPumpAction( struct TRACEDecoder *i, uint8_t c, traceDecodeCB cb,
 
                         /* Put a 1 in each element of disposition if was executed */
                         i->cpu.disposition = c & 3;
-                        retVal = TRACE_EV_MSG_RXED;
-                        TRACEDecodeStateChange( i, EV_CH_ENATOMS );
+			report( V_DEBUG,"Atom Format 2 [%02b]",i->cpu.disposition);
+			if (i->cpu.addr != ADDRESS_UNKNOWN)
+			  {
+			    retVal = TRACE_EV_MSG_RXED;
+			    TRACEDecodeStateChange( i, EV_CH_ENATOMS );
+			  }
                         break;
 
-                    case 0b11111000 ... 0b11111000: /* Atom Format 3, Figure 6-41, Pg 6-305 */
+                    case 0b11111000 ... 0b11111111: /* Atom Format 3, Figure 6-41, Pg 6-305 */
                         i->cpu.eatoms = ( 0 != ( c & 1 ) ) + ( 0 != ( c & 2 ) ) + ( 0 != ( c & 4 ) );
                         i->cpu.natoms = 3 - i->cpu.eatoms;
                         i->cpu.instCount += 3;
 
                         /* Put a 1 in each element of disposition if was executed */
                         i->cpu.disposition = c & 7;
-                        retVal = TRACE_EV_MSG_RXED;
-                        TRACEDecodeStateChange( i, EV_CH_ENATOMS );
+			report( V_DEBUG,"Atom Format 3 [%03b]",i->cpu.disposition);
+			if (i->cpu.addr != ADDRESS_UNKNOWN)
+			  {
+			    retVal = TRACE_EV_MSG_RXED;
+			    TRACEDecodeStateChange( i, EV_CH_ENATOMS );
+			  }
                         break;
 
                     case 0b11011100 ... 0b11011111: /* Atom Format 4, Figure 6-42, Pg 6-305 */
@@ -220,7 +233,7 @@ void ETM4DecoderPumpAction( struct TRACEDecoder *i, uint8_t c, traceDecodeCB cb,
                         {
                             case 0b00:
                                 i->cpu.natoms = 1;
-                                i->cpu.disposition = 0b0111;
+                                i->cpu.disposition = 0b1110;
                                 break;
 
                             case 0b01:
@@ -230,19 +243,23 @@ void ETM4DecoderPumpAction( struct TRACEDecoder *i, uint8_t c, traceDecodeCB cb,
 
                             case 0b10:
                                 i->cpu.natoms = 2;
-                                i->cpu.disposition = 0b0101;
+                                i->cpu.disposition = 0b1010;
                                 break;
 
                             case 0b11:
                                 i->cpu.natoms = 2;
-                                i->cpu.disposition = 1010;
+                                i->cpu.disposition = 0b0101;
                                 break;
                         }
 
                         i->cpu.eatoms = 4 - i->cpu.natoms;
                         i->cpu.instCount += 4;
-                        retVal = TRACE_EV_MSG_RXED;
-                        TRACEDecodeStateChange( i, EV_CH_ENATOMS );
+			report( V_DEBUG,"Atom Format 4 [%04b]",i->cpu.disposition);
+			if (i->cpu.addr != ADDRESS_UNKNOWN)
+			  {
+			    retVal = TRACE_EV_MSG_RXED;
+			    TRACEDecodeStateChange( i, EV_CH_ENATOMS );
+			  }
                         break;
 
 
@@ -254,7 +271,7 @@ void ETM4DecoderPumpAction( struct TRACEDecoder *i, uint8_t c, traceDecodeCB cb,
                         {
                             case 0b101:
                                 i->cpu.natoms = 1;
-                                i->cpu.disposition = 0b10000;
+                                i->cpu.disposition = 0b11110;
                                 break;
 
                             case 0b001:
@@ -279,8 +296,12 @@ void ETM4DecoderPumpAction( struct TRACEDecoder *i, uint8_t c, traceDecodeCB cb,
 
                         i->cpu.eatoms = 5 - i->cpu.natoms;
                         i->cpu.instCount += 5;
-                        retVal = TRACE_EV_MSG_RXED;
-                        TRACEDecodeStateChange( i, EV_CH_ENATOMS );
+			report( V_DEBUG,"Atom Format 5 [%05b]",i->cpu.disposition);
+			if (i->cpu.addr != ADDRESS_UNKNOWN)
+			  {
+			    retVal = TRACE_EV_MSG_RXED;
+			    TRACEDecodeStateChange( i, EV_CH_ENATOMS );
+			  }
                         break;
 
                     case 0b11000000 ... 0b11010100:
@@ -300,8 +321,15 @@ void ETM4DecoderPumpAction( struct TRACEDecoder *i, uint8_t c, traceDecodeCB cb,
                             i->cpu.natoms = 0;
                         }
 
-                        retVal = TRACE_EV_MSG_RXED;
-                        TRACEDecodeStateChange( i, EV_CH_ENATOMS );
+			char construct[30];
+			sprintf(construct,"Atom Format 6 [%%ld %%%ldb]",i->cpu.instCount);
+			report( V_DEBUG,construct,i->cpu.instCount,i->cpu.disposition);
+			
+			if (i->cpu.addr != ADDRESS_UNKNOWN)
+			  {
+			    retVal = TRACE_EV_MSG_RXED;
+			    TRACEDecodeStateChange( i, EV_CH_ENATOMS );
+			  }
                         break;
 
 
@@ -454,7 +482,11 @@ void ETM4DecoderPumpAction( struct TRACEDecoder *i, uint8_t c, traceDecodeCB cb,
 
                     case 0b00000010 ... 0b00000011: /* Timestamp, Figure 6-7, Pg 6-264 */
                         newState = TRACE_GET_TIMESTAMP;
-                        j.cc_follows = 0 != ( c & 1 );
+                        j.cc_follows = (0 != ( c & 1 ));
+			if (!j.cc_follows)
+			  {
+			    i->cpu.cycleCount = COUNT_UNKNOWN;
+			  }
                         j.idx = 0;
                         break;
 
@@ -501,7 +533,7 @@ void ETM4DecoderPumpAction( struct TRACEDecoder *i, uint8_t c, traceDecodeCB cb,
             case TRACE_GET_CONTEXT: /* Get context information byte, Figure 6-36, Pg 6-297 */
                 i->cpu.exceptionLevel = c & 3;
                 i->cpu.am64bit = ( 0 != ( c & ( 1 << 4 ) ) );
-                i->cpu.amSecure = ( 0 != ( c & ( 1 << 5 ) ) );
+                i->cpu.amSecure = ( 0 == ( c & ( 1 << 5 ) ) );
                 j.haveContext = ( 0 != ( c & ( 1 << 7 ) ) );
 
                 if ( c & ( 1 << 6 ) )
@@ -587,7 +619,7 @@ void ETM4DecoderPumpAction( struct TRACEDecoder *i, uint8_t c, traceDecodeCB cb,
                 break;
 
             // -----------------------------------------------------
-            case TRACE_GET_32BIT_ADDR: /* Long format 32 bit address for IS0 or IS1, offset set by idx. Figure 6-33, Pg 6-295 */
+            case TRACE_GET_32BIT_ADDR: /* Long format 32 bit address for IS0 or IS1, offset set by idx. Figure 6-33, Pg 6-295 and Figure 6-37, Pg 6-299 */
                 if ( j.idx < 3 )
                 {
                     /* First byte of received data */
@@ -596,7 +628,7 @@ void ETM4DecoderPumpAction( struct TRACEDecoder *i, uint8_t c, traceDecodeCB cb,
                 }
                 else
                 {
-                    if ( ( j.q[0].inst == IS1 ) && ( j.idx == 8 ) )
+                    if ( j.idx == 8 )
                     {
                         /* Second byte of IS1 case - mask MSB */
                         j.q[0].addr = ( j.q[0].addr & ( ~( 0x7F << j.idx ) ) ) | ( ( c & 0x7f ) << ( j.idx ) );
@@ -671,18 +703,18 @@ void ETM4DecoderPumpAction( struct TRACEDecoder *i, uint8_t c, traceDecodeCB cb,
 
             // -----------------------------------------------------
             case TRACE_GET_TIMESTAMP: /* Timestamp, Figure 6-7, Pg 6-264 */
-                if ( j.idx < 8 )
+                if ( j.idx < 56 )
                 {
-                    i->cpu.ts = ( i->cpu.ts & ( 0x7F << ( j.idx * 7 ) ) ) | ( c & 0x7f );
+		  i->cpu.ts = ( i->cpu.ts & ( 0x7F << j.idx ) ) | ( ( c & 0x7f ) << j.idx );
                 }
                 else
                 {
-                    i->cpu.ts = ( i->cpu.ts & ( 0xFF << ( j.idx * 7 ) ) ) | ( c & 0xff );
+		  i->cpu.ts = ( i->cpu.ts & ( 0xFF << j.idx ) ) | ( ( c & 0xff ) << j.idx );
                 }
 
-                j.idx++;
+                j.idx+=7;
 
-                if ( ( !( c & 0x80 ) ) || ( j.idx == 9 ) )
+                if ( ( !( c & 0x80 ) ) || ( j.idx == 63 ) )
                 {
                     TRACEDecodeStateChange( i, EV_CH_TSTAMP );
 
@@ -706,7 +738,6 @@ void ETM4DecoderPumpAction( struct TRACEDecoder *i, uint8_t c, traceDecodeCB cb,
                         newState = TRACE_IDLE;
                     }
                 }
-
                 break;
 
             // -----------------------------------------------------
@@ -871,8 +902,8 @@ void ETM4DecoderPumpAction( struct TRACEDecoder *i, uint8_t c, traceDecodeCB cb,
 
     if ( i->p != TRACE_UNSYNCED )
     {
-        if ( report ) report( V_DEBUG, "%02x:%s --> %s %s(%d)", c, ( i->p == TRACE_IDLE ) ? protoStateName[i->p] : "", protoStateName[newState],
-                                  ( ( newState == TRACE_IDLE ) ? ( ( retVal == TRACE_EV_NONE ) ? "!!!" : "OK" ) : " : " ), retVal );
+        if ( report ) report( V_DEBUG, "%02x:%s --> %s (%s:%d)", c, ( i->p == TRACE_IDLE ) ? protoStateName[i->p] : "", protoStateName[newState],
+                                  ( ( newState == TRACE_IDLE ) ? ( ( retVal == TRACE_EV_NONE ) ? "DROPPED" : "OK" ) : "-" ), retVal );
 
         if ( newState == TRACE_IDLE )
         {
