@@ -9,7 +9,7 @@ GDB SWO Trace Configuration Helpers
 Setup Device
 ------------
 STM32;
-  enableSTM32SWO  : Enable SWO on STM32 pins (for STM32F4 if 4 is passed as first argument)
+  enableSTM32SWO  : Enable SWO on STM32 pins (for F4 or F7 if 4/7 is passed as first argument)
   enableSTM32TRACE: Start TRACE on STM32 pins
 
 IMXRT;
@@ -346,8 +346,8 @@ define enableSTM32SWO
 
   set $CPU=$CPU_STM32
    _setAddressesSTM32
-  if ($tgt==4)
-    # STM32F4 variant.
+  if (($tgt==4) || ($tgt==7))
+    # STM32F4/7 variant.
     # Enable AHB1ENR
     set *0x40023830 |= 0x02
     # Set MODER for PB3

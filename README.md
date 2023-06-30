@@ -6,7 +6,9 @@
 
 ![Screenshot](https://raw.githubusercontent.com/orbcode/orbuculum/main/Docs/title.png)
 
-This (main) is the development branch for V2.1.0. This includes nice things like Python support and the ninja/meson build system. Development is generally done in feature branches and folded into main as those features mature.
+This (main) is the development branch for V2.2.0 but, at the moment, it doesn't contain anything juicy beyond 2.1.0. Development is generally done in feature branches and folded into main as those features mature.
+
+Version 2.1.0 has recently been released and includes nice things like Python support, a decent quality Windows port and the ninja/meson build system. It also supports the full functionality of the ORBTrace Mini dongle.
 
 ORBTrace, the FPGA based trace interface dongle, has now been moved into its own separate repository as it's grown considerably and really needs its own identity. History for ORBtrace until the split point is maintained here for provenance purposes, but new work is now done over in the new location.
 
@@ -62,7 +64,7 @@ is a very powerful code performance analysis tool.
 
 * orblcd: LCD emulator on the host computer.
 
-There is also embryonic Python support in the `Python` directory.
+There is also Python support in the `Python` directory.
 
 A few simple use cases are documented in the last section of this
 document, as are example outputs of using orbtop to report on the
@@ -73,7 +75,10 @@ either using NRZ (UART) or RZ (Manchester) formats.  The pin is a
 dedicated one that would be used for TDO when the debug interface is
 in JTAG mode. We've demonstrated
 ITM feeds of around 4.3MBytes/sec on a STM32F427 via SWO with Manchester
-encoding running at 48Mbps. SWO with UART encoding is good for 62Mbaud.
+encoding running at 48Mbps. SWO with UART encoding is good for 62Mbaud. The encoding of UART
+is less efficient than Manchester so those speeds come out largely the same. Users are advised
+to use Manchester encoding if their probe supports it because the don't have to stress about
+data speeds (it's autobauding), clock changes or start/stop bits.
 
 The data flowing from the TRACE pins is clocked using a separate TRACECLK pin. There can
 be 1-4 TRACE pins which obviously give you much higher bandwidth than the single SWO. Using ORBTrace
@@ -101,7 +106,8 @@ from the target;
 * ORBTrace Mini
 
 Note that current support for the ECPIX-5 breakout board is based on the original bob, the designs for which
-are in the orbtrace_hw repository. bob2 support will be added over the next few weeks (written on 1 Nov 2022).
+are in the orbtrace_hw repository. bob2 support will be added when we get around to it (probably when we decide we
+need USB3 support...unlikely to be yet a while).
 
 For 'normal' users we highly reccomend the ORBTrace mini probe for the best experience using this stuff. That's
 not particularlly to make money (the designs are in the orbtrace_hw directory...feel free to build you own), but
@@ -110,7 +116,7 @@ because that hardware has been tuned for the job to be done.
 gdb setup files for each device type can be found in the `Support` directory. You'll find
 example get-you-going applications in the [Orbmule](https://github.com/orbcode/orbmule) repository including
 `gdbinit` scripts for OpenOCD, pyOCD and Blackmagic Probe Hosted. There are walkthroughs for lots of examples
-of the use of the orbuculum suite at (Orbcode)[https://orbcode.org].
+of the use of the orbuculum suite at [Orbcode](https://orbcode.org).
 
 When using SWO Orbuculum can use, or bypass, the TPIU. The TPIU adds overhead
 to the datastream, but provides better synchronisation if there is corruption
@@ -140,14 +146,14 @@ you are using. ORBTrace Mini can operate with UART encoded SWO at up to 62MBits/
 also supports Manchester encoded SWO at up
 to 48Mbps. The advantage of Manch encoding is that there's no speed matching needed to use it, and it should
 continue to work correctly even if the target clock speed changes (e.g. when it goes
-into a low power mode). This is a good thing, and is the way we normally use SWO.
+into a low power mode). This is a good thing, and is the way we normally use SWO for day-job.
 
 Configuring the Target
 ======================
 
 Generally speaking, you will need to configure the target device to output
 SWD or parallel data. You can either do that through program code, or through magic
-incantations in gdb. The gdb approach flexible but a bit clunky. @novakov has created
+incantations in gdb. The gdb approach is flexible but a bit clunky. @novakov has created
 the libtrace repository which includes all the code needed to configure your target
 directly via progam code if you prefer to set things up that way.
 
@@ -296,6 +302,8 @@ Dependencies
 
 In MSys2/MinGW-w64 run command: `pacman -S mingw-w64-x86_64-meson mingw-w64-x86_64-SDL2 ninja mingw-w64-x86_64-libusb mingw-w64-x86_64-toolchain mingw-w64-x86_64-zeromq git` to install all required dependencies.
 
+Note that at the moment the Windows build is using a forked libusb because of constraints in the upstream build opening multiple interfaces on the same device at the same time. Hopefully that situation is only temporary.
+
 Build
 -----
 
@@ -313,7 +321,7 @@ In order to get single folder with Orbuculum and MinGW dependencies run:
 >meson install -C ./build --destdir ./install --strip
 ```
 
-`--prefix A:/` is required to workaround how Meson constructs install directory. Without it deeply nested path will be generated instead of clean `build/install`.
+`--prefix A:/` is required to workaround how Meson constructs the install directory. Without it a deeply nested path will be generated instead of the clean `build/install`.
 
 Orbuculum executables along with MinGW-w64 dependencies will be installed into `build/install` and can be transfered to different machine or used outside of MSys2 shell.
 
@@ -321,25 +329,26 @@ Using
 =====
 
 The command line options for Orbuculum are available by running
-orbuculum with the -h option. Orbuculum is just the multiplexer, the
-fifos are now provided by `orbfifo`. *This is a change to the previous
-way the suite was configured where the fifos were integrated into `orbuculum` itself*. Note that
-orbfifo isn't available on Windows (there are no fifos), so use orbzmq to get similar functionality
-on that platform.
+orbuculum with the -h option.
 
 Simply start orbuculum with the correct options for your trace probe and
 then you can start of stop other utilities as you wish. A typical command
 to run orbuculum would be;
 
-```$ orbuculum --monitor 100```
+```$ orbuculum --monitor 1000```
 
 In this case, because no source options were provided on the command line, input
 will be taken from a Blackmagic probe USB SWO feed, or from an ORBTrace mini if it can find one.
-It will start the daemon with a monitor reporting interval of 100mS.  Orbuculum exposes TCP port 3443 to which
+It will start the daemon with a monitor reporting interval of 100ms.  Orbuculum exposes TCP port 3443 to which
 network clients can connect. This port delivers raw TPIU frames to any
 client that is connected (such as orbcat, orbfifo or orbtop).
 The practical limit to the number of clients that can connect is set by the speed of the host machine....but there's
-nothing stopping you using another one on the local network :-)
+nothing stopping you using another one on the local network :-)  If you've got an orbtrace mini and you want
+to switch on power to your target and configure it for Manchester SWO, a suitable command would be;
+
+```$ orbuculum --monitor 1000 --orbtrace '-p vtref,3.3 -e vtref,on'```
+
+...this will re-initialise the probe if it gets disconnected at any time.
 
 Information about command line options can be found with the -h
 option.  Orbuculum itself is specifically designed to be 'hardy' to probe and
@@ -365,7 +374,7 @@ For `orbuculum`, the specific command line options of note are;
 
  `-H, --hires`: Use high resolution time. This limits probe interface timeouts to 1ms, which makes host-side timing more accurate, but at the expense of _much_ higher load (literally perhaps x100). Use sparingly.
 
- `-m, --monitor`: Monitor interval (in mS) for reporting on state of the link. If baudrate is specified (using `-a`) and is greater than 100bps then the percentage link occupancy is also reported.
+ `-m, --monitor`: Monitor interval (in ms) for reporting on state of the link. If baudrate is specified (using `-a`) and is greater than 100bps then the percentage link occupancy is also reported.
 
  `-n, --serial-number`: Set a specific serial number for the ORBTrace or BMP device to connect to. Any unambigious sequence is sufficient. Ignored for other probe types.
 
@@ -383,7 +392,7 @@ For `orbuculum`, the specific command line options of note are;
 Orbfifo
 -------
 
-**Note:** `orbfifo` is not supported on Windows.
+**Note:** `orbfifo` is not supported on Windows. Use `orbzmq` instead.
 
 The easiest way to use the output from orbuculum is with one of the utilities
 such as `orbfifo`. This creates a set of fifos or permanent files in a given
@@ -590,7 +599,8 @@ options for orbcat are;
 
  `-c, --channel [Number],[Format]`: of channel to populate (repeat per channel) using printf
      formatting. Note that the `Name` component is missing in this format because
-     orbcat does not create fifos.
+     orbcat does not create fifos. **beware not to have any extraneous spaces in this option,
+     that generally ends up not doing what you want as its interpreted as a new option.**
 
  `-C, --cpufreq [Frequency in KHz]`: Set (scaled) speed of the CPU to convert CPU timestamps into time timestamps. When
       this option is set `-Ts` and `-Tt` will generate output in milliseconds and thousandths of a millisecond
@@ -623,6 +633,8 @@ options for orbcat are;
  `-v, --verbose [x]`: Verbose mode level 0..3.
 
  `-w, --window [string]`: Title for on-screen window.
+
+
 Orbtop
 ------
 
@@ -663,7 +675,7 @@ Command line options for orbtop are;
 
  `-h, --help`: Brief help.
 
- `-I, --interval [Interval]`: Set integration and display interval in milliseconds (defaults to 1000 mS)
+ `-I, --interval [Interval]`: Set integration and display interval in milliseconds (defaults to 1000 ms)
 
  `-j, --json-file [filename]`: Output to file in JSON format (or screen if <filename> is '-')
 
@@ -710,7 +722,7 @@ and what the spread is of those. Here's a typical combination output for a simpl
  15 |      100 |     1 |      10208  |        102 |       100  |       210
  53 |      210 |     1 |      44752  |        213 |        97  |       479
 
-[V-TH] Interval = 1002mS / 7966664 (~7950 Ticks/mS)
+[V-TH] Interval = 1002ms / 7966664 (~7950 Ticks/ms)
 ```
 
 The top half of this display is the typical 'top' output, the bottom half is a table of
@@ -731,7 +743,7 @@ The command line options of note are;
 
  `-b, --buffer-len [Length]`: Set length of post-mortem buffer, in KBytes (Default 32 KBytes)
 
- `-c, --editor-cmd [command]`: Set command line for external editor (0.000000 = filename, % = line). A few examples are;
+ `-c, --editor-cmd [command]`: Set command line for external editor ( %%f = filename, %%l = line). A few examples are;
 
      * emacs; `-c emacs "+%l %f"`
      * codium/VSCode; `-c codium  -g "%f:%l"`
