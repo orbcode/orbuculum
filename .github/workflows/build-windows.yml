@@ -17,20 +17,40 @@ jobs:
           msystem: MINGW64
           install: >-
             base-devel
-            mingw-w64-x86_64-libusb
             mingw-w64-x86_64-toolchain
             mingw-w64-x86_64-zeromq
             mingw-w64-x86_64-SDL2
             git
             zip
             mingw-w64-x86_64-meson
+            mingw-w64-x86_64-autotools
       - uses: actions/checkout@v3
-      - run: meson setup ./build --prefix A:/
+        with:
+          path: ./orbuculum
+      - uses: actions/checkout@v3
+        with:
+          path: ./libusb/src
+          repository: Novakov/libusb
+          ref: d67cf6868b91c5972aa4225caf9b924f25a9bda6
+
+      - run: ./bootstrap.sh
+        working-directory: ./libusb/src
+      - run: mkdir ./libusb/build
+      - run: ../src/configure --prefix=`realpath ../install`
+        working-directory: ./libusb/build
+      - run: make -j4 install
+        working-directory: ./libusb/build
+
+      - run: "export PKG_CONFIG_PATH=`realpath ../libusb/install/lib/pkgconfig` && meson setup ./build --prefix A:/"
+        working-directory: ./orbuculum
       - run: ninja -C ./build
+        working-directory: ./orbuculum
       - run: meson install -C ./build --destdir ./install --strip
+        working-directory: ./orbuculum
+      - run: cp ./libusb/install/bin/libusb-1.0.dll ./orbuculum/build/install/bin
       - uses: actions/upload-artifact@v3
         with:
           name: orbuculum-win64
-          path: build/install/**/*.*
+          path: ./orbuculum/build/install/**/*.*
           if-no-files-found: error
 

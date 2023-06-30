@@ -738,11 +738,11 @@ static void _outputTop( uint32_t total, uint32_t reportLines, struct reportLine 
                     ( _r.HWPkt != ITMDecoderGetStats( &_r.i )->HWPkt ) ? C_HW_IND "H" : C_RESET "-" );
 
     if ( ( _r.lastReportTicks ) && ( lastTime != _r.lastReportus ) )
-        genericsPrintf( "Interval = " C_DATA "%" PRIu64 "mS " C_RESET "/ "C_DATA "%" PRIu64 C_RESET " (~" C_DATA "%" PRIu64 C_RESET " Ticks/mS)" EOL,
+        genericsPrintf( "Interval = " C_DATA "%" PRIu64 "ms " C_RESET "/ "C_DATA "%" PRIu64 C_RESET " (~" C_DATA "%" PRIu64 C_RESET " Ticks/ms)" EOL,
                         ( ( lastTime - _r.lastReportus ) + 500 ) / 1000, _r.timeStamp - _r.lastReportTicks, ( ( _r.timeStamp - _r.lastReportTicks ) * 1000 ) / ( lastTime - _r.lastReportus ) );
     else
     {
-        genericsPrintf( C_RESET "Interval = " C_DATA "%" PRIu64 C_RESET "mS" EOL, ( ( lastTime - _r.lastReportus ) + 500 ) / 1000 );
+        genericsPrintf( C_RESET "Interval = " C_DATA "%" PRIu64 C_RESET "ms" EOL, ( ( lastTime - _r.lastReportus ) + 500 ) / 1000 );
     }
 
     genericsReport( V_INFO, "         Ovf=%3d  ITMSync=%3d TPIUSync=%3d ITMErrors=%3d" EOL,
@@ -1185,7 +1185,7 @@ bool _processOptions( int argc, char *argv[] )
     genericsReport( V_INFO, "Elf File         : %s" EOL, options.elffile );
     genericsReport( V_INFO, "ForceSync        : %s" EOL, options.forceITMSync ? "true" : "false" );
     genericsReport( V_INFO, "C++ Demangle     : %s" EOL, options.demangle ? "true" : "false" );
-    genericsReport( V_INFO, "Display Interval : %d mS" EOL, options.displayInterval / 1000 );
+    genericsReport( V_INFO, "Display Interval : %d ms" EOL, options.displayInterval / 1000 );
     genericsReport( V_INFO, "Log File         : %s" EOL, options.logfile ? options.logfile : "None" );
     genericsReport( V_INFO, "Objdump options  : %s" EOL, options.odoptions ? options.odoptions : "None" );
 

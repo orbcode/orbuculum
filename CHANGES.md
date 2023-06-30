@@ -1,12 +1,21 @@
-Version 2.1.0 in Progress
+30th June 2023 (Version 2.1.0)
 
+* Support for host side and device side timestamping in orbtop
 * Stability improvements
 * Move to ninja/meson build system
+* Cleaner stream abstraction for data sourcing
+* Improved orbtop interval monotonicity
+* Improved shutdown and error handling for orbuculum mux
+* Suite and connected probe version reporting
+* UART configuration in orbtrace for ORBTrace Mini
+* Move to separate library to support third party tooling
+* Better max interrupt depth tracking under overload conditions
+* Automated udev and gdb init files installation in Linux builds
 * Changes to usb transfer arrangments for improved performance
 * Orbtop gains wall time and interrupt utilisation percentage
 * Support for SWO over UART speed setting on ORBTRrace
 * Improved OSX support
-* Improved windows support
+* Much improved windows support
 * Python support
 * Addition of orblcd utility for host-side emulation of lcd panels.
 
