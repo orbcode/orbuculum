@@ -96,6 +96,63 @@ define _setAddressesNRF
 # Locations in the memory map for interesting things on NRF
 end
 
+define _setAddressesETM4
+# Locations in the memory map for ETMv4 registers
+
+set $ETM4BASE=0xE0041000
+# Programming Control Register
+set $TRCPRGCTLR=$ETM4BASE+0x004
+# Select Control Register
+set $TRCPROCSELR=$ETM4BASE+0x008
+# Trace Status Register
+set $TRCSTATR=$ETM4BASE+0x00C
+# Trace Configuration Register
+set $TRCCONFIGR=$ETM4BASE+0x010
+# Auxiliary Control Register
+set $TRCAUXCTLR=$ETM4BASE+0x018
+# Event Control 0 Register
+set $TRCEVENTCTL0R=$ETM4BASE+0x020
+# Event Control 1 Register
+set $TRCEVENTCTL1R=$ETM4BASE+0x024
+# Stall Control Register
+set $TRCSTALLCTLR=$ETM4BASE+0x02C
+# Global Timestamp Control Register
+set $TRCTSCTLR=$ETM4BASE+0x030
+# Synchronization Period Register
+set $TRCSYNCPR=$ETM4BASE+0x034
+# Cycle Count Control Register
+set $TRCCCCTLR=$ETM4BASE+0x038
+# Branch Broadcast Control Register
+set $TRCBBCTLR=$ETM4BASE+0x03c
+# Trace ID Register
+set $TRCTRACEIDR=$ETM4BASE+0x040
+# Q Element Control Register
+set $TRCQCTLR=$ETM4BASE+0x044
+# ViewInst Main Control Register
+set $TRCVICTLR=$ETM4BASE+0x080
+# ViewInst Include/Exclude Control Register
+set $TRCVIIECTLR=$ETM4BASE+0x084
+# ViewInst Start/Stop Control Register
+set $TRCVISSCTLR=$ETM4BASE+0x088
+# ViewInst Start/Stop PE Comparator Control Register
+set $TRCVIPCSSCTLR=$ETM4BASE+0x08c
+# ViewData Main Control Register
+set $TRCVDCTLR=$ETM4BASE+0x0a0
+# ViewData Include/Exclude Single Address Comparator Control Register
+set $TRCVDSACCTLR=$ETM4BASE+0x0a4
+# ViewData Include/Exclude Address Range Compa
+set $TRCVDARCCTLR=$ETM4BASE+0x0a8
+# Device architecture register
+set $TRCDEVARCH=$ETM4BASE+0xFBC
+# Trace IDR base address
+set $TRCIDR0=$ETM4BASE+0x1E0
+end
+# Trace Address comparator Value registers
+set $TRCACVR0=$ETMBASE+0x400
+set $TRCACVR1=$ETMBASE+0x400+8*1
+set $TRCACATR0=$ETMBASE+0x480
+set $TRCACATR1=$ETMBASE+0x480+8*1
+
 define _setAddressesNRF52
 _setAddressesNRF
 set $NRF_P0_PIN_CNF=0x50000700
@@ -117,18 +174,55 @@ define _setAddressesEFR32MG12
 end
 
 # ====================================================================
+define _startETMv4
+  # Enable the return stack, global timestamping, Context ID, and Virtual context identifier tracing.
+  set *($TRCCONFIGR) = 0x000018C1
 
-define startETM
-  set $br_out=0
-  if $argc >= 1
-    set $br_out=$arg0
+  # Disable all event tracing.
+  set *($TRCEVENTCTL0R) = 0
+  set *($TRCEVENTCTL1R) = 0
+
+  # Disable or enable stalling for instructions, if implemented
+  if ($stall!=0)
+    set *($TRCSTALLCTLR) = 0
+  else
+    set *($TRCSTALLCTLR) = (1<<13)|(1<<8)|(0x0f<<0)
   end
 
-  set $stall = 0
-  if $argc >= 2
-    set $stall = $arg1
-  end
+  # Trace sync every 4096 bytes of trace
+  set *($TRCSYNCPR) = 0x0c
 
+  # Do we want branch broadcasting?
+  set *$TRCACVR0=0
+  set *$TRCACVR1=0xFFFFFFFF
+  set *$TRCACATR0=0
+  set *$TRCACATR1=0
+  set *($TRCCONFIGR) |= ($br_out<<3)
+  set *($TRCBBCTLR) = ($br_out<<8)|0x03
+
+  # Trace on ID 2
+  set *($TRCTRACEIDR) = 2
+
+  # Disable timestamp event
+  set *($TRCTSCTLR) = 0
+
+  # Enable ViewInst to trace everything
+  set *($TRCVICTLR) = 0x201
+
+  # No address range filtering for ViewInst
+  set *($TRCVIIECTLR) = 0
+
+  # No start or stop points for ViewInst
+  set *($TRCVISSCTLR) = 0
+
+  # ...and start
+  set *($TRCPRGCTLR) |= (1<<0)
+  while (((*$TRCSTATR)&(1<<0))==1)
+  echo Wait for trace not idle\n
+  end
+end
+# ====================================================================
+define _startETMv35
   # Allow access to device
   set *($ETMBASE+0xfb0) = 0xc5acce55
 
@@ -158,68 +252,159 @@ define startETM
   set *($ETMBASE) &= ~(1<<10)
 
 end
+# ====================================================================
+
+define stopETM
+  if (((*$TRCDEVARCH)&0xfff0ffff)  ==0x47704a13)
+    set *($TRCPRGCTLR) &= ~(1<<0)
+    while ((*$TRCSTATR)&(1<<0)==0)
+      echo Wait for idle\n
+    end
+  else
+    set *($ETMBASE) |= 0x400
+  end
+end
+document stopETM
+stopETM
+end
+
+# ====================================================================
+define startETM
+
+  _setAddressesETM4
+  stopETM
+
+  set $br_out=0
+  if $argc >= 1
+    set $br_out=$arg0
+  end
+
+  set $stall = 0
+  if $argc >= 2
+    set $stall = $arg1
+  end
+
+
+  if (((*$TRCDEVARCH)&0xfff0ffff)  ==0x47704a13)
+    _startETMv4
+  else
+    _startETMv35
+  end
+end
+
 document startETM
 startETM <br_out> <stall>
+
+Start ETMv3.5 or v4 macrocell
+
 <br_out>     : 1 = Explicitly report branch events
 <stall>      : 1 = Stall the CPU when trace buffer is full
 end
 
 # ====================================================================
 define describeETM
-set $etmval = *($ETMBASE+0x1e4)
-output ((($etmval>>8)&0x0f)+1)
-echo .
-output (($etmval>>4)&0x0f)
-echo Rev
-output (($etmval)&0x0f)
-echo \n
-if (((($etmval)>>24)&0xff)==0x41)
-   echo Implementer is ARM\n
-end
-if (((($etmval)>>24)&0xff)==0x44)
-echo Implementer is DEC\n
-end
-if (((($etmval)>>24)&0xff)==0x4D)
-echo Implementer is Motorola/Freescale/NXP\n
-end
-if (((($etmval)>>24)&0xff)==0x51)
-echo Implementer is Qualcomm\n
-end
-if (((($etmval)>>24)&0xff)==0x56)
-echo Implementer is Marvell\n
-end
-if (((($etmval)>>24)&0xff)==0x69)
-echo Implementer is Intel\n
-end
+if (((*$TRCDEVARCH)&0xfff0ffff)  ==0x47704a13)
+   echo ETMv4.
+   output (((*$TRCDEVARCH)>>16)&0x0f)
+   echo \n
+   set $i=0
+   while $i<8
+      output $i
+      echo :
+      output/x *($TRCIDR0+4*$i)
+      set $i = $i+1
+      echo \n
+   end
+   if (((*$TRCIDR0)>>1)&3==3)
+     echo Tracing of Load and Store instructions as P0 elements is supported\n
+   else
+     echo Tracing of Load and Store instructions as P0 elements is not supported\n   
+   end
 
-if ($etmval&(1<<18))
-   echo 32-bit Thumb instruction is traced as single instruction\n
+   if (((*$TRCIDR0)>>3)&3==3)
+     echo Data tracing is supported\n
    else
-      echo 32-bit Thumb instruction is traced as two instructions\n
-end
-if ($etmval&(1<<19))
-   echo Implements ARM architecture security extensions\n
+     echo Data tracing is not supported\n
+   end
+
+   if (((*$TRCIDR0)>>5)&1==1)
+     echo Branch broadcast is supported\n
    else
-   echo No ARM architecture security extensions\n
-end
-if ($etmval&(1<<20))
-   echo Uses alternative Branch Packet Encoding\n
+     echo Branch broadcast is not supported\n
+   end
+
+   if (((*$TRCIDR0)>>6)&1==1)
+     echo Conditional Tracing is supported\n
    else
-      echo Uses original Branch Packet Encoding\n
+     echo Conditional Tracing is not supported\n
+   end
+
+   if (((*$TRCIDR0)>>7)&1==1)
+     echo Instruction Cycle Counting is supported\n
+   else
+     echo Instruction Cycle Counting is not supported\n
+   end
+
+   if (((*$TRCIDR0)>>9)&1==1)
+     echo Return Stacking is supported\n
+   else
+     echo Return Stacking is not supported\n
+   end
+
+   if (((*($TRCIDR0+12))>>26)&3==3)
+     echo Stall is supported\n
+   else
+     echo Stalling is not supported\n
+   end
+
+
+ else
+  set $etmval = *($ETMBASE+0x1e4)
+  output ((($etmval>>8)&0x0f)+1)
+  echo .
+  output (($etmval>>4)&0x0f)
+  echo Rev
+  output (($etmval)&0x0f)
+  echo \n
+  if (((($etmval)>>24)&0xff)==0x41)
+    echo Implementer is ARM\n
+  end
+  if (((($etmval)>>24)&0xff)==0x44)
+    echo Implementer is DEC\n
+  end
+  if (((($etmval)>>24)&0xff)==0x4D)
+    echo Implementer is Motorola/Freescale/NXP\n
+  end
+  if (((($etmval)>>24)&0xff)==0x51)
+    echo Implementer is Qualcomm\n
+  end
+  if (((($etmval)>>24)&0xff)==0x56)
+    echo Implementer is Marvell\n
+  end
+  if (((($etmval)>>24)&0xff)==0x69)
+    echo Implementer is Intel\n
+  end
+
+  if ($etmval&(1<<18))
+    echo 32-bit Thumb instruction is traced as single instruction\n
+  else
+    echo 32-bit Thumb instruction is traced as two instructions\n
+  end
+  if ($etmval&(1<<19))
+    echo Implements ARM architecture security extensions\n
+  else
+    echo No ARM architecture security extensions\n
+  end
+  if ($etmval&(1<<20))
+    echo Uses alternative Branch Packet Encoding\n
+  else
+    echo Uses original Branch Packet Encoding\n
+  end
 end
 end
 
 document describeETM
 Provide information about the ETM implementation on this target.
-end
-
-# ====================================================================
-
-define stopETM
-  set *($ETMBASE) |= 0x400
-end
-document stopETM
-stopETM
 end
 
 # ====================================================================
@@ -462,6 +647,10 @@ print $drive
   set $CPU=$CPU_STM32
 
   _setAddressesSTM32
+
+  # Enable Trace TRCENA (DCB DEMCR) needed for clocks
+  set *($CDBBASE+0xC)=(1<<24)
+  
   # Enable AHB1ENR
   set *0x40023830 |= 0x10
 
