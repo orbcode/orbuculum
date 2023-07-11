@@ -473,12 +473,12 @@ static void _printHelp( const char *const progName )
     genericsPrintf( "    -O, --objdump-opts: <options> Options to pass directly to objdump" EOL );
     genericsPrintf( "    -p, --trace-proto:  { " );
 
-    for ( int i = TRACE_PROT_LIST_START; i < TRACE_PROT_LIST_END; i++ )
+    for ( int i = TRACE_PROT_LIST_START; i < TRACE_PROT_NUM; i++ )
     {
-        genericsPrintf( "%s ", TRACEDecodeProtocolName( i ) );
+        genericsPrintf( "%s ", TRACEDecodeGetProtocolName( i ) );
     }
 
-    genericsPrintf( "} trace protocol to use, default is %s" EOL, TRACEDecodeProtocolName( TRACE_PROT_LIST_START ) );
+    genericsPrintf( "} trace protocol to use, default is %s" EOL, TRACEDecodeGetProtocolName( TRACE_PROT_LIST_START ) );
     genericsPrintf( "    -s, --server:       <Server>:<Port> to use" EOL );
     genericsPrintf( "    -t, --tpiu:         <channel>: Use TPIU to strip TPIU on specfied channel (defaults to 2)" EOL );
     genericsPrintf( "    -T, --all-truncate: truncate -d material off all references (i.e. make output relative)" EOL );
@@ -591,7 +591,7 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
 
                 /* Index through protocol strings looking for match or end of list */
                 for ( r->options->protocol = TRACE_PROT_LIST_START;
-                        ( ( r->options->protocol != TRACE_PROT_LIST_END ) && strcasecmp( optarg, TRACEDecodeProtocolName( r->options->protocol ) ) );
+                        ( ( r->options->protocol != TRACE_PROT_NUM ) && strcasecmp( optarg, TRACEDecodeGetProtocolName( r->options->protocol ) ) );
                         r->options->protocol++ )
                 {}
 
@@ -696,7 +696,7 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
     genericsReport( V_INFO, "Delete Material : %s" EOL, r->options->deleteMaterial ? r->options->deleteMaterial : "None" );
     genericsReport( V_INFO, "Elf File        : %s (%s Names)" EOL, r->options->elffile, r->options->truncateDeleteMaterial ? "Truncate" : "Don't Truncate" );
     genericsReport( V_INFO, "Objdump options : %s" EOL, r->options->odoptions ? r->options->odoptions : "None" );
-    genericsReport( V_INFO, "Protocol        : %s" EOL, TRACEDecodeProtocolName( r->options->protocol ) );
+    genericsReport( V_INFO, "Protocol        : %s" EOL, TRACEDecodeGetProtocolName( r->options->protocol ) );
     genericsReport( V_INFO, "DOT file        : %s" EOL, r->options->dotfile ? r->options->dotfile : "None" );
     genericsReport( V_INFO, "Sample Duration : %d mS" EOL, r->options->sampleDuration );
 
@@ -795,13 +795,13 @@ static void *_processBlocks( void *params )
 
                 if ( j > 0 )
                 {
-                    TRACEDecoderPump( &r->i, r->rawBlock[r->rp].buffer, j, _traceCB, genericsReport, &_r );
+                    TRACEDecoderPump( &r->i, r->rawBlock[r->rp].buffer, j, _traceCB, &_r );
                 }
             }
             else
             {
                 /* Pump all of the data through the protocol handler */
-                TRACEDecoderPump( &r->i, r->rawBlock[r->rp].buffer, r->rawBlock[r->rp].fillLevel, _traceCB, genericsReport, &_r );
+                TRACEDecoderPump( &r->i, r->rawBlock[r->rp].buffer, r->rawBlock[r->rp].fillLevel, _traceCB, &_r );
 
             }
 
@@ -862,7 +862,7 @@ int main( int argc, char *argv[] )
 
 #endif
 
-    TRACEDecoderInit( &_r.i, _r.options->protocol, !_r.options->noaltAddr );
+    TRACEDecoderInit( &_r.i, _r.options->protocol, !_r.options->noaltAddr, genericsReport );
 
     if ( _r.options->useTPIU )
     {

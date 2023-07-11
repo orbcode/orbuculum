@@ -472,6 +472,7 @@ static enum symbolErr _getTargetProgramInfo( struct SymbolSet *s )
         snprintf( commandLine, MAX_LINE_LEN, OBJDUMP " -Sl%s --source-comment=" SOURCE_INDICATOR " %s %s",  s->demanglecpp ? " -C" : "", s->elfFile, s->odoptions );
     }
 
+    printf( "\n\n%s\n\n", commandLine );
 #if defined(WIN32)
     PROCESS_INFORMATION processInfo;
     FILE *errorOut;
@@ -709,27 +710,27 @@ static enum symbolErr _getTargetProgramInfo( struct SymbolSet *s )
 
 #define MASKED_COMPARE(mask,compare) (((sourceEntry->assy[sourceEntry->assyLines].codes)&(mask))==(compare))
 
-			    /* For ETM4 we need to know direct and indirect branches, cos they are the only instructions                */
-			    /* that will get traced. So let's label those...Per definition in ARM IHI0064H.a ID20820 Appendix F         */
-			    if (
-				MASKED_COMPARE( 0xffffff03, 0x00004700 ) || /* BL, BLX rx */
-				MASKED_COMPARE( 0xfffff500, 0x0000b100 ) || /* CBNZ/CBZ   */
-				MASKED_COMPARE( 0xfffff000, 0x0000d000 ) || /* B          */
-				MASKED_COMPARE( 0xffffffef, 0x0000bf20 ) || /* WFE/WFI    */
+                            /* For ETM4 we need to know direct and indirect branches, cos they are the only instructions                */
+                            /* that will get traced. So let's label those...Per definition in ARM IHI0064H.a ID20820 Appendix F         */
+                            if (
+                                        MASKED_COMPARE( 0xffffff03, 0x00004700 ) || /* BL, BLX rx */
+                                        MASKED_COMPARE( 0xfffff500, 0x0000b100 ) || /* CBNZ/CBZ   */
+                                        MASKED_COMPARE( 0xfffff000, 0x0000d000 ) || /* B          */
+                                        MASKED_COMPARE( 0xffffffef, 0x0000bf20 ) || /* WFE/WFI    */
 
-				/* 32 bit matches */
-				MASKED_COMPARE( 0xffd08000, 0xe8908000 ) || /* LDM */
-				MASKED_COMPARE( 0xffd08000, 0xe9908000 ) || /* LDMDB */
-				MASKED_COMPARE( 0xfe10f000, 0xf810f000 ) || /* LDR to PC */
-				MASKED_COMPARE( 0xf8008000, 0xf0008000 )  /* Branches and misc control */
-				)
-			      {
+                                        /* 32 bit matches */
+                                        MASKED_COMPARE( 0xffd08000, 0xe8908000 ) || /* LDM */
+                                        MASKED_COMPARE( 0xffd08000, 0xe9908000 ) || /* LDMDB */
+                                        MASKED_COMPARE( 0xfe10f000, 0xf810f000 ) || /* LDR to PC */
+                                        MASKED_COMPARE( 0xf8008000, 0xf0008000 )  /* Branches and misc control */
+                            )
+                            {
                                 sourceEntry->assy[sourceEntry->assyLines].etm4branch = true;
-			      }
-			    else
-			      {
-				sourceEntry->assy[sourceEntry->assyLines].etm4branch = false;
-			      }
+                            }
+                            else
+                            {
+                                sourceEntry->assy[sourceEntry->assyLines].etm4branch = false;
+                            }
 
                             /* The only way a subroutine will be called from gcc (See gcc source code file gcc/config/arm/thumb2.md) is */
                             /* via blx reg, blxns reg. In theory it could also be done via direct manipulation of R15, but fortunately  */

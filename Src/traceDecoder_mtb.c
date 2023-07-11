@@ -9,9 +9,25 @@
 
 #include <string.h>
 #include <assert.h>
+#include <stdlib.h>
 #include "msgDecoder.h"
 #include "traceDecoder.h"
 #include "generics.h"
+
+/* Internal states of the protocol machine */
+enum TRACE_MTBprotoState
+{
+    TRACE_UNSYNCED,
+    TRACE_IDLE
+};
+
+struct MTBDecodeState
+{
+    struct TRACEDecoderEngine e; /* Must be first to allow object method access */
+    enum TRACE_MTBprotoState p;  /* Current state of the receiver */
+};
+
+#define REPORT(...) { if ( cpu->report ) cpu->report( V_DEBUG, __VA_ARGS__); }
 
 // ====================================================================================================
 // ====================================================================================================
@@ -20,21 +36,26 @@
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
-void MTBDecoderPumpAction( struct TRACEDecoder *i, uint32_t source, uint32_t dest, traceDecodeCB cb, genericsReportCB report, void *d )
+
+static void _stateChange( struct TRACECPUState *cpu, enum TRACEchanges c )
+{
+    cpu->changeRecord |= ( 1 << c );
+}
+
+// ====================================================================================================
+static bool _pumpActionPair( struct TRACEDecoderEngine *e, struct TRACECPUState *cpu, uint32_t source, uint32_t dest )
 
 /* Pump next words through the protocol decoder */
 
 {
-    enum TRACEprotoState newState = i->p;
-    struct TRACECPUState *cpu = &i->cpu;
+    struct MTBDecodeState *j = ( struct MTBDecodeState * )e;
+
+    enum TRACE_MTBprotoState newState = j->p;
     enum TRACEDecoderPumpEvent retVal = TRACE_EV_NONE;
 
-    if ( report )
-    {
-        report( V_ERROR, "[From 0x%08x to 0x%08x]" EOL, source, dest );
-    }
+    REPORT( "[From 0x%08x to 0x%08x]" EOL, source, dest );
 
-    switch ( i->p )
+    switch ( j->p )
     {
         // -----------------------------------------------------
 
@@ -46,7 +67,7 @@ void MTBDecoderPumpAction( struct TRACEDecoder *i, uint32_t source, uint32_t des
             /* If the low bit of dest was set then this is a start of trace event */
             if ( dest & 1 )
             {
-                TRACEDecodeStateChange( i, EV_CH_TRACESTART );
+                _stateChange( cpu, EV_CH_TRACESTART );
             }
 
             newState = TRACE_IDLE;
@@ -58,21 +79,21 @@ void MTBDecoderPumpAction( struct TRACEDecoder *i, uint32_t source, uint32_t des
             if ( cpu->nextAddr & 1 )
             {
                 /* If low bit of nextAddr is set then we got here via an exception */
-                TRACEDecodeStateChange( i, EV_CH_EX_ENTRY );
+                _stateChange( cpu, EV_CH_EX_ENTRY );
             }
 
             /* If low bit of dest is set then this is a start of trace */
             if ( dest & 1 )
             {
-                TRACEDecodeStateChange( i, EV_CH_TRACESTART );
+                _stateChange( cpu, EV_CH_TRACESTART );
             }
 
             cpu->addr = cpu->nextAddr & 0xFFFFFFFE;
             cpu->nextAddr = ( dest & 0xFFFFFFFE ) | ( source & 1 );
             cpu->toAddr = source & 0xFFFFFFFE;
             cpu->exception = 0; /* We don't known exception cause on a M0 */
-            TRACEDecodeStateChange( i, EV_CH_ADDRESS );
-            TRACEDecodeStateChange( i, EV_CH_LINEAR );
+            _stateChange( cpu, EV_CH_ADDRESS );
+            _stateChange( cpu, EV_CH_LINEAR );
             retVal = TRACE_EV_MSG_RXED;
             break;
 
@@ -86,11 +107,53 @@ void MTBDecoderPumpAction( struct TRACEDecoder *i, uint32_t source, uint32_t des
 
     }
 
-    if ( retVal != TRACE_EV_NONE )
-    {
-        cb( d );
-    }
 
-    i->p = newState;
+    j->p = newState;
+    return ( retVal != TRACE_EV_NONE );
 }
+// ====================================================================================================
+
+static void _pumpDestroy( struct TRACEDecoderEngine *e )
+
+{
+    assert( e );
+    free( e );
+}
+
+// ====================================================================================================
+
+static bool _synced( struct TRACEDecoderEngine *e )
+
+{
+    assert( e );
+    return ( ( struct MTBDecodeState * )e )->p != TRACE_UNSYNCED;
+}
+
+// ====================================================================================================
+static void _forceSync(  struct TRACEDecoderEngine *e, bool isSynced )
+
+{
+    ( ( struct MTBDecodeState * )e )->p = ( isSynced ) ? TRACE_IDLE : TRACE_UNSYNCED;
+}
+
+// ====================================================================================================
+// ====================================================================================================
+// ====================================================================================================
+// Publicly accessible methods
+// ====================================================================================================
+// ====================================================================================================
+// ====================================================================================================
+
+struct TRACEDecoderEngine *MTBDecoderPumpCreate( void )
+
+{
+
+    struct TRACEDecoderEngine *e = ( struct TRACEDecoderEngine * )calloc( 1, sizeof( struct MTBDecodeState ) );
+    e->actionPair    = _pumpActionPair;
+    e->destroy       = _pumpDestroy;
+    e->synced        = _synced;
+    e->forceSync     = _forceSync;
+    return e;
+}
+
 // ====================================================================================================

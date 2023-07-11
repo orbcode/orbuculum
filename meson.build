@@ -5,7 +5,11 @@ dependencies = [
     dependency('libusb-1.0'),
     dependency('libzmq'),
     dependency('SDL2'),
-    dependency('ncurses', 'ncursesw')
+    dependency('ncurses', 'ncursesw'),
+    dependency('libdw'),
+    dependency('capstone'),
+    dependency('libelf')
+    
 ]
 
 incdirs = include_directories(['Inc', 'Inc/external'])
@@ -149,7 +153,7 @@ executable('orbstat',
 executable('orbmortem',
     sources: [
         'Src/orbmortem.c',
-        'Src/symbols.c',
+        'Src/loadelf.c',
         'Src/sio.c',
         git_version_info_h,
     ],

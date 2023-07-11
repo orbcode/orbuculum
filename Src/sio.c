@@ -22,7 +22,29 @@
 #include "sio.h"
 
 /* Colours for output */
-enum CP { CP_NONE, CP_EVENT, CP_NORMAL, CP_FILEFUNCTION, CP_LINENO, CP_EXECASSY, CP_NEXECASSY, CP_BASELINE, CP_BASELINETEXT, CP_SEARCH, CP_DEBUG };
+enum CP
+{
+    /* These initial pairs are set to match the ANSI foreground colors */
+    CP_FG_BLACK,
+    CP_FG_DARK_RED,
+    CP_FG_DARK_GREEN,
+    CP_FG_DARK_YELLOW,
+    CP_FG_DARK_BLUE,
+    CP_FG_DARK_MAGENTA,
+    CP_FG_DARK_CYAN,
+    CP_FG_DARK_WHITE,
+    CP_FG_BRIGHT_BLACK,
+    CP_FG_BRIGHT_RED,
+    CP_FG_BRIGHT_GREEN,
+    CP_FG_BRIGHT_YELLOW,
+    CP_FG_BRIGHT_BLUE,
+    CP_FG_BRIGHT_MAGENTA,
+    CP_FG_BRIGHT_CYAN,
+    CP_FG_BRIGHT_WHITE,
+
+    /* Remaining pairs */
+    CP_EVENT, CP_NORMAL, CP_FILEFUNCTION, CP_LINENO, CP_EXECASSY, CP_NEXECASSY, CP_BASELINE, CP_BASELINETEXT, CP_SEARCH, CP_DEBUG
+};
 
 /* Search types */
 enum SRCH { SRCH_OFF, SRCH_FORWARDS, SRCH_BACKWARDS };
@@ -58,7 +80,7 @@ struct SIOInstance
     uint32_t warnTimeout;               /* Time at which it should be removed, or 0 if it's not active */
 
     /* Current position in buffer */
-    struct line **opText;               /* Pointer to lines of Text of the output buffer */
+    struct sioline **opText;            /* Pointer to lines of Text of the output buffer */
     int32_t opTextWline;                /* Next line number to be written */
     int32_t opTextRline;                /* Current read position in op buffer */
     int32_t oldopTextRline;             /* Old read position in op buffer (for redraw) */
@@ -588,15 +610,35 @@ static bool _displayLine( struct SIOInstance *sio, int32_t lineNum, int32_t scre
         }
         else
         {
-            wattr_set( sio->outputWindow, attr, pair, NULL );
+            /* If the output string contains embedded escape colours then extract and respect them */
+            while ( *u == 27 )
+            {
+                u++;
+
+                if ( !strncmp( u, "[m", 2 ) )
+                {
+                    u += 2;
+                    wattrset( sio->outputWindow, ( highlight ? A_STANDOUT : 0 ) | COLOR_PAIR( 15 ) );
+                    continue;
+                }
+
+                if ( !strncmp( u, "[3", 2 ) )
+                {
+                    wattrset( sio->outputWindow, ( highlight ? A_STANDOUT : 0 ) | COLOR_PAIR( ( *( u + 2 ) ) - '0' ) );
+                    u += 4;
+                    continue;
+                }
+
+                if ( !strncmp( u, "[01;3", 5 ) )
+                {
+                    wattrset( sio->outputWindow, ( highlight ? A_STANDOUT : 0 ) | COLOR_PAIR( ( *( u + 5 ) ) - '0' ) );
+                    u += 7;
+                    continue;
+                }
+            }
         }
 
-        if ( x == OUTPUT_WINDOW_W - 1 )
-        {
-            waddch( sio->outputWindow, '>' );
-            break;
-        }
-        else
+        if ( ( *u != '\n' ) && ( *u != '\r' ) )
         {
             waddch( sio->outputWindow, ( x == OUTPUT_WINDOW_W - 1 ) ? '>' : *u++ );
         }
@@ -604,6 +646,8 @@ static bool _displayLine( struct SIOInstance *sio, int32_t lineNum, int32_t scre
         /* This is done like this so chars like tabs are accounted for correctly */
         getyx( sio->outputWindow, y, x );
     }
+
+    wattr_set( sio->outputWindow, attr, pair, NULL );
 
     /* Now pad out the rest of this line with spaces */
     if ( highlight )
@@ -865,6 +909,11 @@ struct SIOInstance *SIOsetup( const char *progname, const char *elffile, bool is
 
     if ( OK == start_color() )
     {
+        for ( int i = 0; i < 16; i++ )
+        {
+            init_pair( i, COLOR_BLACK + i, COLOR_BLACK );
+        }
+
         init_pair( CP_EVENT, COLOR_YELLOW, COLOR_BLACK );
         init_pair( CP_NORMAL, COLOR_WHITE,  COLOR_BLACK );
         init_pair( CP_FILEFUNCTION, COLOR_RED, COLOR_BLACK );
@@ -938,7 +987,7 @@ void SIOrequestRefresh( struct SIOInstance *sio  )
     sio->forceRefresh = true;
 }
 // ====================================================================================================
-void SIOsetOutputBuffer( struct SIOInstance *sio, int32_t numLines, int32_t currentLine, struct line **opTextSet, bool amDiving )
+void SIOsetOutputBuffer( struct SIOInstance *sio, int32_t numLines, int32_t currentLine, struct sioline **opTextSet, bool amDiving )
 
 {
     sio->opText      = opTextSet;

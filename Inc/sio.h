@@ -30,18 +30,19 @@ enum SIOEvent { SIO_EV_NONE, SIO_EV_HOLD, SIO_EV_QUIT, SIO_EV_SAVE, SIO_EV_CONSU
 enum LineType { LT_SOURCE, LT_ASSEMBLY, LT_NASSEMBLY, LT_MU_SOURCE, LT_EVENT, LT_LABEL, LT_FILE, LT_DEBUG  };
 
 /* Definition for a single line...collections of these are what get displayed */
-struct line
+struct sioline
 {
     enum LineType lt;
     bool isRef;
     char *buffer;
     int32_t line;
+    void *dat;
 };
 
 // ====================================================================================================
 const char *SIOgetSaveFilename( struct SIOInstance *sio );
 int32_t SIOgetCurrentLineno( struct SIOInstance *sio );
-void SIOsetOutputBuffer( struct SIOInstance *sio, int32_t numLines, int32_t currentLine, struct line **opTextSet, bool amDiving );
+void SIOsetOutputBuffer( struct SIOInstance *sio, int32_t numLines, int32_t currentLine, struct sioline **opTextSet, bool amDiving );
 void SIOalert( struct SIOInstance *sio, const char *msg );
 void SIOrequestRefresh( struct SIOInstance *sio );
 void SIOheld( struct SIOInstance *sio, bool isHeld );

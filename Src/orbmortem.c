@@ -13,6 +13,8 @@
 #include <sys/stat.h>
 #include <stdio.h>
 #include <assert.h>
+#include <strings.h>
+#include <string.h>
 #include <signal.h>
 #include <getopt.h>
 
@@ -21,7 +23,7 @@
 #include "nw.h"
 #include "traceDecoder.h"
 #include "tpiuDecoder.h"
-#include "symbols.h"
+#include "loadelf.h"
 #include "sio.h"
 #include "stream.h"
 
@@ -79,7 +81,7 @@ struct dataBlock
 struct opConstruct
 {
     uint32_t currentFileindex;           /* The filename we're currently in */
-    uint32_t currentFunctionindex;       /* The function we're currently in */
+    struct symbolFunctionStore *currentFunctionptr;       /* The function we're currently in */
     uint32_t currentLine;                /* The line we're currently in */
     uint32_t workingAddr;                /* The address we're currently in */
 };
@@ -91,7 +93,8 @@ struct RunTime
     struct TPIUDecoder t;
 
     const char *progName;               /* Name by which this program was called */
-    struct SymbolSet *s;                /* Symbols read from elf */
+
+    struct symbol *s;                   /* Symbols read from elf */
     bool     ending;                    /* Flag indicating app is terminating */
     bool     singleShot;                /* Flag indicating take a single buffer then stop */
     uint64_t newTotalBytes;             /* Number of bytes of real data transferred in total */
@@ -103,13 +106,13 @@ struct RunTime
     int wp;                             /* Index pointers for ring buffer */
     int rp;
 
-    struct line *opText;                /* Text of the output buffer */
+    struct sioline *opText;             /* Text of the output buffer */
     int32_t numLines;                   /* Number of lines in the output buffer */
 
     int32_t diveline;                   /* Line number we're currently diving into */
     char *divefile;                     /* Filename we're currently diving into */
     bool diving;                        /* Flag indicating we're diving into a file at the moment */
-    struct line *fileopText;            /* The text lines of the file we're diving into */
+    struct sioline *fileopText;         /* The text lines of the file we're diving into */
     int32_t filenumLines;               /* ...and how many lines of it there are */
 
     bool held;                          /* If we are actively collecting data */
@@ -121,6 +124,9 @@ struct RunTime
     struct opConstruct op;              /* The mechanical elements for creating the output buffer */
 
     struct Options *options;            /* Our runtime configuration */
+
+    bool traceRunning;                  /* Set if we are currently receiving trace */
+    uint32_t context;                   /* Context we are currently working under */
 } _r;
 
 /* For opening the editor (Shift-Right-Arrow) the following command lines work for a few editors;
@@ -164,12 +170,12 @@ static void _printHelp( const char *const progName )
     genericsPrintf( "    -O, --objdump-opts: <options> Options to pass directly to objdump" EOL );
     genericsPrintf( "    -p, --trace-proto:  { " );
 
-    for ( int i = TRACE_PROT_LIST_START; i < TRACE_PROT_LIST_END; i++ )
+    for ( int i = TRACE_PROT_LIST_START; i < TRACE_PROT_NUM; i++ )
     {
-        genericsPrintf( "%s ", TRACEDecodeProtocolName( i ) );
+        genericsPrintf( "%s ", TRACEDecodeGetProtocolName( i ) );
     }
 
-    genericsPrintf( "} trace protocol to use, default is %s" EOL, TRACEDecodeProtocolName( TRACE_PROT_LIST_START ) );
+    genericsPrintf( "} trace protocol to use, default is %s" EOL, TRACEDecodeGetProtocolName( TRACE_PROT_LIST_START ) );
     genericsPrintf( "    -s, --server:       <Server>:<Port> to use" EOL );
     genericsPrintf( "    -t, --tpiu:         <channel>: Use TPIU to strip TPIU on specfied channel" EOL );
     genericsPrintf( "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
@@ -285,7 +291,7 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
 
                 /* Index through protocol strings looking for match or end of list */
                 for ( r->options->protocol = TRACE_PROT_LIST_START;
-                        ( ( r->options->protocol != TRACE_PROT_LIST_END ) && strcasecmp( optarg, TRACEDecodeProtocolName( r->options->protocol ) ) );
+                        ( ( r->options->protocol != TRACE_PROT_NUM ) && strcasecmp( optarg, TRACEDecodeGetProtocolName( r->options->protocol ) ) );
                         r->options->protocol++ )
                 {}
 
@@ -366,7 +372,7 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
     }
     else
     {
-        genericsReport( V_INFO, "Protocol %s" EOL, TRACEDecodeProtocolName( r->options->protocol ) );
+        genericsReport( V_INFO, "Protocol %s" EOL, TRACEDecodeGetProtocolName( r->options->protocol ) );
     }
 
     if ( ( r->options->protocol == TRACE_PROT_MTB ) && ( !r->options->file ) )
@@ -512,7 +518,7 @@ static void _flushBuffer( struct RunTime *r )
     /* ...and the file/line references */
     r->op.currentLine = NO_LINE;
     r->op.currentFileindex = NO_FILE;
-    r->op.currentFunctionindex = NO_FUNCTION;
+    r->op.currentFunctionptr = NULL;
     r->op.workingAddr = NO_DESTADDRESS;
 }
 // ====================================================================================================
@@ -521,7 +527,7 @@ static void _flushBuffer( struct RunTime *r )
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wanalyzer-malloc-leak"
 
-static void _appendToOPBuffer( struct RunTime *r, int32_t lineno, enum LineType lt, const char *fmt, ... )
+static void _appendToOPBuffer( struct RunTime *r, void *dat, int32_t lineno, enum LineType lt, const char *fmt, ... )
 
 /* Add line to output buffer, in a printf stylee */
 
@@ -539,28 +545,30 @@ static void _appendToOPBuffer( struct RunTime *r, int32_t lineno, enum LineType 
 
     *p = 0;
 
-    r->opText = ( struct line * )realloc( r->opText, ( sizeof( struct line ) ) * ( r->numLines + 1 ) );
+    r->opText = ( struct sioline * )realloc( r->opText, ( sizeof( struct sioline ) ) * ( r->numLines + 1 ) );
     r->opText[r->numLines].buffer = strdup( construct );
     r->opText[r->numLines].lt     = lt;
     r->opText[r->numLines].line   = lineno;
     r->opText[r->numLines].isRef  = false;
+    r->opText[r->numLines].dat    = dat;
     r->numLines++;
 }
 #pragma GCC diagnostic pop
 
 // ====================================================================================================
-static void _appendRefToOPBuffer( struct RunTime *r, int32_t lineno, enum LineType lt, const char *ref )
+static void _appendRefToOPBuffer( struct RunTime *r, void *dat, int32_t lineno, enum LineType lt, const char *ref )
 
 /* Add line to output buffer, as a reference (which don't be free'd later) */
 
 {
-    r->opText = ( struct line * )realloc( r->opText, ( sizeof( struct line ) ) * ( r->numLines + 1 ) );
+    r->opText = ( struct sioline * )realloc( r->opText, ( sizeof( struct sioline ) ) * ( r->numLines + 1 ) );
 
     /* This line removes the 'const', but we know to not mess with this line */
     r->opText[r->numLines].buffer = ( char * )ref;
     r->opText[r->numLines].lt     = lt;
     r->opText[r->numLines].line   = lineno;
     r->opText[r->numLines].isRef  = true;
+    r->opText[r->numLines].dat    = dat;
     r->numLines++;
 }
 // ====================================================================================================
@@ -575,7 +583,7 @@ static void _traceReport( enum verbLevel l, const char *fmt, ... )
     va_start( va, fmt );
     vsnprintf( op, SCRATCH_STRING_LEN, fmt, va );
     va_end( va );
-    _appendToOPBuffer( &_r, _r.op.currentLine, LT_DEBUG, op );
+    _appendToOPBuffer( &_r, NULL, _r.op.currentLine, LT_DEBUG, op );
 }
 // ====================================================================================================
 static void _traceCB( void *d )
@@ -585,17 +593,22 @@ static void _traceCB( void *d )
 {
     struct RunTime *r = ( struct RunTime * )d;
     struct TRACECPUState *cpu = TRACECPUState( &r->i );
-    char construct[SCRATCH_STRING_LEN];
     uint32_t incAddr = 0;
-    struct nameEntry n;
     uint32_t disposition;
     uint32_t targetAddr = 0; /* Just to avoid unitialised variable warning */
     bool linearRun = false;
+    bool isJump;
+    bool is4byte;
+    symbolMemaddr newaddr;
 
     /* Deal with changes introduced by this event ========================= */
     if ( TRACEStateChanged( &r->i, EV_CH_TRACESTART ) )
     {
-        _appendRefToOPBuffer( r, r->op.currentLine, LT_EVENT, "========== TRACE START EVENT ==========" );
+        if ( !r->traceRunning )
+        {
+            _appendRefToOPBuffer( r, NULL, r->op.currentLine, LT_EVENT, "========== TRACE START EVENT ==========" );
+            r->traceRunning = true;
+        }
     }
 
     if ( TRACEStateChanged( &r->i, EV_CH_ADDRESS ) )
@@ -606,7 +619,7 @@ static void _traceCB( void *d )
 
         if ( r->options->protocol != TRACE_PROT_MTB )
         {
-            _appendToOPBuffer( r, r->op.currentLine, LT_DEBUG, "%sCommanded CPU Address change (Was:0x%08x Commanded:0x%08x)" EOL,
+            _appendToOPBuffer( r, NULL, r->op.currentLine, LT_DEBUG, "%sCommanded CPU Address change (Was:0x%08x Commanded:0x%08x)" EOL,
                                ( r->op.workingAddr == cpu->addr ) ? "" : "***INCONSISTENT*** ", r->op.workingAddr, cpu->addr );
         }
 
@@ -621,7 +634,7 @@ static void _traceCB( void *d )
         targetAddr        = cpu->toAddr;
         linearRun         = true;
         disposition       = 0xffffffff;
-        _appendToOPBuffer( r, r->op.currentLine, LT_DEBUG, "Linear run 0x%08x to 0x%08x" EOL, cpu->addr, cpu->toAddr );
+        _appendToOPBuffer( r, NULL, r->op.currentLine, LT_DEBUG, "Linear run 0x%08x to 0x%08x" EOL, cpu->addr, cpu->toAddr );
     }
 
     if ( TRACEStateChanged( &r->i, EV_CH_ENATOMS ) )
@@ -632,206 +645,204 @@ static void _traceCB( void *d )
 
     if ( TRACEStateChanged( &r->i, EV_CH_VMID ) )
     {
-        _appendToOPBuffer( r, r->op.currentLine, LT_EVENT, "*** VMID Set to %d", cpu->vmid );
+        _appendToOPBuffer( r, NULL, r->op.currentLine, LT_EVENT, "*** VMID Set to %d", cpu->vmid );
     }
 
     if ( TRACEStateChanged( &r->i, EV_CH_EX_ENTRY ) )
     {
         if ( r->options->protocol != TRACE_PROT_MTB )
         {
-            _appendToOPBuffer( r, r->op.currentLine, LT_EVENT, "========== Exception Entry%s (%d at 0x%08x) ==========",
+            _appendToOPBuffer( r, NULL, r->op.currentLine, LT_EVENT, "========== Exception Entry%s (%d at 0x%08x) ==========",
                                TRACEStateChanged( &r->i, EV_CH_CANCELLED ) ? ", Last Instruction Cancelled" : "", cpu->exception, cpu->addr );
         }
         else
         {
-            _appendToOPBuffer( r, r->op.currentLine, LT_EVENT, "========== Exception Entry ==========" );
+            _appendRefToOPBuffer( r, NULL, r->op.currentLine, LT_EVENT, "========== Exception Entry ==========" );
         }
     }
 
     if ( TRACEStateChanged( &r->i, EV_CH_EX_EXIT ) )
     {
-        _appendRefToOPBuffer( r, r->op.currentLine, LT_EVENT, "========== Exception Exit ==========" );
+        _appendRefToOPBuffer( r, NULL, r->op.currentLine, LT_EVENT, "========== Exception Exit ==========" );
     }
 
     if ( TRACEStateChanged( &r->i, EV_CH_TSTAMP ) )
     {
-      if (cpu->ts != COUNT_UNKNOWN)
-        _appendToOPBuffer( r, r->op.currentLine, LT_EVENT, "*** Timestamp %ld", cpu->ts );
-      else
-	_appendToOPBuffer( r, r->op.currentLine, LT_EVENT, "*** Timestamp unknown" );
+        if ( cpu->ts )
+        {
+            if ( cpu->ts != COUNT_UNKNOWN )
+            {
+                _appendToOPBuffer( r, NULL, r->op.currentLine, LT_EVENT, "*** Timestamp %ld", cpu->ts );
+            }
+            else
+            {
+                _appendToOPBuffer( r, NULL, r->op.currentLine, LT_EVENT, "*** Timestamp unknown" );
+            }
+        }
     }
 
     if ( TRACEStateChanged( &r->i, EV_CH_TRIGGER ) )
     {
-        _appendRefToOPBuffer( r, r->op.currentLine, LT_EVENT, "*** Trigger" );
+        _appendRefToOPBuffer( r, NULL, r->op.currentLine, LT_EVENT, "*** Trigger" );
     }
 
     if ( TRACEStateChanged( &r->i, EV_CH_CLOCKSPEED ) )
     {
-        _appendRefToOPBuffer( r, r->op.currentLine, LT_EVENT, "*** Change Clockspeed" );
+        _appendRefToOPBuffer( r, NULL, r->op.currentLine, LT_EVENT, "*** Change Clockspeed" );
     }
 
     if ( TRACEStateChanged( &r->i, EV_CH_ISLSIP ) )
     {
-        _appendRefToOPBuffer( r, r->op.currentLine, LT_EVENT, "*** ISLSIP Triggered" );
+        _appendRefToOPBuffer( r, NULL, r->op.currentLine, LT_EVENT, "*** ISLSIP Triggered" );
     }
 
     if ( TRACEStateChanged( &r->i, EV_CH_CYCLECOUNT ) )
     {
-        _appendToOPBuffer( r, r->op.currentLine, LT_EVENT, "(Cycle Count %d)", cpu->cycleCount );
+        _appendToOPBuffer( r, NULL, r->op.currentLine, LT_EVENT, "(Cycle Count %d)", cpu->cycleCount );
     }
 
     if ( TRACEStateChanged( &r->i, EV_CH_VMID ) )
     {
-        _appendToOPBuffer( r, r->op.currentLine, LT_EVENT, "(VMID is now %d)", cpu->vmid );
+        _appendToOPBuffer( r, NULL, r->op.currentLine, LT_EVENT, "(VMID is now %d)", cpu->vmid );
     }
 
     if ( TRACEStateChanged( &r->i, EV_CH_CONTEXTID ) )
     {
-        _appendToOPBuffer( r, r->op.currentLine, LT_EVENT, "(Context ID is now %d)", cpu->contextID );
+        if ( r->context != cpu->contextID )
+        {
+            _appendToOPBuffer( r, NULL, r->op.currentLine, LT_EVENT, "(Context ID is now %d)", cpu->contextID );
+            r->context = cpu->contextID;
+        }
     }
 
     if ( TRACEStateChanged( &r->i, EV_CH_SECURE ) )
     {
-        _appendToOPBuffer( r, r->op.currentLine, LT_EVENT, "(Non-Secure State is now %s)", cpu->nonSecure ? "True" : "False" );
+        _appendToOPBuffer( r, NULL, r->op.currentLine, LT_EVENT, "(Non-Secure State is now %s)", cpu->nonSecure ? "True" : "False" );
     }
 
     if ( TRACEStateChanged( &r->i, EV_CH_ALTISA ) )
     {
-        _appendToOPBuffer( r, r->op.currentLine, LT_EVENT, "(Using AltISA  is now %s)", cpu->altISA ? "True" : "False" );
+        _appendToOPBuffer( r, NULL, r->op.currentLine, LT_EVENT, "(Using AltISA  is now %s)", cpu->altISA ? "True" : "False" );
     }
 
     if ( TRACEStateChanged( &r->i, EV_CH_HYP ) )
     {
-        _appendToOPBuffer( r, r->op.currentLine,  LT_EVENT, "(Using Hypervisor is now %s)", cpu->hyp ? "True" : "False" );
+        _appendToOPBuffer( r, NULL, r->op.currentLine,  LT_EVENT, "(Using Hypervisor is now %s)", cpu->hyp ? "True" : "False" );
     }
 
     if ( TRACEStateChanged( &r->i, EV_CH_JAZELLE ) )
     {
-        _appendToOPBuffer( r, r->op.currentLine, LT_EVENT, "(Using Jazelle is now %s)", cpu->jazelle ? "True" : "False" );
+        _appendToOPBuffer( r, NULL, r->op.currentLine, LT_EVENT, "(Using Jazelle is now %s)", cpu->jazelle ? "True" : "False" );
     }
 
     if ( TRACEStateChanged( &r->i, EV_CH_THUMB ) )
     {
-        _appendToOPBuffer( r, r->op.currentLine, LT_EVENT, "(Using Thumb is now %s)", cpu->thumb ? "True" : "False" );
+        _appendToOPBuffer( r, NULL, r->op.currentLine, LT_EVENT, "(Using Thumb is now %s)", cpu->thumb ? "True" : "False" );
     }
 
     /* End of dealing with changes introduced by this event =============== */
 
     while ( ( incAddr && !linearRun ) || ( ( r->op.workingAddr <= targetAddr ) && linearRun ) )
     {
-        if ( SymbolLookup( r->s, r->op.workingAddr, &n ) )
+        /* Firstly, checkout the source code line...*/
+        struct symbolLineStore *l = symbolLineAt( r->s, r->op.workingAddr );
+
+        if ( l )
         {
             /* If we have changed file or function put a header line in */
-            if ( ( n.fileindex != r->op.currentFileindex ) || ( n.functionindex != r->op.currentFunctionindex ) )
+            if ( l->function )
             {
-                _appendToOPBuffer( r, r->op.currentLine, LT_FILE, "%s::%s", SymbolFilename( r->s, n.fileindex ), SymbolFunction( r->s, n.functionindex ) );
-                r->op.currentFileindex     = n.fileindex;
-                r->op.currentFunctionindex = n.functionindex;
-                r->op.currentLine = NO_LINE;
-            }
-
-            /* If we have changed line then output the new one */
-            if ( n.line != r->op.currentLine - 1 )
-            {
-                const char *v = n.source;
-                r->op.currentLine = n.line - n.linesInBlock + 1;
-                *construct = 0;
-
-                if ( v ) while ( *v )
-                    {
-                        /* In buffer output NL/CR are treated as end of string, so this is safe */
-                        /* with these buffers that can span multiple lines. Split into separate ones. */
-                        _appendRefToOPBuffer( r, r->op.currentLine++, LT_SOURCE, v );
-
-                        /* Move to the CR/NL or EOL on this line */
-                        while ( ( *v ) && ( *v != '\r' ) && ( *v != '\n' ) )
-                        {
-                            v++;
-                        }
-
-                        if ( *v )
-                        {
-                            /* Found end of string or NL/CR...move past those */
-                            if ( ( ( *v == '\r' ) && ( *( v + 1 ) == '\n' ) ) ||
-                                    ( ( *v == '\n' ) && ( *( v + 1 ) == '\r' ) )
-                               )
-                            {
-                                v += 2;
-                            }
-                            else
-                            {
-                                v++;
-                            }
-                        }
-
-                    }
-            }
-
-            /* If this line has assembly then output it */
-            if ( n.assyLine != ASSY_NOT_FOUND )
-            {
-                /* ETM3.5: Instructions are executed based on disposition */
-	        /* ETM4: ETM4 everything up to a branch is executed...decision about that branch is based on disposition */
-                /* MTB: Everything except jumps are executed, jumps are executed only if they are the last instruction in a run */
-                bool insExecuted = (
-				    /* ETM3.5 case - dependent on disposition */
-				    ( ( !linearRun )  && ( r->i.protocol==TRACE_PROT_ETM35 ) && ( disposition & 1 ) ) ||
-
-				    /* ETM4 case - either not a branch or disposition is 1 */
-				    ( ( !linearRun ) && ( r->i.protocol==TRACE_PROT_ETM4 ) && (( !n.assy[n.assyLine].etm4branch ) || (disposition & 1 ) )) ||
-
-				    /* MTB case - a linear run to last address */
-				    ( ( linearRun ) &&
-				      ( ( ( r->op.workingAddr != targetAddr ) && ( !n.assy[n.assyLine].isJump ) && ( !n.assy[n.assyLine].isSubCall ) )  ||
-					( r->op.workingAddr == targetAddr )
-                                        ) ) );
-
-                _appendRefToOPBuffer( r, r->op.currentLine, insExecuted ? LT_ASSEMBLY : LT_NASSEMBLY, n.assy[n.assyLine].lineText );
-
-
-		/* Move addressing along */
-		if ((r->i.protocol != TRACE_PROT_ETM4 ) || (n.assy[n.assyLine].etm4branch ))
-		  {
-		    if ( r->i.protocol == TRACE_PROT_ETM4 )
-		      {
-			_traceReport( V_DEBUG,"Consumed, %sexecuted",disposition&1?"":"not ");
-		      }
-		    disposition >>= 1;
-		    incAddr--;
-		  }
-		
-                if ( n.assy[n.assyLine].isJump || n.assy[n.assyLine].isSubCall )
+                /* There is a valid function tag recognised here */
+                if ( ( l->function->filename != r->op.currentFileindex ) || ( l->function != r->op.currentFunctionptr ) )
                 {
-                    _appendToOPBuffer( r, r->op.currentLine, LT_DEBUG, "%sTAKEN %s", insExecuted ? "" : "NOT ", n.assy[n.assyLine].isJump ? "JUMP" : "SUBCALL"  );
-
-                    /* Update working address according to if jump was taken */
-                    r->op.workingAddr = insExecuted ? ( n.assy[n.assyLine].jumpdest ) : r->op.workingAddr + ( ( n.assy[n.assyLine].is4Byte ) ? 4 : 2 );
-                }
-                else
-                {
-                    r->op.workingAddr += ( n.assy[n.assyLine].is4Byte ) ? 4 : 2;
+                    _appendToOPBuffer( r, l, r->op.currentLine, LT_FILE, "%s::%s", symbolGetFilename( r->s, l->function->filename ), l->function->funcname );
+                    r->op.currentFileindex     = l->function->filename;
+                    r->op.currentFunctionptr = l->function;
+                    r->op.currentLine = NO_LINE;
                 }
             }
             else
             {
-                _appendRefToOPBuffer( r, r->op.currentLine, LT_ASSEMBLY, "\t\tASSEMBLY NOT FOUND" EOL );
-                r->op.workingAddr += 2;
-		disposition >>= 1;
-		incAddr--;
+                if ( ( NO_FILE != r->op.currentFileindex ) || ( NULL != r->op.currentFunctionptr ) )
+                {
+                    _appendToOPBuffer( r, l, r->op.currentLine, LT_FILE, "Unknown function" );
+                    r->op.currentFileindex     = NO_FILE;
+                    r->op.currentFunctionptr = NULL;
+                    r->op.currentLine = NO_LINE;
+
+                }
+            }
+
+        }
+
+        /* If we have changed line then output the new one */
+        if ( l && ( ( l->startline != r->op.currentLine ) ) )
+        {
+            const char *v = symbolSource( r->s, l->filename, l->startline - 1 );
+            r->op.currentLine = l->startline;
+
+            _appendRefToOPBuffer( r, l, r->op.currentLine, LT_SOURCE, v );
+        }
+
+        /* Now the matching assembly, and location updates */
+        newaddr = 0;
+        char *a = symbolAssemblyLine( r->s, &isJump, &is4byte, r->op.workingAddr, &newaddr );
+
+        if ( a )
+        {
+            /* ETM3.5: Instructions are executed based on disposition */
+            /* ETM4: ETM4 everything up to a branch is executed...decision about that branch is based on disposition */
+            /* MTB: Everything except jumps are executed, jumps are executed only if they are the last instruction in a run */
+            bool insExecuted = (
+                                           /* ETM3.5 case - dependent on disposition */
+                                           ( ( !linearRun )  && ( r->i.protocol == TRACE_PROT_ETM35 ) && ( disposition & 1 ) ) ||
+
+                                           /* ETM4 case - either not a branch or disposition is 1 */
+                                           ( ( !linearRun ) && ( r->i.protocol == TRACE_PROT_ETM4 ) && ( ( !isJump ) || ( disposition & 1 ) ) ) ||
+
+                                           /* MTB case - a linear run to last address */
+                                           ( ( linearRun ) &&
+                                             ( ( ( r->op.workingAddr != targetAddr ) && ( !isJump ) )  ||
+                                               ( r->op.workingAddr == targetAddr )
+                                             ) ) );
+
+            _appendToOPBuffer( r, l, r->op.currentLine, insExecuted ? LT_ASSEMBLY : LT_NASSEMBLY, a );
+
+
+            /* Move addressing along */
+            if ( ( r->i.protocol != TRACE_PROT_ETM4 ) || ( isJump ) )
+            {
+                if ( r->i.protocol == TRACE_PROT_ETM4 )
+                {
+                    _traceReport( V_DEBUG, "Consumed, %sexecuted (%d left)", disposition & 1 ? "" : "not ", incAddr - 1 );
+                }
+
+                disposition >>= 1;
+                incAddr--;
+            }
+
+            if ( isJump )
+            {
+                _appendToOPBuffer( r, l, r->op.currentLine, LT_DEBUG, "%sTAKEN JUMP", insExecuted ? "" : "NOT " );
+
+                /* Update working address according to if jump was taken */
+                r->op.workingAddr = insExecuted ? newaddr : r->op.workingAddr + ( ( is4byte ) ? 4 : 2 ); // FIXME
+            }
+            else
+            {
+                r->op.workingAddr += ( is4byte ) ? 4 : 2;
             }
         }
         else
         {
-            /* We didn't have a symbol for this address, so let's just assume a short instruction */
-            _appendRefToOPBuffer( r, r->op.currentLine, LT_DEBUG, "*** No Symbol found ***" EOL );
+            _appendRefToOPBuffer( r, l, r->op.currentLine, LT_ASSEMBLY, "\t\tASSEMBLY NOT FOUND" EOL );
             r->op.workingAddr += 2;
-	    disposition >>= 1;
-	    incAddr--;
+            disposition >>= 1;
+            incAddr--;
         }
-
     }
 }
+
 // ====================================================================================================
 static void _dumpBuffer( struct RunTime *r )
 
@@ -840,24 +851,14 @@ static void _dumpBuffer( struct RunTime *r )
 {
     _flushBuffer( r );
 
-    if ( !SymbolSetValid( &r->s, r->options->elffile ) )
+    if ( !symbolSetValid( r->s, r->options->elffile ) )
     {
-        switch ( SymbolSetCreate( &r->s, r->options->elffile, r->options->deleteMaterial, r->options->demangle, true, true, r->options->odoptions ) )
+        symbolDelete( r->s );
+
+        if ( !( r->s = symbolAqquire( r->options->elffile, true, true, true ) ) )
         {
-            case SYMBOL_NOELF:
-                genericsReport( V_ERROR, "Elf file or symbols in it not found" EOL );
-                return;
-
-            case SYMBOL_NOOBJDUMP:
-                genericsReport( V_ERROR, "Objdump not found" EOL );
-                return;
-
-            case SYMBOL_UNSPECIFIED:
-                genericsReport( V_ERROR, "Unspecified symbol subsystem error" EOL );
-                return;
-
-            default:
-                break;
+            genericsReport( V_ERROR, "Elf file or symbols in it not found" EOL );
+            return;
         }
 
         genericsReport( V_DEBUG, "Loaded %s" EOL, r->options->elffile );
@@ -873,76 +874,41 @@ static void _dumpBuffer( struct RunTime *r )
     }
 
     /* Two calls in case buffer is wrapped - submit both parts */
-    TRACEDecoderPump( &r->i, &r->pmBuffer[r->rp], r->options->buflen - r->rp, _traceCB, _traceReport, r );
+    TRACEDecoderPump( &r->i, &r->pmBuffer[r->rp], r->options->buflen - r->rp, _traceCB, r );
 
     /* The length of this second buffer can be 0 for case buffer is not wrapped */
-    TRACEDecoderPump( &r->i, &r->pmBuffer[0], r->wp, _traceCB, _traceReport, r );
+    TRACEDecoderPump( &r->i, &r->pmBuffer[0], r->wp, _traceCB, r );
 
     /* Submit this constructed buffer for display */
     SIOsetOutputBuffer( r->sio, r->numLines, r->numLines - 1, &r->opText, false );
 }
 // ====================================================================================================
-static bool _currentFileAndLine( struct RunTime *r, char **file, int32_t *l )
+static struct symbolLineStore *_currentFileAndLine( struct RunTime *r )
 
 {
-    /* Search backwards from current file and line until we find (a) a source line with a line number and */
+    /* Search backwards from current position in buffer until we find a line a line record attached */
     /* (b) a filename which contains this line. */
 
-    int32_t sl = 0;
     int32_t i = SIOgetCurrentLineno( r->sio );
-    *file = NULL;
 
-    while ( ( i ) && ( r->opText[i].lt != LT_FILE ) )
+    while ( ( i ) &&
+            ( ( ( ( r->opText[i].lt != LT_SOURCE ) && ( r->opText[i].lt != LT_ASSEMBLY ) ) || r->opText[i].dat == NULL ) ) )
     {
-        if ( ( r->opText[i].lt == LT_SOURCE ) && ( !sl ) )
-        {
-            sl = r->opText[i].line;
-        }
-
         i--;
     }
 
-    if ( r->opText[i].lt == LT_FILE )
+    if ( !i || !r->opText[i].dat )
     {
-        *file = r->opText[i].buffer;
-    }
+        i = SIOgetCurrentLineno( r->sio );
 
-    if ( !sl )
-    {
-        /* This was odd, no line number found before filename was. Let's search forward for one */
-        while ( ( i < r->numLines ) && ( r->opText[i].lt != LT_SOURCE ) )
+        while ( ( i ) &&
+                ( ( ( ( r->opText[i].lt != LT_SOURCE ) && ( r->opText[i].lt != LT_ASSEMBLY ) ) || r->opText[i].dat == NULL ) ) )
         {
             i++;
         }
-
-        if ( i < r->numLines )
-        {
-            sl = r->opText[i].line;
-        }
     }
 
-    if ( ( !sl ) || ( !*file ) )
-    {
-        /* We didn't find everything */
-        return false;
-    }
-
-    *l = sl;
-    return true;
-}
-// ====================================================================================================
-static bool _fileExists( char *fileToOpen )
-
-{
-    FILE *f = fopen( fileToOpen, "r" );
-
-    if ( !f )
-    {
-        return false;
-    }
-
-    fclose( f );
-    return true;
+    return ( struct symbolLineStore * )( ( i < r->numLines ) ? r->opText[i].dat : NULL );
 }
 // ====================================================================================================
 static void _openFileCommand( struct RunTime *r, int32_t line, char *fileToOpen )
@@ -993,60 +959,39 @@ static void _openFileCommand( struct RunTime *r, int32_t line, char *fileToOpen 
     system( construct );
 }
 // ====================================================================================================
-static void _openFileBuffer( struct RunTime *r, int32_t line, char *fileToOpen )
+static void _mapFileBuffer( struct RunTime *r, int lineno, int filenameIndex )
 
-/* Read file into buffer */
+/* Map filename records into buffer */
 
 {
-    FILE *f;
-    char construct[SCRATCH_STRING_LEN];
-    char *p;
-    int32_t lc = 0;
+    /* Get line reference from current buffer */
 
-    f = fopen( fileToOpen, "r" );
+    unsigned int index = 0;
+    const char *c;
 
-    if ( !f )
+    r->filenumLines = 0;
+
+    while ( ( c = symbolSource( r->s, filenameIndex, index++ ) ) )
     {
-        return;
-    }
+        r->fileopText = ( struct sioline * )realloc( r->fileopText, ( sizeof( struct sioline ) ) * ( r->filenumLines + 1 ) );
 
-    while ( !feof( f ) )
-    {
-        if ( !fgets( construct, SCRATCH_STRING_LEN, f ) )
-        {
-            break;
-        }
-
-        lc++;
-        r->fileopText = ( struct line * )realloc( r->fileopText, ( sizeof( struct line ) ) * ( r->filenumLines + 1 ) );
-
-        /* Remove and LF/CR */
-        for ( p = construct; ( ( *p ) && ( *p != '\n' ) && ( *p != '\r' ) ); p++ );
-
-        *p = 0;
-
-        r->fileopText[r->filenumLines].buffer = strdup( construct );
+        /* This line removes the 'const', but we know to not mess with this line */
+        r->fileopText[r->filenumLines].buffer = ( char * )c;
         r->fileopText[r->filenumLines].lt     = LT_MU_SOURCE;
-        r->fileopText[r->filenumLines].line   = lc;
-        r->fileopText[r->filenumLines].isRef  = false;
-        r->filenumLines++;
+        r->fileopText[r->filenumLines].line   = r->filenumLines++;
+        r->fileopText[r->filenumLines].isRef  = true;
     }
 
-    fclose( f );
-
-    SIOsetOutputBuffer( r->sio, r->filenumLines, line - 1, &r->fileopText, true );
+    SIOsetOutputBuffer( r->sio, r->filenumLines, lineno - 1, &r->fileopText, true );
     r->diving = true;
 }
 // ====================================================================================================
-static void _doFileOpen( struct RunTime *r, bool isDive )
+static void _doFileDive( struct RunTime *r )
 
-/* Do actions required to open file to dive into */
+/* Do actions required to get file contents to dive into */
 
 {
-    char *p;
-    char *filename;
-    int32_t lineNo;
-    char construct[SCRATCH_STRING_LEN];
+    static struct symbolLineStore *l;
 
     if ( ( r->diving ) || ( !r->numLines ) || ( !r->held ) )
     {
@@ -1057,49 +1002,13 @@ static void _doFileOpen( struct RunTime *r, bool isDive )
     assert( !r->fileopText );
     assert( !r->filenumLines );
 
-
-    if ( !_currentFileAndLine( r, &p, &lineNo ) )
+    if ( !( l = _currentFileAndLine( r ) ) )
     {
         SIOalert( r->sio, "Couldn't get filename/line" );
         return;
     }
 
-    filename = strdup( p );
-    p = &filename[strlen( filename )];
-
-    /* Roll back to before the '::' to turn this into a filename */
-    while ( ( p != filename ) && ( *p != ':' ) )
-    {
-        p--;
-    }
-
-    if ( ( p == filename ) || ( *( p - 1 ) != ':' ) )
-    {
-        SIOalert( r->sio, "Couldn't decode filename" );
-        free( filename );
-        return;
-    }
-
-    *( p - 1 ) = 0;
-
-    /* Now create filename including stripped material if need be */
-    snprintf( construct, SCRATCH_STRING_LEN, "%s%s", r->options->deleteMaterial ? r->options->deleteMaterial : "", filename );
-
-    /* Try full path first, and filename if path doesn't work */
-    if ( _fileExists( construct ) )
-    {
-        isDive ? _openFileBuffer( r, lineNo, construct ) : _openFileCommand( r, lineNo, construct );
-    }
-    else if ( _fileExists( filename ) )
-    {
-        isDive ? _openFileBuffer( r, lineNo, filename ) : _openFileCommand( r, lineNo, filename );
-    }
-    else
-    {
-        SIOalert( r->sio, "Couldn't open file" );
-    }
-
-    free( filename );
+    _mapFileBuffer( r,  l->startline, l->filename );
 }
 // ====================================================================================================
 static void _doFilesurface( struct RunTime *r )
@@ -1112,12 +1021,10 @@ static void _doFilesurface( struct RunTime *r )
         return;
     }
 
-    while ( r->filenumLines )
-    {
-        free( r->fileopText[--r->filenumLines].buffer );
-    }
-
+    /* Buffer is a ref so we don't need to delete it, just remove the index */
+    free( r->fileopText );
     r->fileopText = NULL;
+    r->filenumLines = 0;
     r->diving = false;
     SIOsetOutputBuffer( r->sio, r->numLines, r->numLines - 1, &r->opText, false );
 }
@@ -1250,30 +1157,18 @@ int main( int argc, char *argv[] )
     atexit( _doExit );
 
     /* Check we've got _some_ symbols to start from */
-    if ( !SymbolSetValid( &_r.s, _r.options->elffile ) )
+    _r.s = symbolAqquire( _r.options->elffile, true, true, true );
+
+    if ( !_r.s )
     {
-        switch ( SymbolSetCreate( &_r.s, _r.options->elffile, _r.options->deleteMaterial, _r.options->demangle, true, true, _r.options->odoptions ) )
-        {
-            case SYMBOL_NOELF:
-                genericsReport( V_ERROR, "Elf file or symbols in it not found" EOL );
-                return -1;
-
-            case SYMBOL_NOOBJDUMP:
-                genericsReport( V_ERROR, "Objdump not found" EOL );
-                return -1;
-
-            case SYMBOL_UNSPECIFIED:
-                genericsReport( V_ERROR, "Unspecified symbol subsystem error" EOL );
-                return -1;
-
-            default:
-                break;
-        }
-
-        genericsReport( V_DEBUG, "Loaded %s" EOL, _r.options->elffile );
+        genericsReport( V_ERROR, "Elf file or symbols in it not found" EOL );
+        return -1;
     }
 
-    SymbolSetDelete( &_r.s );
+    genericsReport( V_DEBUG, "Loaded %s" EOL, _r.options->elffile );
+
+    symbolDelete( _r.s );
+    _r.s = NULL;
 
     /* Create a screen and interaction handler */
     _r.sio = SIOsetup( _r.progName, _r.options->elffile, ( _r.options->file != NULL ) );
@@ -1300,7 +1195,7 @@ int main( int argc, char *argv[] )
     /* Create the buffer memory */
     _r.pmBuffer = ( uint8_t * )calloc( 1, _r.options->buflen );
 
-    TRACEDecoderInit( &_r.i, _r.options->protocol, !( _r.options->noAltAddr ) );
+    TRACEDecoderInit( &_r.i, _r.options->protocol, !( _r.options->noAltAddr ), _traceReport );
 
     if ( _r.options->useTPIU )
     {
@@ -1308,7 +1203,7 @@ int main( int argc, char *argv[] )
     }
 
     /* Put a record of the protocol in use on screen */
-    SIOtagText( _r.sio, TRACEDecodeProtocolName( _r.options->protocol ) );
+    SIOtagText( _r.sio, TRACEDecodeGetProtocolName( _r.options->protocol ) );
 
     while ( !_r.ending )
     {
@@ -1417,13 +1312,13 @@ int main( int argc, char *argv[] )
                     break;
 
                 case SIO_EV_DIVE:
-                    _doFileOpen( &_r, true );
+                    _doFileDive( &_r );
                     break;
 
                 case SIO_EV_FOPEN:
                     if ( _r.options->openFileCL )
                     {
-                        _doFileOpen( &_r, false );
+                        //                        _doFileOpen( &_r, false );
                     }
 
                     break;

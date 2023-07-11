@@ -15,12 +15,13 @@
 #include "traceDecoder.h"
 #include "generics.h"
 
-/* Individual trace decoders */
-extern void ETM35DecoderPumpAction( struct TRACEDecoder *i, uint8_t c, traceDecodeCB cb, genericsReportCB report, void *d );
-extern void MTBDecoderPumpAction( struct TRACEDecoder *i, uint32_t source, uint32_t dest, traceDecodeCB cb, genericsReportCB report, void *d );
-extern void ETM4DecoderPumpAction( struct TRACEDecoder *i, uint8_t c, traceDecodeCB cb, genericsReportCB report, void *d );
+/* Individual trace decoders defined in their own file */
+extern struct TRACEDecoderEngine *ETM35DecoderPumpCreate( void );
+extern struct TRACEDecoderEngine *MTBDecoderPumpCreate( void );
+extern struct TRACEDecoderEngine *ETM4DecoderPumpCreate( void );
 
-static const char *TRACEprotocolString[] = { TRACEprotocolStrings, NULL };
+static struct TRACEDecoderEngine *( *_engine[TRACE_PROT_NUM] )( void ) = { ETM35DecoderPumpCreate, MTBDecoderPumpCreate, ETM4DecoderPumpCreate };
+static const char *TRACEprotocolString[TRACE_PROT_NUM] = { TRACEprotocolStrings };
 
 // ====================================================================================================
 // ====================================================================================================
@@ -29,44 +30,11 @@ static const char *TRACEprotocolString[] = { TRACEprotocolStrings, NULL };
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
-void TRACEDecoderInit( struct TRACEDecoder *i, enum TRACEprotocol protocol, bool usingAltAddrEncodeSet )
-
-/* Reset a TRACEDecoder instance */
-
-{
-    memset( i, 0, sizeof( struct TRACEDecoder ) );
-    TRACEDecoderZeroStats( i );
-    i->cpu.addr = ADDRESS_UNKNOWN;
-    i->cpu.cycleCount = COUNT_UNKNOWN;
-    TRACEDecodeUsingAltAddrEncode( i, usingAltAddrEncodeSet );
-    TRACEDecodeProtocol( i, protocol );
-}
-// ====================================================================================================
-void TRACEDecodeStateChange( struct TRACEDecoder *i, enum TRACEchanges c )
-{
-    i->cpu.changeRecord |= ( 1 << c );
-}
-// ====================================================================================================
-void TRACEDecodeProtocol( struct TRACEDecoder *i, enum TRACEprotocol protocol )
-
-{
-    assert( protocol < TRACE_PROT_LIST_END );
-    assert( i );
-    i->protocol = protocol;
-}
-// ====================================================================================================
-const char *TRACEDecodeProtocolName( enum TRACEprotocol protocol )
+const char *TRACEDecodeGetProtocolName( enum TRACEprotocol protocol )
 
 {
     assert( protocol < TRACE_PROT_LIST_END );
     return TRACEprotocolString[ protocol ];
-}
-// ====================================================================================================
-void TRACEDecodeUsingAltAddrEncode( struct TRACEDecoder *i, bool usingAltAddrEncodeSet )
-
-{
-    assert( i );
-    i->usingAltAddrEncode = usingAltAddrEncodeSet;
 }
 // ====================================================================================================
 void TRACEDecoderZeroStats( struct TRACEDecoder *i )
@@ -80,7 +48,8 @@ bool TRACEDecoderIsSynced( struct TRACEDecoder *i )
 
 {
     assert( i );
-    return i->p != TRACE_UNSYNCED;
+    assert( i->engine );
+    return i->engine->synced( i->engine );
 }
 // ====================================================================================================
 struct TRACEDecoderStats *TRACEDecoderGetStats( struct TRACEDecoder *i )
@@ -107,28 +76,24 @@ void TRACEDecoderForceSync( struct TRACEDecoder *i, bool isSynced )
 
 {
     assert( i );
+    assert( i->engine );
 
-    if ( i->p == TRACE_UNSYNCED )
+    if ( isSynced )
     {
-        if ( isSynced )
-        {
-            i->p = TRACE_IDLE;
-            i->stats.syncCount++;
-        }
+        i->stats.syncCount++;
     }
     else
     {
-        if ( !isSynced )
+        if ( TRACEDecoderIsSynced( i ) )
         {
             i->stats.lostSyncCount++;
-            i->asyncCount = 0;
-            i->rxedISYNC = false;
-            i->p = TRACE_UNSYNCED;
         }
     }
+
+    i->engine->forceSync( i->engine, isSynced );
 }
 // ====================================================================================================
-void TRACEDecoderPump( struct TRACEDecoder *i, uint8_t *buf, int len, traceDecodeCB cb, genericsReportCB report, void *d )
+void TRACEDecoderPump( struct TRACEDecoder *i, uint8_t *buf, int len, traceDecodeCB cb, void *d )
 
 {
     assert( i );
@@ -137,41 +102,57 @@ void TRACEDecoderPump( struct TRACEDecoder *i, uint8_t *buf, int len, traceDecod
 
     /* len can arrive as 0 for the case of an unwrapped buffer */
 
-    switch ( i->protocol )
+    if ( i->engine->action )
     {
-        case TRACE_PROT_ETM35:
-            while ( len-- )
+        while ( len-- )
+        {
+            if ( i->engine->action(  i->engine, &i->cpu, *( buf++ ) ) )
             {
-                /* ETM processes one octet at a time */
-                ETM35DecoderPumpAction( i, *( buf++ ), cb, report, d );
+                /* Something worthy of being reported happened */
+                cb( d );
+            }
+        }
+
+    }
+    else if ( i->engine->actionPair )
+    {
+        while ( len > 7 )
+        {
+            /* MTB processes two words at a time...a from and to address */
+            /* (yes, that could be +1 on a uint32_t increment, but I prefer being explicit) */
+            if ( i->engine->actionPair( i->engine, &i->cpu, *( uint32_t * )buf, *( uint32_t * )( buf + 4 ) ) )
+            {
+                /* Something worthy of being reported happened */
+                cb( d );
             }
 
-            break;
-
-        case TRACE_PROT_ETM4:
-            while ( len-- )
-            {
-                /* ETM processes one octet at a time */
-                ETM4DecoderPumpAction( i, *( buf++ ), cb, report, d );
-            }
-
-            break;
-
-        case TRACE_PROT_MTB:
-            while ( len > 7 )
-            {
-                /* MTB processes two words at a time...a from and to address */
-                /* (yes, that could be +1 on a uint32_t increment, but I prefer being explicit) */
-                MTBDecoderPumpAction( i, *( uint32_t * )buf, *( uint32_t * )( buf + 4 ), cb, report, d );
-                buf += 8;
-                len -= 8;
-            }
-
-            break;
-
-        default:
-            assert( false );
-            break;
+            buf += 8;
+            len -= 8;
+        }
     }
 }
 // ====================================================================================================
+void TRACEDecoderInit( struct TRACEDecoder *i, enum TRACEprotocol protocol, bool usingAltAddrEncodeSet, genericsReportCB report )
+
+/* Reset a TRACEDecoder instance */
+
+{
+    assert( protocol < TRACE_PROT_NUM );
+
+    memset( i, 0, sizeof( struct TRACEDecoder ) );
+
+    TRACEDecoderZeroStats( i );
+    i->cpu.addr = ADDRESS_UNKNOWN;
+    i->cpu.cycleCount = COUNT_UNKNOWN;
+    i->cpu.report = report;
+    i->protocol = protocol;
+
+    i->engine = _engine[ protocol ]();
+
+    if ( i->engine->altAddrEncode )
+    {
+        i->engine->altAddrEncode( i->engine, usingAltAddrEncodeSet );
+    }
+}
+// ====================================================================================================
+
