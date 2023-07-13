@@ -257,20 +257,23 @@ static int _processDie( Dwarf_Die *d, void *pp )
         const char *directory    = dwarf_formstring( &dirattr );
         const char *filename     = dwarf_decl_file( d );
 
-        if ( filename && ( filename[0] != '/' ) )
+        if ( filename )
         {
-            /* Need to construct the fully qualified filename from the directory + filename */
-            char *s = ( char * )malloc( strlen( filename ) + strlen( directory ) + 2 );
-            strcpy( s, directory );
-            strcat( s, "/" );
-            strcat( s, filename );
-            newFunc->filename  = _findOrAddString( s, &p->stringTable[PT_FILENAME],  &p->tableLen[PT_FILENAME] );
-            free( s );
-        }
-        else
-        {
-            /* This string is already fully qualified, so just use it */
-            newFunc->filename  = _findOrAddString( filename, &p->stringTable[PT_FILENAME],  &p->tableLen[PT_FILENAME] );
+            if ( filename[0] != '/' )
+            {
+                /* Need to construct the fully qualified filename from the directory + filename */
+                char *s = ( char * )malloc( strlen( filename ) + strlen( directory ) + 2 );
+                strcpy( s, directory );
+                strcat( s, "/" );
+                strcat( s, filename );
+                newFunc->filename  = _findOrAddString( s, &p->stringTable[PT_FILENAME],  &p->tableLen[PT_FILENAME] );
+                free( s );
+            }
+            else
+            {
+                /* This string is already fully qualified, so just use it */
+                newFunc->filename  = _findOrAddString( filename, &p->stringTable[PT_FILENAME],  &p->tableLen[PT_FILENAME] );
+            }
         }
 
         dwarf_decl_line( d, ( int * )&newFunc->startline );
@@ -741,7 +744,7 @@ void symbolDelete( struct symbol *p )
 
 // ====================================================================================================
 
-char *symbolAssemblyLine( struct symbol *p, bool *isJump, bool *is4byte, symbolMemaddr addr, symbolMemaddr *newaddr )
+char *symbolDisssembleLine( struct symbol *p, enum instructionClass *ic, symbolMemaddr addr, symbolMemaddr *newaddr )
 
 /* Return assembly code representing this line */
 
@@ -749,6 +752,8 @@ char *symbolAssemblyLine( struct symbol *p, bool *isJump, bool *is4byte, symbolM
     cs_insn *insn;
     size_t count;
     static char op[255];
+
+    *newaddr = NO_ADDRESS;
 
     if ( !p->caphandle )
     {
@@ -783,22 +788,40 @@ char *symbolAssemblyLine( struct symbol *p, bool *isJump, bool *is4byte, symbolM
         if ( insn[0].size == 2 )
         {
             sprintf( op, "%8"PRIx64":   %02x%02x        %s  %s", insn[0].address, insn[0].bytes[1], insn[0].bytes[0], insn[0].mnemonic, insn[0].op_str  );
-            *is4byte = false;
+            *ic = LE_IC_NONE;
         }
         else
         {
             sprintf( op, "%8"PRIx64":   %02x%02x %02x%02x   %s %s", insn[0].address, insn[0].bytes[1], insn[0].bytes[0], insn[0].bytes[3], insn[0].bytes[2], insn[0].mnemonic, insn[0].op_str );
-            *is4byte = true;
+            *ic = LE_IC_4BYTE;
         }
 
-        *isJump = false;
-
+        /* Fill in other characteristics of this instruction */
         for ( int n = 0; n < detail->groups_count; n++ )
         {
-            if ( ( detail->groups[n] == ARM_GRP_JUMP ) || ( detail->groups[n] == ARM_GRP_CALL ) || ( detail->groups[n] == ARM_GRP_BRANCH_RELATIVE ) )
+            switch ( detail->groups[n] )
             {
-                *isJump = true;
-                break;
+                case CS_GRP_JUMP:
+                case CS_GRP_BRANCH_RELATIVE:
+                    *ic |= LE_IC_ISJUMP;
+                    break;
+
+                case CS_GRP_CALL:
+                    *ic |= LE_IC_CALL;
+                    break;
+
+                case CS_GRP_RET:
+                    *ic |= LE_IC_RET;
+                    break;
+
+                case CS_GRP_INT:
+                    *ic |= LE_IC_INT;
+                    break;
+
+                case CS_GRP_IRET:
+                    *ic |= LE_IC_INTRET;
+                    break;
+
             }
         }
     }

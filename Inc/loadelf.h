@@ -10,6 +10,7 @@ typedef unsigned char *symbolMemptr;
 #define NO_LINE        (-1)
 #define NO_FILE        (-1)
 #define NO_DESTADDRESS (-1)
+#define NO_ADDRESS     (-1)
 
 /* Structure for a memory segment */
 struct symbolMemoryStore
@@ -75,6 +76,8 @@ struct symbol
     csh caphandle;
 };
 
+enum instructionClass { LE_IC_NONE, LE_IC_ISJUMP = ( 1 << 0 ), LE_IC_4BYTE = ( 1 << 1 ), LE_IC_CALL = ( 1 << 2 ),  LE_IC_RET = ( 1 << 3 ), LE_IC_INT = ( 1 << 4 ), LE_IC_INTRET = ( 1 << 5 ) };
+
 // ====================================================================================================
 
 /* Return pointer to source code for specified line in file index */
@@ -106,7 +109,7 @@ symbolMemptr symbolCodeAt( struct symbol *p, symbolMemaddr addr, unsigned int *l
 
 /* Return assembly code representing this line, with annotations */
 //char *symbolAssemblyLine( struct symbol *p, bool *isJump, bool *is4byte, symbolMemaddr addr );
-char *symbolAssemblyLine( struct symbol *p, bool *isJump, bool *is4byte, symbolMemaddr addr, symbolMemaddr *newaddr );
+char *symbolDisssembleLine( struct symbol *p, enum instructionClass *ic, symbolMemaddr addr, symbolMemaddr *newaddr );
 
 /* Delete symbol set */
 void symbolDelete( struct symbol *p );

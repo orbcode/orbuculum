@@ -86,6 +86,8 @@ struct opConstruct
     uint32_t workingAddr;                /* The address we're currently in */
 };
 
+/* Maximum depth of call stack, defined Section 5.3 or ARM IHI0064H.a ID120820 */
+#define MAX_CALL_STACK (15)
 
 struct RunTime
 {
@@ -127,6 +129,8 @@ struct RunTime
 
     bool traceRunning;                  /* Set if we are currently receiving trace */
     uint32_t context;                   /* Context we are currently working under */
+    symbolMemaddr callStack[MAX_CALL_STACK]; /* Stack of calls */
+    unsigned int stackDepth;            /* Maximum stack depth */
 } _r;
 
 /* For opening the editor (Shift-Right-Arrow) the following command lines work for a few editors;
@@ -586,22 +590,11 @@ static void _traceReport( enum verbLevel l, const char *fmt, ... )
     _appendToOPBuffer( &_r, NULL, _r.op.currentLine, LT_DEBUG, op );
 }
 // ====================================================================================================
-static void _traceCB( void *d )
-
-/* Callback function for when valid TRACE decode is detected */
+static void _reportNonflowEvents( struct RunTime *r )
 
 {
-    struct RunTime *r = ( struct RunTime * )d;
     struct TRACECPUState *cpu = TRACECPUState( &r->i );
-    uint32_t incAddr = 0;
-    uint32_t disposition;
-    uint32_t targetAddr = 0; /* Just to avoid unitialised variable warning */
-    bool linearRun = false;
-    bool isJump;
-    bool is4byte;
-    symbolMemaddr newaddr;
 
-    /* Deal with changes introduced by this event ========================= */
     if ( TRACEStateChanged( &r->i, EV_CH_TRACESTART ) )
     {
         if ( !r->traceRunning )
@@ -609,38 +602,6 @@ static void _traceCB( void *d )
             _appendRefToOPBuffer( r, NULL, r->op.currentLine, LT_EVENT, "========== TRACE START EVENT ==========" );
             r->traceRunning = true;
         }
-    }
-
-    if ( TRACEStateChanged( &r->i, EV_CH_ADDRESS ) )
-    {
-        /* Make debug report if calculated and reported addresses differ. This is most useful for testing when exhaustive  */
-        /* address reporting is switched on. It will give 'false positives' for uncalculable instructions (e.g. bx lr) but */
-        /* it's a decent safety net to be sure the jump decoder is working correctly.                                      */
-
-        if ( r->options->protocol != TRACE_PROT_MTB )
-        {
-            _appendToOPBuffer( r, NULL, r->op.currentLine, LT_DEBUG, "%sCommanded CPU Address change (Was:0x%08x Commanded:0x%08x)" EOL,
-                               ( r->op.workingAddr == cpu->addr ) ? "" : "***INCONSISTENT*** ", r->op.workingAddr, cpu->addr );
-        }
-
-        r->op.workingAddr = cpu->addr;
-    }
-
-    if ( TRACEStateChanged( &r->i, EV_CH_LINEAR ) )
-    {
-        /* Execute instructions from the marked starting location to the indicated finishing one (used by MTB) */
-        /* Disposition is all 1's because every instruction is executed. */
-        r->op.workingAddr = cpu->addr;
-        targetAddr        = cpu->toAddr;
-        linearRun         = true;
-        disposition       = 0xffffffff;
-        _appendToOPBuffer( r, NULL, r->op.currentLine, LT_DEBUG, "Linear run 0x%08x to 0x%08x" EOL, cpu->addr, cpu->toAddr );
-    }
-
-    if ( TRACEStateChanged( &r->i, EV_CH_ENATOMS ) )
-    {
-        incAddr = cpu->eatoms + cpu->natoms;
-        disposition = cpu->disposition;
     }
 
     if ( TRACEStateChanged( &r->i, EV_CH_VMID ) )
@@ -739,12 +700,72 @@ static void _traceCB( void *d )
     {
         _appendToOPBuffer( r, NULL, r->op.currentLine, LT_EVENT, "(Using Thumb is now %s)", cpu->thumb ? "True" : "False" );
     }
+}
 
-    /* End of dealing with changes introduced by this event =============== */
+// ====================================================================================================
+static void _traceCB( void *d )
 
+/* Callback function for when valid TRACE decode is detected */
+
+{
+    struct RunTime *r = ( struct RunTime * )d;
+    struct TRACECPUState *cpu = TRACECPUState( &r->i );
+    uint32_t incAddr = 0;
+    uint32_t disposition;
+    uint32_t targetAddr = 0; /* Just to avoid unitialised variable warning */
+    bool linearRun = false;
+    enum instructionClass ic;
+    symbolMemaddr newaddr;
+
+    /* 1: Report anything that doesn't affect the flow */
+    /* =============================================== */
+    _reportNonflowEvents( r );
+
+    /* 2: Collect flow affecting changes introduced by this event */
+    /* ========================================================== */
+    if ( TRACEStateChanged( &r->i, EV_CH_ADDRESS ) )
+    {
+        /* Make debug report if calculated and reported addresses differ. This is most useful for testing when exhaustive  */
+        /* address reporting is switched on. It will give 'false positives' for uncalculable instructions (e.g. bx lr) but */
+        /* it's a decent safety net to be sure the jump decoder is working correctly.                                      */
+
+        if ( r->options->protocol != TRACE_PROT_MTB )
+        {
+            _appendToOPBuffer( r, NULL, r->op.currentLine, LT_DEBUG, "%sCommanded CPU Address change (Was:0x%08x Commanded:0x%08x)" EOL,
+                               ( r->op.workingAddr == cpu->addr ) ? "" : "***INCONSISTENT*** ", r->op.workingAddr, cpu->addr );
+        }
+
+        /* Whatever the state was, this is an explicit setting of an address, so we need to respect it */
+        r->op.workingAddr = cpu->addr;
+    }
+
+    if ( TRACEStateChanged( &r->i, EV_CH_LINEAR ) )
+    {
+        /* MTB-Specific mechanism: Execute instructions from the marked starting location to the indicated finishing one */
+        /* Disposition is all 1's because every instruction is executed.                                                 */
+        r->op.workingAddr = cpu->addr;
+        targetAddr        = cpu->toAddr;
+        linearRun         = true;
+        disposition       = 0xffffffff;
+        _appendToOPBuffer( r, NULL, r->op.currentLine, LT_DEBUG, "Linear run 0x%08x to 0x%08x" EOL, cpu->addr, cpu->toAddr );
+    }
+
+    if ( TRACEStateChanged( &r->i, EV_CH_ENATOMS ) )
+    {
+        /* Atoms represent instruction steps...some of which will have been executed, some stepped over. The number of steps is the   */
+        /* total of the eatoms (executed) and natoms (not executed) and the disposition bitfield shows if each individual instruction */
+        /* was executed or not. For ETM3 each 'run' of instructions is a single instruction with the disposition bit telling you if   */
+        /* it was executed or not. For ETM4 each 'run' of instructions is from the current address to the next possible change of     */
+        /* program flow (and which point the disposition bit tells you if that jump was taken or not).                                */
+        incAddr = cpu->eatoms + cpu->natoms;
+        disposition = cpu->disposition;
+    }
+
+    /* 3: Execute the flow instructions */
+    /* ================================ */
     while ( ( incAddr && !linearRun ) || ( ( r->op.workingAddr <= targetAddr ) && linearRun ) )
     {
-        /* Firstly, checkout the source code line...*/
+        /* Firstly, lets get the source code line...*/
         struct symbolLineStore *l = symbolLineAt( r->s, r->op.workingAddr );
 
         if ( l )
@@ -752,7 +773,7 @@ static void _traceCB( void *d )
             /* If we have changed file or function put a header line in */
             if ( l->function )
             {
-                /* There is a valid function tag recognised here */
+                /* There is a valid function tag recognised here. If it's a change highlight it in the output. */
                 if ( ( l->function->filename != r->op.currentFileindex ) || ( l->function != r->op.currentFunctionptr ) )
                 {
                     _appendToOPBuffer( r, l, r->op.currentLine, LT_FILE, "%s::%s", symbolGetFilename( r->s, l->function->filename ), l->function->funcname );
@@ -763,16 +784,15 @@ static void _traceCB( void *d )
             }
             else
             {
+                /* We didn't find a valid function, but we might have some information to work with.... */
                 if ( ( NO_FILE != r->op.currentFileindex ) || ( NULL != r->op.currentFunctionptr ) )
                 {
                     _appendToOPBuffer( r, l, r->op.currentLine, LT_FILE, "Unknown function" );
                     r->op.currentFileindex     = NO_FILE;
                     r->op.currentFunctionptr = NULL;
                     r->op.currentLine = NO_LINE;
-
                 }
             }
-
         }
 
         /* If we have changed line then output the new one */
@@ -780,37 +800,35 @@ static void _traceCB( void *d )
         {
             const char *v = symbolSource( r->s, l->filename, l->startline - 1 );
             r->op.currentLine = l->startline;
-
             _appendRefToOPBuffer( r, l, r->op.currentLine, LT_SOURCE, v );
         }
 
-        /* Now the matching assembly, and location updates */
-        newaddr = 0;
-        char *a = symbolAssemblyLine( r->s, &isJump, &is4byte, r->op.workingAddr, &newaddr );
+        /* Now output the matching assembly, and location updates */
+        char *a = symbolDisssembleLine( r->s, &ic, r->op.workingAddr, &newaddr );
 
         if ( a )
         {
-            /* ETM3.5: Instructions are executed based on disposition */
-            /* ETM4: ETM4 everything up to a branch is executed...decision about that branch is based on disposition */
-            /* MTB: Everything except jumps are executed, jumps are executed only if they are the last instruction in a run */
+            /* Calculate if this instruction was executed. This is slightly hairy depending on which protocol we're using;         */
+            /*   * ETM3.5: Instructions are executed based on disposition bit (LSB in disposition word)                            */
+            /*   * ETM4  : ETM4 everything up to a branch is executed...decision about that branch is based on disposition bit     */
+            /*   * MTB   : Everything except jumps are executed, jumps are executed only if they are the last instruction in a run */
             bool insExecuted = (
                                            /* ETM3.5 case - dependent on disposition */
                                            ( ( !linearRun )  && ( r->i.protocol == TRACE_PROT_ETM35 ) && ( disposition & 1 ) ) ||
 
                                            /* ETM4 case - either not a branch or disposition is 1 */
-                                           ( ( !linearRun ) && ( r->i.protocol == TRACE_PROT_ETM4 ) && ( ( !isJump ) || ( disposition & 1 ) ) ) ||
+                                           ( ( !linearRun ) && ( r->i.protocol == TRACE_PROT_ETM4 ) && ( ( !( ic & LE_IC_ISJUMP ) ) || ( disposition & 1 ) ) ) ||
 
                                            /* MTB case - a linear run to last address */
                                            ( ( linearRun ) &&
-                                             ( ( ( r->op.workingAddr != targetAddr ) && ( !isJump ) )  ||
+                                             ( ( ( r->op.workingAddr != targetAddr ) && ( ! ( ic & LE_IC_ISJUMP ) ) )  ||
                                                ( r->op.workingAddr == targetAddr )
                                              ) ) );
-
             _appendToOPBuffer( r, l, r->op.currentLine, insExecuted ? LT_ASSEMBLY : LT_NASSEMBLY, a );
 
 
             /* Move addressing along */
-            if ( ( r->i.protocol != TRACE_PROT_ETM4 ) || ( isJump ) )
+            if ( ( r->i.protocol != TRACE_PROT_ETM4 ) || ( ic & LE_IC_ISJUMP ) )
             {
                 if ( r->i.protocol == TRACE_PROT_ETM4 )
                 {
@@ -821,16 +839,53 @@ static void _traceCB( void *d )
                 incAddr--;
             }
 
-            if ( isJump )
+            if ( ic & LE_IC_CALL )
+            {
+                if ( insExecuted )
+                {
+                    /* Push the instruction after this if it's a subroutine or ISR */
+                    _appendToOPBuffer( r, l, r->op.currentLine, LT_DEBUG, "%s to %08x", ( ic & LE_IC_INT ) ? "Interrupt" : "Subcall", newaddr );
+
+                    if ( r->stackDepth == MAX_CALL_STACK - 1 )
+                    {
+                        /* Stack is full, so make room for a new entry */
+                        memmove( &r->callStack[0], &r->callStack[1], sizeof( symbolMemaddr ) * ( MAX_CALL_STACK - 1 ) );
+                    }
+
+                    r->callStack[r->stackDepth] = r->op.workingAddr + ( ic & LE_IC_4BYTE ) ? 4 : 2;
+
+                    if ( r->stackDepth < MAX_CALL_STACK - 1 )
+                    {
+                        /* We aren't at max depth, so go ahead and remove this entry */
+                        r->stackDepth++;
+                    }
+
+                    r->op.workingAddr = insExecuted ? newaddr : r->op.workingAddr + ( ( ic & LE_IC_4BYTE ) ? 4 : 2 );
+                    r->op.workingAddr = newaddr;
+                }
+            }
+            else if ( ( ic & LE_IC_INTRET ) || ( ic & LE_IC_RET ) )
+            {
+                if ( r->stackDepth )
+                {
+                    r->op.workingAddr = r->callStack[--r->stackDepth];
+                    _appendToOPBuffer( r, l, r->op.currentLine, LT_DEBUG, "%s return to %08x", ( ic & LE_IC_INTRET ) ? "Interrupt" : "Subcall", newaddr );
+                }
+                else
+                {
+                    _appendToOPBuffer( r, l, r->op.currentLine, LT_DEBUG, "%s return with no stacked address", ( ic & LE_IC_INTRET ) ? "Interrupt" : "Subcall" );
+                }
+            }
+            else if ( ic & LE_IC_ISJUMP )
             {
                 _appendToOPBuffer( r, l, r->op.currentLine, LT_DEBUG, "%sTAKEN JUMP", insExecuted ? "" : "NOT " );
 
                 /* Update working address according to if jump was taken */
-                r->op.workingAddr = insExecuted ? newaddr : r->op.workingAddr + ( ( is4byte ) ? 4 : 2 ); // FIXME
+                r->op.workingAddr = insExecuted ? newaddr : r->op.workingAddr + ( ( ic & LE_IC_4BYTE ) ? 4 : 2 );
             }
             else
             {
-                r->op.workingAddr += ( is4byte ) ? 4 : 2;
+                r->op.workingAddr += ( ic & LE_IC_4BYTE ) ? 4 : 2;
             }
         }
         else
@@ -965,7 +1020,8 @@ static void _mapFileBuffer( struct RunTime *r, int lineno, int filenameIndex )
 
 {
     /* Get line reference from current buffer */
-
+    assert( r->fileopText == NULL );
+    assert( r->filenumLines == 0 );
     unsigned int index = 0;
     const char *c;
 
@@ -977,9 +1033,11 @@ static void _mapFileBuffer( struct RunTime *r, int lineno, int filenameIndex )
 
         /* This line removes the 'const', but we know to not mess with this line */
         r->fileopText[r->filenumLines].buffer = ( char * )c;
+        r->fileopText[r->filenumLines].dat    = NULL;
         r->fileopText[r->filenumLines].lt     = LT_MU_SOURCE;
-        r->fileopText[r->filenumLines].line   = r->filenumLines++;
         r->fileopText[r->filenumLines].isRef  = true;
+        r->fileopText[r->filenumLines].line   = r->filenumLines + 1;
+        r->filenumLines++;
     }
 
     SIOsetOutputBuffer( r->sio, r->filenumLines, lineno - 1, &r->fileopText, true );
