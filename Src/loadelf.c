@@ -796,6 +796,23 @@ char *symbolDisssembleLine( struct symbol *p, enum instructionClass *ic, symbolM
             *ic = LE_IC_4BYTE;
         }
 
+        /* If it's a BL family instruction then we need to mark it as a call */
+
+        if ( ( insn[0].id == ARM_INS_BL ) || ( insn[0].id == ARM_INS_BLX ) || ( insn[0].id == ARM_INS_BLXNS ) )
+        {
+            *ic |= LE_IC_CALL;
+        }
+
+
+        for ( int n = 0; n <  insn[0].detail->arm.op_count; n++ )
+        {
+            if ( insn[0].detail->arm.operands[n].type == ARM_OP_IMM )
+            {
+                *ic |= LE_IC_IMMEDIATE;
+                break;
+            }
+        }
+
         /* Fill in other characteristics of this instruction */
         for ( int n = 0; n < detail->groups_count; n++ )
         {
@@ -806,22 +823,8 @@ char *symbolDisssembleLine( struct symbol *p, enum instructionClass *ic, symbolM
                     *ic |= LE_IC_ISJUMP;
                     break;
 
-                case CS_GRP_CALL:
-                    *ic |= LE_IC_CALL;
+                default:
                     break;
-
-                case CS_GRP_RET:
-                    *ic |= LE_IC_RET;
-                    break;
-
-                case CS_GRP_INT:
-                    *ic |= LE_IC_INT;
-                    break;
-
-                case CS_GRP_IRET:
-                    *ic |= LE_IC_INTRET;
-                    break;
-
             }
         }
     }

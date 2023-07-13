@@ -63,6 +63,15 @@ struct TRACECPUState *TRACECPUState( struct TRACEDecoder *i )
     return &i->cpu;
 }
 // ====================================================================================================
+const char *TRACEExceptionName( int exceptionNumber )
+
+{
+    return ( ( char *[] )
+    {"???", "PE Reset", "NMI", "HardFault", "MemManage", "BusFault", "UsageFault", "SecureFault", "???", "???", "???", "SVC", "Debug Monitor", "???", "PendSV", "SysTick", "IRQ"
+    } )[( exceptionNumber < 16 ) ? exceptionNumber : 16];
+}
+// ====================================================================================================
+
 bool TRACEStateChanged( struct TRACEDecoder *i, enum TRACEchanges c )
 {
     bool r = ( i->cpu.changeRecord & ( 1 << c ) ) != 0;

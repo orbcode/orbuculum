@@ -50,7 +50,6 @@ enum TRACEchanges
     EV_CH_ENATOMS,
     EV_CH_WATOMS,
     EV_CH_ADDRESS,
-    EV_CH_EXCEPTION,
     EV_CH_CANCELLED,
     EV_CH_VMID,
     EV_CH_TSTAMP,
@@ -115,6 +114,7 @@ struct TRACECPUState
     uint64_t cycleCount;                 /* Cycle Count for exact mode */
     uint16_t exception;                  /* Exception type being executed */
     uint16_t resume;                     /* Interrupt resume code */
+    bool serious;                        /* True if there is a serious fault pending */
     uint64_t instCount;                  /* Number of instructions executed */
     uint8_t exceptionLevel;              /* Current exception level */
     bool am64bit;                        /* Running in 64 bit mode */
@@ -188,6 +188,8 @@ struct TRACEDecoderStats *TRACEDecoderGetStats( struct TRACEDecoder *i );
 
 struct TRACECPUState *TRACECPUState( struct TRACEDecoder *i );
 bool TRACEStateChanged( struct TRACEDecoder *i, enum TRACEchanges c );
+
+const char *TRACEExceptionName( int exceptionNumber );
 
 const char *TRACEDecodeGetProtocolName( enum TRACEprotocol protocol );
 

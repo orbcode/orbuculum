@@ -460,7 +460,7 @@ static bool _pumpAction( struct TRACEDecoderEngine *e, struct TRACECPUState *cpu
                     {
                         /* There is (legacy) exception information in here */
                         cpu->exception = ( c >> 4 ) & 0x07;
-                        _stateChange( cpu, EV_CH_EXCEPTION );
+                        _stateChange( cpu, EV_CH_EX_ENTRY );
                         _stateChange( cpu, ( ( c & 0x40 ) != 0 ) ? EV_CH_CANCELLED : 0 );
                         newState = TRACE_IDLE;
                         retVal = TRACE_EV_MSG_RXED;

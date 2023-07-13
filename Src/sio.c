@@ -409,7 +409,7 @@ static bool _updateSearch( struct SIOInstance *sio )
             ( sio->searchMode == SRCH_FORWARDS ) ? ( l < sio->opTextWline - 1 ) : ( l > 0 );
             ( sio->searchMode == SRCH_FORWARDS ) ? l++ : l-- )
     {
-        if ( strstr( ( *sio->opText )[l].buffer, sio->searchString ) )
+        if ( ( ( *sio->opText )[l].buffer ) && strstr( ( *sio->opText )[l].buffer, sio->searchString ) )
         {
             /* This is a match */
             sio->opTextRline = l;
@@ -595,7 +595,7 @@ static bool _displayLine( struct SIOInstance *sio, int32_t lineNum, int32_t scre
     getyx( sio->outputWindow, y, x );
     ( void )y;
 
-    while ( ( *u ) && ( *u != '\n' ) && ( *u != '\r' ) && ( x < OUTPUT_WINDOW_W ) )
+    while ( u && ( *u ) && ( *u != '\n' ) && ( *u != '\r' ) && ( x < OUTPUT_WINDOW_W ) )
     {
         /* Colour matches if we're in search mode, but whatever is happening, output the characters */
         if ( ( sio->searchMode != SRCH_OFF ) && ( *sio->searchString ) && ( !strncmp( u, ssp, strlen( ssp ) ) ) )

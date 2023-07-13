@@ -76,7 +76,7 @@ struct symbol
     csh caphandle;
 };
 
-enum instructionClass { LE_IC_NONE, LE_IC_ISJUMP = ( 1 << 0 ), LE_IC_4BYTE = ( 1 << 1 ), LE_IC_CALL = ( 1 << 2 ),  LE_IC_RET = ( 1 << 3 ), LE_IC_INT = ( 1 << 4 ), LE_IC_INTRET = ( 1 << 5 ) };
+enum instructionClass { LE_IC_NONE, LE_IC_ISJUMP = ( 1 << 0 ), LE_IC_4BYTE = ( 1 << 1 ), LE_IC_CALL = ( 1 << 2 ),  LE_IC_IMMEDIATE = ( 1 << 3 ) };
 
 // ====================================================================================================
 

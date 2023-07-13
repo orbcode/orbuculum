@@ -39,29 +39,34 @@ enum TRACE_ETM4protoState
     TRACE_GET_64BIT_ADDR,
     TRACE_GET_CONTEXT,
     TRACE_GET_VCONTEXT,
-    TRACE_GET_CONTEXT_ID
+    TRACE_GET_CONTEXT_ID,
+    TRACE_GET_EXCEPTIONINFO1,
+    TRACE_GET_EXCEPTIONINFO2
 };
 
 static const char *_protoStateName[] =
 {
-    "UNSYNCED",       "IDLE",
-    "WAIT_CYCLECOUNT",
-    "TRACE_WAIT_INFO",
-    "TRACE_GET_INFO_PLCTL",
-    "TRACE_GET_INFO_INFO",
-    "TRACE_GET_INFO_KEY",
-    "TRACE_GET_INFO_SPEC",
-    "TRACE_GET_INFO_CYCT",
-    "TRACE_EXTENSION",
-    "TRACE_GET_TIMESTAMP",
-    "TRACE_GET_TS_CC",
-    "TRACE_COMMIT",
-    "TRACE_GET_SHORT_ADDR",
-    "TRACE_GET_32BIT_ADDR",
-    "TRACE_GET_64BIT_ADDR",
-    "TRACE_GET_CONTEXT",
-    "TRACE_GET_VCONTEXT",
-    "TRACE_GET_CONTEXT_ID"
+    "UNSYNCED",
+    "IDLE",
+    "GET_CYCLECOUNT",
+    "WAIT_INFO",
+    "GET_INFO_PLCTL",
+    "GET_INFO_INFO",
+    "GET_INFO_KEY",
+    "GET_INFO_SPEC",
+    "GET_INFO_CYCT",
+    "EXTENSION",
+    "GET_TIMESTAMP",
+    "GET_TS_CC",
+    "COMMIT",
+    "GET_SHORT_ADDR",
+    "GET_32BIT_ADDR",
+    "GET_64BIT_ADDR",
+    "GET_CONTEXT",
+    "GET_VCONTEXT",
+    "GET_CONTEXT_ID",
+    "GET_EXCEPTIONINFO1",
+    "GET_EXCEPTIONINFO1"
 };
 
 #define COND_LOAD_TRACED  1
@@ -92,6 +97,8 @@ struct ETM4DecodeState
     uint32_t nextrhkey;          /* Next rh key expected in the stream */
     uint32_t spec;               /* Max speculation depth to be expected */
     uint32_t cyct;               /* Cycnt threshold */
+
+    uint8_t ex0;                 /* First info byte for exception */
 
     bool cc_follows;             /* Indication if CC follows from TS */
     uint8_t idx;                 /* General counter used for multi-byte payload indexing */
@@ -500,6 +507,10 @@ static bool _pumpAction( struct TRACEDecoderEngine *e, struct TRACECPUState *cpu
                         newState = TRACE_UNSYNCED;
                         break;
 
+                    case 0b00000110: /* Exception instruction trace packet Figure 6-10, Pg 6-267 */
+                        newState = TRACE_GET_EXCEPTIONINFO1;
+                        break;
+
                     case 0b00000010 ... 0b00000011: /* Timestamp, Figure 6-7, Pg 6-264 */
                         newState = TRACE_GET_TIMESTAMP;
                         j->cc_follows = ( 0 != ( c & 1 ) );
@@ -577,6 +588,27 @@ static bool _pumpAction( struct TRACEDecoderEngine *e, struct TRACECPUState *cpu
                     newState = TRACE_IDLE;
                 }
 
+                break;
+
+            // -----------------------------------------------------
+
+            case TRACE_GET_EXCEPTIONINFO1:
+                j->ex0 = c;
+                newState = TRACE_GET_EXCEPTIONINFO2;
+                break;
+
+            // -----------------------------------------------------
+
+            case TRACE_GET_EXCEPTIONINFO2:
+                newState = TRACE_GET_EXCEPTIONINFO2;
+                cpu->exception = ( ( j->ex0 >> 1 ) & 0x1f ) | ( ( c & 0x1f ) << 5 );
+                cpu->serious = 0 != ( c & ( 1 << 5 ) );
+                _stateChange( cpu, EV_CH_EX_ENTRY );
+
+                /* We aren't really returning idle, but we need to collect a standard formatted address packet    */
+                /* Then, when the address is delivered to the CPU Processor, it will have the EV_CH_EXCEPTION set */
+                /* too, which the code must recogise as setting a preferred return address.                       */
+                newState = TRACE_IDLE;
                 break;
 
             // -----------------------------------------------------

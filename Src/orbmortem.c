@@ -131,6 +131,7 @@ struct RunTime
     uint32_t context;                   /* Context we are currently working under */
     symbolMemaddr callStack[MAX_CALL_STACK]; /* Stack of calls */
     unsigned int stackDepth;            /* Maximum stack depth */
+    bool stackDelPending;               /* Possibility to remove an entry from the stack, if address not given */
 } _r;
 
 /* For opening the editor (Shift-Right-Arrow) the following command lines work for a few editors;
@@ -613,8 +614,8 @@ static void _reportNonflowEvents( struct RunTime *r )
     {
         if ( r->options->protocol != TRACE_PROT_MTB )
         {
-            _appendToOPBuffer( r, NULL, r->op.currentLine, LT_EVENT, "========== Exception Entry%s (%d at 0x%08x) ==========",
-                               TRACEStateChanged( &r->i, EV_CH_CANCELLED ) ? ", Last Instruction Cancelled" : "", cpu->exception, cpu->addr );
+            _appendToOPBuffer( r, NULL, r->op.currentLine, LT_EVENT, "========== Exception Entry%s (%d (%s) at 0x%08x) ==========",
+                               TRACEStateChanged( &r->i, EV_CH_CANCELLED ) ? ", Last Instruction Cancelled" : "", cpu->exception, TRACEExceptionName( cpu->exception ), cpu->addr );
         }
         else
         {
@@ -735,8 +736,26 @@ static void _traceCB( void *d )
                                ( r->op.workingAddr == cpu->addr ) ? "" : "***INCONSISTENT*** ", r->op.workingAddr, cpu->addr );
         }
 
+        /* Return Stack: If we had a stack deletion pending because of a candidate match, it wasn't, so abort */
+        if ( r->stackDelPending )
+        {
+            _appendToOPBuffer( r, NULL, r->op.currentLine, LT_DEBUG, "Stack delete aborted" );
+        }
+
+        r->stackDelPending = false;
         /* Whatever the state was, this is an explicit setting of an address, so we need to respect it */
         r->op.workingAddr = cpu->addr;
+    }
+    else
+    {
+        /* Return Stack: If we had a stack deletion pending because of a candidate match, the match was good, so commit */
+        if ( ( r->stackDelPending == true ) && ( r->stackDepth ) )
+        {
+            r->stackDepth--;
+            _appendToOPBuffer( r, NULL, r->op.currentLine, LT_DEBUG, "Stack delete comitted" );
+        }
+
+        r->stackDelPending = false;
     }
 
     if ( TRACEStateChanged( &r->i, EV_CH_LINEAR ) )
@@ -832,7 +851,7 @@ static void _traceCB( void *d )
             {
                 if ( r->i.protocol == TRACE_PROT_ETM4 )
                 {
-                    _traceReport( V_DEBUG, "Consumed, %sexecuted (%d left)", disposition & 1 ? "" : "not ", incAddr - 1 );
+                    _traceReport( V_DEBUG, "Consumed, %sexecuted (%d left)", insExecuted ? "" : "not ", incAddr - 1 );
                 }
 
                 disposition >>= 1;
@@ -844,7 +863,7 @@ static void _traceCB( void *d )
                 if ( insExecuted )
                 {
                     /* Push the instruction after this if it's a subroutine or ISR */
-                    _appendToOPBuffer( r, l, r->op.currentLine, LT_DEBUG, "%s to %08x", ( ic & LE_IC_INT ) ? "Interrupt" : "Subcall", newaddr );
+                    _appendToOPBuffer( r, l, r->op.currentLine, LT_DEBUG, "Call to %08x", newaddr );
 
                     if ( r->stackDepth == MAX_CALL_STACK - 1 )
                     {
@@ -852,7 +871,8 @@ static void _traceCB( void *d )
                         memmove( &r->callStack[0], &r->callStack[1], sizeof( symbolMemaddr ) * ( MAX_CALL_STACK - 1 ) );
                     }
 
-                    r->callStack[r->stackDepth] = r->op.workingAddr + ( ic & LE_IC_4BYTE ) ? 4 : 2;
+                    r->callStack[r->stackDepth] = r->op.workingAddr + ( ( ic & LE_IC_4BYTE ) ? 4 : 2 );
+                    _appendToOPBuffer( r, l, r->op.currentLine, LT_DEBUG, "Pushed %08x to stack", r->callStack[r->stackDepth] );
 
                     if ( r->stackDepth < MAX_CALL_STACK - 1 )
                     {
@@ -864,27 +884,44 @@ static void _traceCB( void *d )
                     r->op.workingAddr = newaddr;
                 }
             }
-            else if ( ( ic & LE_IC_INTRET ) || ( ic & LE_IC_RET ) )
-            {
-                if ( r->stackDepth )
-                {
-                    r->op.workingAddr = r->callStack[--r->stackDepth];
-                    _appendToOPBuffer( r, l, r->op.currentLine, LT_DEBUG, "%s return to %08x", ( ic & LE_IC_INTRET ) ? "Interrupt" : "Subcall", newaddr );
-                }
-                else
-                {
-                    _appendToOPBuffer( r, l, r->op.currentLine, LT_DEBUG, "%s return with no stacked address", ( ic & LE_IC_INTRET ) ? "Interrupt" : "Subcall" );
-                }
-            }
             else if ( ic & LE_IC_ISJUMP )
             {
                 _appendToOPBuffer( r, l, r->op.currentLine, LT_DEBUG, "%sTAKEN JUMP", insExecuted ? "" : "NOT " );
 
-                /* Update working address according to if jump was taken */
-                r->op.workingAddr = insExecuted ? newaddr : r->op.workingAddr + ( ( ic & LE_IC_4BYTE ) ? 4 : 2 );
+                if ( insExecuted )
+                {
+                    /* Update working address according to if jump was taken */
+                    if ( ic & LE_IC_IMMEDIATE )
+                    {
+                        /* We have a good address, so update with it */
+                        r->op.workingAddr = newaddr;
+                    }
+                    else
+                    {
+                        /* We didn't get the address, so need to park the call stack address if we've got one. Either we won't      */
+                        /* get an address (in which case this one was correct), or we wont (in which case, don't unstack this one). */
+                        if ( r->stackDepth )
+                        {
+                            r->op.workingAddr = r->callStack[r->stackDepth - 1];
+                            _appendToOPBuffer( r, l, r->op.currentLine, LT_DEBUG, "Return with stacked candidate to %08x", r->op.workingAddr );
+                        }
+                        else
+                        {
+                            _appendToOPBuffer( r, l, r->op.currentLine, LT_DEBUG, "Return with no stacked candidate" );
+                        }
+
+                        r->stackDelPending = true;
+                    }
+                }
+                else
+                {
+                    /* The branch wasn't taken, so just move along */
+                    r->op.workingAddr += ( ic & LE_IC_4BYTE ) ? 4 : 2;
+                }
             }
             else
             {
+                /* Just a regular instruction, so just move along */
                 r->op.workingAddr += ( ic & LE_IC_4BYTE ) ? 4 : 2;
             }
         }
