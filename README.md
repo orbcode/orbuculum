@@ -258,7 +258,7 @@ If you do want to build the system, then the command line to build the Orbuculum
 >ninja -C build
 ```
 
-You may need to change the paths to your libusb files, depending on how well your build environment is set up.
+You may need to change the paths to your libusb files, depending on how well your build environment is set up. You might also want to change the install path, which defaults to putting everything under `/usr/local` by passing the appropriate path to meson with a command line such as `meson setup --prefix=/usr build`...we've had some feedback that Arch doesn't find libraries under `/usr/local/lib`, for example.
 
 Permissions and Access
 ----------------------
