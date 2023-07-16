@@ -1,3 +1,4 @@
+
 /* SPDX-License-Identifier: BSD-3-Clause */
 
 /*
@@ -66,7 +67,7 @@ static const char *_protoStateName[] =
     "GET_VCONTEXT",
     "GET_CONTEXT_ID",
     "GET_EXCEPTIONINFO1",
-    "GET_EXCEPTIONINFO1"
+    "GET_EXCEPTIONINFO2"
 };
 
 #define COND_LOAD_TRACED  1
@@ -397,7 +398,6 @@ static bool _pumpAction( struct TRACEDecoderEngine *e, struct TRACECPUState *cpu
                     case 0b10010000 ... 0b10010011: /* Exact Match Address */
                         int match = c & 0x03;
                         assert( c != 3 ); /* This value is reserved */
-                        _stackQ( j );
                         cpu->addr = j->q[match].addr;
                         retVal = TRACE_EV_MSG_RXED;
                         _stateChange( cpu, EV_CH_ADDRESS );
@@ -600,7 +600,6 @@ static bool _pumpAction( struct TRACEDecoderEngine *e, struct TRACECPUState *cpu
             // -----------------------------------------------------
 
             case TRACE_GET_EXCEPTIONINFO2:
-                newState = TRACE_GET_EXCEPTIONINFO2;
                 cpu->exception = ( ( j->ex0 >> 1 ) & 0x1f ) | ( ( c & 0x1f ) << 5 );
                 cpu->serious = 0 != ( c & ( 1 << 5 ) );
                 _stateChange( cpu, EV_CH_EX_ENTRY );

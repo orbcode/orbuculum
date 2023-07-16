@@ -775,57 +775,71 @@ char *symbolDisssembleLine( struct symbol *p, enum instructionClass *ic, symbolM
     }
 
     count = cs_disasm( p->caphandle, m, 4, addr, 0, &insn );
+    *ic = LE_IC_NONE;
+
 
     if ( count > 0 )
     {
-        cs_detail *detail = insn[0].detail;
+        /* Characterise the instruction using rules from F1.3 of ARM IHI0064H.a */
 
-        if ( detail->arm.op_count )
-        {
-            *newaddr = detail->arm.operands[0].imm;
-        }
+        /* Check instruction size */
+        *ic |= ( insn[0].size == 4 ) ? LE_IC_4BYTE : 0;
 
-        if ( insn[0].size == 2 )
+        /* Was it a subroutine call? */
+        *ic |= ( ( insn[0].id == ARM_INS_BL ) || ( insn[0].id == ARM_INS_BLX ) ) ? LE_IC_JUMP | LE_IC_CALL : 0;
+
+        /* Was it a regular call? */
+        *ic |= ( ( insn[0].id == ARM_INS_B )    || ( insn[0].id == ARM_INS_BX )  || ( insn[0].id == ARM_INS_ISB ) ||
+                 ( insn[0].id == ARM_INS_WFI )  || ( insn[0].id == ARM_INS_WFE ) || ( insn[0].id == ARM_INS_TBB ) ||
+                 ( insn[0].id == ARM_INS_TBH )  || ( insn[0].id == ARM_INS_BXJ ) || ( insn[0].id == ARM_INS_CBZ ) ||
+                 ( insn[0].id == ARM_INS_CBNZ ) || ( insn[0].id == ARM_INS_WFI ) || ( insn[0].id == ARM_INS_WFE )
+               ) ? LE_IC_JUMP : 0;
+
+        *ic |=  (
+                            ( ( ( insn[0].id == ARM_INS_SUB ) || ( insn[0].id == ARM_INS_MOV ) ||
+				( insn[0].id == ARM_INS_LDM ) || ( insn[0].id == ARM_INS_POP ) )
+                              && strstr( insn[0].op_str, "pc" ) )
+                ) ? LE_IC_JUMP : 0;
+
+        /* Was it an exception return? */
+        *ic |=  ( ( insn[0].id == ARM_INS_ERET ) ) ? LE_IC_JUMP | LE_IC_IRET : 0;
+
+
+        /* Add text describing instruction */
+        if ( *ic & LE_IC_4BYTE )
         {
-            sprintf( op, "%8"PRIx64":   %02x%02x        %s  %s", insn[0].address, insn[0].bytes[1], insn[0].bytes[0], insn[0].mnemonic, insn[0].op_str  );
-            *ic = LE_IC_NONE;
+            sprintf( op, "%8"PRIx64":   %02x%02x %02x%02x   %s %s", insn[0].address, insn[0].bytes[1], insn[0].bytes[0], insn[0].bytes[3], insn[0].bytes[2], insn[0].mnemonic, insn[0].op_str );
         }
         else
         {
-            sprintf( op, "%8"PRIx64":   %02x%02x %02x%02x   %s %s", insn[0].address, insn[0].bytes[1], insn[0].bytes[0], insn[0].bytes[3], insn[0].bytes[2], insn[0].mnemonic, insn[0].op_str );
-            *ic = LE_IC_4BYTE;
+            sprintf( op, "%8"PRIx64":   %02x%02x        %s  %s", insn[0].address, insn[0].bytes[1], insn[0].bytes[0], insn[0].mnemonic, insn[0].op_str  );
         }
 
-        /* If it's a BL family instruction then we need to mark it as a call */
-
-        if ( ( insn[0].id == ARM_INS_BL ) || ( insn[0].id == ARM_INS_BLX ) || ( insn[0].id == ARM_INS_BLXNS ) )
+        if ( *ic && ( *ic != LE_IC_4BYTE ) )
         {
-            *ic |= LE_IC_CALL;
-        }
+            //      sprintf ( &op[strlen( op )], " ic = %d ",*ic);
+            /* Check to see if operands are immediate */
+            cs_detail *detail = insn[0].detail;
 
-
-        for ( int n = 0; n <  insn[0].detail->arm.op_count; n++ )
-        {
-            if ( insn[0].detail->arm.operands[n].type == ARM_OP_IMM )
+            if ( detail->arm.op_count )
             {
-                *ic |= LE_IC_IMMEDIATE;
-                break;
-            }
-        }
+                *newaddr = detail->arm.operands[0].imm;
 
-        /* Fill in other characteristics of this instruction */
-        for ( int n = 0; n < detail->groups_count; n++ )
-        {
-            switch ( detail->groups[n] )
-            {
-                case CS_GRP_JUMP:
-                case CS_GRP_BRANCH_RELATIVE:
-                    *ic |= LE_IC_ISJUMP;
-                    break;
-
-                default:
-                    break;
+                for ( int n = 0; n <  insn[0].detail->arm.op_count; n++ )
+                {
+                    if ( insn[0].detail->arm.operands[n].type == ARM_OP_IMM )
+                    {
+                        *ic |= LE_IC_IMMEDIATE;
+                        break;
+                    }
+                }
             }
+
+            /* Add classifications ( for debug ) */
+            //if ( *ic )
+            //            {
+            //                sprintf ( &op[strlen( op )], " ; %s%s%s%s",  *ic & LE_IC_JUMP ? "JUMP " : "", *ic & LE_IC_CALL ? "CALL " : "", *ic & LE_IC_IMMEDIATE ? "IMM " : "", *ic & LE_IC_IRET ? "IRET " : "" );
+            //            }
         }
     }
     else

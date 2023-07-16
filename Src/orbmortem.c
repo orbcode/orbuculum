@@ -591,6 +591,25 @@ static void _traceReport( enum verbLevel l, const char *fmt, ... )
     _appendToOPBuffer( &_r, NULL, _r.op.currentLine, LT_DEBUG, op );
 }
 // ====================================================================================================
+static void _addRetToStack( struct RunTime *r, symbolMemaddr p )
+
+{
+    if ( r->stackDepth == MAX_CALL_STACK - 1 )
+    {
+        /* Stack is full, so make room for a new entry */
+        memmove( &r->callStack[0], &r->callStack[1], sizeof( symbolMemaddr ) * ( MAX_CALL_STACK - 1 ) );
+    }
+
+    r->callStack[r->stackDepth] = p;
+    _appendToOPBuffer( r, NULL, r->op.currentLine, LT_DEBUG, "Pushed %08x to return stack", r->callStack[r->stackDepth] );
+
+    if ( r->stackDepth < MAX_CALL_STACK - 1 )
+    {
+        /* We aren't at max depth, so go ahead and remove this entry */
+        r->stackDepth++;
+    }
+}
+// ====================================================================================================
 static void _reportNonflowEvents( struct RunTime *r )
 
 {
@@ -608,19 +627,6 @@ static void _reportNonflowEvents( struct RunTime *r )
     if ( TRACEStateChanged( &r->i, EV_CH_VMID ) )
     {
         _appendToOPBuffer( r, NULL, r->op.currentLine, LT_EVENT, "*** VMID Set to %d", cpu->vmid );
-    }
-
-    if ( TRACEStateChanged( &r->i, EV_CH_EX_ENTRY ) )
-    {
-        if ( r->options->protocol != TRACE_PROT_MTB )
-        {
-            _appendToOPBuffer( r, NULL, r->op.currentLine, LT_EVENT, "========== Exception Entry%s (%d (%s) at 0x%08x) ==========",
-                               TRACEStateChanged( &r->i, EV_CH_CANCELLED ) ? ", Last Instruction Cancelled" : "", cpu->exception, TRACEExceptionName( cpu->exception ), cpu->addr );
-        }
-        else
-        {
-            _appendRefToOPBuffer( r, NULL, r->op.currentLine, LT_EVENT, "========== Exception Entry ==========" );
-        }
     }
 
     if ( TRACEStateChanged( &r->i, EV_CH_EX_EXIT ) )
@@ -722,7 +728,48 @@ static void _traceCB( void *d )
     /* =============================================== */
     _reportNonflowEvents( r );
 
-    /* 2: Collect flow affecting changes introduced by this event */
+    /* 2: Deal with exception entry */
+    /* ============================ */
+    if ( TRACEStateChanged( &r->i, EV_CH_EX_ENTRY ) )
+    {
+        switch ( r->options->protocol )
+        {
+            case TRACE_PROT_ETM35:
+                _appendToOPBuffer( r, NULL, r->op.currentLine, LT_EVENT, "========== Exception Entry%s (%d (%s) at 0x%08x) ==========",
+                                   TRACEStateChanged( &r->i, EV_CH_CANCELLED ) ? ", Last Instruction Cancelled" : "", cpu->exception, TRACEExceptionName( cpu->exception ), cpu->addr );
+                break;
+
+            case TRACE_PROT_MTB:
+                _appendRefToOPBuffer( r, NULL, r->op.currentLine, LT_EVENT, "========== Exception Entry ==========" );
+                break;
+
+
+            case TRACE_PROT_ETM4:
+
+                /* For the ETM4 case we get a new address with the exception indication. This address is the preferred _return_ address, */
+                /* there will be a further address packet, which is the jump destination, along shortly. Note that _this_ address        */
+                /* change indication will be consumed here, and won't hit the test below (which is correct behaviour.                    */
+                if ( !TRACEStateChanged( &r->i, EV_CH_ADDRESS ) )
+                {
+                    _appendToOPBuffer( r, NULL, r->op.currentLine, LT_DEBUG, "Exception occured without return address specification" );
+                }
+                else
+                {
+                    _appendToOPBuffer( r, NULL, r->op.currentLine, LT_EVENT, "========== Exception Entry (%d (%s) at 0x%08x return to %08x ) ==========",
+                                       cpu->exception, TRACEExceptionName( cpu->exception ), r->op.workingAddr, cpu->addr );
+                    _addRetToStack( r, cpu->addr );
+                }
+
+                break;
+
+            default:
+                _appendToOPBuffer( r, NULL, r->op.currentLine, LT_DEBUG, "Unrecognised trace protocol in exception handler" );
+                break;
+        }
+    }
+
+
+    /* 3: Collect flow affecting changes introduced by this event */
     /* ========================================================== */
     if ( TRACEStateChanged( &r->i, EV_CH_ADDRESS ) )
     {
@@ -780,7 +827,7 @@ static void _traceCB( void *d )
         disposition = cpu->disposition;
     }
 
-    /* 3: Execute the flow instructions */
+    /* 4: Execute the flow instructions */
     /* ================================ */
     while ( ( incAddr && !linearRun ) || ( ( r->op.workingAddr <= targetAddr ) && linearRun ) )
     {
@@ -836,18 +883,18 @@ static void _traceCB( void *d )
                                            ( ( !linearRun )  && ( r->i.protocol == TRACE_PROT_ETM35 ) && ( disposition & 1 ) ) ||
 
                                            /* ETM4 case - either not a branch or disposition is 1 */
-                                           ( ( !linearRun ) && ( r->i.protocol == TRACE_PROT_ETM4 ) && ( ( !( ic & LE_IC_ISJUMP ) ) || ( disposition & 1 ) ) ) ||
+                                           ( ( !linearRun ) && ( r->i.protocol == TRACE_PROT_ETM4 ) && ( ( !( ic & LE_IC_JUMP ) ) || ( disposition & 1 ) ) ) ||
 
                                            /* MTB case - a linear run to last address */
                                            ( ( linearRun ) &&
-                                             ( ( ( r->op.workingAddr != targetAddr ) && ( ! ( ic & LE_IC_ISJUMP ) ) )  ||
+                                             ( ( ( r->op.workingAddr != targetAddr ) && ( ! ( ic & LE_IC_JUMP ) ) )  ||
                                                ( r->op.workingAddr == targetAddr )
                                              ) ) );
             _appendToOPBuffer( r, l, r->op.currentLine, insExecuted ? LT_ASSEMBLY : LT_NASSEMBLY, a );
 
 
             /* Move addressing along */
-            if ( ( r->i.protocol != TRACE_PROT_ETM4 ) || ( ic & LE_IC_ISJUMP ) )
+            if ( ( r->i.protocol != TRACE_PROT_ETM4 ) || ( ic & LE_IC_JUMP ) )
             {
                 if ( r->i.protocol == TRACE_PROT_ETM4 )
                 {
@@ -864,27 +911,13 @@ static void _traceCB( void *d )
                 {
                     /* Push the instruction after this if it's a subroutine or ISR */
                     _appendToOPBuffer( r, l, r->op.currentLine, LT_DEBUG, "Call to %08x", newaddr );
-
-                    if ( r->stackDepth == MAX_CALL_STACK - 1 )
-                    {
-                        /* Stack is full, so make room for a new entry */
-                        memmove( &r->callStack[0], &r->callStack[1], sizeof( symbolMemaddr ) * ( MAX_CALL_STACK - 1 ) );
-                    }
-
-                    r->callStack[r->stackDepth] = r->op.workingAddr + ( ( ic & LE_IC_4BYTE ) ? 4 : 2 );
-                    _appendToOPBuffer( r, l, r->op.currentLine, LT_DEBUG, "Pushed %08x to stack", r->callStack[r->stackDepth] );
-
-                    if ( r->stackDepth < MAX_CALL_STACK - 1 )
-                    {
-                        /* We aren't at max depth, so go ahead and remove this entry */
-                        r->stackDepth++;
-                    }
+                    _addRetToStack( r, r->op.workingAddr + ( ( ic & LE_IC_4BYTE ) ? 4 : 2 ) );
 
                     r->op.workingAddr = insExecuted ? newaddr : r->op.workingAddr + ( ( ic & LE_IC_4BYTE ) ? 4 : 2 );
                     r->op.workingAddr = newaddr;
                 }
             }
-            else if ( ic & LE_IC_ISJUMP )
+            else if ( ic & LE_IC_JUMP )
             {
                 _appendToOPBuffer( r, l, r->op.currentLine, LT_DEBUG, "%sTAKEN JUMP", insExecuted ? "" : "NOT " );
 
@@ -1001,54 +1034,6 @@ static struct symbolLineStore *_currentFileAndLine( struct RunTime *r )
     }
 
     return ( struct symbolLineStore * )( ( i < r->numLines ) ? r->opText[i].dat : NULL );
-}
-// ====================================================================================================
-static void _openFileCommand( struct RunTime *r, int32_t line, char *fileToOpen )
-
-{
-    char construct[SCRATCH_STRING_LEN];
-    char *a = r->options->openFileCL;
-    char *b = construct;
-
-    /* We now have the filename and line number that we're targetting...go collect this file */
-    if ( !a )
-    {
-        return;
-    }
-
-    while ( *a )
-    {
-        if ( *a != '%' )
-        {
-            *b++ = *a++;
-        }
-        else
-        {
-            a++;
-
-            if ( *a == 'f' )
-            {
-                a++;
-                b += snprintf( b, SCRATCH_STRING_LEN - ( b - construct ), "%s", fileToOpen );
-            }
-            else if ( *a == 'l' )
-            {
-                a++;
-                b += snprintf( b, SCRATCH_STRING_LEN - ( b - construct ), "%d", line );
-            }
-            else
-            {
-                *b++ = *a++;
-            }
-        }
-    }
-
-    *b++ = ' ';
-    *b++ = '&';
-    *b++ = 0;
-
-    /* Now detach from controlling terminal and send the message */
-    system( construct );
 }
 // ====================================================================================================
 static void _mapFileBuffer( struct RunTime *r, int lineno, int filenameIndex )

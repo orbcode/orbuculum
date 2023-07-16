@@ -640,7 +640,15 @@ static bool _displayLine( struct SIOInstance *sio, int32_t lineNum, int32_t scre
 
         if ( ( *u != '\n' ) && ( *u != '\r' ) )
         {
-            waddch( sio->outputWindow, ( x == OUTPUT_WINDOW_W - 1 ) ? '>' : *u++ );
+            if ( x == OUTPUT_WINDOW_W - 1 )
+            {
+                waddch( sio->outputWindow, '>' );
+                break;
+            }
+            else
+            {
+                waddch( sio->outputWindow, *u++ );
+            }
         }
 
         /* This is done like this so chars like tabs are accounted for correctly */

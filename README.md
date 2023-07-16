@@ -242,6 +242,9 @@ Dependencies
 * libczmq-dev
 * ncurses
 * libsdl
+* libdw-dev
+* libelf-dev
+* libcapstone-dev
 
 Note that `objdump`  version at least 2.33.1 is also required. By default the suite will run `arm-none-eabi-objdump` but another binary or pathname can be subsituted via the OBJDUMP environment variable.
 
