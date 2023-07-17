@@ -17,16 +17,16 @@ if host_machine.system() == 'windows'
         winsock2
     ]
 elif host_machine.system() == 'darwin'
-    add_global_arguments('-DOSX', language: 'c')
+    add_project_arguments('-DOSX', language: 'c')
 else
-    add_global_arguments('-DLINUX', language: 'c')
-    add_global_arguments('-D_GNU_SOURCE', language: 'c')
+    add_project_arguments('-DLINUX', language: 'c')
+    add_project_arguments('-D_GNU_SOURCE', language: 'c')
     install_data('Support/60-orbcode.rules', install_dir : '/etc/udev/rules.d')
     install_data('Support/gdbtrace.init', install_dir : 'share/orbcode')
 endif
 
-add_global_arguments('-DSCREEN_HANDLING', language: 'c')
-add_global_arguments(['-include', 'uicolours_default.h'], language: 'c')
+add_project_arguments('-DSCREEN_HANDLING', language: 'c')
+add_project_arguments(['-include', 'uicolours_default.h'], language: 'c')
 
 if host_machine.system() == 'windows'
     stream_src = [
