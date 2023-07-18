@@ -912,10 +912,8 @@ static void _traceCB( void *d )
                     /* Push the instruction after this if it's a subroutine or ISR */
                     _appendToOPBuffer( r, l, r->op.currentLine, LT_DEBUG, "Call to %08x", newaddr );
                     _addRetToStack( r, r->op.workingAddr + ( ( ic & LE_IC_4BYTE ) ? 4 : 2 ) );
-
-                    r->op.workingAddr = insExecuted ? newaddr : r->op.workingAddr + ( ( ic & LE_IC_4BYTE ) ? 4 : 2 );
-                    r->op.workingAddr = newaddr;
-                }
+		}
+		r->op.workingAddr = insExecuted ? newaddr : r->op.workingAddr + ( ( ic & LE_IC_4BYTE ) ? 4 : 2 );
             }
             else if ( ic & LE_IC_JUMP )
             {
