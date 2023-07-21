@@ -25,6 +25,9 @@ NRF;
 
 EFR32MG12;
   enableEFR32MG12SWO : Start SWO on EFR32MG12 pins
+
+TM4C;
+  enableTM4C123TRACE : Start TRACE on TM4C123 pins (defaults to 2 pin mode as 4 pin trace is unavailable on all)
   
 All;
   prepareSWO      : Prepare SWO output in specified format
@@ -75,6 +78,7 @@ set $CPU_STM32=2
 set $CPU_IMXRT106X=1
 set $CPU_NRF=3
 set $CPU_EFR32=4
+set $CPU_TM4C=5
 
 # ====================================================================
 set $CDBBASE=0xE000EDF0
@@ -114,6 +118,21 @@ end
 
 define _setAddressesEFR32MG12
 # Locations in the memory map for interesting things on EFR32
+end
+
+define _setAddressesTM4C
+  set $PORTF_BASE=0x40025000
+  set $GPIODIR=0x400
+  set $GPIOAFSEL=0x420
+  set $GPIODR2R=0x500
+  set $GPIODR4R=0x504
+  set $GPIODR8R=0x508
+  set $GPIODEN=0x51C
+  set $GPIOLOCK=0x520
+  set $GPIOCR=0x524
+  set $GPIOPCTL=0x52C
+
+  set $GPIOUNLOCKKEY=0x4C4F434B
 end
 
 # ====================================================================
@@ -672,6 +691,97 @@ enableNRF53TRACE <Width> <drive> <speed> : Enable TRACE on NRF pins
   <Width>   : Number of bits wide (1,2 or 4 only)
   <Drive>   : Drive strength (0 (lowest), 1, 2, 3 or 11 (highest))
   <Speed>   : Clock Speed (0..3, 0 fastest)
+end
+# ====================================================================
+define enableTM4C123TRACE
+  set language c
+
+  set $bits=2
+  set $drive=2
+
+  if $argc >= 1
+    set $bits = $arg0
+  end
+  
+  if (($bits<1) || ($bits==3) || ($bits>4))
+    help enableTM4C123TRACE
+  end
+
+  if $argc >= 2
+    set $drive = $arg1
+  end
+
+  if ($drive > 2)
+    help enableTM4C123TRACE
+  end
+
+  set $bits = $bits-1
+  set $CPU=$CPU_TM4C
+
+  _setAddressesTM4C
+
+  if ($drive == 0)
+    set $DRIVEREG=$GPIODR2R
+  end
+  if ($drive == 1)
+    set $DRIVEREG=$GPIODR4R
+  end
+  if ($drive == 2)
+    set $DRIVEREG=$GPIODR8R
+  end
+
+  # Setup PF3 (tclk) and PF2 (td0)
+  # Digital Enable, Direction, AF sel, drive strength, and mux
+  set *($PORTF_BASE + $GPIODIR) |= 0b1100
+  set *($PORTF_BASE + $GPIODEN) |= 0b1100
+  set *($PORTF_BASE + $GPIOAFSEL) |= 0b1100
+  set *($PORTF_BASE + $DRIVEREG) |= 0b1100
+  set *($PORTF_BASE + $GPIOPCTL) |= 0xEE00
+
+
+  if ($bits >= 1)
+    # Setup PF1 (td1)
+    set *($PORTF_BASE + $GPIODIR) |= 0b0010
+    set *($PORTF_BASE + $GPIODEN) |= 0b0010
+    set *($PORTF_BASE + $GPIOAFSEL) |= 0b0010
+    set *($PORTF_BASE + $DRIVEREG) |= 0b0010
+    set *($PORTF_BASE + $GPIOPCTL) |= 0x00E0
+  end
+
+  if ($bits > 2)
+    # Unloxk PF0 so we can configure it as alt function TDR2 (14)
+    set *($PORTF_BASE + $GPIOLOCK) = $GPIOUNLOCKKEY
+    set *($PORTF_BASE + $GPIOCR) |= 1
+
+    # Setup PF0 (td2) and PF4 (td3)
+    set *($PORTF_BASE + $GPIODIR) |= 0b10001
+    set *($PORTF_BASE + $GPIODEN) |= 0b10001
+    set *($PORTF_BASE + $GPIOAFSEL) |= 0b10001
+    set *($PORTF_BASE + $DRIVEREG) |= 0b10001
+    set *($PORTF_BASE + $GPIOPCTL) |= 0xE000E
+  end
+
+  # Set number of bits in DBGMCU_CR
+  set *0xE0042004 &= ~(3<<6)
+
+  if ($bits<3)
+     set *0xE0042004 |= ((($bits+1)<<6) | (1<<5))
+  else
+     set *0xE0042004 |= ((3<<6) | (1<<5))
+  end
+
+  # Enable Trace TRCENA (DCB DEMCR)
+  set *($CDBBASE+0xC)=(1<<24)
+
+  # Finally start the trace output
+  _doTRACE
+
+  set language auto
+end
+document enableTM4C123TRACE
+enableTM4C123TRACE <Width>: Enable TRACE on STM32 pins
+  <Width>   : Number of bits wide (1,2 or 4 only (2 default))
+  <Drive>   : Drive strength (0=lowest, 2=highest)
 end
 # ====================================================================
 define dwtPOSTCNT
