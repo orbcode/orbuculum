@@ -97,19 +97,19 @@ define _setAddressesNRF
 end
 
 define _setAddressesNRF52
-_setAddressesNRF
-set $NRF_P0_PIN_CNF=0x50000700
-set $NRF_CLOCK=0x40000000
+  _setAddressesNRF
+  set $NRF_P0_PIN_CNF=0x50000700
+  set $NRF_CLOCK=0x40000000
 end
 
 define _setAddressesNRF53
-_setAddressesNRF
-set $CTIBASE=0xE0042000
-set $SCSBASE=0xE000E000
-set $BPUBASE=0xE0002000
-set $NRF_TAD_S=0xE0080000
-set $NRF_P0_S=0x50842500
-set $NRF_SPU_S=0x50003000
+  _setAddressesNRF
+  set $CTIBASE=0xE0042000
+  set $SCSBASE=0xE000E000
+  set $BPUBASE=0xE0002000
+  set $NRF_TAD_S=0xE0080000
+  set $NRF_P0_S=0x50842500
+  set $NRF_SPU_S=0x50003000
 end
 
 define _setAddressesEFR32MG12
@@ -119,6 +119,8 @@ end
 # ====================================================================
 
 define startETM
+  set language c
+
   set $br_out=0
   if $argc >= 1
     set $br_out=$arg0
@@ -157,6 +159,7 @@ define startETM
   # Essential that this bit is only cleared after everything else is done
   set *($ETMBASE) &= ~(1<<10)
 
+  set language auto
 end
 document startETM
 startETM <br_out> <stall>
@@ -166,49 +169,52 @@ end
 
 # ====================================================================
 define describeETM
-set $etmval = *($ETMBASE+0x1e4)
-output ((($etmval>>8)&0x0f)+1)
-echo .
-output (($etmval>>4)&0x0f)
-echo Rev
-output (($etmval)&0x0f)
-echo \n
-if (((($etmval)>>24)&0xff)==0x41)
-   echo Implementer is ARM\n
-end
-if (((($etmval)>>24)&0xff)==0x44)
-echo Implementer is DEC\n
-end
-if (((($etmval)>>24)&0xff)==0x4D)
-echo Implementer is Motorola/Freescale/NXP\n
-end
-if (((($etmval)>>24)&0xff)==0x51)
-echo Implementer is Qualcomm\n
-end
-if (((($etmval)>>24)&0xff)==0x56)
-echo Implementer is Marvell\n
-end
-if (((($etmval)>>24)&0xff)==0x69)
-echo Implementer is Intel\n
-end
+  set language c
 
-if ($etmval&(1<<18))
-   echo 32-bit Thumb instruction is traced as single instruction\n
-   else
-      echo 32-bit Thumb instruction is traced as two instructions\n
-end
-if ($etmval&(1<<19))
-   echo Implements ARM architecture security extensions\n
-   else
-   echo No ARM architecture security extensions\n
-end
-if ($etmval&(1<<20))
-   echo Uses alternative Branch Packet Encoding\n
-   else
-      echo Uses original Branch Packet Encoding\n
-end
-end
+  set $etmval = *($ETMBASE+0x1e4)
+  output ((($etmval>>8)&0x0f)+1)
+  echo .
+  output (($etmval>>4)&0x0f)
+  echo Rev
+  output (($etmval)&0x0f)
+  echo \n
+  if (((($etmval)>>24)&0xff)==0x41)
+    echo Implementer is ARM\n
+  end
+  if (((($etmval)>>24)&0xff)==0x44)
+  echo Implementer is DEC\n
+  end
+  if (((($etmval)>>24)&0xff)==0x4D)
+  echo Implementer is Motorola/Freescale/NXP\n
+  end
+  if (((($etmval)>>24)&0xff)==0x51)
+  echo Implementer is Qualcomm\n
+  end
+  if (((($etmval)>>24)&0xff)==0x56)
+  echo Implementer is Marvell\n
+  end
+  if (((($etmval)>>24)&0xff)==0x69)
+  echo Implementer is Intel\n
+  end
 
+  if ($etmval&(1<<18))
+    echo 32-bit Thumb instruction is traced as single instruction\n
+    else
+        echo 32-bit Thumb instruction is traced as two instructions\n
+  end
+  if ($etmval&(1<<19))
+    echo Implements ARM architecture security extensions\n
+    else
+    echo No ARM architecture security extensions\n
+  end
+  if ($etmval&(1<<20))
+    echo Uses alternative Branch Packet Encoding\n
+    else
+        echo Uses original Branch Packet Encoding\n
+  end
+
+  set language auto
+end
 document describeETM
 Provide information about the ETM implementation on this target.
 end
@@ -216,7 +222,11 @@ end
 # ====================================================================
 
 define stopETM
+  set language c
+
   set *($ETMBASE) |= 0x400
+
+  set language auto
 end
 document stopETM
 stopETM
@@ -225,6 +235,8 @@ end
 # ====================================================================
 
 define prepareSWO
+  set language c
+
   set $clockspeed=72000000
   set $speed=2250000
   set $useTPIU=0
@@ -277,6 +289,8 @@ define prepareSWO
   set *($CDBBASE+0xC)|=(1<<24)
   set *($DWTBASE) = 0
   set *($ITMBASE+0xe80) = 0
+
+  set language auto
 end
 document prepareSWO
 prepareSWO <ClockSpd> <Speed> <UseTPIU> <UseMan>: Prepare output trace data port at specified speed
@@ -288,6 +302,8 @@ end
 
 # ====================================================================
 define enableIMXRT102XSWO
+  set language c
+
 
   _setAddressesIMXRT
   # Store the CPU we are using
@@ -300,16 +316,22 @@ define enableIMXRT102XSWO
   # Set AD_B0_11 to be SWO, with specific output characteristics
   set *0x401F80E8=6
   set *0x401F825C=0x6020
+
+  set language auto
 end
 document enableIMXRT102XSWO
 enableIMXRT102XSWO Configure output pin on IMXRT102X for SWO use.
 end
 
 define enableIMXRT1021SWO
+  set language c
+
        enableIMXRT102XSWO
 end
 # ====================================================================
 define enableIMXRT106XSWO
+  set language c
+
   _setAddressesIMXRT
   # Store the CPU we are using
   set $CPU=$CPU_IMXRT106X
@@ -332,6 +354,8 @@ define enableIMXRT106XSWO
   # Set AD_B0_10 to be SWO, with specific output characteristics (MUX_CTL & PAD_CTL)
   set *0x401F80E4=9
   set *0x401F82D4=0xB0A1
+
+  set language auto
 end
 document enableIMXRT106XSWO
 enableIMXRT1021SWO Configure output pin on IMXRT1060 for SWO use.
@@ -339,6 +363,8 @@ end
 # ====================================================================
 
 define enableSTM32SWO
+  set language c
+
   set $tgt=1
   if $argc >= 1
     set $tgt = $arg0
@@ -369,12 +395,16 @@ define enableSTM32SWO
   # Common initialisation.
   # DBGMCU->CR |= DBGMCU_CR_TRACE_IOEN;
   set *0xE0042004 |= 0x20
+
+  set language auto
 end
 document enableSTM32SWO
 enableSTM32SWO Configure output pin on STM32 for SWO use.
 end
 # ====================================================================
 define enableSAMD5XSWD
+  set language c
+
   # Enable peripheral channel clock on GCLK#0
   # GCLK->PHCTRL[47] = GCLK_PCHCTRL_GEN(0)
   set *(unsigned char *)0x40001D3C = 0
@@ -383,6 +413,8 @@ define enableSAMD5XSWD
   # Configure PINMUX for GPIOB.30. '7' is SWO.
   set *(unsigned char *)0x410080BF |= 0x07
   set *(unsigned char *)0x410080DE = 0x01
+
+  set language auto
 end
 document enableSAMD5XSWD
 enableSAMD5XSWD Configure output pin on SAM5X for SWO use.
@@ -390,6 +422,8 @@ end
 
 # ====================================================================
 define enableEFR32MG12SWO
+  set language c
+
 
   _setAddressesEFR32MG12
   # Store the CPU we are using
@@ -416,6 +450,8 @@ define enableEFR32MG12SWO
   # GPIO->P[5].MODEL |= GPIO_P_MODEL_MODE2_PUSHPULL;
   set *0x4000A0F4 &= ~(0xF00)
   set *0x4000A0F4 |= (4 << 8)
+
+  set language auto
 end
 document enableEFR32MG12SWO
 enableEFR32MG12SWO Configure output pin on EFR32MG12 for SWO use.
@@ -425,20 +461,22 @@ end
 # ====================================================================
 # Enable CORTEX TRACE on preconfigured pins
 define _doTRACE
-     # Must be called with $bits containing number of bits to set trace for
+  # Must be called with $bits containing number of bits to set trace for
 
-     set *($ITMBASE+0xfb0) = 0xc5acce55
-     set *($ETMBASE+0xfb0) = 0xc5acce55
-     set *($TPIUBASE+0xfb0) = 0xc5acce55
+  set *($ITMBASE+0xfb0) = 0xc5acce55
+  set *($ETMBASE+0xfb0) = 0xc5acce55
+  set *($TPIUBASE+0xfb0) = 0xc5acce55
 
-     # Set port size (TPIU_CSPSR)
-     set *($TPIUBASE+4) = (1<<$bits)
+  # Set port size (TPIU_CSPSR)
+  set *($TPIUBASE+4) = (1<<$bits)
 
-     # Set pin protocol to Sync Trace Port (TPIU_SPPR)
-     set *($TPIUBASE+0xF0)=0
+  # Set pin protocol to Sync Trace Port (TPIU_SPPR)
+  set *($TPIUBASE+0xF0)=0
 end
 # ====================================================================
 define enableSTM32TRACE
+  set language c
+
   set $bits=4
   set $drive=1
 
@@ -518,6 +556,8 @@ print $drive
 
   # Finally start the trace output
   _doTRACE
+
+  set language auto
 end
 document enableSTM32TRACE
 enableSTM32TRACE <Width>: Enable TRACE on STM32 pins
@@ -526,6 +566,8 @@ enableSTM32TRACE <Width>: Enable TRACE on STM32 pins
 end
 # ====================================================================
 define enableNRF52TRACE
+  set language c
+
   set $bits=4
   set $cspeed=1
   set $drive=3
@@ -582,6 +624,8 @@ define enableNRF52TRACE
   end
   # Finally start the trace output
   _doTRACE
+
+  set language auto
 end
 document enableNRF52TRACE
 enableNRF52TRACE <Drive> <Speed> : Enable TRACE on NRF52 pins (not nrf52833 or nrf52840)
@@ -591,6 +635,8 @@ enableNRF52TRACE <Drive> <Speed> : Enable TRACE on NRF52 pins (not nrf52833 or n
 end
 # ====================================================================
 define enableNRF53TRACE
+  set language c
+
   set $bits=4
   set $cspeed=1
   set $drive=11
@@ -666,6 +712,8 @@ define enableNRF53TRACE
 
   # Finally start the trace output
   _doTRACE
+
+  set language auto
 end
 document enableNRF53TRACE
 enableNRF53TRACE <Width> <drive> <speed> : Enable TRACE on NRF pins
@@ -675,6 +723,8 @@ enableNRF53TRACE <Width> <drive> <speed> : Enable TRACE on NRF pins
 end
 # ====================================================================
 define dwtPOSTCNT
+  set language c
+
   if ($argc!=1)
     help dwtPOSTCNT
   else
@@ -685,12 +735,16 @@ define dwtPOSTCNT
       set *($DWTBASE) &= ~(1<<22)
     end
   end
+
+  set language auto
 end
 document dwtPOSTCNT
 dwtPOSTCNT <0|1> Enable POSTCNT underflow event counter packet generation
 end
 # ====================================================================
 define dwtFOLDEVT
+  set language c
+
   if ($argc!=1)
     help dwtFOLDEVT
   else
@@ -701,12 +755,16 @@ define dwtFOLDEVT
       set *($DWTBASE) &= ~(1<<21)
     end
   end
+
+  set language auto
 end
 document dwtFOLDEVT
 dwtFOLDEVT <0|1> Enable folded-instruction counter overflow event packet generation
 end
 # ====================================================================
 define dwtLSUEVT
+  set language c
+
   if ($argc!=1)
     help dwtLSUEVT
   else
@@ -717,12 +775,16 @@ define dwtLSUEVT
       set *($DWTBASE) &= ~(1<<20)
     end
   end
+
+  set language auto
 end
 document dwtLSUEVT
 dwtLSUEVT <0|1> Enable LSU counter overflow event packet generation
 end
 # ====================================================================
 define dwtSLEEPEVT
+  set language c
+
   if ($argc!=1)
     help dwtSLEEPEVT
   else
@@ -733,12 +795,16 @@ define dwtSLEEPEVT
       set *($DWTBASE) &= ~(1<<19)
     end
   end
+
+  set language auto
 end
 document dwtSLEEPEVT
 dwtSLEEPEVT <0|1> Enable Sleep counter overflow event packet generation
 end
 # ====================================================================
 define dwtDEVEVT
+  set language c
+
   if ($argc!=1)
     help dwtCEVEVT
   else
@@ -749,12 +815,16 @@ define dwtDEVEVT
       set *($DWTBASE) &= ~(1<<18)
     end
   end
+
+  set language auto
 end
 document dwtDEVEVT
 dwtDEVEVT <0|1> Enable Exception counter overflow event packet generation
 end
 # ====================================================================
 define dwtCPIEVT
+  set language c
+
   if ($argc!=1)
     help dwtCPIEVT
   else
@@ -765,12 +835,16 @@ define dwtCPIEVT
       set *($DWTBASE) &= ~(1<<17)
     end
   end
+
+  set language auto
 end
 document dwtCPIEVT
 dwtCPIEVT <0|1> Enable CPI counter overflow event packet generation
 end
 # ====================================================================
 define dwtTraceException
+  set language c
+
   if ($argc!=1)
     help dwtTraceException
   else
@@ -781,12 +855,16 @@ define dwtTraceException
       set *($DWTBASE) &= ~(1<<16)
     end
   end
+
+  set language auto
 end
 document dwtTraceException
 dwtTraceException <0|1> Enable Exception Trace Event packet generation
 end
 # ====================================================================
 define dwtSamplePC
+  set language c
+
   if ($argc!=1)
     help dwtSamplePC
   else
@@ -797,12 +875,16 @@ define dwtSamplePC
       set *($DWTBASE) &= ~(1<<12)
     end
   end
+
+  set language auto
 end
 document dwtSamplePC
 dwtSamplePC <0|1> Enable PC sample using POSTCNT interval
 end
 # ====================================================================
 define dwtSyncTap
+  set language c
+
   if (($argc!=1) || ($arg0<0) || ($arg0>3))
     help dwtSyncTap
   else
@@ -810,12 +892,16 @@ define dwtSyncTap
     set *($DWTBASE) &= ~(0x03<<10)
     set *($DWTBASE) |= (($arg0&0x03)<<10)
   end
+
+  set language auto
 end
 document dwtSyncTap
 dwtSyncTap <0..3> Set how often Sync packets are sent out (None, CYCCNT[24], CYCCNT[26] or CYCCNT[28])
 end
 # ====================================================================
 define dwtPostTap
+  set language c
+
   if (($argc!=1) || ($arg0<0) || ($arg0>1))
     help dwtPostTap
   else
@@ -826,12 +912,16 @@ define dwtPostTap
       set *($DWTBASE) |= (1<<9)
     end
   end
+
+  set language auto
 end
 document dwtPostTap
 dwtPostTap <0..1> Sets the POSTCNT tap (CYCCNT[6] or CYCCNT[10])
 end
 # ====================================================================
 define dwtPostInit
+  set language c
+
   if (($argc!=1) || ($arg0<0) || ($arg0>15))
     help dwtPostInit
   else
@@ -839,12 +929,16 @@ define dwtPostInit
     set *($DWTBASE) &= ~(0x0f<<5)
     set *($DWTBASE) |= (($arg0&0x0f)<<5)
   end
+
+  set language auto
 end
 document dwtPostInit
 dwtPostInit <0..15> Sets the initial value for the POSTCNT counter
 end
 # ====================================================================
 define dwtPostReset
+  set language c
+
   if (($argc!=1) || ($arg0<0) || ($arg0>15))
     help dwtPostReset
   else
@@ -852,6 +946,8 @@ define dwtPostReset
     set *($DWTBASE) &= ~(0x0f<<1)
     set *($DWTBASE) |= (($arg0&0x0f)<<1)
   end
+
+  set language auto
 end
 document dwtPostReset
 dwtPostReset <0..15> Sets the reload value for the POSTCNT counter
@@ -860,6 +956,8 @@ of sampling speeds.  Lower numbers are faster.
 end
 # ====================================================================
 define dwtCycEna
+  set language c
+
   if ($argc!=1)
     help dwtCycEna
   else
@@ -870,6 +968,8 @@ define dwtCycEna
       set *($DWTBASE) &= ~(1<<0)
     end
   end
+
+  set language auto
 end
 document dwtCycEna
 dwtCycEna <0|1> Enable or disable CYCCNT
@@ -877,6 +977,8 @@ end
 # ====================================================================
 # ====================================================================
 define ITMId
+  set language c
+
   if (($argc!=1) || ($arg0<0) || ($arg0>127))
     help ITMBusId
   else
@@ -884,12 +986,16 @@ define ITMId
     set *($ITMBASE+0xe80) &= ~(0x7F<<16)
     set *($ITMBASE+0xe80) |= (($arg0&0x7f)<<16)
   end
+
+  set language auto
 end
 document ITMId
 ITMId <0..127>: Set the ITM ID for this device
 end
 # ====================================================================
 define ITMGTSFreq
+  set language c
+
   if (($argc!=1) || ($arg0<0) || ($arg0>3))
     help ITMGTSFreq
   else
@@ -897,6 +1003,8 @@ define ITMGTSFreq
     set *($ITMBASE+0xe80) &= ~(0x3<<10)
     set *($ITMBASE+0xe80) |= (($arg0&3)<<10)
   end
+
+  set language auto
 end
 document ITMGTSFreq
 ITMGTSFreq <0..3> Set Global Timestamp frequency
@@ -905,6 +1013,8 @@ ITMGTSFreq <0..3> Set Global Timestamp frequency
 end
 # ====================================================================
 define ITMTSPrescale
+  set language c
+
   if (($argc!=1) || ($arg0<0) || ($arg0>3))
     help ITMGTSFreq
   else
@@ -912,12 +1022,16 @@ define ITMTSPrescale
     set *($ITMBASE+0xe80) &= ~(0x3<<8)
     set *($ITMBASE+0xe80) |= (($arg0&3)<<8)
   end
+
+  set language auto
 end
 document ITMTSPrescale
 ITMTSPrescale <0..3> Set Timestamp Prescale [0-No Prescale, 1-/4, 2-/16, 3-/64
 end
 # ====================================================================
 define ITMSWOEna
+  set language c
+
   if (($argc!=1) || ($arg0<0) || ($arg0>1))
     help ITMSWOEna
   else
@@ -928,6 +1042,8 @@ define ITMSWOEna
       set *($ITMBASE+0xe80) |= (($arg0&1)<<4)
     end
   end
+
+  set language auto
 end
 document ITMSWOEna
 ITMSWOEna <0|1> 0-TS counter uses Processor Clock
@@ -935,6 +1051,8 @@ ITMSWOEna <0|1> 0-TS counter uses Processor Clock
 end
 # ====================================================================
 define ITMTXEna
+  set language c
+
   if (($argc!=1) || ($arg0<0) || ($arg0>1))
     help ITMTXEna
   else
@@ -945,6 +1063,8 @@ define ITMTXEna
       set *($ITMBASE+0xe80) |= (($arg0&1)<<3)
     end
   end
+
+  set language auto
 end
 document ITMTXEna
 ITMTXEna <0|1> 0-DWT packets are not forwarded to the ITM
@@ -952,6 +1072,8 @@ ITMTXEna <0|1> 0-DWT packets are not forwarded to the ITM
 end
 # ====================================================================
 define ITMSYNCEna
+  set language c
+
   if (($argc!=1) || ($arg0<0) || ($arg0>1))
     help ITMSYNCEna
   else
@@ -962,6 +1084,8 @@ define ITMSYNCEna
       set *($ITMBASE+0xe80) |= (($arg0&1)<<2)
     end
   end
+
+  set language auto
 end
 document ITMSYNCEna
 ITMSYNCEna <0|1> 0-Sync packets are not transmitted
@@ -969,6 +1093,8 @@ ITMSYNCEna <0|1> 0-Sync packets are not transmitted
 end
 # ====================================================================
 define ITMTSEna
+  set language c
+
   if (($argc!=1) || ($arg0<0) || ($arg0>1))
     help ITMTSEna
   else
@@ -979,12 +1105,16 @@ define ITMTSEna
       set *($ITMBASE+0xe80) |= (($arg0&1)<<1)
     end
   end
+
+  set language auto
 end
 document ITMTSEna
 ITMTSEna <0|1> Enable local timestamp generation
 end
 # ====================================================================
 define ITMEna
+  set language c
+
   if (($argc!=1) || ($arg0<0) || ($arg0>1))
     help ITMEna
   else
@@ -995,30 +1125,40 @@ define ITMEna
       set *($ITMBASE+0xe80) |= (($arg0&1)<<0)
     end
   end
+
+  set language auto
 end
 document ITMEna
 ITMEna <0|1> Master Enable for ITM
 end
 # ====================================================================
 define ITMTER
+  set language c
+
   if (($argc!=2) || ($arg0<0) || ($arg0>7))
     help ITMTER
   else
     set *($ITMBASE+0xfb0) = 0xc5acce55
     set *($ITMBASE+0xe00+4*$arg0) = $arg1
   end
+
+  set language auto
 end
 document ITMTER
 ITMTER <Block> <Bitmask> Set Trace Enable Register bitmap for 32*<Block>
 end
 # ====================================================================
 define ITMTPR
+  set language c
+
   if ($argc!=1)
     help ITMTPR
   else
     set *($ITMBASE+0xfb0) = 0xc5acce55
     set *($ITMBASE+0xe40) = $arg0
   end
+
+  set language auto
 end
 document ITMTPR
 ITMTPR <Bitmask> Enable block 8*bit access from unprivledged code
