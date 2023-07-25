@@ -6,8 +6,7 @@
 #include <string.h>
 #include <gelf.h>
 #include <dwarf.h>
-#include <elfutils/libdw.h>
-
+#include <libdwarf/libdwarf.h>
 
 #include "loadelf.h"
 #include "generics.h"
@@ -219,83 +218,161 @@ int _findOrAddString( const char *stringToFindorAdd, char ***table, unsigned int
 
 // ====================================================================================================
 
-static int _processDie( Dwarf_Die *d, void *pp )
+static void _getSourceLines( struct symbol *p, Dwarf_Debug dbg, Dwarf_Die die )
+
 
 {
-    /* This is the callback set in dwarf_getfuncs below to actually populate the function record */
-    struct symbol *p = ( struct symbol * )pp;
+    Dwarf_Unsigned version;
+    Dwarf_Line_Context linecontext;
+    Dwarf_Line *linebuf;
+    Dwarf_Signed linecount;
+    Dwarf_Small tc;
+    Dwarf_Addr line_addr;
+    char *file_name;
+    Dwarf_Unsigned line_num;
 
-    Dwarf_Attribute dirattr;
-    Dwarf_Attribute producerattr;
-    Dwarf_Attribute typeattr;
-    Dwarf_Addr h = -1;
-    Dwarf_Addr l = -1;
-    Dwarf_Addr e = -1;
 
-    struct symbolFunctionStore *newFunc;
-
-    Dwarf_Die cudie;
-
-    dwarf_highpc ( d, &h );
-    dwarf_lowpc ( d, &l );
-    dwarf_entrypc ( d, &e );
-
-    if ( l != h )
+    /* Now, for each source line, pull it into the line storage */
+    if ( DW_DLV_OK == dwarf_srclines_b( die, &version, &tc, &linecontext, 0 ) )
     {
-        dwarf_diecu ( d, &cudie, NULL, NULL );
-        dwarf_attr( &cudie, DW_AT_comp_dir, &dirattr );
-        dwarf_attr( &cudie, DW_AT_producer, &producerattr );
-        dwarf_attr( d, DW_AT_type, &typeattr );
+        dwarf_srclines_from_linecontext( linecontext, &linebuf, &linecount, 0 );
 
-        /* This has length, so it's valid ... create a new function entry */
-        p->func = ( struct symbolFunctionStore ** )realloc( p->func, sizeof( struct symbolFunctionStore * ) * ( p->nfunc + 1 ) );
-        newFunc = p->func[p->nfunc] = ( struct symbolFunctionStore * )calloc( 1, sizeof( struct symbolFunctionStore ) );
-        p->nfunc++;
-
-        newFunc->funcname  = strdup( dwarf_diename( d ) );
-        newFunc->producer  = _findOrAddString( dwarf_formstring( &producerattr ), &p->stringTable[PT_PRODUCER],  &p->tableLen[PT_PRODUCER] );
-        const char *directory    = dwarf_formstring( &dirattr );
-        const char *filename     = dwarf_decl_file( d );
-
-        if ( filename )
+        for ( int i = 0; i < linecount; ++i )
         {
-            if ( filename[0] != '/' )
-            {
-                /* Need to construct the fully qualified filename from the directory + filename */
-                char *s = ( char * )malloc( strlen( filename ) + strlen( directory ) + 2 );
-                strcpy( s, directory );
-                strcat( s, "/" );
-                strcat( s, filename );
-                newFunc->filename  = _findOrAddString( s, &p->stringTable[PT_FILENAME],  &p->tableLen[PT_FILENAME] );
-                free( s );
-            }
-            else
-            {
-                /* This string is already fully qualified, so just use it */
-                newFunc->filename  = _findOrAddString( filename, &p->stringTable[PT_FILENAME],  &p->tableLen[PT_FILENAME] );
-            }
+            // Get the line number and the corresponding address
+            dwarf_lineno( linebuf[i], &line_num, 0 );
+            dwarf_lineaddr( linebuf[i], &line_addr, 0 );
+            dwarf_linesrc( linebuf[i], &file_name, 0 );
+
+            p->line = ( struct symbolLineStore ** )realloc( p->line, sizeof( struct symbolLineStore * ) * ( p->nlines + 1 ) );
+            struct symbolLineStore *newLine = p->line[p->nlines] = ( struct symbolLineStore * )calloc( 1, sizeof( struct symbolLineStore ) );
+            p->nlines++;
+            newLine->startline = line_num;
+            newLine->lowaddr = line_addr;
+            newLine->isinline = true;
+            newLine->filename = _findOrAddString( file_name, &p->stringTable[PT_FILENAME],  &p->tableLen[PT_FILENAME] );
         }
 
-        dwarf_decl_line( d, ( int * )&newFunc->startline );
-        dwarf_decl_column( d, ( int * )&newFunc->startcol );
-        newFunc->lowaddr = l;
-        newFunc->highaddr = h - 1;
-        newFunc->entryaddr = e;
-        newFunc->isInline = dwarf_func_inline( d );
+        dwarf_srclines_dealloc_b( linecontext );
     }
-
-    return DWARF_CB_OK;
 }
 
 // ====================================================================================================
 
+static void _processFunctionDie( struct symbol *p, Dwarf_Debug dbg, Dwarf_Die die, int filenameN, int producerN )
+
+{
+    char *name = NULL;
+    Dwarf_Addr h = 0;
+    Dwarf_Addr l = 0;
+    Dwarf_Attribute attr_data;
+    Dwarf_Half attr_tag;
+    struct symbolFunctionStore *newFunc;
+
+
+    dwarf_highpc ( die, &h, 0 );
+    dwarf_lowpc ( die, &l, 0 );
+
+    if ( l && ( l != h ) )
+    {
+        /* This has length, so it's valid ... create a new function entry */
+        if ( DW_DLV_OK != dwarf_diename( die, &name, 0 ) )
+        {
+            attr_tag = DW_AT_abstract_origin;
+
+            if ( dwarf_attr( die, attr_tag, &attr_data, 0 ) == DW_DLV_OK )
+            {
+                Dwarf_Off abstract_origin_offset;
+                Dwarf_Die abstract_origin_die;
+                dwarf_global_formref( attr_data, &abstract_origin_offset, 0 );
+                dwarf_offdie( dbg, abstract_origin_offset, &abstract_origin_die, 0 );
+                dwarf_diename( abstract_origin_die, &name, 0 );
+            }
+        }
+
+        p->func = ( struct symbolFunctionStore ** )realloc( p->func, sizeof( struct symbolFunctionStore * ) * ( p->nfunc + 1 ) );
+        newFunc = p->func[p->nfunc] = ( struct symbolFunctionStore * )calloc( 1, sizeof( struct symbolFunctionStore ) );
+        p->nfunc++;
+
+        newFunc->funcname  = strdup( name );
+        newFunc->producer  = producerN;
+        newFunc->filename  = filenameN;
+        newFunc->lowaddr   = l;
+        newFunc->highaddr  = h - 1;
+
+        /* Collect start of function line and column */
+        attr_tag = DW_AT_decl_line;
+
+        if ( dwarf_attr( die, attr_tag, &attr_data, 0 ) == DW_DLV_OK )
+        {
+            Dwarf_Unsigned no;
+            dwarf_formudata( attr_data, &no, 0 );
+            newFunc->startline = no;
+        }
+
+        attr_tag = DW_AT_decl_column;
+
+        if ( dwarf_attr( die, attr_tag, &attr_data, 0 ) == DW_DLV_OK )
+        {
+            Dwarf_Unsigned no;
+            dwarf_formudata( attr_data, &no, 0 );
+            newFunc->startcol = no;
+        }
+    }
+}
+
+// ====================================================================================================
+
+static void _processDie( struct symbol *p, Dwarf_Debug dbg, Dwarf_Die die, int level, int filenameN, int producerN )
+
+{
+    Dwarf_Error err;
+    Dwarf_Half tag;
+
+    dwarf_tag( die, &tag, &err );
+
+    if ( tag == DW_TAG_subprogram )
+    {
+        _processFunctionDie( p, dbg, die, filenameN, producerN );
+    }
+
+    // Recursively process children DIEs
+    Dwarf_Die child;
+
+    int res = dwarf_child( die, &child, &err );
+
+    if ( res == DW_DLV_OK )
+    {
+        do
+        {
+            _processDie( p, dbg, child, level + 1, filenameN, producerN );
+
+        }
+        while ( dwarf_siblingof( dbg, child, &child, &err ) == DW_DLV_OK );
+    }
+}
+// ====================================================================================================
+
 static bool _readLines( int fd, struct symbol *p )
 {
-    Dwarf *dw;
+    Dwarf_Debug dbg;
+    Dwarf_Error err;
+    Dwarf_Unsigned cu_header_length;
+    Dwarf_Half     version_stamp;
+    Dwarf_Off      abbrev_offset;
+    Dwarf_Half     address_size;
+    Dwarf_Unsigned next_cu_header = 0;
+    Dwarf_Die cu_die;
 
-    if ( ( dw = dwarf_begin( fd, DWARF_C_READ ) ) == NULL )
+    char *name;
+    char *producer;
+    char *compdir;
+
+    unsigned int filenameN;
+    unsigned int producerN;
+
+    if ( 0 != dwarf_init( fd, DW_DLC_READ, NULL, NULL, &dbg, &err ) )
     {
-        fprintf( stderr, "Couldn't start DWARF\n" );
         return false;
     }
 
@@ -305,89 +382,42 @@ static bool _readLines( int fd, struct symbol *p )
         _findOrAddString( "", &p->stringTable[pt],  &p->tableLen[pt] );
     }
 
-    /* Now let's iterate over all the cu's. Iterator starts with cu=NULL and off=0 */
-    Dwarf_CU *cu = NULL;
-    Dwarf_Off off = 0;
-    Dwarf_Files *srcfiles = NULL;
-    size_t nfiles = 0;
-    Dwarf_Lines *srclines = NULL;
-    size_t nlines = 0;
-
-    /* Collect the functions and lines */
-    /* ------------------------------- */
-    while ( 0 == dwarf_next_lines( dw, off, &off, &cu, &srcfiles, &nfiles, &srclines, &nlines ) )
+    /* 1: Collect the functions and lines */
+    /* ---------------------------------- */
+    while ( ( 0 == dwarf_next_cu_header( dbg, &cu_header_length, &version_stamp, &abbrev_offset, &address_size, &next_cu_header, &err ) ) )
     {
-        Dwarf_Die die;
-        Dwarf_Die subdie;
-        uint8_t unitId;
-        Dwarf_Half version;
-        ptrdiff_t offset = 0;
+        dwarf_siblingof( dbg, NULL, &cu_die, &err );
+        dwarf_diename( cu_die, &name, &err );
+        dwarf_die_text( cu_die, DW_AT_producer, &producer, &err );
+        dwarf_die_text( cu_die, DW_AT_comp_dir, &compdir, &err );
 
-        /* Start off by populating the functions */
-        if ( dwarf_cu_info ( cu, &version, &unitId, &die, &subdie, NULL, NULL, NULL ) == 0 )
-        {
-            while ( ( offset = dwarf_getfuncs ( &die, _processDie, p, offset ) ) > 0 );
-        }
 
-        /* Now read in the lines */
-        for ( int t = 0; t < nlines; t++ )
-        {
-            Dwarf_Line *l = dwarf_onesrcline ( srclines, t );
-            Dwarf_Addr a;
-            dwarf_lineaddr( l, &a );
+        /* Need to construct the fully qualified filename from the directory + filename */
+        char *s = ( char * )malloc( strlen( name ) + strlen( compdir ) + 2 );
+        strcpy( s, compdir );
+        strcat( s, "/" );
+        strcat( s, name );
+        filenameN  = _findOrAddString( s, &p->stringTable[PT_FILENAME],  &p->tableLen[PT_FILENAME] );
+        free( s );
+        producerN =  _findOrAddString( producer, &p->stringTable[PT_PRODUCER],  &p->tableLen[PT_PRODUCER] );
 
-            /* Only proceed if this line has a non-zero address ...this heuristic does mean we'll miss code starting at 0 */
-            if ( ( a ) )
-            {
-                const char *const *dirtable;
-                size_t ndirs;
-                int line;
-                Dwarf_Word mtime;
-                Dwarf_Word length;
-                const char *filesrc;
+        /* Kickoff the process for the DIE and its children to get the functions in this cu */
+        _processDie( p, dbg, cu_die, 0, filenameN, producerN );
 
-                dwarf_lineno( l, &line );
-                dwarf_getsrcdirs ( srcfiles, &dirtable, &ndirs );
-                filesrc = dwarf_filesrc ( srcfiles, 1, &mtime, &length );
-
-                /* Create a new line and populate it */
-                p->line = ( struct symbolLineStore ** )realloc( p->line, sizeof( struct symbolLineStore * ) * ( p->nlines + 1 ) );
-                struct symbolLineStore *newLine = p->line[p->nlines] = ( struct symbolLineStore * )calloc( 1, sizeof( struct symbolLineStore ) );
-                p->nlines++;
-                newLine->startline = line;
-                newLine->lowaddr = a;
-
-                if ( filesrc && ( filesrc[0] != '/' ) )
-                {
-                    /* Need to construct the fully qualified filename from the directory + filename */
-                    char *s = ( char * )malloc( strlen( filesrc ) + strlen( dirtable[0] ) + 2 );
-                    strcpy( s, dirtable[0] );
-                    strcat( s, "/" );
-                    strcat( s, filesrc );
-                    newLine->filename  = _findOrAddString( s, &p->stringTable[PT_FILENAME],  &p->tableLen[PT_FILENAME] );
-                    free( s );
-                }
-                else
-                {
-                    /* This string is already fully qualified, so just use it */
-                    newLine->filename  = _findOrAddString( filesrc, &p->stringTable[PT_FILENAME],  &p->tableLen[PT_FILENAME] );
-                }
-            }
-        }
+        /* ...and the source lines */
+        _getSourceLines( p, dbg, cu_die );
     }
 
-    /* We have the lines and functions. Clean them up and interlink them so they're useful to applications */
-    /* --------------------------------------------------------------------------------------------------- */
+    /* 2: We have the lines and functions. Clean them up and interlink them so they're useful to applications */
+    /* ------------------------------------------------------------------------------------------------------ */
     /* Sort tables into address order, just in case they're not ... no gaurantees from the DWARF */
-    qsort( p->func, p->nfunc, sizeof( struct symbolFunctionStore * ), _compareFunc );
     qsort( p->line, p->nlines, sizeof( struct symbolLineStore * ), _compareLineMem );
+    qsort( p->func, p->nfunc, sizeof( struct symbolFunctionStore * ), _compareFunc );
 
-    /* Combine lines in the lines table which have the same address...that isn't too useful for us      */
-    /* and set the ranges too, in order to make searching easier. Note that this will set the startline */
-    /* parameter to the _last_ line of the shared-address block, which seems to work best.              */
+    /* Combine addresses in the lines table which have the same memory location...those aren't too useful for us      */
     for ( int i = 1; i < p->nlines; i++ )
     {
-        while ( ( i < p->nlines ) && ( ( p->line[i]->lowaddr == p->line[i - 1]->lowaddr ) ) )
+        while ( ( i < p->nlines ) && ( ( p->line[i]->filename == p->line[i - 1]->filename ) ) && ( ( p->line[i]->lowaddr == p->line[i - 1]->lowaddr ) ) )
         {
             /* This line needs to be freed in memory 'cos otherwise there is no reference to it anywhere */
             free( p->line[i - 1] );
@@ -400,6 +430,9 @@ static bool _readLines( int fd, struct symbol *p )
 
             p->nlines--;
         }
+
+        /* Now set the high extent address to one less than the low address of the following line */
+        //      p->line[i-1]->highaddr = p->line[i]->lowaddr-1;
     }
 
     /* Now do the same for lines with the same line number and file */
@@ -410,6 +443,8 @@ static bool _readLines( int fd, struct symbol *p )
                 ( p->line[i]->startline == p->line[i - 1]->startline ) &&
                 ( p->line[i]->filename == p->line[i - 1]->filename ) )
         {
+
+            p->line[i]->lowaddr = p->line[i - 1]->lowaddr;
             free( p->line[i - 1] );
 
             for ( int j = i; j < p->nlines; j++ )
@@ -425,11 +460,12 @@ static bool _readLines( int fd, struct symbol *p )
 
     p->line[p->nlines - 1]->highaddr = -1;
 
-    /* Finally, allocate lines to functions ... these will be in address order 'cos the lines already are */
+    /* Allocate lines to functions ... these will be in address order 'cos the lines already are */
     for ( int i = 0; i < p->nlines; i++ )
     {
         struct symbolFunctionStore *f = symbolFunctionAt( p, p->line[i]->lowaddr );
         p->line[i]->function = f;
+        p->line[i]->isinline = false;
 
         if ( f )
         {
@@ -439,7 +475,7 @@ static bool _readLines( int fd, struct symbol *p )
         }
     }
 
-    dwarf_end( dw );
+    dwarf_finish( dbg, 0 );
 
     return true;
 }
@@ -753,7 +789,12 @@ char *symbolDisssembleLine( struct symbol *p, enum instructionClass *ic, symbolM
     size_t count;
     static char op[255];
 
-    *newaddr = NO_ADDRESS;
+    if ( newaddr )
+    {
+        *newaddr = NO_ADDRESS;
+    }
+
+    *ic = 0;
 
     if ( !p->caphandle )
     {
@@ -783,64 +824,66 @@ char *symbolDisssembleLine( struct symbol *p, enum instructionClass *ic, symbolM
         /* Characterise the instruction using rules from F1.3 of ARM IHI0064H.a */
 
         /* Check instruction size */
-        *ic |= ( insn[0].size == 4 ) ? LE_IC_4BYTE : 0;
+        *ic |= ( insn->size == 4 ) ? LE_IC_4BYTE : 0;
 
         /* Was it a subroutine call? */
-        *ic |= ( ( insn[0].id == ARM_INS_BL ) || ( insn[0].id == ARM_INS_BLX ) ) ? LE_IC_JUMP | LE_IC_CALL : 0;
+        *ic |= ( ( insn->id == ARM_INS_BL ) || ( insn->id == ARM_INS_BLX ) ) ? LE_IC_JUMP | LE_IC_CALL : 0;
 
         /* Was it a regular call? */
-        *ic |= ( ( insn[0].id == ARM_INS_B )    || ( insn[0].id == ARM_INS_BX )  || ( insn[0].id == ARM_INS_ISB ) ||
-                 ( insn[0].id == ARM_INS_WFI )  || ( insn[0].id == ARM_INS_WFE ) || ( insn[0].id == ARM_INS_TBB ) ||
-                 ( insn[0].id == ARM_INS_TBH )  || ( insn[0].id == ARM_INS_BXJ ) || ( insn[0].id == ARM_INS_CBZ ) ||
-                 ( insn[0].id == ARM_INS_CBNZ ) || ( insn[0].id == ARM_INS_WFI ) || ( insn[0].id == ARM_INS_WFE )
+        *ic |= ( ( insn->id == ARM_INS_B )    || ( insn->id == ARM_INS_BX )  || ( insn->id == ARM_INS_ISB ) ||
+                 ( insn->id == ARM_INS_WFI )  || ( insn->id == ARM_INS_WFE ) || ( insn->id == ARM_INS_TBB ) ||
+                 ( insn->id == ARM_INS_TBH )  || ( insn->id == ARM_INS_BXJ ) || ( insn->id == ARM_INS_CBZ ) ||
+                 ( insn->id == ARM_INS_CBNZ ) || ( insn->id == ARM_INS_WFI ) || ( insn->id == ARM_INS_WFE )
                ) ? LE_IC_JUMP : 0;
 
         *ic |=  (
-                            ( ( ( insn[0].id == ARM_INS_SUB ) || ( insn[0].id == ARM_INS_MOV ) ||
-				( insn[0].id == ARM_INS_LDM ) || ( insn[0].id == ARM_INS_POP ) )
-                              && strstr( insn[0].op_str, "pc" ) )
+                            ( ( ( insn->id == ARM_INS_SUB ) || ( insn->id == ARM_INS_MOV ) ||
+                                ( insn->id == ARM_INS_LDM ) || ( insn->id == ARM_INS_POP ) )
+                              && strstr( insn->op_str, "pc" ) )
                 ) ? LE_IC_JUMP : 0;
 
         /* Was it an exception return? */
-        *ic |=  ( ( insn[0].id == ARM_INS_ERET ) ) ? LE_IC_JUMP | LE_IC_IRET : 0;
+        *ic |=  ( ( insn->id == ARM_INS_ERET ) ) ? LE_IC_JUMP | LE_IC_IRET : 0;
 
 
         /* Add text describing instruction */
         if ( *ic & LE_IC_4BYTE )
         {
-            sprintf( op, "%8"PRIx64":   %02x%02x %02x%02x   %s %s", insn[0].address, insn[0].bytes[1], insn[0].bytes[0], insn[0].bytes[3], insn[0].bytes[2], insn[0].mnemonic, insn[0].op_str );
+            sprintf( op, "%8"PRIx64":   %02x%02x %02x%02x   %s %s", insn->address, insn->bytes[1], insn->bytes[0], insn->bytes[3], insn->bytes[2], insn->mnemonic, insn->op_str );
         }
         else
         {
-            sprintf( op, "%8"PRIx64":   %02x%02x        %s  %s", insn[0].address, insn[0].bytes[1], insn[0].bytes[0], insn[0].mnemonic, insn[0].op_str  );
+            sprintf( op, "%8"PRIx64":   %02x%02x        %s  %s", insn->address, insn->bytes[1], insn->bytes[0], insn->mnemonic, insn->op_str  );
         }
 
-        if ( *ic && ( *ic != LE_IC_4BYTE ) )
+        /* Check to see if operands are immediate */
+        cs_detail *detail = insn->detail;
+
+        if ( detail->arm.op_count )
         {
-            //      sprintf ( &op[strlen( op )], " ic = %d ",*ic);
-            /* Check to see if operands are immediate */
-            cs_detail *detail = insn[0].detail;
 
-            if ( detail->arm.op_count )
+            for ( int n = 0; n <  insn->detail->arm.op_count; n++ )
             {
-                *newaddr = detail->arm.operands[0].imm;
-
-                for ( int n = 0; n <  insn[0].detail->arm.op_count; n++ )
+                if ( insn->detail->arm.operands[n].type == ARM_OP_IMM )
                 {
-                    if ( insn[0].detail->arm.operands[n].type == ARM_OP_IMM )
+                    *ic |= LE_IC_IMMEDIATE;
+
+                    if ( newaddr )
                     {
-                        *ic |= LE_IC_IMMEDIATE;
-                        break;
+                        *newaddr = detail->arm.operands[0].imm;
                     }
+
+                    break;
                 }
             }
-
-            /* Add classifications ( for debug ) */
-            //if ( *ic )
-            //            {
-            //                sprintf ( &op[strlen( op )], " ; %s%s%s%s",  *ic & LE_IC_JUMP ? "JUMP " : "", *ic & LE_IC_CALL ? "CALL " : "", *ic & LE_IC_IMMEDIATE ? "IMM " : "", *ic & LE_IC_IRET ? "IRET " : "" );
-            //            }
         }
+
+
+        /* Add classifications ( for debug ) */
+        //if ( *ic )
+        //            {
+        //                sprintf ( &op[strlen( op )], " ; %s%s%s%s",  *ic & LE_IC_JUMP ? "JUMP " : "", *ic & LE_IC_CALL ? "CALL " : "", *ic & LE_IC_IMMEDIATE ? "IMM " : "", *ic & LE_IC_IRET ? "IRET " : "" );
+        //            }
     }
     else
     {
@@ -976,13 +1019,14 @@ bool _disassemble( struct symbol *p, symbolMemaddr a, unsigned int len )
 
 
 {
-    bool isJump, is4byte;
+    enum instructionClass ic;
     symbolMemaddr addr;
+    symbolMemaddr newaddr;
 
-    for ( addr = a; addr < a + len; addr += is4byte ? 4 : 2 )
+    for ( addr = a; addr < a + len; addr += ic & LE_IC_4BYTE ? 4 : 2 )
     {
-        char *u = symbolAssemblyLine( p, &isJump, &is4byte, addr );
-        printf( "%s   %s\n", u, isJump ? "JUMP" : "" );
+        char *u = symbolDisssembleLine( p, &ic, addr, &newaddr );
+        printf( "%s\n", u );
     }
 
     return true;
@@ -992,6 +1036,7 @@ bool _disassemble( struct symbol *p, symbolMemaddr a, unsigned int len )
 void main( int argc, char *argv[] )
 
 {
+    enum instructionClass ic;
     struct symbol *p = symbolAqquire( argv[1], true, true, true );
 
     if ( !p )
@@ -1000,10 +1045,23 @@ void main( int argc, char *argv[] )
         exit( -1 );
     }
 
-    _listFunctions( p, true );
-    _listFile( p, 9 );
-    _disassemble( p, 0x08000214, 60 );
-    symbolDelete( p );
+    //    _listFunctions(p,false);
+    //    exit(-1);
+    struct symbolLineStore *s;
+
+    for ( int i = 0; i < p->nlines; i++ )
+    {
+        s = symbolLineIndex( p, i );
+
+        printf( "\n%08x ... %08x %s %s", ( uint32_t )s->lowaddr, ( uint32_t )s->highaddr, s->isinline ? "INLINE" : "", symbolSource( p, s->filename, s->startline - 1 ) );
+
+        if ( ( s->lowaddr > 0x08000000 ) && ( s->highaddr != -1 ) )
+            for ( symbolMemaddr b = s->lowaddr; b < s->highaddr; )
+            {
+                printf( "         %s\n", symbolDisssembleLine( p, &ic, b, NULL ) );
+                b += ic & LE_IC_4BYTE ? 4 : 2;
+            }
+    }
 }
 // ====================================================================================================
 #endif

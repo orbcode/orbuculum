@@ -1,3 +1,4 @@
+
 project('orbuculum', 'c')
 
 dependencies = [
@@ -6,15 +7,14 @@ dependencies = [
     dependency('libzmq'),
     dependency('SDL2'),
     dependency('ncurses', 'ncursesw'),
-    dependency('libdw'),
     dependency('capstone'),
     dependency('libelf')
-    
 ]
 
 incdirs = include_directories(['Inc', 'Inc/external'])
 cc = meson.get_compiler('c')
 
+dependencies += cc.find_library('dwarf')
 if host_machine.system() == 'windows'
     winsock2 = cc.find_library('ws2_32')
     dependencies += [
@@ -70,7 +70,7 @@ liborb = library('orb',
     ] + stream_src,
     include_directories: incdirs,
     dependencies: dependencies,
-    soversion: 0,
+    soversion: meson.project_version(),
     install: true,
 )
 

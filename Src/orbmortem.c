@@ -109,11 +109,13 @@ struct RunTime
     int rp;
 
     struct sioline *opText;             /* Text of the output buffer */
+    int32_t lineNum;                    /* Current line number in output buffer */
     int32_t numLines;                   /* Number of lines in the output buffer */
 
     int32_t diveline;                   /* Line number we're currently diving into */
     char *divefile;                     /* Filename we're currently diving into */
     bool diving;                        /* Flag indicating we're diving into a file at the moment */
+
     struct sioline *fileopText;         /* The text lines of the file we're diving into */
     int32_t filenumLines;               /* ...and how many lines of it there are */
 
@@ -164,7 +166,7 @@ static void _printHelp( const char *const progName )
     genericsPrintf( "Usage: %s [options]" EOL, progName );
     genericsPrintf( "    -A, --alt-addr-enc: Do not use alternate address encoding" EOL );
     genericsPrintf( "    -b, --buffer-len:   <Length> Length of post-mortem buffer, in KBytes (Default %d KBytes)" EOL, DEFAULT_PM_BUFLEN_K );
-    genericsPrintf( "    -C, --editor-cmd:   <command> Command line for external editor (%f = filename, %l = line)" EOL );
+    genericsPrintf( "    -C, --editor-cmd:   <command> Command line for external editor (%%f = filename, %%l = line)" EOL );
     genericsPrintf( "    -D, --no-demangle:  Switch off C++ symbol demangling" EOL );
     genericsPrintf( "    -d, --del-prefix:   <String> Material to delete off the front of filenames" EOL );
     genericsPrintf( "    -e, --elf-file:     <ElfFile> to use for symbols and source" EOL );
@@ -912,8 +914,9 @@ static void _traceCB( void *d )
                     /* Push the instruction after this if it's a subroutine or ISR */
                     _appendToOPBuffer( r, l, r->op.currentLine, LT_DEBUG, "Call to %08x", newaddr );
                     _addRetToStack( r, r->op.workingAddr + ( ( ic & LE_IC_4BYTE ) ? 4 : 2 ) );
-		}
-		r->op.workingAddr = insExecuted ? newaddr : r->op.workingAddr + ( ( ic & LE_IC_4BYTE ) ? 4 : 2 );
+                }
+
+                r->op.workingAddr = insExecuted ? newaddr : r->op.workingAddr + ( ( ic & LE_IC_4BYTE ) ? 4 : 2 );
             }
             else if ( ic & LE_IC_JUMP )
             {
@@ -1006,13 +1009,11 @@ static void _dumpBuffer( struct RunTime *r )
     SIOsetOutputBuffer( r->sio, r->numLines, r->numLines - 1, &r->opText, false );
 }
 // ====================================================================================================
-static struct symbolLineStore *_currentFileAndLine( struct RunTime *r )
+static struct symbolLineStore *_fileAndLine( struct RunTime *r, uint32_t i )
 
 {
     /* Search backwards from current position in buffer until we find a line a line record attached */
     /* (b) a filename which contains this line. */
-
-    int32_t i = SIOgetCurrentLineno( r->sio );
 
     while ( ( i ) &&
             ( ( ( ( r->opText[i].lt != LT_SOURCE ) && ( r->opText[i].lt != LT_ASSEMBLY ) ) || r->opText[i].dat == NULL ) ) )
@@ -1080,11 +1081,14 @@ static void _doFileDive( struct RunTime *r )
     assert( !r->fileopText );
     assert( !r->filenumLines );
 
-    if ( !( l = _currentFileAndLine( r ) ) )
+    if ( !( l = _fileAndLine( r, SIOgetCurrentLineno( r->sio ) ) ) )
     {
         SIOalert( r->sio, "Couldn't get filename/line" );
         return;
     }
+
+    /* Cache the line in this file in case we need it later */
+    r->lineNum = SIOgetCurrentLineno( r->sio );
 
     _mapFileBuffer( r,  l->startline, l->filename );
 }
@@ -1104,7 +1108,9 @@ static void _doFilesurface( struct RunTime *r )
     r->fileopText = NULL;
     r->filenumLines = 0;
     r->diving = false;
+
     SIOsetOutputBuffer( r->sio, r->numLines, r->numLines - 1, &r->opText, false );
+    SIOsetCurrentLineno( r->sio, r->lineNum );
 }
 // ====================================================================================================
 static void _doSave( struct RunTime *r, bool includeDebug )
@@ -1216,6 +1222,7 @@ int main( int argc, char *argv[] )
     int32_t lastTTime, lastTSTime, lastHTime;
     struct Stream *stream;              /* Stream that we are collecting data from */
     struct timeval tv;
+    enum SIOEvent s;
 
     /* Have a basic name and search string set up */
     _r.progName = genericsBasename( argv[0] );
@@ -1356,9 +1363,10 @@ int main( int argc, char *argv[] )
             }
 
             /* Update the outputs and deal with any keys that made it up this high */
-            switch ( SIOHandler( _r.sio, ( genericsTimestampmS() - lastTTime ) > TICK_TIME_MS, _r.oldTotalIntervalBytes ) )
+            /* =================================================================== */
+            switch ( ( s = SIOHandler( _r.sio, ( genericsTimestampmS() - lastTTime ) > TICK_TIME_MS, _r.oldTotalIntervalBytes ) ) )
             {
-                case SIO_EV_HOLD:
+                case SIO_EV_HOLD:  // ----------------- Request for Hold Start/Stop -------------------------------------
                     if ( !_r.options->file )
                     {
                         _r.held = !_r.held;
@@ -1381,7 +1389,80 @@ int main( int argc, char *argv[] )
 
                     break;
 
-                case SIO_EV_SAVE:
+                case SIO_EV_PREV:
+                case SIO_EV_NEXT: // ----------------- Request for next/prev execution line -----------------------------
+                    if ( !_r.diving )
+                    {
+                        int32_t l = SIOgetCurrentLineno( _r.sio );
+
+                        if ( ( ( s == SIO_EV_PREV ) && ( !l ) ) || ( ( s == SIO_EV_NEXT ) && ( l >= _r.numLines - 1 ) ) )
+                        {
+                            break;
+                        }
+
+                        /* In a regular window, scroll back looking for an earlier assembly instruction */
+                        do
+                        {
+                            l += s == SIO_EV_PREV ? -1 : 1;
+                        }
+                        while ( l && ( l < _r.numLines - 1 ) && ( ( _r.opText[l].lt != LT_ASSEMBLY ) ) );
+
+                        if ( l )
+                        {
+                            SIOsetCurrentLineno( _r.sio, l );
+                            SIOrequestRefresh( _r.sio );
+                        }
+                        else
+                        {
+                            SIObeep();
+                        }
+                    }
+                    else
+                    {
+                        /* In a diving window, situation is slightly more complicated */
+                        int32_t l = _r.lineNum;
+                        struct symbolLineStore *oldLine = _fileAndLine( &_r, l );
+
+                        if ( ( ( s == SIO_EV_PREV ) && ( !l ) ) || ( ( s == SIO_EV_NEXT ) && ( l >= _r.numLines - 1 ) ) )
+                        {
+                            break;
+                        }
+
+                        /* Search for different _source_line_ to the one we started from */
+                        do
+                        {
+                            l += s == SIO_EV_PREV ? -1 : 1;
+                        }
+                        while ( l && ( l < _r.numLines - 1 ) && ( ( _r.opText[l].lt != LT_SOURCE ) ) );
+
+                        if ( l )
+                        {
+                            if ( oldLine->filename == _fileAndLine( &_r, l )->filename )
+                            {
+                                /* We are still in the same file, so only the line number to change */
+                                _r.lineNum = l;
+                                SIOsetCurrentLineno( _r.sio, _fileAndLine( &_r, l )->startline - 1 );
+                                SIOrequestRefresh( _r.sio );
+                            }
+                            else
+                            {
+                                /* We have changed diving file, surface and enter the new one */
+                                _r.lineNum = l;
+                                _doFilesurface( &_r );
+                                _doFileDive( &_r );
+                                SIOrequestRefresh( _r.sio );
+                            }
+                        }
+                        else
+                        {
+                            SIObeep();
+                        }
+
+                    }
+
+                    break;
+
+                case SIO_EV_SAVE: // ------------------ Request for file save -------------------------------------------
                     if ( _r.options->file )
                     {
                         _doSave( &_r, false );
@@ -1389,11 +1470,11 @@ int main( int argc, char *argv[] )
 
                     break;
 
-                case SIO_EV_DIVE:
+                case SIO_EV_DIVE: // -------------------- Request for dive into source file -----------------------------
                     _doFileDive( &_r );
                     break;
 
-                case SIO_EV_FOPEN:
+                case SIO_EV_FOPEN: // ------------------- Request for file open -----------------------------------------
                     if ( _r.options->openFileCL )
                     {
                         //                        _doFileOpen( &_r, false );
@@ -1401,11 +1482,11 @@ int main( int argc, char *argv[] )
 
                     break;
 
-                case SIO_EV_SURFACE:
+                case SIO_EV_SURFACE: // --------------------- Request for file surface ----------------------------------
                     _doFilesurface( &_r );
                     break;
 
-                case SIO_EV_QUIT:
+                case SIO_EV_QUIT: // ------------------------- Request to exit ------------------------------------------
                     _r.ending = true;
                     break;
 

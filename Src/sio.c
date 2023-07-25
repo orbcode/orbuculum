@@ -199,6 +199,8 @@ static void _outputHelp( struct SIOInstance *sio )
     wprintw( sio->outputWindow, "  CTRL-L: Refresh the screen" EOL );
     wprintw( sio->outputWindow, "  CTRL-R: Search backwards, CTRL-R again for next match" EOL );
     wprintw( sio->outputWindow, "  CTRL-F: Search forwards, CTRL-F again for next match" EOL );
+    wprintw( sio->outputWindow, "       p: Step backwards through execution history of current window" EOL );
+    wprintw( sio->outputWindow, "       n: Step forwards through execution history of current window" EOL );
     wprintw( sio->outputWindow, EOL "  Use PgUp/PgDown/Home/End and the arrow keys to move around the sample buffer" EOL );
     wprintw( sio->outputWindow, "  Shift-PgUp and Shift-PgDown move more quickly" EOL );
     wprintw( sio->outputWindow, EOL "       <?> again to leave this help screen." EOL );
@@ -315,7 +317,7 @@ static enum SIOEvent _processRegularKeys( struct SIOInstance *sio )
             }
             else
             {
-                beep();
+                SIObeep();
             }
 
             op = SIO_EV_CONSUMED;
@@ -324,7 +326,7 @@ static enum SIOEvent _processRegularKeys( struct SIOInstance *sio )
         case '0' ... '0'+MAX_TAGS: /* ----------- Tagged Location -------------------------------- */
             if ( sio->amDiving )
             {
-                beep();
+                SIObeep();
             }
             else
             {
@@ -341,7 +343,7 @@ static enum SIOEvent _processRegularKeys( struct SIOInstance *sio )
                     }
                     else
                     {
-                        beep();
+                        SIObeep();
                     }
                 }
             }
@@ -419,7 +421,7 @@ static bool _updateSearch( struct SIOInstance *sio )
     }
 
     /* If we get here then we had no match */
-    beep();
+    SIObeep();
     sio->searchOK = false;
     return false;
 }
@@ -964,6 +966,21 @@ int32_t SIOgetCurrentLineno( struct SIOInstance *sio )
     return sio->opTextRline;
 }
 // ====================================================================================================
+int32_t SIOgetLastLineno( struct SIOInstance *sio )
+
+{
+    return sio->opTextWline - 1;
+}
+// ====================================================================================================
+void SIOsetCurrentLineno( struct SIOInstance *sio, int32_t l )
+
+{
+    if ( ( l >= 0 ) && ( l < sio->opTextWline - 1 ) )
+    {
+        sio->opTextRline = l;
+    }
+}
+// ====================================================================================================
 void SIOalert( struct SIOInstance *sio, const char *msg )
 
 {
@@ -1039,6 +1056,14 @@ void SIOtagText ( struct SIOInstance *sio, const char *ttext )
 
 // ====================================================================================================
 
+void SIObeep( void )
+
+{
+    beep();
+}
+
+// ====================================================================================================
+
 enum SIOEvent SIOHandler( struct SIOInstance *sio, bool isTick, uint64_t oldintervalBytes )
 
 /* Top level to deal with all UI aspects */
@@ -1107,6 +1132,14 @@ enum SIOEvent SIOHandler( struct SIOInstance *sio, bool isTick, uint64_t oldinte
 
                 case 260:
                     op = SIO_EV_SURFACE;
+                    break;
+
+                case 'p':
+                    op = SIO_EV_PREV;
+                    break;
+
+                case 'n':
+                    op = SIO_EV_NEXT;
                     break;
 
                 case 'q':

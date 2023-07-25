@@ -21,11 +21,13 @@ struct symbolMemoryStore
     symbolMemptr    data;                  /* Contents of the segment */
 };
 
+
 /* Structure for a line memory region identified in the image */
 struct symbolLineStore
 {
     unsigned int               filename;   /* Filename index for this line */
     unsigned int               startline;  /* First line in source code covered by this line region */
+    bool isinline;
     symbolMemaddr              lowaddr;    /* Minimum address this line covers */
     symbolMemaddr              highaddr;   /* Max address this line covers */
     struct symbolFunctionStore *function;  /* Function encompassing this line (or NULL if none is identified */
@@ -39,10 +41,9 @@ struct symbolFunctionStore
     unsigned int               filename;   /* What filename + path off the source root? */
     unsigned int               startline;  /* Start line in source file of function */
     unsigned int               startcol;   /* Start col in source file of function */
+    unsigned int               endline;    /* End line in source file of function */
     symbolMemaddr              lowaddr;    /* Lowest address of function */
     symbolMemaddr              highaddr;   /* Highest address of function */
-    symbolMemaddr              entryaddr;  /* Entry into function */
-    bool                       isInline;   /* Is this an inline function? */
     struct symbolLineStore   **line;       /* Lines comprising this function */
     unsigned int               nlines;     /* Number of lines in line number storage */
 };
@@ -50,6 +51,8 @@ struct symbolFunctionStore
 struct symbolSourcecodeStore
 {
     char                     **linetext;   /* Table of text lines in this file */
+
+
     unsigned int               nlines;     /* Number of text lines in this file */
 };
 
@@ -72,6 +75,7 @@ struct symbol
     unsigned int nlines;                   /* Number of lines in source code line table */
 
     unsigned int cachedSearchIndex;        /* Cached memory search region, to speed up memory fetches */
+
 
     csh caphandle;
 };
@@ -108,7 +112,6 @@ const char *symbolGetFilename( struct symbol *p, unsigned int index );
 symbolMemptr symbolCodeAt( struct symbol *p, symbolMemaddr addr, unsigned int *len );
 
 /* Return assembly code representing this line, with annotations */
-//char *symbolAssemblyLine( struct symbol *p, bool *isJump, bool *is4byte, symbolMemaddr addr );
 char *symbolDisssembleLine( struct symbol *p, enum instructionClass *ic, symbolMemaddr addr, symbolMemaddr *newaddr );
 
 /* Delete symbol set */
