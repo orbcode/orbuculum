@@ -26,6 +26,7 @@ else
 endif
 
 add_project_arguments('-DSCREEN_HANDLING', language: 'c')
+add_project_arguments('-Wno-error=deprecated-declarations', language: 'c')
 add_project_arguments(['-include', 'uicolours_default.h'], language: 'c')
 
 if host_machine.system() == 'windows'
