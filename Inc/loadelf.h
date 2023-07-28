@@ -1,3 +1,4 @@
+
 #ifndef _LOADELF_H_
 
 #include <stdbool.h>
@@ -44,6 +45,7 @@ struct symbolFunctionStore
     unsigned int               endline;    /* End line in source file of function */
     symbolMemaddr              lowaddr;    /* Lowest address of function */
     symbolMemaddr              highaddr;   /* Highest address of function */
+    bool                       isinline;   /* Is this an abstract template for a function? */
     struct symbolLineStore   **line;       /* Lines comprising this function */
     unsigned int               nlines;     /* Number of lines in line number storage */
 };

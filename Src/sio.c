@@ -43,7 +43,7 @@ enum CP
     CP_FG_BRIGHT_WHITE,
 
     /* Remaining pairs */
-    CP_EVENT, CP_NORMAL, CP_FILEFUNCTION, CP_LINENO, CP_EXECASSY, CP_NEXECASSY, CP_BASELINE, CP_BASELINETEXT, CP_SEARCH, CP_DEBUG
+    CP_EVENT, CP_NORMAL, CP_FILEFUNCTION, CP_LINENO, CP_EXECASSY, CP_NEXECASSY, CP_BASELINE, CP_BASELINETEXT, CP_SEARCH, CP_DEBUG, CP_SOURCEHL
 };
 
 /* Search types */
@@ -620,20 +620,20 @@ static bool _displayLine( struct SIOInstance *sio, int32_t lineNum, int32_t scre
                 if ( !strncmp( u, "[m", 2 ) )
                 {
                     u += 2;
-                    wattrset( sio->outputWindow, ( highlight ? A_STANDOUT : 0 ) | COLOR_PAIR( 15 ) );
+                    wattrset( sio->outputWindow, ( highlight ? A_BOLD | A_STANDOUT | COLOR_PAIR( CP_SOURCEHL ) : COLOR_PAIR( 15 ) ) );
                     continue;
                 }
 
                 if ( !strncmp( u, "[3", 2 ) )
                 {
-                    wattrset( sio->outputWindow, ( highlight ? A_STANDOUT : 0 ) | COLOR_PAIR( ( *( u + 2 ) ) - '0' ) );
+                    wattrset( sio->outputWindow, ( highlight ? A_BOLD | A_STANDOUT | COLOR_PAIR( CP_SOURCEHL ) : COLOR_PAIR( ( *( u + 2 ) ) - '0' ) ) );
                     u += 4;
                     continue;
                 }
 
                 if ( !strncmp( u, "[01;3", 5 ) )
                 {
-                    wattrset( sio->outputWindow, ( highlight ? A_STANDOUT : 0 ) | COLOR_PAIR( ( *( u + 5 ) ) - '0' ) );
+                    wattrset( sio->outputWindow, ( highlight ? A_BOLD | A_STANDOUT | COLOR_PAIR( CP_SOURCEHL ) : COLOR_PAIR( ( *( u + 5 ) ) - '0' ) ) );
                     u += 7;
                     continue;
                 }
@@ -934,6 +934,7 @@ struct SIOInstance *SIOsetup( const char *progname, const char *elffile, bool is
         init_pair( CP_BASELINETEXT, COLOR_YELLOW, COLOR_BLACK );
         init_pair( CP_SEARCH, COLOR_GREEN, COLOR_BLACK );
         init_pair( CP_DEBUG, COLOR_MAGENTA, COLOR_BLACK );
+        init_pair( CP_SOURCEHL, COLOR_WHITE, COLOR_BLACK );
     }
 
     sio->outputWindow = newwin( OUTPUT_WINDOW_L, OUTPUT_WINDOW_W, 0, 0 );

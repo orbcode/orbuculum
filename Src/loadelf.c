@@ -218,6 +218,44 @@ int _findOrAddString( const char *stringToFindorAdd, char ***table, unsigned int
 
 // ====================================================================================================
 
+#ifdef TESTING_LOADELF
+static void _dump_die_attribs( Dwarf_Debug dbg, Dwarf_Die die )
+
+{
+    Dwarf_Attribute *attrs;
+    Dwarf_Signed attr_count;
+    const char *name;
+
+    if ( DW_DLV_OK != dwarf_attrlist( die, &attrs, &attr_count, 0 ) )
+    {
+        fprintf( stderr, "Requesting attributes failed\n" );
+        return;
+    }
+
+    // Iterate through attributes
+    for ( int i = 0; i < attr_count; ++i )
+    {
+        Dwarf_Half attr;
+        Dwarf_Attribute attr_ptr = attrs[i];
+
+        if ( DW_DLV_OK != dwarf_whatattr( attr_ptr, &attr, 0 ) )
+        {
+            fprintf( stderr, "Failed to itentify attribute\n" );
+            goto terminate;
+        }
+
+        dwarf_get_AT_name( attr, &name );
+        printf( "Attribute Name: %s\n", name );
+    }
+
+    // Free attribute list
+terminate:
+    dwarf_dealloc( dbg, attrs, DW_DLA_LIST );
+}
+#endif
+
+// ====================================================================================================
+
 static void _getSourceLines( struct symbol *p, Dwarf_Debug dbg, Dwarf_Die die )
 
 
@@ -228,29 +266,49 @@ static void _getSourceLines( struct symbol *p, Dwarf_Debug dbg, Dwarf_Die die )
     Dwarf_Signed linecount;
     Dwarf_Small tc;
     Dwarf_Addr line_addr;
+    Dwarf_Addr tracked_addr;
+    bool zero_start_dont_store;
     char *file_name;
     Dwarf_Unsigned line_num;
+    Dwarf_Bool begin;
 
 
     /* Now, for each source line, pull it into the line storage */
     if ( DW_DLV_OK == dwarf_srclines_b( die, &version, &tc, &linecontext, 0 ) )
     {
         dwarf_srclines_from_linecontext( linecontext, &linebuf, &linecount, 0 );
+        tracked_addr = 0;
+        zero_start_dont_store = true;
 
+        /* If a context starts at zero, or is a direct continuation of a context that started at zero, then we dispose of it */
+        /* We consider any line that is within 16 bytes of the previous one to be a continuation, to allow for padding.      */
         for ( int i = 0; i < linecount; ++i )
         {
-            // Get the line number and the corresponding address
-            dwarf_lineno( linebuf[i], &line_num, 0 );
             dwarf_lineaddr( linebuf[i], &line_addr, 0 );
-            dwarf_linesrc( linebuf[i], &file_name, 0 );
+            dwarf_linebeginstatement( linebuf[i], &begin, 0 );
 
-            p->line = ( struct symbolLineStore ** )realloc( p->line, sizeof( struct symbolLineStore * ) * ( p->nlines + 1 ) );
-            struct symbolLineStore *newLine = p->line[p->nlines] = ( struct symbolLineStore * )calloc( 1, sizeof( struct symbolLineStore ) );
-            p->nlines++;
-            newLine->startline = line_num;
-            newLine->lowaddr = line_addr;
-            newLine->isinline = true;
-            newLine->filename = _findOrAddString( file_name, &p->stringTable[PT_FILENAME],  &p->tableLen[PT_FILENAME] );
+            if ( ( zero_start_dont_store && ( ( !begin ) || ( !line_addr ) || ( ( line_addr - tracked_addr ) < 16 ) ) ) ||
+                    ( begin && ( line_addr == 0 ) ) )
+            {
+                zero_start_dont_store = true;
+            }
+            else
+            {
+                /* We are going to store this one */
+                zero_start_dont_store = false;
+                dwarf_lineno( linebuf[i], &line_num, 0 );
+                dwarf_linesrc( linebuf[i], &file_name, 0 );
+
+                p->line = ( struct symbolLineStore ** )realloc( p->line, sizeof( struct symbolLineStore * ) * ( p->nlines + 1 ) );
+                struct symbolLineStore *newLine = p->line[p->nlines] = ( struct symbolLineStore * )calloc( 1, sizeof( struct symbolLineStore ) );
+                p->nlines++;
+                newLine->startline = line_num;
+                newLine->lowaddr = line_addr;
+                newLine->isinline = true;
+                newLine->filename = _findOrAddString( file_name, &p->stringTable[PT_FILENAME],  &p->tableLen[PT_FILENAME] );
+            }
+
+            tracked_addr = line_addr;
         }
 
         dwarf_srclines_dealloc_b( linecontext );
@@ -259,39 +317,60 @@ static void _getSourceLines( struct symbol *p, Dwarf_Debug dbg, Dwarf_Die die )
 
 // ====================================================================================================
 
-static void _processFunctionDie( struct symbol *p, Dwarf_Debug dbg, Dwarf_Die die, int filenameN, int producerN )
+void  _dwarf_error( Dwarf_Error e, void *ptr )
+{
+    printf( "Reached error:%s\n", dwarf_errmsg( e ) );
+    exit( -1 );
+}
+
+// ====================================================================================================
+
+static void _processFunctionDie( struct symbol *p, Dwarf_Debug dbg, Dwarf_Die die, int filenameN, int producerN, Dwarf_Addr cu_base_addr )
 
 {
-    char *name = NULL;
-    Dwarf_Addr h = 0;
-    Dwarf_Addr l = 0;
+    char *name;
+    Dwarf_Addr h;
+    Dwarf_Addr l;
     Dwarf_Attribute attr_data;
     Dwarf_Half attr_tag;
+    bool isinline = false;
     struct symbolFunctionStore *newFunc;
 
 
-    dwarf_highpc ( die, &h, 0 );
-    dwarf_lowpc ( die, &l, 0 );
+    attr_tag = DW_AT_inline;
+
+    if ( dwarf_attr( die, attr_tag, &attr_data, 0 ) == DW_DLV_OK )
+    {
+        return;
+    }
+
+    /* See if this is an inline die usage */
+    attr_tag = DW_AT_abstract_origin;
+
+    if ( dwarf_attr( die, attr_tag, &attr_data, 0 ) == DW_DLV_OK )
+    {
+        /* It is, so track back to the real one */
+        Dwarf_Off abstract_origin_offset;
+        attr_tag = DW_AT_abstract_origin;
+        dwarf_attr( die, attr_tag, &attr_data, 0 );
+        dwarf_global_formref( attr_data, &abstract_origin_offset, 0 );
+        dwarf_offdie( dbg, abstract_origin_offset, &die, 0 );
+        //printf("Instance at %08x...%08x\n\n\n",(uint32_t)l,(uint32_t)h);
+        isinline = true;
+    }
+    else
+    {
+        dwarf_highpc ( die, &h, 0 );
+        dwarf_lowpc ( die, &l, 0 );
+    }
 
     if ( l && ( l != h ) )
     {
-        /* This has length, so it's valid ... create a new function entry */
-        if ( DW_DLV_OK != dwarf_diename( die, &name, 0 ) )
-        {
-            attr_tag = DW_AT_abstract_origin;
-
-            if ( dwarf_attr( die, attr_tag, &attr_data, 0 ) == DW_DLV_OK )
-            {
-                Dwarf_Off abstract_origin_offset;
-                Dwarf_Die abstract_origin_die;
-                dwarf_global_formref( attr_data, &abstract_origin_offset, 0 );
-                dwarf_offdie( dbg, abstract_origin_offset, &abstract_origin_die, 0 );
-                dwarf_diename( abstract_origin_die, &name, 0 );
-            }
-        }
+        dwarf_diename( die, &name, 0 );
 
         p->func = ( struct symbolFunctionStore ** )realloc( p->func, sizeof( struct symbolFunctionStore * ) * ( p->nfunc + 1 ) );
         newFunc = p->func[p->nfunc] = ( struct symbolFunctionStore * )calloc( 1, sizeof( struct symbolFunctionStore ) );
+        newFunc->isinline = isinline;
         p->nfunc++;
 
         newFunc->funcname  = strdup( name );
@@ -323,32 +402,31 @@ static void _processFunctionDie( struct symbol *p, Dwarf_Debug dbg, Dwarf_Die di
 
 // ====================================================================================================
 
-static void _processDie( struct symbol *p, Dwarf_Debug dbg, Dwarf_Die die, int level, int filenameN, int producerN )
+static void _processDie( struct symbol *p, Dwarf_Debug dbg, Dwarf_Die die, int level, int filenameN, int producerN, Dwarf_Addr cu_base_addr )
 
 {
-    Dwarf_Error err;
     Dwarf_Half tag;
 
-    dwarf_tag( die, &tag, &err );
+    dwarf_tag( die, &tag, 0 );
 
-    if ( tag == DW_TAG_subprogram )
+    if ( ( tag == DW_TAG_subprogram ) || ( tag == DW_TAG_inlined_subroutine ) )
     {
-        _processFunctionDie( p, dbg, die, filenameN, producerN );
+        _processFunctionDie( p, dbg, die, filenameN, producerN, cu_base_addr );
     }
 
     // Recursively process children DIEs
     Dwarf_Die child;
 
-    int res = dwarf_child( die, &child, &err );
+    int res = dwarf_child( die, &child, 0 );
 
     if ( res == DW_DLV_OK )
     {
         do
         {
-            _processDie( p, dbg, child, level + 1, filenameN, producerN );
+            _processDie( p, dbg, child, level + 1, filenameN, producerN, cu_base_addr );
 
         }
-        while ( dwarf_siblingof( dbg, child, &child, &err ) == DW_DLV_OK );
+        while ( dwarf_siblingof( dbg, child, &child, 0 ) == DW_DLV_OK );
     }
 }
 // ====================================================================================================
@@ -356,10 +434,10 @@ static void _processDie( struct symbol *p, Dwarf_Debug dbg, Dwarf_Die die, int l
 static bool _readLines( int fd, struct symbol *p )
 {
     Dwarf_Debug dbg;
-    Dwarf_Error err;
     Dwarf_Unsigned cu_header_length;
     Dwarf_Half     version_stamp;
     Dwarf_Off      abbrev_offset;
+    Dwarf_Addr     cu_low_addr;
     Dwarf_Half     address_size;
     Dwarf_Unsigned next_cu_header = 0;
     Dwarf_Die cu_die;
@@ -371,7 +449,7 @@ static bool _readLines( int fd, struct symbol *p )
     unsigned int filenameN;
     unsigned int producerN;
 
-    if ( 0 != dwarf_init( fd, DW_DLC_READ, NULL, NULL, &dbg, &err ) )
+    if ( 0 != dwarf_init( fd, DW_DLC_READ, &_dwarf_error, NULL, &dbg, 0 ) )
     {
         return false;
     }
@@ -384,13 +462,12 @@ static bool _readLines( int fd, struct symbol *p )
 
     /* 1: Collect the functions and lines */
     /* ---------------------------------- */
-    while ( ( 0 == dwarf_next_cu_header( dbg, &cu_header_length, &version_stamp, &abbrev_offset, &address_size, &next_cu_header, &err ) ) )
+    while ( ( 0 == dwarf_next_cu_header( dbg, &cu_header_length, &version_stamp, &abbrev_offset, &address_size, &next_cu_header, 0 ) ) )
     {
-        dwarf_siblingof( dbg, NULL, &cu_die, &err );
-        dwarf_diename( cu_die, &name, &err );
-        dwarf_die_text( cu_die, DW_AT_producer, &producer, &err );
-        dwarf_die_text( cu_die, DW_AT_comp_dir, &compdir, &err );
-
+        dwarf_siblingof( dbg, NULL, &cu_die, 0 );
+        dwarf_diename( cu_die, &name, 0 );
+        dwarf_die_text( cu_die, DW_AT_producer, &producer, 0 );
+        dwarf_die_text( cu_die, DW_AT_comp_dir, &compdir, 0 );
 
         /* Need to construct the fully qualified filename from the directory + filename */
         char *s = ( char * )malloc( strlen( name ) + strlen( compdir ) + 2 );
@@ -402,7 +479,9 @@ static bool _readLines( int fd, struct symbol *p )
         producerN =  _findOrAddString( producer, &p->stringTable[PT_PRODUCER],  &p->tableLen[PT_PRODUCER] );
 
         /* Kickoff the process for the DIE and its children to get the functions in this cu */
-        _processDie( p, dbg, cu_die, 0, filenameN, producerN );
+
+        dwarf_lowpc( cu_die, &cu_low_addr, 0 );
+        _processDie( p, dbg, cu_die, 0, filenameN, producerN, cu_low_addr );
 
         /* ...and the source lines */
         _getSourceLines( p, dbg, cu_die );
@@ -1045,8 +1124,6 @@ void main( int argc, char *argv[] )
         exit( -1 );
     }
 
-    //    _listFunctions(p,false);
-    //    exit(-1);
     struct symbolLineStore *s;
 
     for ( int i = 0; i < p->nlines; i++ )
