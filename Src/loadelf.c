@@ -6,7 +6,7 @@
 #include <string.h>
 #include <gelf.h>
 #include <dwarf.h>
-#include <libdwarf/libdwarf.h>
+#include <libdwarf.h>
 
 #include "loadelf.h"
 #include "generics.h"

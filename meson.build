@@ -1,5 +1,7 @@
 
-project('orbuculum', 'c')
+project('orbuculum', 'c', meson_version: '>=0.63')
+
+uicolours_default = declare_dependency(compile_args: ['-include', 'uicolours_default.h'])
 
 dependencies = [
     dependency('threads'),
@@ -8,13 +10,13 @@ dependencies = [
     dependency('SDL2'),
     dependency('ncurses', 'ncursesw'),
     dependency('capstone'),
-    dependency('libelf')
+    dependency('libelf'),
+    uicolours_default,
 ]
 
 incdirs = include_directories(['Inc', 'Inc/external'])
 cc = meson.get_compiler('c')
 
-dependencies += cc.find_library('dwarf')
 if host_machine.system() == 'windows'
     winsock2 = cc.find_library('ws2_32')
     dependencies += [
@@ -31,7 +33,9 @@ else
 endif
 
 add_global_arguments('-DSCREEN_HANDLING', language: 'c')
-add_global_arguments(['-include', 'uicolours_default.h'], language: 'c')
+
+libdwarf = subproject('libdwarf').get_variable('libdwarf')
+dependencies += libdwarf
 
 if host_machine.system() == 'windows'
     stream_src = [

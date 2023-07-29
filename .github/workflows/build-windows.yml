@@ -20,10 +20,12 @@ jobs:
             mingw-w64-x86_64-toolchain
             mingw-w64-x86_64-zeromq
             mingw-w64-x86_64-SDL2
+            mingw-w64-x86_64-libelf
             git
             zip
             mingw-w64-x86_64-meson
             mingw-w64-x86_64-autotools
+            mingw-w64-x86_64-ca-certificates
       - uses: actions/checkout@v3
         with:
           path: ./orbuculum
