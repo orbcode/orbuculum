@@ -2,6 +2,11 @@
 project('orbuculum', 'c', meson_version: '>=0.63')
 
 uicolours_default = declare_dependency(compile_args: ['-include', 'uicolours_default.h'])
+if host_machine.system() == 'windows'
+    getline_polyfill = declare_dependency(sources: ['Src/getline.c'])
+else
+    getline_polyfill = declare_dependency()
+endif
 
 dependencies = [
     dependency('threads'),
@@ -162,7 +167,7 @@ executable('orbmortem',
         git_version_info_h,
     ],
     include_directories: incdirs,
-    dependencies: dependencies,
+    dependencies: dependencies + [getline_polyfill],
     link_with: liborb,
     install: true,
 )

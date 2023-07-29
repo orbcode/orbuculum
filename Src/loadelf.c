@@ -11,6 +11,10 @@
 #include "loadelf.h"
 #include "generics.h"
 
+#if defined(WIN32)
+extern size_t getline(char **lineptr, size_t *n, FILE *stream);
+#endif
+
 #define MAX_LINE_LEN (4095)
 static char _print_buffer[MAX_LINE_LEN];
 // ====================================================================================================
