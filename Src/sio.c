@@ -755,19 +755,21 @@ static void _outputStatus( struct SIOInstance *sio, uint64_t oldintervalBytes )
     {
         if ( !sio->held )
         {
+            uint64_t oldintervalBits = oldintervalBytes * 8;
+
             if ( oldintervalBytes )
             {
-                if ( oldintervalBytes < 9999 )
+                if ( oldintervalBits < 9999 )
                 {
-                    mvwprintw( sio->statusWindow, 1, COLS - 45, "%" PRIu64 " Bps (~%" PRIu64 " Ips)", oldintervalBytes, ( oldintervalBytes * 8 ) / 11 );
+                    mvwprintw( sio->statusWindow, 1, COLS - 45, "%" PRIu64 " bps (~%" PRIu64 " Ips)", oldintervalBits, oldintervalBits / 11 );
                 }
                 else if ( oldintervalBytes < 9999999 )
                 {
-                    mvwprintw( sio->statusWindow, 1, COLS - 45, "%" PRIu64 " KBps (~%" PRIu64 " KIps)", oldintervalBytes / 1000, oldintervalBytes * 8 / 1120 );
+                    mvwprintw( sio->statusWindow, 1, COLS - 45, "%" PRIu64 " Kbps (~%" PRIu64 " KIps)", oldintervalBits / 1000, oldintervalBits / 1120 );
                 }
                 else
                 {
-                    mvwprintw( sio->statusWindow, 1, COLS - 45, "%" PRIu64 " MBps (~%" PRIu64 " MIps)", oldintervalBytes / 1000000, ( oldintervalBytes * 8 ) / 1120000 );
+                    mvwprintw( sio->statusWindow, 1, COLS - 45, "%" PRIu64 " Mbps (~%" PRIu64 " MIps)", oldintervalBits / 1000000, oldintervalBits / 1120000 );
                 }
             }
 

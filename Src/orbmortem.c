@@ -872,7 +872,7 @@ static void _traceCB( void *d )
         }
 
         /* Now output the matching assembly, and location updates */
-        char *a = symbolDisssembleLine( r->s, &ic, r->op.workingAddr, &newaddr );
+        char *a = symbolDisassembleLine( r->s, &ic, r->op.workingAddr, &newaddr );
 
         if ( a )
         {
@@ -981,7 +981,7 @@ static void _dumpBuffer( struct RunTime *r )
     {
         symbolDelete( r->s );
 
-        if ( !( r->s = symbolAqquire( r->options->elffile, true, true, true ) ) )
+        if ( !( r->s = symbolAquire( r->options->elffile, true, true, true ) ) )
         {
             genericsReport( V_ERROR, "Elf file or symbols in it not found" EOL );
             return;
@@ -1242,7 +1242,7 @@ int main( int argc, char *argv[] )
     atexit( _doExit );
 
     /* Check we've got _some_ symbols to start from */
-    _r.s = symbolAqquire( _r.options->elffile, true, true, true );
+    _r.s = symbolAquire( _r.options->elffile, true, true, true );
 
     if ( !_r.s )
     {

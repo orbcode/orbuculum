@@ -12,6 +12,7 @@
 #include "generics.h"
 
 #define MAX_LINE_LEN (4095)
+static char _print_buffer[MAX_LINE_LEN];
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
@@ -271,7 +272,12 @@ static void _getSourceLines( struct symbol *p, Dwarf_Debug dbg, Dwarf_Die die )
     char *file_name;
     Dwarf_Unsigned line_num;
     Dwarf_Bool begin;
+    Dwarf_Bool isset;
 
+    //Dwarf_Bool  ispend;
+    //Dwarf_Bool  ispbegin;
+    //Dwarf_Unsigned isa;
+    //Dwarf_Unsigned disc;
 
     /* Now, for each source line, pull it into the line storage */
     if ( DW_DLV_OK == dwarf_srclines_b( die, &version, &tc, &linecontext, 0 ) )
@@ -280,21 +286,36 @@ static void _getSourceLines( struct symbol *p, Dwarf_Debug dbg, Dwarf_Die die )
         tracked_addr = 0;
         zero_start_dont_store = true;
 
-        /* If a context starts at zero, or is a direct continuation of a context that started at zero, then we dispose of it */
-        /* We consider any line that is within 16 bytes of the previous one to be a continuation, to allow for padding.      */
+        /* If a line address starts at zero, or is a direct continuation of a line that started at zero, then we dispose of it */
+        /* We consider any line that is within 16 bytes of the previous one to be a continuation, to allow for padding.        */
         for ( int i = 0; i < linecount; ++i )
         {
+            dwarf_line_is_addr_set( linebuf[i], &isset, 0 );
             dwarf_lineaddr( linebuf[i], &line_addr, 0 );
             dwarf_linebeginstatement( linebuf[i], &begin, 0 );
 
-            if ( ( zero_start_dont_store && ( ( !begin ) || ( !line_addr ) || ( ( line_addr - tracked_addr ) < 16 ) ) ) ||
-                    ( begin && ( line_addr == 0 ) ) )
+            //dwarf_prologue_end_etc(linebuf[i], &ispend, &ispbegin, &isa, &disc, 0);
+            //if(isa)
+            //  printf("\nDisc=%lld isa=%llx\n",disc,isa);
+
+            if ( ( isset ) && ( line_addr == 0 ) )
             {
                 zero_start_dont_store = true;
+            }
+
+            //if (begin)
+            //  printf("\nBEGIN(%08x):",(uint32_t)line_addr);
+
+            if ( ( zero_start_dont_store && ( ( !begin ) || ( !line_addr ) || ( ( line_addr - tracked_addr ) < 16 ) ) ) )
+            {
+                zero_start_dont_store = true;
+                //   printf("!");
             }
             else
             {
                 /* We are going to store this one */
+                //if (zero_start_dont_store) printf("\n%08x: ",(uint32_t)line_addr);
+                //else printf("*");
                 zero_start_dont_store = false;
                 dwarf_lineno( linebuf[i], &line_num, 0 );
                 dwarf_linesrc( linebuf[i], &file_name, 0 );
@@ -321,6 +342,14 @@ void  _dwarf_error( Dwarf_Error e, void *ptr )
 {
     printf( "Reached error:%s\n", dwarf_errmsg( e ) );
     exit( -1 );
+}
+
+// ====================================================================================================
+
+void _dwarf_print( void *p, const char *line )
+
+{
+    printf( "%s", line );
 }
 
 // ====================================================================================================
@@ -442,6 +471,7 @@ static bool _readLines( int fd, struct symbol *p )
     Dwarf_Unsigned next_cu_header = 0;
     Dwarf_Die cu_die;
 
+    bool retval = false;
     char *name;
     char *producer;
     char *compdir;
@@ -453,6 +483,19 @@ static bool _readLines( int fd, struct symbol *p )
     {
         return false;
     }
+
+    struct Dwarf_Printf_Callback_Info_s print_setup =
+    {
+        .dp_user_pointer = p,
+        .dp_fptr = &_dwarf_print,
+        .dp_buffer = _print_buffer,
+        .dp_buffer_len = MAX_LINE_LEN,
+        .dp_buffer_user_provided = true,
+        .dp_reserved = NULL
+
+    };
+
+    dwarf_register_printf_callback( dbg, &print_setup );
 
     /* Add an empty string to each string table, so the 0th element is the empty string in all cases */
     for ( enum symbolTables pt = 0; pt < PT_NUMTABLES; pt++ )
@@ -537,26 +580,36 @@ static bool _readLines( int fd, struct symbol *p )
         p->line[i - 1]->highaddr = p->line[i]->lowaddr - 1;
     }
 
-    p->line[p->nlines - 1]->highaddr = -1;
-
-    /* Allocate lines to functions ... these will be in address order 'cos the lines already are */
-    for ( int i = 0; i < p->nlines; i++ )
+    if ( !p->nlines )
     {
-        struct symbolFunctionStore *f = symbolFunctionAt( p, p->line[i]->lowaddr );
-        p->line[i]->function = f;
-        p->line[i]->isinline = false;
+        fprintf( stderr, "No lines found in file\n" );
+    }
+    else
+    {
+        p->line[p->nlines - 1]->highaddr =     p->line[p->nlines - 1]->lowaddr + 2;
+        p->line[0]->lowaddr =     p->line[0]->highaddr - 2;
 
-        if ( f )
+        /* Allocate lines to functions ... these will be in address order 'cos the lines already are */
+        for ( int i = 0; i < p->nlines; i++ )
         {
-            f->line = ( struct symbolLineStore ** )realloc( f->line, sizeof( struct symbolLineStore * ) * ( f->nlines + 1 ) );
-            f->line[f->nlines] = p->line[i];
-            f->nlines++;
+            struct symbolFunctionStore *f = symbolFunctionAt( p, p->line[i]->lowaddr );
+            p->line[i]->function = f;
+            p->line[i]->isinline = false;
+
+            if ( f )
+            {
+                f->line = ( struct symbolLineStore ** )realloc( f->line, sizeof( struct symbolLineStore * ) * ( f->nlines + 1 ) );
+                f->line[f->nlines] = p->line[i];
+                f->nlines++;
+            }
         }
+
+        retval = true;
     }
 
     dwarf_finish( dbg, 0 );
 
-    return true;
+    return retval;
 }
 
 // ====================================================================================================
@@ -859,7 +912,7 @@ void symbolDelete( struct symbol *p )
 
 // ====================================================================================================
 
-char *symbolDisssembleLine( struct symbol *p, enum instructionClass *ic, symbolMemaddr addr, symbolMemaddr *newaddr )
+char *symbolDisassembleLine( struct symbol *p, enum instructionClass *ic, symbolMemaddr addr, symbolMemaddr *newaddr )
 
 /* Return assembly code representing this line */
 
@@ -976,7 +1029,7 @@ char *symbolDisssembleLine( struct symbol *p, enum instructionClass *ic, symbolM
 
 // ====================================================================================================
 
-struct symbol *symbolAqquire( char *filename, bool loadlines, bool loadmem, bool loadsource )
+struct symbol *symbolAquire( char *filename, bool loadlines, bool loadmem, bool loadsource )
 
 /* Collect symbol set with specified components */
 
@@ -1104,7 +1157,7 @@ bool _disassemble( struct symbol *p, symbolMemaddr a, unsigned int len )
 
     for ( addr = a; addr < a + len; addr += ic & LE_IC_4BYTE ? 4 : 2 )
     {
-        char *u = symbolDisssembleLine( p, &ic, addr, &newaddr );
+        char *u = symbolDisassembleLine( p, &ic, addr, &newaddr );
         printf( "%s\n", u );
     }
 
@@ -1116,7 +1169,7 @@ void main( int argc, char *argv[] )
 
 {
     enum instructionClass ic;
-    struct symbol *p = symbolAqquire( argv[1], true, true, true );
+    struct symbol *p = symbolAquire( argv[1], true, true, true );
 
     if ( !p )
     {
@@ -1135,7 +1188,7 @@ void main( int argc, char *argv[] )
         if ( ( s->lowaddr > 0x08000000 ) && ( s->highaddr != -1 ) )
             for ( symbolMemaddr b = s->lowaddr; b < s->highaddr; )
             {
-                printf( "         %s\n", symbolDisssembleLine( p, &ic, b, NULL ) );
+                printf( "         %s\n", symbolDisassembleLine( p, &ic, b, NULL ) );
                 b += ic & LE_IC_4BYTE ? 4 : 2;
             }
     }

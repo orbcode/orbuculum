@@ -114,13 +114,13 @@ const char *symbolGetFilename( struct symbol *p, unsigned int index );
 symbolMemptr symbolCodeAt( struct symbol *p, symbolMemaddr addr, unsigned int *len );
 
 /* Return assembly code representing this line, with annotations */
-char *symbolDisssembleLine( struct symbol *p, enum instructionClass *ic, symbolMemaddr addr, symbolMemaddr *newaddr );
+char *symbolDisassembleLine( struct symbol *p, enum instructionClass *ic, symbolMemaddr addr, symbolMemaddr *newaddr );
 
 /* Delete symbol set */
 void symbolDelete( struct symbol *p );
 
 /* Collect symbol set with specified components */
-struct symbol *symbolAqquire( char *filename, bool loadlines, bool loadmem, bool loadsource );
+struct symbol *symbolAquire( char *filename, bool loadlines, bool loadmem, bool loadsource );
 
 /* Check if current symbols are valid */
 bool symbolSetValid( struct symbol *p, char *filename );
