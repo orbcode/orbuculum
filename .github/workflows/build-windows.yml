@@ -21,6 +21,7 @@ jobs:
             mingw-w64-x86_64-zeromq
             mingw-w64-x86_64-SDL2
             mingw-w64-x86_64-libelf
+            mingw-w64-x86_64-capstone
             git
             zip
             mingw-w64-x86_64-meson
