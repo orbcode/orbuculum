@@ -93,7 +93,7 @@ struct Options
 struct handlers
 {
     int channel;                                         /* Channel number for this handler */
-    long int intervalBytes;                              /* Number of depacketised bytes output on this channel */
+    uint64_t intervalBytes;                              /* Number of depacketised bytes output on this channel */
     struct dataBlock *strippedBlock;                     /* Processed buffers for output to clients */
     struct nwclientsHandle *n;                           /* Link to the network client subsystem */
 };
@@ -103,7 +103,7 @@ struct RunTime
     struct TPIUDecoder t;                                /* TPIU decoder instance, in case we need it */
     struct OrbtraceIf  *o;                               /* For accessing ORBTrace devices + BMPs */
 
-    long int  intervalBytes;                             /* Number of bytes transferred in current interval */
+    uint64_t  intervalBytes;                             /* Number of bytes transferred in current interval */
 
     pthread_t intervalThread;                            /* Thread reporting on intervals */
     pthread_t processThread;                             /* Thread for processing prior to distributing to clients */

@@ -136,7 +136,7 @@ static bool _handleHW( struct ITMPacket *packet, struct msg *decoded )
 
         // --------------
         default:
-            if ( ( packet->srcAddr & 0x19 ) == 0x11 )
+            if ( ( ( packet->srcAddr & 0x19 ) == 0x10 ) || ( ( packet->srcAddr & 0x19 ) == 0x11 ) )
             {
                 wasDecoded = _handleDataRWWP( packet, ( struct watchMsg * )decoded );
             }
