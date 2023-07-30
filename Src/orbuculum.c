@@ -93,7 +93,7 @@ struct Options
 struct handlers
 {
     int channel;                                         /* Channel number for this handler */
-    long int intervalBytes;                              /* Number of depacketised bytes output on this channel */
+    uint64_t intervalBytes;                              /* Number of depacketised bytes output on this channel */
     struct dataBlock *strippedBlock;                     /* Processed buffers for output to clients */
     struct nwclientsHandle *n;                           /* Link to the network client subsystem */
 };
