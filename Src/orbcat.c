@@ -146,7 +146,7 @@ static void _outputTimestamp( void )
         case TSAbsolute: // -------------------------------------------------------------------
             res = _timestamp();
             td = ( time_t )res / ONE_SEC_IN_USEC;
-            localtime_r( &td, &tm );
+            tm = *localtime( &td );
             strftime( opConstruct, MAX_STRING_LENGTH, ABS_FORMAT_TM, &tm );
             fprintf( stdout, ABS_FORMAT, opConstruct, ( res / ( ONE_SEC_IN_USEC / 1000 ) ) % 1000 );
             break;
