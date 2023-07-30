@@ -1,5 +1,5 @@
 
-project('orbuculum', 'c', meson_version: '>=0.63')
+project('orbuculum', 'c', version:'2.1.0', meson_version: '>=0.63')
 
 uicolours_default = declare_dependency(compile_args: ['-include', 'uicolours_default.h'])
 if host_machine.system() == 'windows'

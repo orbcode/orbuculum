@@ -242,11 +242,8 @@ Dependencies
 * libczmq-dev
 * ncurses
 * libsdl
-* libdw-dev
 * libelf-dev
 * libcapstone-dev
-
-Note that `objdump`  version at least 2.33.1 is also required. By default the suite will run `arm-none-eabi-objdump` but another binary or pathname can be subsituted via the OBJDUMP environment variable.
 
 Build
 -----
@@ -261,7 +258,7 @@ If you do want to build the system, then the command line to build the Orbuculum
 >ninja -C build
 ```
 
-You may need to change the paths to your libusb files, depending on how well your build environment is set up.
+You may need to change the paths to your libusb files, depending on how well your build environment is set up. It's also worth noting that Ubuntu comes with a pretty old version of meson so if you get errors you may need to install a more recent one via pip.
 
 Permissions and Access
 ----------------------

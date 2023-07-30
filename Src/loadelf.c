@@ -12,7 +12,7 @@
 #include "generics.h"
 
 #if defined(WIN32)
-extern size_t getline(char **lineptr, size_t *n, FILE *stream);
+    extern size_t getline( char **lineptr, size_t *n, FILE *stream );
 #endif
 
 #define MAX_LINE_LEN (4095)
@@ -250,7 +250,7 @@ static void _dump_die_attribs( Dwarf_Debug dbg, Dwarf_Die die )
         }
 
         dwarf_get_AT_name( attr, &name );
-        printf( "Attribute Name: %s\n", name );
+        fprintf( stderr, "Attribute Name: %s\n", name );
     }
 
     // Free attribute list
@@ -277,11 +277,6 @@ static void _getSourceLines( struct symbol *p, Dwarf_Debug dbg, Dwarf_Die die )
     Dwarf_Unsigned line_num;
     Dwarf_Bool begin;
     Dwarf_Bool isset;
-
-    //Dwarf_Bool  ispend;
-    //Dwarf_Bool  ispbegin;
-    //Dwarf_Unsigned isa;
-    //Dwarf_Unsigned disc;
 
     /* Now, for each source line, pull it into the line storage */
     if ( DW_DLV_OK == dwarf_srclines_b( die, &version, &tc, &linecontext, 0 ) )
@@ -313,12 +308,12 @@ static void _getSourceLines( struct symbol *p, Dwarf_Debug dbg, Dwarf_Die die )
             if ( ( zero_start_dont_store && ( ( !begin ) || ( !line_addr ) || ( ( line_addr - tracked_addr ) < 16 ) ) ) )
             {
                 zero_start_dont_store = true;
-                //   printf("!");
+                //  printf("!");
             }
             else
             {
                 /* We are going to store this one */
-                //if (zero_start_dont_store) printf("\n%08x: ",(uint32_t)line_addr);
+                //                if (zero_start_dont_store) printf("\n%08x: ",(uint32_t)line_addr);
                 //else printf("*");
                 zero_start_dont_store = false;
                 dwarf_lineno( linebuf[i], &line_num, 0 );
@@ -476,7 +471,7 @@ static bool _readLines( int fd, struct symbol *p )
     Dwarf_Addr     cu_low_addr;
     Dwarf_Half     address_size;
     Dwarf_Unsigned next_cu_header = 0;
-    Dwarf_Die cu_die;
+    Dwarf_Die      cu_die;
 
     bool retval = false;
     Dwarf_Half dw_length_size;
@@ -518,9 +513,11 @@ static bool _readLines( int fd, struct symbol *p )
 
     /* 1: Collect the functions and lines */
     /* ---------------------------------- */
-    while ( ( 0 == dwarf_next_cu_header_d( dbg, 0, &cu_header_length, &version_stamp, &abbrev_offset, &address_size, &dw_length_size, &dw_extension_size, &dw_type_signature, &dw_typeoffset, &next_cu_header, &dw_header_cu_type, &err ) ) )
+    while ( ( 0 == dwarf_next_cu_header_d( dbg, true, &cu_header_length, &version_stamp, &abbrev_offset, &address_size, &dw_length_size, &dw_extension_size, &dw_type_signature, &dw_typeoffset,
+                                           &next_cu_header, &dw_header_cu_type, &err ) ) )
     {
-        dwarf_siblingof_b( dbg, NULL, 0, &cu_die, &err );
+        dwarf_siblingof_b( dbg, NULL, true, &cu_die, &err );
+
         dwarf_diename( cu_die, &name, 0 );
         dwarf_die_text( cu_die, DW_AT_producer, &producer, 0 );
         dwarf_die_text( cu_die, DW_AT_comp_dir, &compdir, 0 );
@@ -565,9 +562,6 @@ static bool _readLines( int fd, struct symbol *p )
 
             p->nlines--;
         }
-
-        /* Now set the high extent address to one less than the low address of the following line */
-        //      p->line[i-1]->highaddr = p->line[i]->lowaddr-1;
     }
 
     /* Now do the same for lines with the same line number and file */
