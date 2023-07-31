@@ -640,7 +640,7 @@ static bool _displayLine( struct SIOInstance *sio, int32_t lineNum, int32_t scre
             }
         }
 
-        if ( ( *u != '\n' ) && ( *u != '\r' ) )
+        if ( *u && ( *u != '\n' ) && ( *u != '\r' ) )
         {
             if ( x == OUTPUT_WINDOW_W - 1 )
             {

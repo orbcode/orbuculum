@@ -10,13 +10,11 @@
 
 #include "loadelf.h"
 #include "generics.h"
-
-#if defined(WIN32)
-    extern size_t getline( char **lineptr, size_t *n, FILE *stream );
-#endif
+#include "readsource.h"
 
 #define MAX_LINE_LEN (4095)
 static char _print_buffer[MAX_LINE_LEN];
+
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
@@ -624,62 +622,48 @@ static bool _readLines( int fd, struct symbol *p )
 static bool _loadSource( struct symbol *p )
 
 {
-    char *w = NULL;
-    size_t m = 0;
-    FILE *fd;
-    char commandLine[MAX_LINE_LEN];
-    bool notProcess;
+    char *r;
+    size_t l;
+
 
     /* We need to aqquire source code for all of the files that we have an entry in the stringtable, so let's start by making room */
     p->source = ( struct symbolSourcecodeStore ** )calloc( 1, sizeof( struct symbolSourcecodeStore * )*p->tableLen[PT_FILENAME] );
 
     for ( int i = 0; i < p->tableLen[PT_FILENAME]; i++ )
     {
-        /* Try and grab the file via a prettyprinter. If that doesn't work, grab it via cat */
-        if ( getenv( "ORB_PRETTYPRINTER" ) )
-        {
-            /* We have an environment variable containing the prettyprinter...lets use that */
-            snprintf( commandLine, MAX_LINE_LEN, "%s %s", getenv( "ORB_PRETTYPRINTER" ), p->stringTable[PT_FILENAME][i] );
-        }
-        else
-        {
-            /* No environment variable, use the default */
-            snprintf( commandLine, MAX_LINE_LEN, "source-highlight -f esc -o STDOUT -i %s 2>/dev/null", p->stringTable[PT_FILENAME][i] );
-        }
+        r = readsourcefile( p->stringTable[PT_FILENAME][i], &l );
 
-        fd = popen( commandLine, "r" );
-        /* Perform a single read...this will lead to eof if the command wasn't valid */
-        getline( &w, &m, fd );
-
-        if ( feof( fd ) )
-        {
-            pclose( fd );
-            notProcess = true;
-
-            if ( !( fd = fopen( p->stringTable[PT_FILENAME][i], "r" ) ) )
-            {
-                continue;
-            }
-
-            getline( &w, &m, fd );
-        }
-
-        /* Create an entry for this file. It will be zero (NULL) if there are no lines in it */
+        /* Create an entry for this file. It will remain zero (NULL) if there are no lines in it */
         struct symbolSourcecodeStore *store = p->source[i] = ( struct symbolSourcecodeStore * )calloc( 1, sizeof( struct symbolSourcecodeStore ) );
 
-        while ( !feof( fd ) )
+        while ( l )
         {
-            /* Add this line to the storage. We strdup the line storage because the getline call tends to be too generous */
+            /* Add this line to the storage. */
             store->linetext = ( char ** )realloc( store->linetext, sizeof( char * ) * ( store->nlines + 1 ) );
-            store->linetext[store->nlines++] = strdup( w );
-            getline( &w, &m, fd );
-        }
+            store->linetext[store->nlines++] = r;
 
-        /* Close the process or file, depending on what it was that actually got opened */
-        notProcess ? fclose( fd ) : pclose( fd );
+            /* Spin forwards for next newline or eof */
+            while ( ( *r != '\n' ) && l-- )
+            {
+                /* Get rid of pesky returns */
+                if ( *r == '\r' )
+                {
+                    *r = 0;
+                }
+
+                r++;
+            }
+
+            *r = 0;
+
+            if ( l )
+            {
+                l--;
+                r++;
+            }
+        }
     }
 
-    free( w );
     return true;
 }
 
@@ -905,11 +889,10 @@ void symbolDelete( struct symbol *p )
         /* Remove any source code we might be holding */
         for ( int i = 0; i < p->tableLen[PT_FILENAME]; i++ )
         {
-            for ( int j = 0; j < p->source[i]->nlines; j++ )
-            {
-                free( p->source[i]->linetext );
-            }
+            /* Text is all allocated in one block by readsource, so just deleting the firt element is enough */
+            free( p->source[i]->linetext[0] );
 
+            /* ...and the block of pointers to lines in that text */
             free( p->source[i] );
         }
 
