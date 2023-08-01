@@ -1027,7 +1027,12 @@ struct symbol *symbolAquire( char *filename, bool loadlines, bool loadmem, bool 
     int fd;
     struct symbol *p = NULL;
 
+    /* O_BINARY Only needed on platforms that differentiate between binary and text files */
+#ifndef O_BINARY
     if ( ( fd = open( filename, O_RDONLY, 0 ) ) < 0 )
+#else
+    if ( ( fd = open( filename, O_RDONLY | O_BINARY, 0 ) ) < 0 )
+#endif
     {
         return NULL;
     }
