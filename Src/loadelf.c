@@ -125,7 +125,7 @@ static int _matchLine( const void *a, const void *b )
 }
 // ====================================================================================================
 
-static bool _readProg( int fd, struct symbol *p )
+static bool _readProg( struct symbol *p )
 
 {
     Elf *e;
@@ -140,7 +140,7 @@ static bool _readProg( int fd, struct symbol *p )
         return p;
     }
 
-    if ( ( e = elf_begin( fd, ELF_C_READ, NULL ) ) == NULL )
+    if ( ( e = elf_begin( p->fd, ELF_C_READ, NULL ) ) == NULL )
     {
         fprintf( stderr, "ELF Begin failed\n" );
         return false;
@@ -168,7 +168,7 @@ static bool _readProg( int fd, struct symbol *p )
             return false;
         }
 
-        //            printf("%c ADDR=%08lx Type=%8x Flags=%04lx Size=%08lx Name=%s\n",((shdr.sh_flags & SHF_ALLOC) && (shdr.sh_type==SHT_PROGBITS))?'L':' ', shdr.sh_addr, shdr.sh_type, shdr.sh_flags, shdr.sh_size, name);
+        //            fprintf(stderr, "%c ADDR=%08lx Type=%8x Flags=%04lx Size=%08lx Name=%s\n",((shdr.sh_flags & SHF_ALLOC) && (shdr.sh_type==SHT_PROGBITS))?'L':' ', shdr.sh_addr, shdr.sh_type, shdr.sh_flags, shdr.sh_size, name);
 
         if ( ( shdr.sh_flags & SHF_ALLOC ) && ( shdr.sh_type == SHT_PROGBITS ) )
         {
@@ -293,7 +293,7 @@ static void _getSourceLines( struct symbol *p, Dwarf_Debug dbg, Dwarf_Die die )
 
             //dwarf_prologue_end_etc(linebuf[i], &ispend, &ispbegin, &isa, &disc, 0);
             //if(isa)
-            //  printf("\nDisc=%lld isa=%llx\n",disc,isa);
+            //  fprintf(stderr,"\nDisc=%lld isa=%llx\n",disc,isa);
 
             if ( ( isset ) && ( line_addr == 0 ) )
             {
@@ -301,18 +301,18 @@ static void _getSourceLines( struct symbol *p, Dwarf_Debug dbg, Dwarf_Die die )
             }
 
             //if (begin)
-            //  printf("\nBEGIN(%08x):",(uint32_t)line_addr);
+            //  fprintf(stderr,"\nBEGIN(%08x):",(uint32_t)line_addr);
 
             if ( ( zero_start_dont_store && ( ( !begin ) || ( !line_addr ) || ( ( line_addr - tracked_addr ) < 16 ) ) ) )
             {
                 zero_start_dont_store = true;
-                //  printf("!");
+                //  sprintf(stderr,"!");
             }
             else
             {
                 /* We are going to store this one */
-                //                if (zero_start_dont_store) printf("\n%08x: ",(uint32_t)line_addr);
-                //else printf("*");
+                //                if (zero_start_dont_store) fprintf(stderr,"\n%08x: ",(uint32_t)line_addr);
+                //else fprintf(stderr,"*");
                 zero_start_dont_store = false;
                 dwarf_lineno( linebuf[i], &line_num, 0 );
                 dwarf_linesrc( linebuf[i], &file_name, 0 );
@@ -337,7 +337,7 @@ static void _getSourceLines( struct symbol *p, Dwarf_Debug dbg, Dwarf_Die die )
 
 void  _dwarf_error( Dwarf_Error e, void *ptr )
 {
-    printf( "Reached error:%s\n", dwarf_errmsg( e ) );
+    fprintf( stderr, "Reached error:%s\n", dwarf_errmsg( e ) );
     exit( -1 );
 }
 
@@ -346,7 +346,7 @@ void  _dwarf_error( Dwarf_Error e, void *ptr )
 void _dwarf_print( void *p, const char *line )
 
 {
-    printf( "%s", line );
+    fprintf( stderr, "%s", line );
 }
 
 // ====================================================================================================
@@ -382,7 +382,7 @@ static void _processFunctionDie( struct symbol *p, Dwarf_Debug dbg, Dwarf_Die di
         dwarf_attr( die, attr_tag, &attr_data, 0 );
         dwarf_global_formref( attr_data, &abstract_origin_offset, 0 );
         dwarf_offdie_b( dbg, abstract_origin_offset, 0, &abstract_origin_die, 0 );
-        //printf("Instance at %08x...%08x\n\n\n",(uint32_t)l,(uint32_t)h);
+        //printf(stderr,"Instance at %08x...%08x\n\n\n",(uint32_t)l,(uint32_t)h);
         isinline = true;
     }
     else
@@ -459,7 +459,7 @@ static void _processDie( struct symbol *p, Dwarf_Debug dbg, Dwarf_Die die, int l
 }
 // ====================================================================================================
 
-static bool _readLines( int fd, struct symbol *p )
+static bool _readLines( struct symbol *p )
 {
     Dwarf_Debug dbg;
     Dwarf_Error err;
@@ -485,7 +485,7 @@ static bool _readLines( int fd, struct symbol *p )
     unsigned int filenameN;
     unsigned int producerN;
 
-    if ( 0 != dwarf_init_b( fd, DW_GROUPNUMBER_ANY, NULL, NULL, &dbg, &err ) )
+    if ( 0 != dwarf_init_b( p->fd, DW_GROUPNUMBER_ANY, NULL, NULL, &dbg, &err ) )
     {
         return false;
     }
@@ -823,6 +823,13 @@ void symbolDelete( struct symbol *p )
 {
     if ( p )
     {
+        /* We are done with any elf that might have been open */
+        if ( p->fd >= 0 )
+        {
+            /* There is no point in nulling p->fd cos we will delete p anyway */
+            close( p->fd );
+        }
+
         /* Close the disassembler if it's in use */
         if ( !p->caphandle )
         {
@@ -898,6 +905,8 @@ void symbolDelete( struct symbol *p )
 
         free( p );
     }
+
+    p = NULL;
 }
 
 // ====================================================================================================
@@ -1004,7 +1013,7 @@ char *symbolDisassembleLine( struct symbol *p, enum instructionClass *ic, symbol
         /* Add classifications ( for debug ) */
         //if ( *ic )
         //            {
-        //                sprintf ( &op[strlen( op )], " ; %s%s%s%s",  *ic & LE_IC_JUMP ? "JUMP " : "", *ic & LE_IC_CALL ? "CALL " : "", *ic & LE_IC_IMMEDIATE ? "IMM " : "", *ic & LE_IC_IRET ? "IRET " : "" );
+        //                fsprintf ( stderr, &op[strlen( op )], " ; %s%s%s%s",  *ic & LE_IC_JUMP ? "JUMP " : "", *ic & LE_IC_CALL ? "CALL " : "", *ic & LE_IC_IMMEDIATE ? "IMM " : "", *ic & LE_IC_IRET ? "IRET " : "" );
         //            }
     }
     else
@@ -1019,43 +1028,65 @@ char *symbolDisassembleLine( struct symbol *p, enum instructionClass *ic, symbol
 
 // ====================================================================================================
 
+bool symbolSetValid( struct symbol *p )
+
+/* Check if current symbols are valid. True if we've read them and the file we read from hasn't */
+/* evaporated in the meantime. Not a perfect heuristic, but pretty reasonable.                  */
+
+{
+#define ELF_MAGIC (0x464c457f)
+    uint32_t magicMatch;
+
+    if ( ( p ) && ( p->fd >= 0 ) )
+    {
+        /* See if we can read from this file */
+        lseek( p->fd, 0, SEEK_SET );
+
+        if ( sizeof( magicMatch ) == read( p->fd, &magicMatch, sizeof( magicMatch ) ) )
+        {
+            if ( ELF_MAGIC == magicMatch )
+            {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+// ====================================================================================================
+
 struct symbol *symbolAquire( char *filename, bool loadlines, bool loadmem, bool loadsource )
 
 /* Collect symbol set with specified components */
 
 {
-    int fd;
-    struct symbol *p = NULL;
+    struct symbol *p = ( struct symbol * )calloc( 1, sizeof( struct symbol ) );
 
     /* O_BINARY Only needed on platforms that differentiate between binary and text files */
 #ifndef O_BINARY
-    if ( ( fd = open( filename, O_RDONLY, 0 ) ) < 0 )
+
+    if ( ( p->fd = open( filename, O_RDONLY, 0 ) ) < 0 )
 #else
-    if ( ( fd = open( filename, O_RDONLY | O_BINARY, 0 ) ) < 0 )
+    if ( ( p->fd = open( filename, O_RDONLY | O_BINARY, 0 ) ) < 0 )
 #endif
     {
         return NULL;
     }
 
-    p = ( struct symbol * )calloc( 1, sizeof( struct symbol ) );
-
     /* Load the memory image if this was requested...if it fails then we fail */
-    if ( loadmem && ( !_readProg( fd, p ) ) )
+    if ( loadmem && ( !_readProg( p ) ) )
     {
         symbolDelete( p );
-        close( fd );
         return NULL;
     }
 
     /* Load the functions and source code line mappings if requested */
-    if ( !_readLines( fd, p ) )
+    if ( !_readLines( p ) )
     {
         symbolDelete( p );
-        close( fd );
         return NULL;
     }
-
-    close( fd );
 
     /* ...finally, the source code if requested. This can only be done if mem or functions we requested */
     if ( ( loadsource && ( loadmem || loadlines ) )  && !_loadSource( p ) )
@@ -1065,14 +1096,6 @@ struct symbol *symbolAquire( char *filename, bool loadlines, bool loadmem, bool 
     }
 
     return p;
-}
-// ====================================================================================================
-bool symbolSetValid( struct symbol *p, char *filename )
-
-/* Check if current symbols are valid */
-
-{
-    return p != NULL;
 }
 // ====================================================================================================
 // ====================================================================================================
@@ -1092,7 +1115,7 @@ bool _listLines( struct symbol *p )
 
     while ( ( l = symbolLineIndex( p, index++ ) ) )
     {
-        printf( "   " MEMADDRF "..." MEMADDRF " %4d ( %s )" EOL, l->lowaddr, l->highaddr, l->startline, symbolGetFilename( p, l->filename ) );
+        fprintf( stderr, "   " MEMADDRF "..." MEMADDRF " %4d ( %s )" EOL, l->lowaddr, l->highaddr, l->startline, symbolGetFilename( p, l->filename ) );
     }
 }
 
@@ -1107,7 +1130,7 @@ bool _listFunctions( struct symbol *p, bool includeLines )
 
     while ( f = symbolFunctionIndex( p, iter++ ) )
     {
-        printf( MEMADDRF "..." MEMADDRF " %s ( %s %d,%d )" EOL, f->lowaddr, f->highaddr, f->funcname, symbolGetFilename( p, f->filename ), f->startline, f->startcol );
+        fprintf( stderr, MEMADDRF "..." MEMADDRF " %s ( %s %d,%d )" EOL, f->lowaddr, f->highaddr, f->funcname, symbolGetFilename( p, f->filename ), f->startline, f->startcol );
 
         if ( includeLines )
         {
@@ -1115,11 +1138,11 @@ bool _listFunctions( struct symbol *p, bool includeLines )
 
             while ( l = symbolFunctionLineIndex( f, iter2++ ) )
             {
-                printf( "   " MEMADDRF "..." MEMADDRF " %4d ( %s )" EOL, l->lowaddr, l->highaddr, l->startline, symbolGetFilename( p, l->filename ) );
+                fprintf( stderr, "   " MEMADDRF "..." MEMADDRF " %4d ( %s )" EOL, l->lowaddr, l->highaddr, l->startline, symbolGetFilename( p, l->filename ) );
 
                 if ( ( l->function != f ) || ( l->filename != f->filename ) )
                 {
-                    printf( "*****DATA INCONSISTENCY" EOL );
+                    fprintf( stderr, "*****DATA INCONSISTENCY" EOL );
                 }
             }
         }
@@ -1136,7 +1159,7 @@ bool _listFile( struct symbol *p, int fileNo )
 
     while ( t = symbolSource( p, fileNo, i++ ) )
     {
-        printf( "%s", t );
+        fprintf( stderr, "%s", t );
     }
 }
 
@@ -1153,7 +1176,7 @@ bool _disassemble( struct symbol *p, symbolMemaddr a, unsigned int len )
     for ( addr = a; addr < a + len; addr += ic & LE_IC_4BYTE ? 4 : 2 )
     {
         char *u = symbolDisassembleLine( p, &ic, addr, &newaddr );
-        printf( "%s\n", u );
+        fprintf( stderr, "%s\n", u );
     }
 
     return true;
@@ -1168,7 +1191,7 @@ void main( int argc, char *argv[] )
 
     if ( !p )
     {
-        printf( "Failed to aqquire" EOL );
+        fprintf( stderr, "Failed to aquire" EOL );
         exit( -1 );
     }
 
@@ -1178,12 +1201,12 @@ void main( int argc, char *argv[] )
     {
         s = symbolLineIndex( p, i );
 
-        printf( "\n%08x ... %08x %s %s", ( uint32_t )s->lowaddr, ( uint32_t )s->highaddr, s->isinline ? "INLINE" : "", symbolSource( p, s->filename, s->startline - 1 ) );
+        fprintf( stderr, "\n%08x ... %08x %s %s", ( uint32_t )s->lowaddr, ( uint32_t )s->highaddr, s->isinline ? "INLINE" : "", symbolSource( p, s->filename, s->startline - 1 ) );
 
         if ( ( s->lowaddr > 0x08000000 ) && ( s->highaddr != -1 ) )
             for ( symbolMemaddr b = s->lowaddr; b < s->highaddr; )
             {
-                printf( "         %s\n", symbolDisassembleLine( p, &ic, b, NULL ) );
+                fprintf( stderr, "         %s\n", symbolDisassembleLine( p, &ic, b, NULL ) );
                 b += ic & LE_IC_4BYTE ? 4 : 2;
             }
     }

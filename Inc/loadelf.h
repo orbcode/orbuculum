@@ -78,6 +78,7 @@ struct symbol
 
     unsigned int cachedSearchIndex;        /* Cached memory search region, to speed up memory fetches */
 
+    int fd;                                /* Handle that we read elf from */
 
     csh caphandle;
 };
@@ -123,7 +124,7 @@ void symbolDelete( struct symbol *p );
 struct symbol *symbolAquire( char *filename, bool loadlines, bool loadmem, bool loadsource );
 
 /* Check if current symbols are valid */
-bool symbolSetValid( struct symbol *p, char *filename );
+bool symbolSetValid( struct symbol *p );
 
 // ====================================================================================================
 

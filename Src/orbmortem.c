@@ -970,21 +970,21 @@ static void _traceCB( void *d )
 }
 
 // ====================================================================================================
-static void _dumpBuffer( struct RunTime *r )
+static bool _dumpBuffer( struct RunTime *r )
 
 /* Dump received data buffer into text buffer */
 
 {
     _flushBuffer( r );
 
-    if ( !symbolSetValid( r->s, r->options->elffile ) )
+    if ( !symbolSetValid( r->s ) )
     {
         symbolDelete( r->s );
 
         if ( !( r->s = symbolAquire( r->options->elffile, true, true, true ) ) )
         {
             genericsReport( V_ERROR, "Elf file or symbols in it not found" EOL );
-            return;
+            return false;
         }
 
         genericsReport( V_DEBUG, "Loaded %s" EOL, r->options->elffile );
@@ -1007,6 +1007,8 @@ static void _dumpBuffer( struct RunTime *r )
 
     /* Submit this constructed buffer for display */
     SIOsetOutputBuffer( r->sio, r->numLines, r->numLines - 1, &r->opText, false );
+
+    return true;
 }
 // ====================================================================================================
 static struct symbolLineStore *_fileAndLine( struct RunTime *r, uint32_t i )
@@ -1241,6 +1243,15 @@ int main( int argc, char *argv[] )
     /* Make sure the fifos get removed at the end */
     atexit( _doExit );
 
+    if ( _r.options->file != NULL )
+    {
+        if ( NULL == ( stream = streamCreateFile( _r.options->file ) ) )
+        {
+            genericsExit( V_ERROR, "File not found" EOL );
+            _r.ending = true;
+        }
+    }
+
     /* Check we've got _some_ symbols to start from */
     _r.s = symbolAquire( _r.options->elffile, true, true, true );
 
@@ -1252,20 +1263,15 @@ int main( int argc, char *argv[] )
 
     genericsReport( V_DEBUG, "Loaded %s" EOL, _r.options->elffile );
 
-    symbolDelete( _r.s );
-    _r.s = NULL;
-
-    /* Create a screen and interaction handler */
-    _r.sio = SIOsetup( _r.progName, _r.options->elffile, ( _r.options->file != NULL ) );
-
-    /* Fill in a time to start from */
-    lastHTime = lastTTime = lastTSTime = genericsTimestampmS();
-
     /* This ensures the atexit gets called */
     if ( SIG_ERR == signal( SIGINT, _intHandler ) )
     {
         genericsExit( -1, "Failed to establish Int handler" EOL );
     }
+
+    /* Fill in a time to start from */
+    lastHTime = lastTTime = lastTSTime = genericsTimestampmS();
+
 
 #if !defined( WIN32 )
 
@@ -1287,17 +1293,15 @@ int main( int argc, char *argv[] )
         TPIUDecoderInit( &_r.t );
     }
 
+    /* Create a screen and interaction handler */
+    _r.sio = SIOsetup( _r.progName, _r.options->elffile, ( _r.options->file != NULL ) );
+
     /* Put a record of the protocol in use on screen */
     SIOtagText( _r.sio, TRACEDecodeGetProtocolName( _r.options->protocol ) );
 
     while ( !_r.ending )
     {
-
-        if ( _r.options->file != NULL )
-        {
-            stream = streamCreateFile( _r.options->file );
-        }
-        else
+        if ( NULL == _r.options->file )
         {
             /* Keep trying to open a network connection at half second intervals */
             while ( 1 )
@@ -1498,16 +1502,22 @@ int main( int argc, char *argv[] )
             if ( ( !_r.numLines )  &&
                     (
                                 ( _r.options->file && !stream ) ||
-
                                 ( ( ( genericsTimestampmS() - lastHTime ) > HANG_TIME_MS ) &&
                                   ( _r.newTotalBytes - _r.oldTotalHangBytes == 0 ) &&
                                   ( _r.wp != _r.rp ) )
                     )
                )
             {
-                _dumpBuffer( &_r );
-                _r.held = true;
-                SIOheld( _r.sio, _r.held );
+                if ( !_dumpBuffer( &_r ) )
+                {
+                    /* Dumping the buffer failed, so give up */
+                    _r.ending = true;
+                }
+                else
+                {
+                    _r.held = true;
+                    SIOheld( _r.sio, _r.held );
+                }
             }
 
             /* Update the intervals */
@@ -1554,6 +1564,7 @@ int main( int argc, char *argv[] )
         }
     }
 
+    symbolDelete( _r.s );
     return OK;
 }
 
