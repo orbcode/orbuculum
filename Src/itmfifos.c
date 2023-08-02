@@ -208,7 +208,8 @@ static void *_runHWFifo( void *arg )
     {
         if ( !params->permafile )
         {
-            opfile = open( c->fifoName, O_WRONLY );
+            /* We use RDWR to allow the open to proceed without a remote end */
+            opfile = open( c->fifoName, O_RDWR );
         }
         else
         {
@@ -724,8 +725,14 @@ bool itmfifoCreate( struct itmfifosHandle *f )
                 f->c[t].params.permafile = f->permafile;
                 f->c[t].params.c = &f->c[t];
 
-                f->c[t].fifoName = ( char * )malloc( strlen( f->c[t].chanName ) + strlen( f->chanPath ) + 2 );
-                strcpy( f->c[t].fifoName, f->chanPath );
+                f->c[t].fifoName = ( char * )calloc( strlen( f->c[t].chanName ) + 2 + f->chanPath ? strlen( f->chanPath ) : 0, 1 );
+
+                if ( f->chanPath )
+                {
+                    strcpy( f->c[t].fifoName, f->chanPath );
+                    strcat( f->c[t].fifoName, "/" );
+                }
+
                 strcat( f->c[t].fifoName, f->c[t].chanName );
 
                 if ( pthread_create( &( f->c[t].thread ), NULL, &_runFifo, &( f->c[t].params ) ) )
@@ -755,8 +762,14 @@ bool itmfifoCreate( struct itmfifosHandle *f )
             f->c[t].params.permafile = f->permafile;
             f->c[t].params.c = &f->c[t];
 
-            f->c[t].fifoName = ( char * )malloc( strlen( HWFIFO_NAME ) + strlen( f->chanPath ) + 2 );
-            strcpy( f->c[t].fifoName, f->chanPath );
+            f->c[t].fifoName = ( char * )calloc( strlen( HWFIFO_NAME ) + 2 + ( ( f->chanPath ) ? strlen( f->chanPath ) : 0 ), 1 );
+
+            if ( f->chanPath )
+            {
+                strcpy( f->c[t].fifoName, f->chanPath );
+                strcat( f->c[t].fifoName, "/" );
+            }
+
             strcat( f->c[t].fifoName, HWFIFO_NAME );
 
             if ( pthread_create( &( f->c[t].thread ), NULL, &_runHWFifo, &( f->c[t].params ) ) )
@@ -838,7 +851,7 @@ struct itmfifosHandle *itmfifoInit( bool forceITMSyncSet, bool useTPIUSet, int T
 
     MEMCHECK( f, NULL );
 
-    f->chanPath = strdup( "" );
+    f->chanPath = NULL;
     f->useTPIU = useTPIUSet;
     f->forceITMSync = forceITMSyncSet;
     f->tpiuITMChannel = TPIUchannelSet;

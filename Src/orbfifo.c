@@ -78,6 +78,8 @@ static void _printHelp( const char *const progName )
     genericsPrintf( "    -h, --help:         This help" EOL );
     genericsPrintf( "    -M, --no-colour:    Supress colour in output" EOL );
     genericsPrintf( "    -P, --permanent:    Create permanent files rather than fifos" EOL );
+    genericsPrintf(
+                "    -s, --server:       <Server>:<Port> to use" EOL );
     genericsPrintf( "    -t, --tpiu:         <channel> Use TPIU decoder on specified channel, normally 1" EOL );
     genericsPrintf( "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
     genericsPrintf( "    -V, --version:      Print version and exit" EOL );
@@ -100,6 +102,7 @@ struct option _longOptions[] =
     {"no-colour", no_argument, NULL, 'M'},
     {"no-color", no_argument, NULL, 'M'},
     {"permanent", no_argument, NULL, 'P'},
+    {"server", required_argument, NULL, 's'},
     {"tpiu", required_argument, NULL, 't'},
     {"verbose", required_argument, NULL, 'v'},
     {"version", no_argument, NULL, 'V'},
@@ -118,7 +121,8 @@ static bool _processOptions( int argc, char *argv[] )
     uint chan;
     char *chanIndex;
 
-    while ( ( c = getopt_long ( argc, argv, "b:c:Ef:hVn:Pt:v:w:", _longOptions, &optionIndex ) ) != -1 )
+
+    while ( ( c = getopt_long ( argc, argv, "b:c:Ef:hVn:Ps:t:v:w:", _longOptions, &optionIndex ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -163,6 +167,31 @@ static bool _processOptions( int argc, char *argv[] )
 
             case 'P':
                 options.permafile = true;
+                break;
+
+            // ------------------------------------
+            case 's':
+                options.server = optarg;
+
+                // See if we have an optional port number too
+                char *a = optarg;
+
+                while ( ( *a ) && ( *a != ':' ) )
+                {
+                    a++;
+                }
+
+                if ( *a == ':' )
+                {
+                    *a = 0;
+                    options.port = atoi( ++a );
+                }
+
+                if ( !options.port )
+                {
+                    options.port = NWCLIENT_SERVER_PORT;
+                }
+
                 break;
 
             // ------------------------------------
@@ -267,6 +296,7 @@ static bool _processOptions( int argc, char *argv[] )
 
     /* ... and dump the config if we're being verbose */
     genericsReport( V_INFO, "orbfifo version " GIT_DESCRIBE EOL );
+    genericsReport( V_INFO, "Server     : %s:%d" EOL, options.server, options.port );
 
     if ( itmfifoGetUseTPIU( _r.f ) )
     {
@@ -346,6 +376,7 @@ static void _doExit( void )
 {
     _r.ending = true;
     itmfifoShutdown( _r.f );
+
     /* Give them a bit of time, then we're leaving anyway */
     usleep( 200 );
 }
@@ -417,7 +448,7 @@ int main( int argc, char *argv[] )
         }
         else
         {
-            while ( 1 )
+            while ( !_r.ending )
             {
                 stream = streamCreateSocket( options.server, options.port );
 
@@ -451,8 +482,13 @@ int main( int argc, char *argv[] )
             _processBlock( t, cbw );
         }
 
-        stream->close( stream );
-        free( stream );
+
+        if ( stream )
+        {
+            stream->close( stream );
+            free( stream );
+            stream = NULL;
+        }
 
         if ( options.fileTerminate )
         {
