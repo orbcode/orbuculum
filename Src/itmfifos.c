@@ -115,10 +115,11 @@ static void *_runFifo( void *arg )
 
     do
     {
-        /* Keep on opening the file (in case the fifo is opened/closed multiple times */
+        /* Keep on opening the file (in case the fifo is opened/closed multiple times) */
+        /* We use RDWR to allow the open to proceed without a remote end */
         if ( !params->permafile )
         {
-            opfile = open( c->fifoName, O_WRONLY );
+            opfile = open( c->fifoName, O_RDWR | O_NONBLOCK );
         }
         else
         {
@@ -209,7 +210,7 @@ static void *_runHWFifo( void *arg )
         if ( !params->permafile )
         {
             /* We use RDWR to allow the open to proceed without a remote end */
-            opfile = open( c->fifoName, O_RDWR );
+            opfile = open( c->fifoName, O_RDWR | O_NONBLOCK );
         }
         else
         {
