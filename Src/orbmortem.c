@@ -60,6 +60,7 @@ struct Options
     bool noAltAddr;                     /* Flag to *not* use alternate addressing */
     char *openFileCL;                   /* Command line for opening refernced file */
 
+    bool withDebugText;                 /* Include debug text (hidden in) output...screws line numbering a bit */
 } _options =
 {
     .port     = NWCLIENT_SERVER_PORT,
@@ -226,7 +227,7 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
 {
     int c, optionIndex = 0;
 
-    while ( ( c = getopt_long ( argc, argv, "Ab:C:Dd:Ee:f:hVMO:p:s:t:v:", _longOptions, &optionIndex ) ) != -1 )
+    while ( ( c = getopt_long ( argc, argv, "Ab:C:Dd:Ee:f:hVMO:p:s:t:v:w", _longOptions, &optionIndex ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -351,6 +352,12 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
 
             // ------------------------------------
 
+            case 'w':
+                r->options->withDebugText = true;
+                break;
+
+            // ------------------------------------
+
             case '?':
                 if ( optopt == 'b' )
                 {
@@ -372,6 +379,11 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
 
     /* ... and dump the config if we're being verbose */
     genericsReport( V_INFO, "orbmortem version " GIT_DESCRIBE EOL );
+
+    if ( r->options->withDebugText )
+    {
+        genericsReport( V_INFO, "Incoporate debug text in output buffer" EOL );
+    }
 
     if ( r->options->protocol >= TRACE_PROT_NONE )
     {
@@ -584,13 +596,16 @@ static void _traceReport( enum verbLevel l, const char *fmt, ... )
 /* Debug reporting stream */
 
 {
-    static char op[SCRATCH_STRING_LEN];
+    if ( _r.options->withDebugText )
+    {
+        static char op[SCRATCH_STRING_LEN];
 
-    va_list va;
-    va_start( va, fmt );
-    vsnprintf( op, SCRATCH_STRING_LEN, fmt, va );
-    va_end( va );
-    _appendToOPBuffer( &_r, NULL, _r.op.currentLine, LT_DEBUG, op );
+        va_list va;
+        va_start( va, fmt );
+        vsnprintf( op, SCRATCH_STRING_LEN, fmt, va );
+        va_end( va );
+        _appendToOPBuffer( &_r, NULL, _r.op.currentLine, LT_DEBUG, op );
+    }
 }
 // ====================================================================================================
 static void _addRetToStack( struct RunTime *r, symbolMemaddr p )
@@ -603,7 +618,7 @@ static void _addRetToStack( struct RunTime *r, symbolMemaddr p )
     }
 
     r->callStack[r->stackDepth] = p;
-    _appendToOPBuffer( r, NULL, r->op.currentLine, LT_DEBUG, "Pushed %08x to return stack", r->callStack[r->stackDepth] );
+    _traceReport( LT_DEBUG, "Pushed %08x to return stack", r->callStack[r->stackDepth] );
 
     if ( r->stackDepth < MAX_CALL_STACK - 1 )
     {
@@ -753,7 +768,7 @@ static void _traceCB( void *d )
                 /* change indication will be consumed here, and won't hit the test below (which is correct behaviour.                    */
                 if ( !TRACEStateChanged( &r->i, EV_CH_ADDRESS ) )
                 {
-                    _appendToOPBuffer( r, NULL, r->op.currentLine, LT_DEBUG, "Exception occured without return address specification" );
+                    _traceReport( LT_DEBUG, "Exception occured without return address specification" );
                 }
                 else
                 {
@@ -765,7 +780,7 @@ static void _traceCB( void *d )
                 break;
 
             default:
-                _appendToOPBuffer( r, NULL, r->op.currentLine, LT_DEBUG, "Unrecognised trace protocol in exception handler" );
+                _traceReport( LT_DEBUG, "Unrecognised trace protocol in exception handler" );
                 break;
         }
     }
@@ -781,14 +796,14 @@ static void _traceCB( void *d )
 
         if ( r->options->protocol != TRACE_PROT_MTB )
         {
-            _appendToOPBuffer( r, NULL, r->op.currentLine, LT_DEBUG, "%sCommanded CPU Address change (Was:0x%08x Commanded:0x%08x)" EOL,
-                               ( r->op.workingAddr == cpu->addr ) ? "" : "***INCONSISTENT*** ", r->op.workingAddr, cpu->addr );
+            _traceReport( LT_DEBUG, "%sCommanded CPU Address change (Was:0x%08x Commanded:0x%08x)" EOL,
+                          ( r->op.workingAddr == cpu->addr ) ? "" : "***INCONSISTENT*** ", r->op.workingAddr, cpu->addr );
         }
 
         /* Return Stack: If we had a stack deletion pending because of a candidate match, it wasn't, so abort */
         if ( r->stackDelPending )
         {
-            _appendToOPBuffer( r, NULL, r->op.currentLine, LT_DEBUG, "Stack delete aborted" );
+            _traceReport( LT_DEBUG, "Stack delete aborted" );
         }
 
         r->stackDelPending = false;
@@ -801,7 +816,7 @@ static void _traceCB( void *d )
         if ( ( r->stackDelPending == true ) && ( r->stackDepth ) )
         {
             r->stackDepth--;
-            _appendToOPBuffer( r, NULL, r->op.currentLine, LT_DEBUG, "Stack delete comitted" );
+            _traceReport( LT_DEBUG, "Stack delete comitted" );
         }
 
         r->stackDelPending = false;
@@ -815,7 +830,7 @@ static void _traceCB( void *d )
         targetAddr        = cpu->toAddr;
         linearRun         = true;
         disposition       = 0xffffffff;
-        _appendToOPBuffer( r, NULL, r->op.currentLine, LT_DEBUG, "Linear run 0x%08x to 0x%08x" EOL, cpu->addr, cpu->toAddr );
+        _traceReport( LT_DEBUG, "Linear run 0x%08x to 0x%08x" EOL, cpu->addr, cpu->toAddr );
     }
 
     if ( TRACEStateChanged( &r->i, EV_CH_ENATOMS ) )
@@ -912,7 +927,7 @@ static void _traceCB( void *d )
                 if ( insExecuted )
                 {
                     /* Push the instruction after this if it's a subroutine or ISR */
-                    _appendToOPBuffer( r, l, r->op.currentLine, LT_DEBUG, "Call to %08x", newaddr );
+                    _traceReport( LT_DEBUG, "Call to %08x", newaddr );
                     _addRetToStack( r, r->op.workingAddr + ( ( ic & LE_IC_4BYTE ) ? 4 : 2 ) );
                 }
 
@@ -920,7 +935,7 @@ static void _traceCB( void *d )
             }
             else if ( ic & LE_IC_JUMP )
             {
-                _appendToOPBuffer( r, l, r->op.currentLine, LT_DEBUG, "%sTAKEN JUMP", insExecuted ? "" : "NOT " );
+                _traceReport( LT_DEBUG, "%sTAKEN JUMP", insExecuted ? "" : "NOT " );
 
                 if ( insExecuted )
                 {
@@ -937,11 +952,11 @@ static void _traceCB( void *d )
                         if ( r->stackDepth )
                         {
                             r->op.workingAddr = r->callStack[r->stackDepth - 1];
-                            _appendToOPBuffer( r, l, r->op.currentLine, LT_DEBUG, "Return with stacked candidate to %08x", r->op.workingAddr );
+                            _traceReport( LT_DEBUG, "Return with stacked candidate to %08x", r->op.workingAddr );
                         }
                         else
                         {
-                            _appendToOPBuffer( r, l, r->op.currentLine, LT_DEBUG, "Return with no stacked candidate" );
+                            _traceReport( LT_DEBUG, "Return with no stacked candidate" );
                         }
 
                         r->stackDelPending = true;
@@ -1316,7 +1331,7 @@ int main( int argc, char *argv[] )
                 /* This can happen when the feeder has gone missing... */
                 SIOalert( _r.sio, "No connection" );
 
-                if ( SIOHandler( _r.sio, true, 0 ) == SIO_EV_QUIT )
+                if ( SIOHandler( _r.sio, true, 0, _r.options->withDebugText ) == SIO_EV_QUIT )
                 {
                     _r.ending = true;
                     break;
@@ -1368,7 +1383,7 @@ int main( int argc, char *argv[] )
 
             /* Update the outputs and deal with any keys that made it up this high */
             /* =================================================================== */
-            switch ( ( s = SIOHandler( _r.sio, ( genericsTimestampmS() - lastTTime ) > TICK_TIME_MS, _r.oldTotalIntervalBytes ) ) )
+            switch ( ( s = SIOHandler( _r.sio, ( genericsTimestampmS() - lastTTime ) > TICK_TIME_MS, _r.oldTotalIntervalBytes, _r.options->withDebugText ) ) )
             {
                 case SIO_EV_HOLD:  // ----------------- Request for Hold Start/Stop -------------------------------------
                     if ( !_r.options->file )

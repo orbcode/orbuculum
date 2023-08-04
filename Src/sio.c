@@ -43,7 +43,7 @@ enum CP
     CP_FG_BRIGHT_WHITE,
 
     /* Remaining pairs */
-    CP_EVENT, CP_NORMAL, CP_FILEFUNCTION, CP_LINENO, CP_EXECASSY, CP_NEXECASSY, CP_BASELINE, CP_BASELINETEXT, CP_SEARCH, CP_DEBUG, CP_SOURCEHL
+    CP_EVENT, CP_NORMAL, CP_FILEFUNCTION, CP_LINENO, CP_EXECASSY, CP_NEXECASSY, CP_BASELINE, CP_BASELINETEXT, CP_SEARCH, CP_DEBUG, CP_SOURCEHL, CP_PROBLEM
 };
 
 /* Search types */
@@ -718,14 +718,12 @@ static void _outputStatus( struct SIOInstance *sio, uint64_t oldintervalBytes )
     {
         if ( sio->warnTimeout > genericsTimestampmS() )
         {
-
-            mvwprintw( sio->statusWindow, 0, 10, " %s ", sio->warnText );
-        }
-        else
-        {
-            sio->warnTimeout = 0;
+            wattrset( sio->statusWindow, A_BOLD | COLOR_PAIR( CP_PROBLEM ) );
+            mvwprintw( sio->statusWindow, 1, 1, " %s ", sio->warnText );
         }
     }
+
+    wattrset( sio->statusWindow, A_BOLD | COLOR_PAIR( CP_BASELINE ) );
 
     if ( sio->opTextWline )
     {
@@ -743,7 +741,6 @@ static void _outputStatus( struct SIOInstance *sio, uint64_t oldintervalBytes )
     {
         mvwprintw( sio->statusWindow, 0, 30,  " Diving Buffer " );
     }
-
 
     wattrset( sio->statusWindow, A_BOLD | COLOR_PAIR( CP_BASELINETEXT ) );
 
@@ -783,14 +780,11 @@ static void _outputStatus( struct SIOInstance *sio, uint64_t oldintervalBytes )
         }
     }
 
-    if ( !sio->warnTimeout )
-    {
-        mvwprintw( sio->statusWindow, 0, 30, " " );
-    }
-
     /* We only output the tags while not in a diving buffer */
     if ( ! sio->amDiving )
     {
+        mvwprintw( sio->statusWindow, 0, 30, " " );
+
         for ( uint32_t t = 0; t < MAX_TAGS; t++ )
         {
             if ( sio->tag[t] )
@@ -810,11 +804,7 @@ static void _outputStatus( struct SIOInstance *sio, uint64_t oldintervalBytes )
                 wattrset( sio->statusWindow, A_BOLD | COLOR_PAIR( CP_BASELINE ) );
             }
 
-            if ( !sio->warnTimeout )
-            {
-                /* We only print this if we're not outputting a warning message */
-                wprintw( sio->statusWindow, "%d", t );
-            }
+            wprintw( sio->statusWindow, "%d", t );
         }
 
         if ( !sio->warnTimeout )
@@ -937,6 +927,7 @@ struct SIOInstance *SIOsetup( const char *progname, const char *elffile, bool is
         init_pair( CP_SEARCH, COLOR_GREEN, COLOR_BLACK );
         init_pair( CP_DEBUG, COLOR_MAGENTA, COLOR_BLACK );
         init_pair( CP_SOURCEHL, COLOR_WHITE, COLOR_BLACK );
+        init_pair( CP_PROBLEM, COLOR_RED, COLOR_BLACK );
     }
 
     sio->outputWindow = newwin( OUTPUT_WINDOW_L, OUTPUT_WINDOW_W, 0, 0 );
@@ -1067,7 +1058,7 @@ void SIObeep( void )
 
 // ====================================================================================================
 
-enum SIOEvent SIOHandler( struct SIOInstance *sio, bool isTick, uint64_t oldintervalBytes )
+enum SIOEvent SIOHandler( struct SIOInstance *sio, bool isTick, uint64_t oldintervalBytes, bool supportDebug )
 
 /* Top level to deal with all UI aspects */
 
@@ -1115,9 +1106,14 @@ enum SIOEvent SIOHandler( struct SIOInstance *sio, bool isTick, uint64_t oldinte
 
                 case '^':
                     op = SIO_EV_CONSUMED;
-                    isTick = true;
-                    sio->outputDebug = !sio->outputDebug;
-                    SIOrequestRefresh( sio );
+
+                    if ( supportDebug )
+                    {
+                        isTick = true;
+                        sio->outputDebug = !sio->outputDebug;
+                        SIOrequestRefresh( sio );
+                    }
+
                     break;
 
                 case 'h':

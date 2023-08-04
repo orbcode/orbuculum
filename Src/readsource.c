@@ -1,3 +1,4 @@
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
@@ -12,6 +13,40 @@
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
+
+#if defined(WIN32)
+
+char *readsourcefile( char *path, size_t *l )
+{
+    *l = 0;
+    FILE *f = fopen( path, "r" );
+
+    if ( f == NULL )
+    {
+        return NULL;
+    }
+
+    char *retBuffer = ( char * )malloc( BLOCKSIZE );
+
+    size_t insize = fread( retBuffer, 1, BLOCKSIZE, f );
+    *l = insize;
+
+    while ( !feof( f ) )
+    {
+        retBuffer = ( char * )realloc( retBuffer, *l + BLOCKSIZE );
+        insize = fread( &retBuffer[*l], 1, BLOCKSIZE, f );
+        *l += insize;
+    }
+
+    fclose( f );
+
+    retBuffer = ( char * )realloc( retBuffer, *l + 1 );
+    retBuffer[*l] = '\0';
+
+    return retBuffer;
+}
+
+#else
 
 char *readsourcefile( char *path, size_t *l )
 
@@ -86,4 +121,7 @@ char *readsourcefile( char *path, size_t *l )
 
     return retBuffer;
 }
+
+#endif
+
 // ====================================================================================================

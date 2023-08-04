@@ -51,7 +51,7 @@ void SIOalert( struct SIOInstance *sio, const char *msg );
 void SIOrequestRefresh( struct SIOInstance *sio );
 void SIOheld( struct SIOInstance *sio, bool isHeld );
 void SIOtagText ( struct SIOInstance *sio, const char *ttext );
-enum SIOEvent SIOHandler( struct SIOInstance *sio, bool isTick, uint64_t oldintervalBytes );
+enum SIOEvent SIOHandler( struct SIOInstance *sio, bool isTick, uint64_t oldintervalBytes, bool supportDebug );
 void SIObeep( void );
 void SIOterminate( struct SIOInstance *sio );
 struct SIOInstance *SIOsetup( const char *progname, const char *elffile, bool isFile );

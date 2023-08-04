@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <gelf.h>
+#include <ctype.h>
 #include <dwarf.h>
 #include <libdwarf.h>
 
@@ -362,7 +363,6 @@ static void _processFunctionDie( struct symbol *p, Dwarf_Debug dbg, Dwarf_Die di
     bool isinline = false;
     struct symbolFunctionStore *newFunc;
 
-
     attr_tag = DW_AT_inline;
 
     if ( dwarf_attr( die, attr_tag, &attr_data, 0 ) == DW_DLV_OK )
@@ -433,50 +433,80 @@ static void _processDie( struct symbol *p, Dwarf_Debug dbg, Dwarf_Die die, int l
 
 {
     Dwarf_Half tag;
-    Dwarf_Error err;
-
-    dwarf_tag( die, &tag, 0 );
-
-    if ( ( tag == DW_TAG_subprogram ) || ( tag == DW_TAG_inlined_subroutine ) )
-    {
-        _processFunctionDie( p, dbg, die, filenameN, producerN, cu_base_addr );
-    }
-
-    // Recursively process children DIEs
     Dwarf_Die child;
 
-    int res = dwarf_child( die, &child, 0 );
+    Dwarf_Die sib = die;
 
-    if ( res == DW_DLV_OK )
+    while ( DW_DLV_OK == dwarf_siblingof_b( dbg, sib, true, &sib, 0 ) )
     {
-        do
-        {
-            _processDie( p, dbg, child, level + 1, filenameN, producerN, cu_base_addr );
+        dwarf_tag( sib, &tag, 0 );
+        const char *n;
+        dwarf_get_TAG_name( tag, &n );
 
+        if ( ( tag == DW_TAG_subprogram ) || ( tag == DW_TAG_inlined_subroutine ) )
+        {
+            _processFunctionDie( p, dbg, sib, filenameN, producerN, cu_base_addr );
         }
-        while ( dwarf_siblingof_b( dbg, child, 0, &child, &err ) == DW_DLV_OK );
+    }
+
+    if ( DW_DLV_OK == dwarf_child( die, &child, 0 ) )
+    {
+        _processDie( p, dbg, child, level + 1, filenameN, producerN, cu_base_addr );
+        dwarf_dealloc( dbg, child, DW_DLA_DIE );
     }
 }
+
+// ====================================================================================================
+
+static bool _isAbsPath( const char *p )
+
+{
+    /* Path is absolute if it starts with / or x: where x is in the range A..Z. */
+    return (
+                       ( p[0] == '/' ) ||
+                       ( ( toupper( p[0] ) >= 'A' ) && ( toupper( p[0] <= 'Z' ) && ( p[1] == ':' ) ) )
+           );
+}
+
+// ====================================================================================================
+
+static char *_joinPaths( const char *p1, const char *p2 )
+
+{
+    if ( _isAbsPath( p2 ) )
+    {
+        return strdup( p2 );
+    }
+    else
+    {
+        char *res = ( char * )malloc( strlen( p1 ) + strlen( p2 ) + 2 );
+        strcpy( res, p1 );
+        strcat( res, "/" );
+        strcat( res, p2 );
+        return res;
+    }
+}
+
 // ====================================================================================================
 
 static bool _readLines( struct symbol *p )
 {
     Dwarf_Debug dbg;
     Dwarf_Error err;
-    Dwarf_Unsigned cu_header_length;
-    Dwarf_Half     version_stamp;
-    Dwarf_Off      abbrev_offset;
+    Dwarf_Unsigned cu_header_length = 0;
+    Dwarf_Half     version_stamp = 0;
+    Dwarf_Off      abbrev_offset = 0;
     Dwarf_Addr     cu_low_addr;
-    Dwarf_Half     address_size;
+    Dwarf_Half     address_size = 0;
     Dwarf_Unsigned next_cu_header = 0;
-    Dwarf_Die      cu_die;
+    Dwarf_Die      cu_die = NULL;
 
     bool retval = false;
-    Dwarf_Half dw_length_size;
-    Dwarf_Half dw_extension_size;
+    Dwarf_Half dw_length_size = 0;
+    Dwarf_Half dw_extension_size = 0;
     Dwarf_Sig8 dw_type_signature;
-    Dwarf_Unsigned dw_typeoffset;
-    Dwarf_Half dw_header_cu_type;
+    Dwarf_Unsigned dw_typeoffset = 0;
+    Dwarf_Half dw_header_cu_type = DW_UT_compile;
 
     char *name;
     char *producer;
@@ -511,20 +541,28 @@ static bool _readLines( struct symbol *p )
 
     /* 1: Collect the functions and lines */
     /* ---------------------------------- */
-    while ( ( 0 == dwarf_next_cu_header_d( dbg, true, &cu_header_length, &version_stamp, &abbrev_offset, &address_size, &dw_length_size, &dw_extension_size, &dw_type_signature, &dw_typeoffset,
-                                           &next_cu_header, &dw_header_cu_type, &err ) ) )
+    while ( true )
     {
-        dwarf_siblingof_b( dbg, NULL, true, &cu_die, &err );
+        memset( &dw_type_signature, 0, sizeof( dw_type_signature ) );
+
+        if ( DW_DLV_OK != dwarf_next_cu_header_d( dbg, true, &cu_header_length,
+                &version_stamp, &abbrev_offset, &address_size,
+                &dw_length_size, &dw_extension_size, &dw_type_signature,
+                &dw_typeoffset, &next_cu_header, &dw_header_cu_type, 0 ) )
+        {
+            break;
+        }
+
+        dwarf_siblingof_b( dbg, NULL, true, &cu_die, 0 );
 
         dwarf_diename( cu_die, &name, 0 );
         dwarf_die_text( cu_die, DW_AT_producer, &producer, 0 );
         dwarf_die_text( cu_die, DW_AT_comp_dir, &compdir, 0 );
 
+        printf( "%s\n", name );
+
         /* Need to construct the fully qualified filename from the directory + filename */
-        char *s = ( char * )malloc( strlen( name ) + strlen( compdir ) + 2 );
-        strcpy( s, compdir );
-        strcat( s, "/" );
-        strcat( s, name );
+        char *s = _joinPaths( compdir, name );
         filenameN  = _findOrAddString( s, &p->stringTable[PT_FILENAME],  &p->tableLen[PT_FILENAME] );
         free( s );
         producerN =  _findOrAddString( producer, &p->stringTable[PT_PRODUCER],  &p->tableLen[PT_PRODUCER] );
@@ -533,6 +571,7 @@ static bool _readLines( struct symbol *p )
 
         dwarf_lowpc( cu_die, &cu_low_addr, 0 );
         _processDie( p, dbg, cu_die, 0, filenameN, producerN, cu_low_addr );
+        dwarf_dealloc( dbg, cu_die, DW_DLA_DIE );
 
         /* ...and the source lines */
         _getSourceLines( p, dbg, cu_die );
@@ -625,7 +664,6 @@ static bool _loadSource( struct symbol *p )
     char *r;
     size_t l;
 
-
     /* We need to aqquire source code for all of the files that we have an entry in the stringtable, so let's start by making room */
     p->source = ( struct symbolSourcecodeStore ** )calloc( 1, sizeof( struct symbolSourcecodeStore * )*p->tableLen[PT_FILENAME] );
 
@@ -633,9 +671,10 @@ static bool _loadSource( struct symbol *p )
     {
         r = readsourcefile( p->stringTable[PT_FILENAME][i], &l );
 
-        /* Create an entry for this file. It will remain zero (NULL) if there are no lines in it */
+        /* Create an entry for this file. It will remain zero (NULL) if there are no lines in it, because r was NULL */
         struct symbolSourcecodeStore *store = p->source[i] = ( struct symbolSourcecodeStore * )calloc( 1, sizeof( struct symbolSourcecodeStore ) );
 
+        /* Lines in sio.c are demarked by \n, \r or \0 ... so we just need to find the indicies to one after each of those */
         while ( l )
         {
             /* Add this line to the storage. */
@@ -643,24 +682,7 @@ static bool _loadSource( struct symbol *p )
             store->linetext[store->nlines++] = r;
 
             /* Spin forwards for next newline or eof */
-            while ( ( *r != '\n' ) && l-- )
-            {
-                /* Get rid of pesky returns */
-                if ( *r == '\r' )
-                {
-                    *r = 0;
-                }
-
-                r++;
-            }
-
-            *r = 0;
-
-            if ( l )
-            {
-                l--;
-                r++;
-            }
+            while ( ( l-- > 0 ) && ( *r++ != '\n' ) ) {};
         }
     }
 
@@ -682,7 +704,7 @@ const char *symbolSource( struct symbol *p, unsigned int fileNumber, unsigned in
 {
     assert( p );
 
-    if ( ( fileNumber < p->tableLen[PT_FILENAME] ) && ( lineNumber < p->source[fileNumber]->nlines ) )
+    if ( ( fileNumber < p->tableLen[PT_FILENAME] ) && p->source && ( lineNumber < p->source[fileNumber]->nlines ) )
     {
         return ( const char * )p->source[fileNumber]->linetext[lineNumber];
     }
@@ -1194,6 +1216,9 @@ void main( int argc, char *argv[] )
         fprintf( stderr, "Failed to aquire" EOL );
         exit( -1 );
     }
+
+    _listFunctions( p, false );
+    exit( -1 );
 
     struct symbolLineStore *s;
 
