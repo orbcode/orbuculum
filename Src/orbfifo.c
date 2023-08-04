@@ -398,7 +398,7 @@ int main( int argc, char *argv[] )
     struct Stream *stream = NULL;
     int64_t lastTime;
     struct timeval tv;
-    int32_t remainTime;
+    uint64_t remainTime;
 
     /* Setup fifos with forced ITM sync, no TPIU and TPIU on channel 1 if its engaged later */
     _r.f = itmfifoInit( true, false, 1 );
@@ -464,7 +464,7 @@ int main( int argc, char *argv[] )
 
         while ( !_r.ending )
         {
-            remainTime = ( ( lastTime + 1000 - genericsTimestampmS() ) * 1000 ) - 500;
+            remainTime = ( ( lastTime + 1000000 - genericsTimestampuS() ) );
 
             if ( remainTime > 0 )
             {
