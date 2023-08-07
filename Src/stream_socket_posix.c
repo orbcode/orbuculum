@@ -158,7 +158,9 @@ static int _posixSocketStreamCreate( const char *server, int port )
 
 // Malloc leak is deliberately ignored. That is the central purpose of this code!
 #pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wanalyzer-malloc-leak"
+#if !defined(__clang__)
+    #pragma GCC diagnostic ignored "-Wanalyzer-malloc-leak"
+#endif
 
 struct Stream *streamCreateSocket( const char *server, int port )
 {

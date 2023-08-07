@@ -563,7 +563,9 @@ void itmfifoSetChanPath( struct itmfifosHandle *f, char *s )
 // ====================================================================================================
 // strdup leak is deliberately ignored. That is the central purpose of this code!
 #pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wanalyzer-malloc-leak"
+#if !defined(__clang__)
+    #pragma GCC diagnostic ignored "-Wanalyzer-malloc-leak"
+#endif
 
 void itmfifoSetChannel( struct itmfifosHandle *f, int chan, char *n, char *s )
 

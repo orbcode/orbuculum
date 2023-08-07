@@ -76,7 +76,9 @@ static int _posixFileStreamCreate( const char *file )
 
 // Malloc leak is deliberately ignored. That is the central purpose of this code!
 #pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wanalyzer-malloc-leak"
+#if !defined(__clang__)
+    #pragma GCC diagnostic ignored "-Wanalyzer-malloc-leak"
+#endif
 
 struct Stream *streamCreateFile( const char *file )
 {

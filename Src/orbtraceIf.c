@@ -187,7 +187,7 @@ static bool _doInterfaceControlTransfer( struct OrbtraceIf *o, uint8_t interface
         return false;
     }
 
-    if ( interface == NO_INTERFACE )
+    if ( interface == ( uint8_t )NO_INTERFACE )
     {
         return false;
     }

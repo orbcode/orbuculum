@@ -843,7 +843,9 @@ static void _updateWindows( struct SIOInstance *sio, bool isTick, bool isKey, ui
 // ====================================================================================================
 // Malloc leak is deliberately ignored. That is the central purpose of this code!
 #pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wanalyzer-malloc-leak"
+#if !defined(__clang__)
+    #pragma GCC diagnostic ignored "-Wanalyzer-malloc-leak"
+#endif
 
 struct SIOInstance *SIOsetup( const char *progname, const char *elffile, bool isFile )
 

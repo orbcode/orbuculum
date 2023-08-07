@@ -512,7 +512,9 @@ static void _flushBuffer( struct RunTime *r )
 // Strdup leak is deliberately ignored. That is the central purpose of this code. It's cleaned
 // upin __flushBuffer above.
 #pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wanalyzer-malloc-leak"
+#if !defined(__clang__)
+    #pragma GCC diagnostic ignored "-Wanalyzer-malloc-leak"
+#endif
 
 static void _appendToOPBuffer( struct RunTime *r, int32_t lineno, enum LineType lt, const char *fmt, ... )
 

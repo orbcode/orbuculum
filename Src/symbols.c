@@ -116,7 +116,9 @@ static uint32_t _getFunctionEntryIdx( struct SymbolSet *s, char *function )
 // ====================================================================================================
 // Strdup leak is deliberately ignored. That is the central purpose of this code!
 #pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wanalyzer-malloc-leak"
+#if !defined(__clang__)
+    #pragma GCC diagnostic ignored "-Wanalyzer-malloc-leak"
+#endif
 static uint32_t _getOrAddFunctionEntryIdx( struct SymbolSet *s, char *function )
 
 /* Return index to file entry in the functions table, or create an entry and return that */
@@ -1035,7 +1037,9 @@ bool SymbolSetValid( struct SymbolSet **s, char *filename )
 // ====================================================================================================
 // Malloc leak is deliberately ignored. That is the central purpose of this code!
 #pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wanalyzer-malloc-leak"
+#if !defined(__clang__)
+    #pragma GCC diagnostic ignored "-Wanalyzer-malloc-leak"
+#endif
 enum symbolErr SymbolSetCreate( struct SymbolSet **ss, const char *filename, const char *deleteMaterial,
                                 bool demanglecpp, bool recordSource, bool recordAssy, const char *objdumpOptions )
 
