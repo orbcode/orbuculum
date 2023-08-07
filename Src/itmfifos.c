@@ -45,6 +45,7 @@ struct Channel                               /* Information for an individual ch
     pthread_t thread;                        /* Thread on which it's running */
     struct runThreadParams params;           /* Parameters for running thread */
     char *fifoName;                          /* Constructed fifo name (from chanPath and name) */
+    bool ending;                             /* Flag indicating its time to disappear */
 };
 
 struct itmfifosHandle
@@ -115,10 +116,11 @@ static void *_runFifo( void *arg )
 
     do
     {
-        /* Keep on opening the file (in case the fifo is opened/closed multiple times */
+        /* Keep on opening the file (in case the fifo is opened/closed multiple times) */
+        /* We use RDWR to allow the open to proceed without a remote end */
         if ( !params->permafile )
         {
-            opfile = open( c->fifoName, O_WRONLY );
+            opfile = open( c->fifoName, O_RDWR | O_NONBLOCK );
         }
         else
         {
@@ -127,10 +129,10 @@ static void *_runFifo( void *arg )
 
         do
         {
-            /* ....get the packet */
+            /* ....get the packet. This will hang here until a packet arrives or the link closes */
             readDataLen = read( params->listenHandle, &m, sizeof( struct swMsg ) );
 
-            if ( readDataLen <= 0 )
+            if ( readDataLen < 0 )
             {
                 continue;
             }
@@ -172,11 +174,12 @@ static void *_runFifo( void *arg )
                 written = write( opfile, &w, sizeof ( w ) );
             }
         }
-        while ( ( readDataLen > 0 ) && ( written > 0 ) );
+        while ( ( written > 0 ) && ( !c->ending ) );
 
+	/* Falling out on writen fail means we can re-open the fifo if it overflowed */
         close( opfile );
     }
-    while ( readDataLen > 0 );
+    while ( !c->ending );
 
     pthread_exit( NULL );
 }
@@ -208,7 +211,8 @@ static void *_runHWFifo( void *arg )
     {
         if ( !params->permafile )
         {
-            opfile = open( c->fifoName, O_WRONLY );
+            /* We use RDWR to allow the open to proceed without a remote end */
+            opfile = open( c->fifoName, O_RDWR | O_NONBLOCK );
         }
         else
         {
@@ -217,7 +221,7 @@ static void *_runHWFifo( void *arg )
 
         do
         {
-            /* ....get the packet, don't worry if it can't be written */
+            /* ....get the packet. We will hang here until a packet arrives or the link closes */
             readDataLen = read( params->listenHandle, p, MAX_STRING_LENGTH );
 
             if ( readDataLen > 0 )
@@ -225,11 +229,12 @@ static void *_runHWFifo( void *arg )
                 writeDataLen = write( opfile, p, readDataLen );
             }
         }
-        while ( ( readDataLen > 0 ) && ( writeDataLen > 0 ) );
+        while ( ( writeDataLen > 0 ) && ( !c->ending ) );
 
+	/* Falling out on writeDataLen fail means we can re-open the fifo if it overflowed */
         close( opfile );
     }
-    while ( readDataLen > 0 );
+    while ( !c->ending );
 
     pthread_exit( NULL );
 }
@@ -720,14 +725,21 @@ bool itmfifoCreate( struct itmfifosHandle *f )
                 }
 
                 f->c[t].handle = fd[1];
+                f->c[t].ending = false;
 
                 f->c[t].params.listenHandle = fd[0];
                 f->c[t].params.portNo = t;
                 f->c[t].params.permafile = f->permafile;
                 f->c[t].params.c = &f->c[t];
 
-                f->c[t].fifoName = ( char * )malloc( strlen( f->c[t].chanName ) + strlen( f->chanPath ) + 2 );
-                strcpy( f->c[t].fifoName, f->chanPath );
+                f->c[t].fifoName = ( char * )calloc( strlen( f->c[t].chanName ) + 2 + (f->chanPath ? strlen( f->chanPath ) : 0), 1 );
+
+                if ( f->chanPath )
+                {
+                    strcpy( f->c[t].fifoName, f->chanPath );
+                    strcat( f->c[t].fifoName, "/" );
+                }
+
                 strcat( f->c[t].fifoName, f->c[t].chanName );
 
                 if ( pthread_create( &( f->c[t].thread ), NULL, &_runFifo, &( f->c[t].params ) ) )
@@ -757,8 +769,14 @@ bool itmfifoCreate( struct itmfifosHandle *f )
             f->c[t].params.permafile = f->permafile;
             f->c[t].params.c = &f->c[t];
 
-            f->c[t].fifoName = ( char * )malloc( strlen( HWFIFO_NAME ) + strlen( f->chanPath ) + 2 );
-            strcpy( f->c[t].fifoName, f->chanPath );
+            f->c[t].fifoName = ( char * )calloc( strlen( HWFIFO_NAME ) + 2 + ( ( f->chanPath ) ? strlen( f->chanPath ) : 0 ), 1 );
+
+            if ( f->chanPath )
+            {
+                strcpy( f->c[t].fifoName, f->chanPath );
+                strcat( f->c[t].fifoName, "/" );
+            }
+
             strcat( f->c[t].fifoName, HWFIFO_NAME );
 
             if ( pthread_create( &( f->c[t].thread ), NULL, &_runHWFifo, &( f->c[t].params ) ) )
@@ -786,6 +804,8 @@ void itmfifoShutdown( struct itmfifosHandle *f )
     /* Firstly go tell everything they're doomed */
     for ( int t = 0; t < NUM_CHANNELS + 1; t++ )
     {
+        f->c[t].ending = true;
+
         if ( f->c[t].handle > 0 )
         {
             /* This will cause the read to end, thus terminating the pthread */
@@ -840,7 +860,7 @@ struct itmfifosHandle *itmfifoInit( bool forceITMSyncSet, bool useTPIUSet, int T
 
     MEMCHECK( f, NULL );
 
-    f->chanPath = strdup( "" );
+    f->chanPath = NULL;
     f->useTPIU = useTPIUSet;
     f->forceITMSync = forceITMSyncSet;
     f->tpiuITMChannel = TPIUchannelSet;

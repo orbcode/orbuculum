@@ -441,10 +441,9 @@ the order of these has changed);
 
 The command line options are;
 
- `-b, --basedir [basedir]`: for channels. Note that this is actually just leading text on the channel
-     name, so if you put xyz/chan then all ITM software channels will end up in a directory
-     xyz, prepended with chan.  If xyz doesn't exist, then the channel creation will
-     fail silently.
+ `-b, --basedir [basedir]`: for channels, terminated with a trailing directory seperator,
+     so if you put xyz/chan then all ITM software channels will end up in a directory
+     xyz/chan.  If xyz/chan doesn't exist, then the channel creation will fail silently.
 
  `-c, --channel [Number],[Name],[Format]`: of channel to populate (repeat per channel) using printf formatting.
 
