@@ -1,22 +1,23 @@
-name: Build Linux binaries
+name: Build OSX binaries
 
 on:
   - push
   - pull_request
 
 jobs:
-  linux:
-    runs-on: ubuntu-latest
+  osx:
+    runs-on: macos-12
     steps:
-      - run: sudo apt-get update
-      - run: sudo apt-get install -y libusb-1.0-0-dev libzmq3-dev meson libsdl2-dev
+      - run: brew install zmq sdl2
+      - run: pip3 install meson
+      - run: pip3 install ninja
       - uses: actions/checkout@v3
       - run: meson setup ./build
       - run: ninja -C ./build
       - run: meson install -C ./build --destdir ./install
       - uses: actions/upload-artifact@v3
         with:
-          name: orbuculum-linux
+          name: orbuculum-osx
           path: build/install/**/*
           if-no-files-found: error
 

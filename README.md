@@ -2,11 +2,13 @@
 
 [![Build Windows binaries](https://github.com/orbcode/orbuculum/actions/workflows/build-windows.yml/badge.svg)](https://github.com/orbcode/orbuculum/actions/workflows/build-windows.yml)
 
+[![Build OSX binaries](https://github.com/orbcode/orbuculum/actions/workflows/build-osx.yml/badge.svg)](https://github.com/orbcode/orbuculum/actions/workflows/build-osx.yml)
+
 [![Discord](https://img.shields.io/discord/613131135903596547?logo=discord)](https://discord.gg/P7FYThy)
 
 ![Screenshot](https://raw.githubusercontent.com/orbcode/orbuculum/main/Docs/title.png)
 
-This (main) is the development branch for V2.2.0 but, at the moment, it doesn't contain anything juicy beyond 2.1.0. Development is generally done in feature branches and folded into main as those features mature.
+This (main) is the development branch for V2.2.0. Development is generally done in feature branches and folded into main as those features mature.
 
 Version 2.1.0 has recently been released and includes nice things like Python support, a decent quality Windows port and the ninja/meson build system. It also supports the full functionality of the ORBTrace Mini dongle.
 
@@ -270,8 +272,7 @@ Building on OSX
 
 Recipie instructions courtesy of FrankTheTank;
 
-* `brew install libusb`
-* `brew install zmq`
+* `brew install libusb zmq sdl2`
 
 and finally;
 

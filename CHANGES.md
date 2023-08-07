@@ -1,3 +1,7 @@
+* OSX CI Builder support
+* Orbuculum can now be used as a meson subproject
+* TM4C session setup support
+
 30th June 2023 (Version 2.1.0)
 
 * Support for host side and device side timestamping in orbtop
