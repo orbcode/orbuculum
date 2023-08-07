@@ -14,6 +14,8 @@
 #include "readsource.h"
 
 #define MAX_LINE_LEN (4095)
+#define IS_INFO (true)
+
 static char _print_buffer[MAX_LINE_LEN];
 
 // ====================================================================================================
@@ -355,9 +357,11 @@ void _dwarf_print( void *p, const char *line )
 static void _processFunctionDie( struct symbol *p, Dwarf_Debug dbg, Dwarf_Die die, int filenameN, int producerN, Dwarf_Addr cu_base_addr )
 
 {
-    char *name;
-    Dwarf_Addr h;
-    Dwarf_Addr l;
+    char *name = "";
+    Dwarf_Addr h = 0;
+    Dwarf_Addr l = 0;
+    enum Dwarf_Form_Class formclass;
+
     Dwarf_Attribute attr_data;
     Dwarf_Half attr_tag;
     bool isinline = false;
@@ -373,7 +377,7 @@ static void _processFunctionDie( struct symbol *p, Dwarf_Debug dbg, Dwarf_Die di
     /* See if this is an inline die usage */
     attr_tag = DW_AT_abstract_origin;
 
-    if ( dwarf_attr( die, attr_tag, &attr_data, 0 ) == DW_DLV_OK )
+    if ( DW_DLV_OK == dwarf_attr( die, attr_tag, &attr_data, 0 ) )
     {
         /* It is, so track back to the real one */
         Dwarf_Off abstract_origin_offset;
@@ -381,19 +385,41 @@ static void _processFunctionDie( struct symbol *p, Dwarf_Debug dbg, Dwarf_Die di
         attr_tag = DW_AT_abstract_origin;
         dwarf_attr( die, attr_tag, &attr_data, 0 );
         dwarf_global_formref( attr_data, &abstract_origin_offset, 0 );
-        dwarf_offdie_b( dbg, abstract_origin_offset, 0, &abstract_origin_die, 0 );
-        //printf(stderr,"Instance at %08x...%08x\n\n\n",(uint32_t)l,(uint32_t)h);
+        dwarf_offdie_b( dbg, abstract_origin_offset, IS_INFO, &abstract_origin_die, 0 );
+        fprintf( stderr, "Instance at %08x...%08x\n\n\n", ( uint32_t )l, ( uint32_t )h );
         isinline = true;
     }
     else
     {
-        dwarf_highpc_b ( die, &h, 0, 0, 0 );
+        dwarf_highpc_b ( die, &h, 0, &formclass, 0 );
         dwarf_lowpc ( die, &l, 0 );
+    }
+
+    if ( formclass == DW_FORM_CLASS_CONSTANT )
+    {
+        h += l;
     }
 
     if ( l && ( l != h ) )
     {
-        dwarf_diename( die, &name, 0 );
+        if ( DW_DLV_OK != dwarf_diename( die, &name, 0 ) )
+        {
+            /* Name will be hidden in a specification reference */
+            attr_tag = DW_AT_specification;
+
+            if ( dwarf_attr( die, attr_tag, &attr_data, 0 ) == DW_DLV_OK )
+            {
+                Dwarf_Off specification_offset;
+                Dwarf_Die specification_die;
+                dwarf_attr( die, attr_tag, &attr_data, 0 );
+
+                if ( DW_DLV_OK == dwarf_global_formref( attr_data, &specification_offset, 0 ) )
+                {
+                    dwarf_offdie_b( dbg, specification_offset, IS_INFO, &specification_die, 0 );
+                    dwarf_diename( specification_die, &name, 0 );
+                }
+            }
+        }
 
         p->func = ( struct symbolFunctionStore ** )realloc( p->func, sizeof( struct symbolFunctionStore * ) * ( p->nfunc + 1 ) );
         newFunc = p->func[p->nfunc] = ( struct symbolFunctionStore * )calloc( 1, sizeof( struct symbolFunctionStore ) );
@@ -437,7 +463,7 @@ static void _processDie( struct symbol *p, Dwarf_Debug dbg, Dwarf_Die die, int l
 
     Dwarf_Die sib = die;
 
-    while ( DW_DLV_OK == dwarf_siblingof_b( dbg, sib, true, &sib, 0 ) )
+    while ( DW_DLV_OK == dwarf_siblingof_b( dbg, sib, IS_INFO, &sib, 0 ) )
     {
         dwarf_tag( sib, &tag, 0 );
         const char *n;
@@ -553,13 +579,11 @@ static bool _readLines( struct symbol *p )
             break;
         }
 
-        dwarf_siblingof_b( dbg, NULL, true, &cu_die, 0 );
+        dwarf_siblingof_b( dbg, NULL, IS_INFO, &cu_die, 0 );
 
         dwarf_diename( cu_die, &name, 0 );
         dwarf_die_text( cu_die, DW_AT_producer, &producer, 0 );
         dwarf_die_text( cu_die, DW_AT_comp_dir, &compdir, 0 );
-
-        printf( "%s\n", name );
 
         /* Need to construct the fully qualified filename from the directory + filename */
         char *s = _joinPaths( compdir, name );
@@ -1126,6 +1150,10 @@ struct symbol *symbolAquire( char *filename, bool loadlines, bool loadmem, bool 
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
+
+/* Test routines can be built with;
+ * gcc -DTESTING_LOADELF loadelf.c readsource.c -I../Inc -I../subprojects/libdwarf-0.7.0/src/lib/libdwarf -ggdb -lcapstone -lelf ../build/subprojects/libdwarf-0.7.0/src/lib/libdwarf/libdwarf.so.0
+ */
 
 #ifdef TESTING_LOADELF
 
