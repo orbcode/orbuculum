@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /*
- * Orbuculum main receiver and TPIU demux
- * ======================================
+ * Orbuculum main receiver and TPIU/COBS demux
+ * ===========================================
  *
  */
 
@@ -55,6 +55,7 @@
 #include "git_version_info.h"
 #include "generics.h"
 #include "tpiuDecoder.h"
+#include "cobsDecoder.h"
 #include "nwclient.h"
 #include "orbtraceIf.h"
 #include "stream.h"
@@ -82,6 +83,7 @@ struct Options
     char *port;                                          /* Serial host connection */
     int speed;                                           /* Speed of serial link */
     bool useTPIU;                                        /* Are we using TPIU, and stripping TPIU frames? */
+    bool useCOBS;                                        /* Are we using COBS, and stripping COBS frames? */
     uint32_t dataSpeed;                                  /* Effective data speed (can be less than link speed!) */
     char *file;                                          /* File host connection */
     bool fileTerminate;                                  /* Terminate when file read isn't successful */
@@ -90,7 +92,7 @@ struct Options
     uint32_t intervalReportTime;                         /* If we want interval reports about performance */
     bool mono;                                           /* Supress colour in output */
     int paceDelay;                                       /* Delay between blocks of data transmission in file readout */
-    char *channelList;                                   /* List of TPIU channels to be serviced */
+    char *channelList;                                   /* List of TPIU/COBS channels to be serviced */
     bool hiresTime;                                      /* Use hiresolution time (shorter timeouts...more accurate but higher load */
     char *sn;                                            /* Any part serial number for identifying a specific device */
     /* Network link */
@@ -108,6 +110,8 @@ struct handlers
 struct RunTime
 {
     struct TPIUDecoder t;                                /* TPIU decoder instance, in case we need it */
+    struct COBSDecoder c;                                /* COBS decoder instance, in case we need it */
+
     struct OrbtraceIf  *o;                               /* For accessing ORBTrace devices + BMPs */
 
     uint64_t  intervalBytes;                             /* Number of bytes transferred in current interval */
@@ -130,9 +134,9 @@ struct RunTime
     int rp;
     struct dataBlock rawBlock[NUM_RAW_BLOCKS];           /* Transfer buffers from the receiver */
 
-    int numHandlers;                                     /* Number of TPIU channel handlers in use */
+    int numHandlers;                                     /* Number of TPIU/COBS channel handlers in use */
     struct handlers *handler;
-    struct nwclientsHandle *n;                           /* Link to the network client subsystem (used for non-TPIU case) */
+    struct nwclientsHandle *n;                           /* Link to the network client subsystem (used for non-TPIU/COBS case) */
     char *sn;                                            /* Serial number for any device we've established contact with */
 };
 
@@ -145,6 +149,7 @@ struct RunTime
 #define NWSERVER_PORT (2332)
 
 #define NUM_TPIU_CHANNELS 0x80
+#define NUM_COBS_CHANNELS 0xFF
 
 #define INTERVAL_100US (100U)
 #define INTERVAL_1MS   (10*INTERVAL_100US)
@@ -348,6 +353,7 @@ void _printHelp( const char *const progName )
 {
     genericsPrintf( "Usage: %s [options]" EOL, progName );
     genericsPrintf( "    -a, --serial-speed:  <serialSpeed> to use" EOL );
+    genericsPrintf( "    -c, --cobs:          <Channel , ...> Use COBS channels (and strip COBS framing from output flows)" EOL );
     genericsPrintf( "    -E, --eof:           When reading from file, terminate at end of file" EOL );
     genericsPrintf( "    -f, --input-file:    <filename> Take input from specified file" EOL );
     genericsPrintf( "    -h, --help:          This help" EOL );
@@ -391,6 +397,7 @@ void _printVersion( struct RunTime *r )
 static struct option _longOptions[] =
 {
     {"serial-speed", required_argument, NULL, 'a'},
+    {"cobs", required_argument, NULL, 'c'},
     {"eof", no_argument, NULL, 'E'},
     {"input-file", required_argument, NULL, 'f'},
     {"help", no_argument, NULL, 'h'},
@@ -417,7 +424,7 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
     int c, optionIndex = 0;
 #define DELIMITER ','
 
-    while ( ( c = getopt_long ( argc, argv, "a:Ef:hHVl:m:Mn:o:O:p:P:s:t:v:", _longOptions, &optionIndex ) ) != -1 )
+    while ( ( c = getopt_long ( argc, argv, "a:c:Ef:hHVl:m:Mn:o:O:p:P:s:t:v:", _longOptions, &optionIndex ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -431,6 +438,13 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
                     return false;
                 }
 
+                break;
+
+            // ------------------------------------
+
+            case 'c':
+                r->options->useCOBS = true;
+                r->options->channelList = optarg;
                 break;
 
             // ------------------------------------
@@ -649,6 +663,15 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
         genericsReport( V_INFO, "Use/Strip TPIU : False" EOL );
     }
 
+    if ( r->options->useCOBS )
+    {
+        genericsReport( V_INFO, "Use/Strip COBS : True (Channel List %s)" EOL, r->options->channelList );
+    }
+    else
+    {
+        genericsReport( V_INFO, "Use/Strip COBS : False" EOL );
+    }
+
     if ( r->options->otcl )
     {
         genericsReport( V_INFO, "Orbtrace CL    : %s" EOL, r->options->otcl );
@@ -686,6 +709,11 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
         return false;
     }
 
+    if ( ( r->options->useCOBS ) && ( r->options->useTPIU ) )
+    {
+        genericsReport( V_ERROR, "Cannot specify COBS and TPIU at the same time" EOL );
+        return false;
+    }
 
     if ( ( r->options->port ) && ( r->options->nwserverPort ) )
     {
@@ -734,7 +762,7 @@ void *_checkInterval( void *params )
             h = r->handler;
             uint64_t totalDat = 0;
 
-            if ( ( r->intervalBytes ) && ( r->options->useTPIU ) )
+            if ( ( r->intervalBytes ) && ( ( r->options->useTPIU ) || ( r->options->useCOBS ) ) )
             {
                 for ( int chIndex = 0; chIndex < r->numHandlers; chIndex++ )
                 {
@@ -770,7 +798,7 @@ static void _purgeBlock( struct RunTime *r )
 {
     /* Now send any packets to clients who want it */
 
-    if ( r->options->useTPIU )
+    if ( ( r->options->useTPIU ) || ( r->options->useCOBS ) )
     {
         struct handlers *h = r->handler;
         int i = r->numHandlers;
@@ -852,6 +880,70 @@ static void _TPIUpacketRxed( enum TPIUPumpEvent e, struct TPIUPacket *p, void *p
             break;
     }
 }
+// ====================================================================================================
+
+static void _COBSpacketRxed( enum COBSPumpEvent e, struct Frame *p, void *param )
+
+/* Callback for when a COBS frame has been assembled */
+
+{
+    struct RunTime *r = ( struct RunTime * )param;
+
+    struct handlers *h;
+    int chIndex;
+    int incomingChannel;
+
+    switch ( e )
+    {
+        case COBS_EV_RXEDFRAME:
+            if ( p->len > 1 )
+            {
+                incomingChannel = p->d[0];
+                /* Search for channel amongst the handlers */
+
+                h = r->handler;
+
+                for ( chIndex = 0; chIndex < r->numHandlers; chIndex++ )
+                {
+                    if ( h->channel == incomingChannel )
+                    {
+                        break;
+                    }
+
+                    h++;
+                }
+
+                /* We must have found a match for this at some point, so add it to the queue */
+                if ( ( chIndex != r->numHandlers ) && ( h ) )
+                {
+                    for ( int i = 1; i < p->len; i++ )
+                    {
+                        h->strippedBlock->buffer[h->strippedBlock->fillLevel++] = p->d[i];
+
+                        if ( h->strippedBlock->fillLevel == sizeof( h->strippedBlock->buffer ) )
+                        {
+                            _purgeBlock( r );
+                        }
+                    }
+
+                    _purgeBlock( r );
+                }
+            }
+
+            break;
+
+        case COBS_EV_ERROR:
+            genericsReport( V_WARN, "****ERROR****%s" EOL, ( r->options->intervalReportTime ) ? EOL : "" );
+            break;
+
+        case COBS_EV_NEWSYNC:
+        case COBS_EV_RXING:
+        case COBS_EV_NONE:
+        case COBS_EV_UNSYNCED:
+        default:
+            break;
+    }
+}
 
 // ====================================================================================================
 static void _processBlock( struct RunTime *r, ssize_t fillLevel, uint8_t *buffer )
@@ -890,7 +982,12 @@ static void _processBlock( struct RunTime *r, ssize_t fillLevel, uint8_t *buffer
             }
         }
 
-        if ( r-> options->useTPIU )
+        if ( r-> options->useCOBS )
+        {
+            /* Strip the COBS framing from this input */
+            COBSPump( &r->c, r->rawBlock[r->rp].buffer, r->rawBlock[r->rp].fillLevel, _COBSpacketRxed, r );
+        }
+        else if ( r-> options->useTPIU )
         {
             /* Strip the TPIU framing from this input */
             TPIUPump2( &r->t, r->rawBlock[r->rp].buffer, r->rawBlock[r->rp].fillLevel, _TPIUpacketRxed, r );
@@ -969,7 +1066,12 @@ static void _usb_callback( struct libusb_transfer *t )
 
 #endif
 
-        if ( _r.options->useTPIU )
+        if ( _r.options->useCOBS )
+        {
+            /* Strip the COBS framing from this input */
+            COBSPump( &_r.c, t->buffer, t->actual_length, _COBSpacketRxed, &_r );
+        }
+        else if ( _r.options->useTPIU )
         {
             /* Strip the TPIU framing from this input */
             TPIUPump2( &_r.t, t->buffer, t->actual_length, _TPIUpacketRxed, &_r );
@@ -1414,9 +1516,6 @@ int main( int argc, char *argv[] )
     WSAStartup( MAKEWORD( 2, 2 ), &wsaData );
 #endif
 
-    /* Setup TPIU in case we call it into service later */
-    TPIUDecoderInit( &_r.t );
-
     if ( pthread_mutex_init( &_r.dataForClients_m, NULL ) != 0 )
     {
         genericsExit( -1, "Failed to establish mutex for condition variablee" EOL );
@@ -1431,6 +1530,16 @@ int main( int argc, char *argv[] )
     {
         /* processOptions generates its own error messages */
         genericsExit( -1, "" EOL );
+    }
+
+    if ( _r.options->useTPIU )
+    {
+        TPIUDecoderInit( &_r.t );
+    }
+
+    if ( _r.options->useCOBS )
+    {
+        COBSDecoderInit( &_r.c );
     }
 
     genericsScreenHandling( !_r.options->mono );
@@ -1454,7 +1563,7 @@ int main( int argc, char *argv[] )
 
 #endif
 
-    if ( _r.options->useTPIU )
+    if ( _r.options->useTPIU || _r.options->useCOBS )
     {
         char *c = _r.options->channelList;
         int x = 0;
@@ -1479,7 +1588,7 @@ int main( int argc, char *argv[] )
             if ( x )
             {
                 /* This is a good number, so open */
-                if ( ( x < 0 ) || ( x >= NUM_TPIU_CHANNELS ) )
+                if ( ( x < 0 ) || ( ( x >= NUM_TPIU_CHANNELS ) && _r.options->useTPIU ) || ( ( x >= NUM_COBS_CHANNELS ) && _r.options->useCOBS ) )
                 {
                     genericsExit( -1, "Channel number out of range" EOL );
                 }
