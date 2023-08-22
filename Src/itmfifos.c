@@ -176,7 +176,7 @@ static void *_runFifo( void *arg )
         }
         while ( ( written > 0 ) && ( !c->ending ) );
 
-	/* Falling out on writen fail means we can re-open the fifo if it overflowed */
+        /* Falling out on writen fail means we can re-open the fifo if it overflowed */
         close( opfile );
     }
     while ( !c->ending );
@@ -231,7 +231,7 @@ static void *_runHWFifo( void *arg )
         }
         while ( ( writeDataLen > 0 ) && ( !c->ending ) );
 
-	/* Falling out on writeDataLen fail means we can re-open the fifo if it overflowed */
+        /* Falling out on writeDataLen fail means we can re-open the fifo if it overflowed */
         close( opfile );
     }
     while ( !c->ending );
@@ -732,7 +732,7 @@ bool itmfifoCreate( struct itmfifosHandle *f )
                 f->c[t].params.permafile = f->permafile;
                 f->c[t].params.c = &f->c[t];
 
-                f->c[t].fifoName = ( char * )calloc( strlen( f->c[t].chanName ) + 2 + (f->chanPath ? strlen( f->chanPath ) : 0), 1 );
+                f->c[t].fifoName = ( char * )calloc( strlen( f->c[t].chanName ) + 2 + ( f->chanPath ? strlen( f->chanPath ) : 0 ), 1 );
 
                 if ( f->chanPath )
                 {

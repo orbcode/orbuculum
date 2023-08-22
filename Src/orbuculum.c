@@ -755,6 +755,10 @@ static void _TPIUpacketRxed( enum TPIUPumpEvent e, struct TPIUPacket *p, void *p
                     /* We must have found a match for this at some point, so add it to the queue */
                     h->strippedBlock->buffer[h->strippedBlock->fillLevel++] = p->packet[g].d;
                 }
+                else
+                {
+                    genericsReport( V_WARN, "No handler for %d" EOL, p->packet[g].s );
+                }
             }
 
             break;
@@ -1264,6 +1268,9 @@ static int _fileFeeder( struct RunTime *r )
 
     r->conn = true;
 
+    /* We will read from the file very quickly, so let's give a chance for clients to connect before we do */
+    usleep( INTERVAL_1S );
+
     while ( !r->ending )
     {
         struct dataBlock *rxBlock = &r->rawBlock[r->wp];
@@ -1290,7 +1297,7 @@ static int _fileFeeder( struct RunTime *r )
         /* Spin waiting for buffer space to become available */
         while ( nwp == r->rp )
         {
-            usleep( INTERVAL_100MS );
+            usleep( INTERVAL_1MS );
         }
 
         r->wp = nwp;

@@ -44,6 +44,10 @@
 /* Shared ring buffer for data */
 #define SHARED_BUFFER_SIZE (8*TRANSFER_SIZE)
 
+/* Tests for a hung client */
+#define MAX_CLIENT_TESTS (10)
+#define CLIENT_TEST_INTERVAL_US (100000)
+
 /* Master structure for the set of nwclients */
 struct nwclientsHandle
 
@@ -54,6 +58,7 @@ struct nwclientsHandle
     int                       wp;             /* Next write to shared buffer */
     uint8_t sharedBuffer[SHARED_BUFFER_SIZE]; /* Data waiting to be sent to the clients */
 
+    int                       totalSent;      /* Total sent to all clients */
     int                       sockfd;         /* The socket for the inferior */
     pthread_t                 ipThread;       /* The listening thread for n/w clients */
     bool                      finish;         /* Its time to leave */
@@ -73,6 +78,7 @@ struct nwClient
     pthread_mutex_t           dataAvailable_m;   /* Mutex for counting data for clients */
 
     /* Parameters used to run the client */
+    int                       totalSent;         /* Total sent by this client */
     int                       portNo;            /* Port of connection */
     int                       rp;                /* Current read pointer in data stream */
 };
@@ -152,6 +158,9 @@ static void *_client( void *args )
     uint8_t *p;
     ssize_t sent = 0;
 
+    /* Our starting total sent is the system total sent */
+    c->totalSent = c->parent->totalSent;
+
     while ( !c->finish )
     {
         /* Spin until we're told there's something to send along */
@@ -166,9 +175,24 @@ static void *_client( void *args )
 
             while ( ( readDataLen > 0 ) && ( sent >= 0 ) )
             {
-                sent = send( c->portNo, ( const void * )p, readDataLen, MSG_NOSIGNAL );
+                for ( int numTests = 0; numTests < MAX_CLIENT_TESTS; numTests++ )
+                {
+                    sent = send( c->portNo, ( const void * )p, readDataLen, MSG_DONTWAIT | MSG_NOSIGNAL );
+
+                    if ( sent > 0 )
+                    {
+                        break;
+                    }
+                    else
+                    {
+                        /* We'll allow a few chances before we give up... */
+                        usleep( CLIENT_TEST_INTERVAL_US );
+                    }
+                }
+
                 p += sent;
                 readDataLen -= sent;
+                c->totalSent += sent;
             }
 
             if ( c->finish || readDataLen )
@@ -230,7 +254,7 @@ static void *_listenTask( void *arg )
 
         if ( pthread_mutex_init( &client->dataAvailable_m, NULL ) != 0 )
         {
-            genericsExit( -1, "Failed to establish mutex for condition variablee" EOL );
+            genericsExit( -1, "Failed to establish mutex for condition variable" EOL );
         }
 
         if ( pthread_cond_init( &client->dataAvailable, NULL ) != 0 )
@@ -271,6 +295,51 @@ static void *_listenTask( void *arg )
     return NULL;
 }
 // ====================================================================================================
+bool _clientsGood( struct nwclientsHandle *h, bool dumpClient )
+
+{
+    const struct timespec ts = {.tv_sec = 1, .tv_nsec = 0};
+    bool result = true;
+
+    /* Check if network clients have transferred their data */
+    if ( _lock_with_timeout( &h->clientList, &ts ) < 0 )
+    {
+        genericsExit( -1, "Failed to acquire mutex" EOL );
+    }
+
+    /* Iterate over all clients to see if they managed to send all their data... */
+    volatile struct nwClient *n = h->firstClient;
+
+    while ( n )
+    {
+        if ( n->totalSent != h->totalSent )
+        {
+            if ( !dumpClient )
+            {
+                result = false;
+                break;
+            }
+            else
+            {
+                genericsReport( V_ERROR, "Unresponsive client dropped %d vs %d (%d)" EOL, n->totalSent, n->parent->totalSent, n->parent->totalSent - n->totalSent );
+                /* Get rid of the unresponsive client */
+                n->finish = true;
+                close( n->portNo );
+
+                /* This is safe 'cos the list is locked */
+                n = n->nextClient;
+            }
+        }
+        else
+        {
+            n = n->nextClient;
+        }
+    }
+
+    pthread_mutex_unlock( &h->clientList );
+    return result;
+}
+// ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
 // Externally available routines
@@ -281,9 +350,36 @@ void nwclientSend( struct nwclientsHandle *h, uint32_t len, uint8_t *ipbuffer )
 
 {
     const struct timespec ts = {.tv_sec = 1, .tv_nsec = 0};
+    int numTests;
+
+    assert( len < SHARED_BUFFER_SIZE );
+
     int newWp = ( h->wp + len );
     int toEnd = ( newWp > SHARED_BUFFER_SIZE ) ? SHARED_BUFFER_SIZE - h->wp : len;
     int fromStart = len - toEnd;
+
+    if ( fromStart )
+    {
+        /* The buffer wrapped around. This is a good time to check that the clients are keeping up */
+        for ( numTests = 0; numTests < MAX_CLIENT_TESTS; numTests++ )
+        {
+            if ( _clientsGood( h, false ) )
+            {
+                break;
+            }
+
+            /* Wait before trying again */
+            usleep( CLIENT_TEST_INTERVAL_US );
+        }
+
+        /* If that didn't work then kill the one that isn't behaving */
+        if ( numTests == MAX_CLIENT_TESTS )
+        {
+            _clientsGood( h, true );
+        }
+    }
+
+    h->totalSent += len;
 
     /* Copy the received data into the shared buffer */
     memcpy( &h->sharedBuffer[h->wp], ipbuffer, toEnd );
