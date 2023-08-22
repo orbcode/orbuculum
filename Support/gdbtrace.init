@@ -13,8 +13,9 @@ STM32;
   enableSTM32TRACE: Start TRACE on STM32 pins
 
 IMXRT;
-  enableIMXRT102XSWO : Enable SWO on IMXRT102X series pins (AD_B0_04)
-  enableIMXRT106XSWO : Enable SWO on IMXRT106X series pins (AD_B0_10)
+  enableIMXRT102XSWO  : Enable SWO on IMXRT102X series pins (AD_B0_04)
+  enableIMXRT102XTRACE: Start TRACE on IMXRT102X series pins  
+  enableIMXRT106XSWO  : Enable SWO on IMXRT106X series pins (AD_B0_10)
 
 SAM5X;
   enableSAMD5XSWD    : Enable SWO on SAM5X output pin on SAM5X
@@ -553,6 +554,152 @@ define enableIMXRT1021SWO
   #set language auto
 end
 # ====================================================================
+define enableIMXRT101XTRACE
+  set language c
+
+  set $drive=4
+  set $bits=4
+
+  if $argc >= 1
+    set $bits = $arg0
+  end
+    if (($bits<1) || ($bits==3) || ($bits>4))
+    help enableSTM32TRACE
+  end
+
+  if $argc >= 2
+    set $drive = $arg1
+  end
+
+  if ($drive > 7)
+    help enableIMXRT101XTRACE
+  end
+
+  set $bits = $bits-1
+  
+  set $CPU=$CPU_IMXRT101X  
+  _setAddressesIMXRT
+
+  # Ensure IOMUX clocks are on
+  set *0x400FC078 |= 3<<2
+
+  # =========== SORT OUT PINS FOR TRACE ============================
+
+  # Do not set drive strength to 2 or 3 here...it causes crashes. No idea why
+  # Mostly works  set $padval = ( 0<<0 ) | (1<<12) | (0<<14) | (1<<13) | (2<<6) | ($drive<<3)
+  set $padval =               ( 1<<0 ) | (1<<12) | (0<<14) | (1<<13) | (2<<6) | ($drive<<3)
+
+  # TRACECLK ALT7 on GPIO_AD_02
+  # TRACEDATA0 ALT7 on GPIO_AD_00
+  set *0x401f8040 = 7
+  set *0x401f8048 = 7
+  set *0x401f80f0 = $padval
+  set *0x401f80f8 = $padval
+
+  if ($bits>0)
+    # TRACEDATA1 on GPIO_13
+    set *0x401f8088 = 7
+    set *0x401f8138 = $padval
+  end
+
+  if ($bits>1)
+    # TRACEDATA2 on GPIO_12
+    set *0x401f808c = 7
+    set *0x401f813c = $padval
+    # TRACEDATA3 on GPIO_11
+    set *0x401f8090 = 7  
+    set *0x401f8140 = $padval
+  end
+  # =========== END IF SORTING OUT PINS FOR TRACE ==================
+
+  # =========== SORT OUT CLOCK FOR TRACE =================
+  # Turn off clock while setting up PODF (CCGR0 CG11)
+  set *0x400fc068 = ((*0x400fc068) & ~(3<<22))
+
+  # With clock gated we can safely update CSCDR1 TRACE_PODF for /4
+  set *0x400fc024 = ((*0x400fc024) & ~(0xf<<25)) | (14<<25)
+  # ...and set source to PLL2 (can also be PLL2PFD2 PLL2PFD0 or PLL2PFD1)
+  set *0x400fc018 = ((*0x400fc018) & ~(3<<14)) | (0<<14)
+
+  # Clock back on (CCGR0 CG11)
+  set *0x400fc068 |= (3<<22)
+  # =========== END OF SORTING OUT CLOCK FOR TRACE =================
+
+  #Enable DEMCR
+  set *(0xE000EDFC)|=(1<<24)
+
+  # Set port size (TPIU_CSPSR)
+  set *($TPIUBASE+4) = (1<<$bits)
+
+  # Set TPIU_SPPR to parallel trace port mode
+  set *($TPIUBASE+0xf0) = 0
+  
+  set *($TPIUBASE+0x304) = 0x102
+  set language auto
+end
+
+document enableIMXRT101XTRACE
+enableIMXRT102XTRACE <Width> <Drive>: Enable TRACE on IMXRT1010 pins
+  <Width>   : Number of bits wide (1,2 or 4 only)
+  <Drive>   : Drive strength (0=lowest, 7=highest)
+end
+# ====================================================================
+define enableIMXRT102XTRACE
+  set language c
+
+  set $drive=1
+  set $bits=1
+  
+  set $CPU=$CPU_IMXRT102X  
+  _setAddressesIMXRT
+
+  set *0x400FC078 |= 3<<2
+
+  # =========== SORT OUT PINS FOR TRACE ============================
+
+  # TRACECLK ALT6 on GPIO_AD_B0_10
+  # TRACEDATA0 ALT6 on GPIO_AD_B0_12
+  set *0x401f80ec = 6 
+  set *0x401f80e4 = 6 
+
+  # Do not set drive strength to 2 or 3 here...it causes crashes. No idea why
+# Mostly works  set $padval = ( 0<<0 ) | (1<<12) | (0<<14) | (1<<13) | (2<<6) | (4<<3)
+  set $padval =               ( 0<<0 ) | (0<<12) | (0<<14) | (1<<13) | (3<<6) | (2<<3)  
+#set $padval = 0x10b0
+  set *0x401f8258 = $padval
+  set *0x401f8260 = $padval
+  # =========== END IF SORTING OUT PINS FOR TRACE ==================
+
+  
+  # =========== SORT OUT CLOCK FOR TRACE =================
+  # Turn off clock while setting up PODF (CCGR0 CG11)
+  set *0x400fc068 = ((*0x400fc068) & ~(3<<22))
+
+  # With clock gated we can safely update CSCDR1 TRACE_PODF for /4
+  set *0x400fc024 = ((*0x400fc024) & ~(3<<25)) | (3<<25)
+  # ...and set source to PLL2 (can also be PLL2PFD2 PLL2PFD0 or PLL2PFD1)
+  set *0x400fc018 = ((*0x400fc018) & ~(3<<14)) | (1<<14)
+
+  # Clock back on (CCGR0 CG11)
+  set *0x400fc068 |= (3<<22)
+  # =========== END OF SORTING OUT CLOCK FOR TRACE =================
+
+  #Enable DEMCR
+  set *(0xE000EDFC)|=(1<<24)
+
+  # Set port size (TPIU_CSPSR)
+  set *($TPIUBASE+4) = (1<<($bits-1))
+
+  # Set TPIU_SPPR to parallel trace port mode
+  set *($TPIUBASE+0xf0) = 0
+  
+  set *($TPIUBASE+0x304) = 0x102
+  set language auto
+end
+document enableIMXRT102XTRACE
+enableIMXRT102XTRACE : Enable TRACE on IMXRT1020 pins (only 1-bit is supported by the chip)
+end
+# ====================================================================
 define enableIMXRT106XSWO
   #set language c
 
@@ -561,8 +708,8 @@ define enableIMXRT106XSWO
   set $CPU=$CPU_IMXRT106X
 
   # Disable Trace Clocks while we change them (CCM_CCGR0)
-#  set *0x400FC068&=~(3<<22)
-    set *0x400FC068|=(3<<22)
+  set *0x400FC068&=~(3<<22)
+  set *0x400FC068|=(3<<22)
 
   # Set Trace clock input to be from PLL2 PFD2 (CBCMR1, 396 MHz)
   set *0x400Fc018&=~(3<<14)
@@ -696,6 +843,8 @@ define _doTRACE
 
   # Set pin protocol to Sync Trace Port (TPIU_SPPR)
   set *($TPIUBASE+0xF0)=0
+
+  set *($TPIUBASE+0x304) = 0x102
 end
 # ====================================================================
 define enableSTM32TRACE
@@ -1481,5 +1630,29 @@ define ITMTPR
 end
 document ITMTPR
 ITMTPR <Bitmask> Enable block 8*bit access from unprivledged code
+end
+# ====================================================================
+define tracetest
+  set language c
+
+  if ($argc!=1)
+    help tracetest
+  else
+    set *($TPIUBASE+0xfb0) = 0xc5acce55
+    if ($arg0 == 0)
+      set *($TPIUBASE+0x204) = 0
+    else
+      set *($TPIUBASE+0x204) = (1<<17) | (1 << ($arg0&0xf))
+    end
+  end
+  set language auto
+end
+document tracetest
+tracetest <Mode> Switch TRACE output to specified test mode;
+   0 - Normal operation
+   1 - Walking 1's
+   2 - Walking 0's
+   3 - 0xAA / 0x55
+   4 - 0xFF / 0x00
 end
 # ====================================================================
