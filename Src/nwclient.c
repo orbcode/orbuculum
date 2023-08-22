@@ -33,6 +33,7 @@
     // https://stackoverflow.com/a/14388707/995351
     #define SO_REUSEPORT SO_REUSEADDR
     #define MSG_NOSIGNAL 0
+    #define MSG_DONTWAIT 0
 #endif
 
 #ifdef OSX
@@ -252,6 +253,12 @@ static void *_listenTask( void *arg )
         client->portNo = newsockfd;
         client->rp     = h->wp;
 
+#ifdef WIN32
+	/* Set port nonblocking since it can't be done per-call in Windows */
+	u_long iMode=1;
+	ioctlsocket(newsockfd,FIONBIO,&iMode);
+#endif
+	
         if ( pthread_mutex_init( &client->dataAvailable_m, NULL ) != 0 )
         {
             genericsExit( -1, "Failed to establish mutex for condition variable" EOL );
