@@ -8,7 +8,7 @@ jobs:
   osx:
     runs-on: macos-12
     steps:
-      - run: brew install zmq sdl2
+      - run: brew install zmq sdl2 libelf
       - run: pip3 install meson
       - run: pip3 install ninja
       - uses: actions/checkout@v3

@@ -15,6 +15,7 @@
 #include <inttypes.h>
 #include <getopt.h>
 #include <time.h>
+#include <sys/time.h>
 
 #include "nw.h"
 #include "git_version_info.h"
@@ -35,7 +36,7 @@
 #define ONE_SEC_IN_USEC     (1000000)     /* Used for time conversions...usec in one sec */
 
 /* Formats for timestamping */
-#define REL_FORMAT            "%6" PRIu64 ".%01" PRIu64 "|"
+#define REL_FORMAT            "%6" PRIu64 ".%03" PRIu64 "|"
 #define REL_FORMAT_INIT       "   Initial|"
 #define DEL_FORMAT            "%3" PRIu64 ".%03" PRIu64 "|"
 #define DEL_FORMAT_CTD           "      +|"
@@ -99,7 +100,7 @@ struct
 } _r;
 
 // ====================================================================================================
-int64_t _timestamp( void )
+uint64_t _timestamp( void )
 
 {
     struct timeval te;
@@ -137,7 +138,8 @@ static void _outputTimestamp( void )
             }
             else
             {
-                res = _r.oldte - _timestamp();
+                uint64_t now = _timestamp();
+                res = now - _r.oldte;
                 fprintf( stdout, REL_FORMAT, res / ONE_SEC_IN_USEC, ( res / ( ONE_SEC_IN_USEC / 1000 ) ) % 1000 );
             }
 

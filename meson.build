@@ -1,11 +1,17 @@
-project('orbuculum', 'c')
+
+project('orbuculum', 'c', version:'2.1.0', meson_version: '>=0.63')
+
+uicolours_default = declare_dependency(compile_args: ['-include', 'uicolours_default.h'])
 
 dependencies = [
     dependency('threads'),
     dependency('libusb-1.0'),
     dependency('libzmq'),
     dependency('SDL2'),
-    dependency('ncurses', 'ncursesw')
+    dependency('ncurses', 'ncursesw'),
+    dependency('capstone'),
+    dependency('libelf'),
+    uicolours_default,
 ]
 
 incdirs = include_directories(['Inc', 'Inc/external'])
@@ -20,7 +26,9 @@ elif host_machine.system() == 'darwin'
     add_project_arguments('-DOSX', language: 'c')
 else
     add_project_arguments('-DLINUX', language: 'c')
+    add_project_arguments('-ggdb', language: 'c')
     add_project_arguments('-D_GNU_SOURCE', language: 'c')
+
     install_data('Support/60-orbcode.rules', install_dir : '/etc/udev/rules.d')
     install_data('Support/gdbtrace.init', install_dir : 'share/orbcode')
 endif
@@ -28,6 +36,10 @@ endif
 add_project_arguments('-DSCREEN_HANDLING', language: 'c')
 add_project_arguments('-Wno-error=deprecated-declarations', language: 'c')
 add_project_arguments(['-include', 'uicolours_default.h'], language: 'c')
+
+
+libdwarf = subproject('libdwarf').get_variable('libdwarf')
+dependencies += libdwarf
 
 if host_machine.system() == 'windows'
     stream_src = [
@@ -58,12 +70,16 @@ liborb = library('orb',
         'Src/tpiuDecoder.c',
         'Src/msgDecoder.c',
         'Src/msgSeq.c',
+	'Src/traceDecoder_etm35.c',
+	'Src/traceDecoder_etm4.c',	
+	'Src/traceDecoder_mtb.c',
         'Src/traceDecoder.c',
         'Src/generics.c',
+	'Src/readsource.c'
     ] + stream_src,
     include_directories: incdirs,
     dependencies: dependencies,
-    soversion: 0,
+    soversion: meson.project_version(),
     install: true,
 )
 
@@ -146,7 +162,7 @@ executable('orbstat',
 executable('orbmortem',
     sources: [
         'Src/orbmortem.c',
-        'Src/symbols.c',
+        'Src/loadelf.c',
         'Src/sio.c',
         git_version_info_h,
     ],
