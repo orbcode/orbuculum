@@ -57,6 +57,10 @@
 #include "orbtraceIf.h"
 #include "stream.h"
 
+#ifndef O_BINARY
+    #define O_BINARY 0
+#endif
+
 /* How many transfer buffers from the source to allocate */
 #define NUM_RAW_BLOCKS (32)
 
@@ -840,7 +844,7 @@ static void *_processBlocksQueue( void *params )
     {
         pthread_cond_wait( &r->dataForClients, &r->dataForClients_m );
 
-        while( r->rp != r->wp )
+        while ( r->rp != r->wp )
         {
             _processBlock( r, r->rawBlock[r->rp].fillLevel, r->rawBlock[r->rp].buffer );
             r->rp = ( r->rp + 1 ) % NUM_RAW_BLOCKS;
@@ -1261,7 +1265,7 @@ static int _serialFeeder( struct RunTime *r )
 static int _fileFeeder( struct RunTime *r )
 
 {
-    if ( ( r->f = open( r->options->file, O_RDONLY | O_BINARY) ) < 0 )
+    if ( ( r->f = open( r->options->file, O_RDONLY | O_BINARY ) ) < 0 )
     {
         genericsExit( -4, "Can't open file %s" EOL, r->options->file );
     }
@@ -1287,7 +1291,7 @@ static int _fileFeeder( struct RunTime *r )
         }
 
         r->wp = nwp;
-        
+
         if ( !rxBlock->fillLevel )
         {
             if ( r->options->fileTerminate )

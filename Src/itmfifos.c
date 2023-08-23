@@ -25,6 +25,10 @@
 #include "itmfifos.h"
 #include "msgDecoder.h"
 
+#ifndef O_BINARY
+    #define O_BINARY 0
+#endif
+
 #define MAX_STRING_LENGTH (100)              /* Maximum length that will be output from a fifo for a single event */
 
 struct runThreadParams                       /* Structure for parameters passed to a software task thread */
