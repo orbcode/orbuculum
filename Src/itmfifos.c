@@ -120,11 +120,11 @@ static void *_runFifo( void *arg )
         /* We use RDWR to allow the open to proceed without a remote end */
         if ( !params->permafile )
         {
-            opfile = open( c->fifoName, O_RDWR | O_NONBLOCK );
+            opfile = open( c->fifoName, O_RDWR | O_BINARY | O_NONBLOCK );
         }
         else
         {
-            opfile = open( c->fifoName, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH );
+            opfile = open( c->fifoName, O_WRONLY | O_CREAT | O_BINARY  | O_TRUNC, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH );
         }
 
         do
@@ -212,11 +212,11 @@ static void *_runHWFifo( void *arg )
         if ( !params->permafile )
         {
             /* We use RDWR to allow the open to proceed without a remote end */
-            opfile = open( c->fifoName, O_RDWR | O_NONBLOCK );
+            opfile = open( c->fifoName, O_RDWR | O_BINARY | O_NONBLOCK );
         }
         else
         {
-            opfile = open( c->fifoName, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH );
+            opfile = open( c->fifoName, O_WRONLY | O_CREAT | O_BINARY  | O_TRUNC, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH );
         }
 
         do

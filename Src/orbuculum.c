@@ -840,7 +840,7 @@ static void *_processBlocksQueue( void *params )
     {
         pthread_cond_wait( &r->dataForClients, &r->dataForClients_m );
 
-        if ( r->rp != r->wp )
+        while( r->rp != r->wp )
         {
             _processBlock( r, r->rawBlock[r->rp].fillLevel, r->rawBlock[r->rp].buffer );
             r->rp = ( r->rp + 1 ) % NUM_RAW_BLOCKS;
@@ -1261,7 +1261,7 @@ static int _serialFeeder( struct RunTime *r )
 static int _fileFeeder( struct RunTime *r )
 
 {
-    if ( ( r->f = open( r->options->file, O_RDONLY ) ) < 0 )
+    if ( ( r->f = open( r->options->file, O_RDONLY | O_BINARY) ) < 0 )
     {
         genericsExit( -4, "Can't open file %s" EOL, r->options->file );
     }
@@ -1276,6 +1276,18 @@ static int _fileFeeder( struct RunTime *r )
         struct dataBlock *rxBlock = &r->rawBlock[r->wp];
         rxBlock->fillLevel = read( r->f, rxBlock->buffer, USB_TRANSFER_SIZE );
 
+        /* We can probably read from file faster than we can process.... */
+        _dataAvailable( r );
+        int nwp = ( r->wp + 1 ) % NUM_RAW_BLOCKS;
+
+        /* Spin waiting for buffer space to become available */
+        while ( nwp == r->rp )
+        {
+            usleep( INTERVAL_1MS );
+        }
+
+        r->wp = nwp;
+        
         if ( !rxBlock->fillLevel )
         {
             if ( r->options->fileTerminate )
@@ -1289,18 +1301,6 @@ static int _fileFeeder( struct RunTime *r )
                 continue;
             }
         }
-
-        /* We can probably read from file faster than we can process.... */
-        _dataAvailable( r );
-        int nwp = ( r->wp + 1 ) % NUM_RAW_BLOCKS;
-
-        /* Spin waiting for buffer space to become available */
-        while ( nwp == r->rp )
-        {
-            usleep( INTERVAL_1MS );
-        }
-
-        r->wp = nwp;
     }
 
     r->conn = false;
@@ -1434,7 +1434,7 @@ int main( int argc, char *argv[] )
 
     if ( _r.options->outfile )
     {
-        _r.opFileHandle = open( _r.options->outfile, O_CREAT | O_TRUNC | O_WRONLY, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH );
+        _r.opFileHandle = open( _r.options->outfile, O_CREAT | O_TRUNC | O_WRONLY | O_BINARY, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH );
 
         if ( _r.opFileHandle < 0 )
         {
