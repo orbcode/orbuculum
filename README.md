@@ -385,6 +385,8 @@ For `orbuculum`, the specific command line options of note are;
 
   `-p, --serial-port [serialPort]`: to use. If not specified then the program defaults to Blackmagic probe.
 
+  `-P, --pace [us delay]`: between file blocks. Used to slow down orbuculum feeding from a file to a set of clients.
+
   `-s, --server [address]:[port]`: Set address for explicit TCP Source connection, (default none:2332).
 
   `-t, --tpiu x,y,...`: Remove TPIU formatting and issue streams x, y etc over incrementing IP port numbers.

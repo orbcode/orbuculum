@@ -87,6 +87,7 @@ struct Options
     char *otcl;                                          /* Orbtrace command line options */
     uint32_t intervalReportTime;                         /* If we want interval reports about performance */
     bool mono;                                           /* Supress colour in output */
+    int paceDelay;                                       /* Delay between blocks of data transmission in file readout */
     char *channelList;                                   /* List of TPIU channels to be serviced */
     bool hiresTime;                                      /* Use hiresolution time (shorter timeouts...more accurate but higher load */
     char *sn;                                            /* Any part serial number for identifying a specific device */
@@ -356,6 +357,7 @@ void _printHelp( const char *const progName )
     genericsPrintf( "    -o, --output-file:   <filename> to be used for dump file" EOL );
     genericsPrintf( "    -O, --orbtrace:      \"<options>\" run orbtrace with specified options on each new ORBTrace device connect" EOL );
     genericsPrintf( "    -p, --serial-port:   <serialPort> to use" EOL );
+    genericsPrintf( "    -P, --pace:          <microseconds> delay in block of data transmission to clients. Used when source is a file." EOL );
     genericsPrintf( "    -s, --server:        <Server>:<Port> to use" EOL );
     genericsPrintf( "    -t, --tpiu:          <Channel , ...> Use TPIU channels (and strip TPIU framing from output flows)" EOL );
     genericsPrintf( "    -v, --verbose:       <level> Verbose mode 0(errors)..3(debug)" EOL );
@@ -384,6 +386,7 @@ static struct option _longOptions[] =
     {"output-file", required_argument, NULL, 'o'},
     {"orbtrace", required_argument, NULL, 'O'},
     {"serial-port", required_argument, NULL, 'p'},
+    {"pace", required_argument, NULL, 'P'},
     {"server", required_argument, NULL, 's'},
     {"tpiu", required_argument, NULL, 't'},
     {"verbose", required_argument, NULL, 'v'},
@@ -397,7 +400,7 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
     int c, optionIndex = 0;
 #define DELIMITER ','
 
-    while ( ( c = getopt_long ( argc, argv, "a:Ef:hHVl:m:Mn:o:O:p:s:t:v:", _longOptions, &optionIndex ) ) != -1 )
+    while ( ( c = getopt_long ( argc, argv, "a:Ef:hHVl:m:Mn:o:O:p:P:s:t:v:", _longOptions, &optionIndex ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -472,6 +475,12 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
 
             case 'p':
                 r->options->port = optarg;
+                break;
+
+            // ------------------------------------
+
+            case 'P':
+                r->options->paceDelay = atoi( optarg );
                 break;
 
             // ------------------------------------
@@ -598,6 +607,7 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
     if ( r->options->file )
     {
         genericsReport( V_INFO, "Input File  : %s", r->options->file );
+        genericsReport( V_INFO, "Pace Delay  : %dms", r->options->paceDelay );
 
         if ( r->options->fileTerminate )
         {
@@ -614,6 +624,13 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
         genericsReport( V_ERROR, "Cannot specify file and port or NW Server at same time" EOL );
         return false;
     }
+
+    if ( (     r->options->paceDelay ) && ( !r->options->file ) )
+    {
+        genericsReport( V_ERROR, "Pace Delay only makes sense when input is from a file" EOL );
+        return false;
+    }
+
 
     if ( ( r->options->port ) && ( r->options->nwserverPort ) )
     {
@@ -1283,6 +1300,11 @@ static int _fileFeeder( struct RunTime *r )
         /* We can probably read from file faster than we can process.... */
         _dataAvailable( r );
         int nwp = ( r->wp + 1 ) % NUM_RAW_BLOCKS;
+
+        if ( r->options->paceDelay )
+        {
+            usleep( r->options->paceDelay );
+        }
 
         /* Spin waiting for buffer space to become available */
         while ( nwp == r->rp )
