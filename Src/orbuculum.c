@@ -606,8 +606,8 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
 
     if ( r->options->file )
     {
-        genericsReport( V_INFO, "Input File  : %s", r->options->file );
-        genericsReport( V_INFO, "Pace Delay  : %dms", r->options->paceDelay );
+        genericsReport( V_INFO, "Input File     : %s" EOL, r->options->file );
+        genericsReport( V_INFO, "Pace Delay     : %dms" EOL, r->options->paceDelay );
 
         if ( r->options->fileTerminate )
         {
@@ -724,7 +724,7 @@ static void _purgeBlock( struct RunTime *r )
         {
             if ( h->strippedBlock->fillLevel )
             {
-                nwclientSend( h->n, h->strippedBlock->fillLevel, h->strippedBlock->buffer );
+                nwclientSend( h->n, h->strippedBlock->fillLevel, h->strippedBlock->buffer, ( r->options->file != NULL ) );
                 h->intervalBytes += h->strippedBlock->fillLevel;
                 h->strippedBlock->fillLevel = 0;
             }
@@ -844,7 +844,7 @@ static void _processBlock( struct RunTime *r, ssize_t fillLevel, uint8_t *buffer
         else
         {
             /* Do it the old fashioned way and send out the unfettered block */
-            nwclientSend( _r.n, r->rawBlock[r->rp].fillLevel, r->rawBlock[r->rp].buffer );
+            nwclientSend( _r.n, r->rawBlock[r->rp].fillLevel, r->rawBlock[r->rp].buffer, ( r->options->file != NULL ) );
         }
     }
 }
@@ -923,7 +923,7 @@ static void _usb_callback( struct libusb_transfer *t )
         else
         {
             /* Do it the old fashioned way and send out the unfettered block */
-            nwclientSend( _r.n, t->actual_length, t->buffer );
+            nwclientSend( _r.n, t->actual_length, t->buffer, false );
         }
     }
 
@@ -1336,6 +1336,7 @@ static int _fileFeeder( struct RunTime *r )
         genericsReport( V_INFO, "File read error" EOL );
     }
 
+    usleep( INTERVAL_1S );
     close( r->f );
     return true;
 }
