@@ -18,6 +18,7 @@
     #include <netdb.h>
     #include <arpa/inet.h>
     #include <string.h>
+    #include <poll.h>
 #endif
 #ifdef LINUX
     #include <linux/tcp.h>
@@ -25,7 +26,6 @@
 #include <assert.h>
 #include <strings.h>
 #include <stdio.h>
-#include <poll.h>
 #include "generics.h"
 #include "nwclient.h"
 
@@ -212,18 +212,29 @@ void nwclientSend( struct nwclientsHandle *h, uint32_t len, uint8_t *ipbuffer, b
     {
         volatile struct nwClient *nextc = n->nextClient;
         uint32_t tosend = len;
-        uint8_t *p = ipbuffer;
+        int8_t *p = ( int8_t * )ipbuffer; /* Cast is needed for Windows */
+#ifdef WIN32
+        fd_set wfds;
+        struct timeval tv = { .tv_sec = 0, .tv_usec = CLIENT_MAX_WAIT_MS * 1000 };
+        FD_ZERO( &wfds );
+        FD_SET( n->portNo, &wfds );
+#else
         struct pollfd pfd = { n->portNo, POLLOUT | POLLHUP | POLLERR, 0 };
+#endif
 
         do
         {
             /* Need to ensure this port has room for more data */
+#ifdef WIN32
+            if ( select( n->portNo + 1, NULL, &wfds, NULL, unlimWait ? NULL : &tv ) <= 0 )
+#else
             if ( poll( &pfd, 1, unlimWait ? -1 : CLIENT_MAX_WAIT_MS ) <= 0 )
+#endif
             {
                 break;
             }
 
-            sent = send( n->portNo, p, len, MSG_NOSIGNAL );
+            sent = send( n->portNo, ( char * )p, len, MSG_NOSIGNAL );
 
             if ( sent > 0 )
             {
