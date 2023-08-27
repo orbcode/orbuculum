@@ -289,7 +289,7 @@ static enum SIOEvent _processRegularKeys( struct SIOInstance *sio )
         case 'd': /* ---------------------------- Display Mode ----------------------------------- */
             if ( !sio->amDiving )
             {
-                sio->displayMode = ( sio->displayMode + 1 ) % DISP_MAX_OPTIONS;
+                sio->displayMode = ( enum DISP )( ( sio->displayMode + 1 ) % DISP_MAX_OPTIONS );
                 op = SIO_EV_CONSUMED;
                 SIOrequestRefresh( sio );
             }
@@ -734,7 +734,8 @@ static void _outputStatus( struct SIOInstance *sio, uint64_t oldintervalBytes )
     if ( !sio->amDiving )
     {
         mvwprintw( sio->statusWindow, 0, 44, " %s%s", ( char *[] )
-        {"Mixed", "Source", "Assembly"
+        {
+            ( char * )"Mixed", ( char * )"Source", ( char * )"Assembly"
         }[sio->displayMode], sio->outputDebug ? "+Debug " : " " );
     }
     else

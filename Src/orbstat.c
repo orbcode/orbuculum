@@ -63,7 +63,7 @@ struct Options                           /* Record for options, either defaults 
     bool mono;                           /* Supress colour in output */
 
     bool useTPIU;                        /* Are we using TPIU, and stripping TPIU frames? */
-    uint32_t tpiuITMChannel;             /* Which TPIU channel to use for ITM */
+    int8_t tpiuITMChannel;               /* Which TPIU channel to use for ITM */
 
     int port;                            /* Source information for where to connect to */
     char *server;
@@ -71,12 +71,12 @@ struct Options                           /* Record for options, either defaults 
 } _options =
 {
     .demangle       = true,
-    .sampleDuration = DEFAULT_DURATION_MS,
-    .port           = NWCLIENT_SERVER_PORT,
     .traceChannel   = DEFAULT_TRACE_CHANNEL,
     .fileChannel    = DEFAULT_FILE_CHANNEL,
+    .sampleDuration = DEFAULT_DURATION_MS,
     .forceITMSync   = true,
-    .server         = "localhost"
+    .port           = NWCLIENT_SERVER_PORT,
+    .server         = ( char * )"localhost"
 };
 
 /* A block of received data */
@@ -207,7 +207,7 @@ static void _handleSW( struct RunTime *r )
                 {
                     if ( SymbolLookup( r->s, addr, &n ) )
                     {
-                        r->from = calloc( 1, sizeof( struct execEntryHash ) );
+                        r->from = ( struct execEntryHash * )calloc( 1, sizeof( struct execEntryHash ) );
 
                         if ( !r->from )
                         {
@@ -243,7 +243,7 @@ static void _handleSW( struct RunTime *r )
                 {
                     if ( SymbolLookup( r->s, addr, &n ) )
                     {
-                        r->to = calloc( 1, sizeof( struct execEntryHash ) );
+                        r->to = ( struct execEntryHash * )calloc( 1, sizeof( struct execEntryHash ) );
 
                         if ( !r->to )
                         {
@@ -523,6 +523,7 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
 
 {
     int c, optionIndex = 0;
+    char *a;
 
     while ( ( c = getopt_long ( argc, argv, "Dd:e:Ef:g:hI:nO:s:t:Tv:Vy:z:", _longOptions, &optionIndex ) ) != -1 )
         switch ( c )
@@ -593,7 +594,7 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
                 r->options->server = optarg;
 
                 // See if we have an optional port number too
-                char *a = optarg;
+                a = optarg;
 
                 while ( ( *a ) && ( *a != ':' ) )
                 {
@@ -632,7 +633,7 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
                     return false;
                 }
 
-                genericsSetReportLevel( atoi( optarg ) );
+                genericsSetReportLevel( ( enum verbLevel )atoi( optarg ) );
                 break;
 
             // ------------------------------------

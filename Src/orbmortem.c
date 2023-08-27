@@ -27,7 +27,7 @@
 #include "sio.h"
 #include "stream.h"
 
-#define REMOTE_SERVER       "localhost"
+#define REMOTE_SERVER       (char*)"localhost"
 
 #define SCRATCH_STRING_LEN  (65535)     /* Max length for a string under construction */
 //#define DUMP_BLOCK
@@ -63,12 +63,12 @@ struct Options
     bool withDebugText;                 /* Include debug text (hidden in) output...screws line numbering a bit */
 } _options =
 {
+    .demangle = true,
+    .buflen   = DEFAULT_PM_BUFLEN_K * 1024,
+    .channel  = 2,
     .port     = NWCLIENT_SERVER_PORT,
     .server   = REMOTE_SERVER,
-    .demangle = true,
     .protocol = TRACE_PROT_ETM35,
-    .channel  = 2,
-    .buflen   = DEFAULT_PM_BUFLEN_K * 1024
 };
 
 /* A block of received data */
@@ -180,7 +180,7 @@ static void _printHelp( const char *const progName )
 
     for ( int i = TRACE_PROT_LIST_START; i < TRACE_PROT_NUM; i++ )
     {
-        genericsPrintf( "%s ", TRACEDecodeGetProtocolName( i ) );
+        genericsPrintf( "%s ", TRACEDecodeGetProtocolName( ( enum TRACEprotocol )i ) );
     }
 
     genericsPrintf( "} trace protocol to use, default is %s" EOL, TRACEDecodeGetProtocolName( TRACE_PROT_LIST_START ) );
@@ -226,6 +226,7 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
 
 {
     int c, optionIndex = 0;
+    char *a;
 
     while ( ( c = getopt_long ( argc, argv, "Ab:C:Dd:Ee:f:hVMO:p:s:t:v:w", _longOptions, &optionIndex ) ) != -1 )
         switch ( c )
@@ -298,11 +299,12 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
             case 'p':
 
                 /* Index through protocol strings looking for match or end of list */
-                for ( r->options->protocol = TRACE_PROT_LIST_START;
-                        ( ( r->options->protocol != TRACE_PROT_NUM ) && strcasecmp( optarg, TRACEDecodeGetProtocolName( r->options->protocol ) ) );
-                        r->options->protocol++ )
+                for ( c = TRACE_PROT_LIST_START;
+                        ( ( c != TRACE_PROT_NUM ) && strcasecmp( optarg, TRACEDecodeGetProtocolName( ( enum TRACEprotocol )c ) ) );
+                        c++ )
                 {}
 
+                r->options->protocol = ( enum TRACEprotocol )c;
                 break;
 
             // ------------------------------------
@@ -311,7 +313,7 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
                 r->options->server = optarg;
 
                 // See if we have an optional port number too
-                char *a = optarg;
+                a = optarg;
 
                 while ( ( *a ) && ( *a != ':' ) )
                 {
@@ -347,7 +349,7 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
                     return false;
                 }
 
-                genericsSetReportLevel( atoi( optarg ) );
+                genericsSetReportLevel( ( enum verbLevel )atoi( optarg ) );
                 break;
 
             // ------------------------------------
@@ -418,7 +420,7 @@ static void _processBlock( struct RunTime *r )
 
 {
     uint8_t *c = r->rawBlock.buffer;
-    uint32_t y = r->rawBlock.fillLevel;
+    int32_t y = r->rawBlock.fillLevel;
 
     genericsReport( V_DEBUG, "RXED Packet of %d bytes" EOL, y );
 
@@ -456,13 +458,13 @@ static void _processBlock( struct RunTime *r )
                     else
                     {
                         /* Iterate through the packet, putting bytes for TRACE into the processing buffer */
-                        for ( uint32_t g = 0; g < p.len; g++ )
+                        for ( int g = 0; g < p.len; g++ )
                         {
                             if ( r->options->channel == p.packet[g].s )
                             {
                                 r->pmBuffer[r->wp] = p.packet[g].d;
                                 r->newTotalBytes++;
-                                uint32_t nwp = ( r->wp + 1 ) % r->options->buflen;
+                                int32_t nwp = ( r->wp + 1 ) % r->options->buflen;
 
                                 if ( nwp == r->rp )
                                 {
@@ -491,7 +493,7 @@ static void _processBlock( struct RunTime *r )
             while ( y-- )
             {
                 r->pmBuffer[r->wp] = *c++;
-                uint32_t nwp = ( r->wp + 1 ) % r->options->buflen;
+                int32_t nwp = ( r->wp + 1 ) % r->options->buflen;
 
                 if ( nwp == r->rp )
                 {
@@ -740,7 +742,7 @@ static void _traceCB( void *d )
     uint32_t disposition;
     uint32_t targetAddr = 0; /* Just to avoid unitialised variable warning */
     bool linearRun = false;
-    enum instructionClass ic;
+    int ic;
     symbolMemaddr newaddr;
 
     /* 1: Report anything that doesn't affect the flow */
@@ -1028,7 +1030,7 @@ static bool _dumpBuffer( struct RunTime *r )
     return true;
 }
 // ====================================================================================================
-static struct symbolLineStore *_fileAndLine( struct RunTime *r, uint32_t i )
+static struct symbolLineStore *_fileAndLine( struct RunTime *r, int32_t i )
 
 {
     /* Search backwards from current position in buffer until we find a line a line record attached */
@@ -1139,7 +1141,7 @@ static void _doSave( struct RunTime *r, bool includeDebug )
 {
     FILE *f;
     char fn[SCRATCH_STRING_LEN];
-    uint32_t w;
+    int32_t w;
     char *p;
 
     snprintf( fn, SCRATCH_STRING_LEN, "%s.trace", SIOgetSaveFilename( r->sio ) );

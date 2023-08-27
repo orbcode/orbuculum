@@ -33,7 +33,7 @@ extern "C" {
 #define INTERRUPT         (SPECIALS_MASK|0xd)
 #define FN_INTERRUPT_STR  "INTERRUPT"
 
-enum symbolErr { SYMBOL_OK, SYMBOL_NOELF, SYMBOL_NOOBJDUMP, SYMBOL_UNSPECIFIED };
+enum symbolErr { SYMBOL_OK, SYMBOL_NOELF, SYMBOL_NOOBJDUMP, SYMBOL_UNSPECIFIED, SYMBOL_OOM };
 
 /* Mapping of lines numbers to indicies */
 struct assyLineEntry

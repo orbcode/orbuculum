@@ -91,7 +91,7 @@ struct OrbtraceIf
     uint8_t ep;                                  /* Endpoint used for data transfer */
     uint8_t iface;                               /* ...and the interface */
 
-    int numDevices;                              /* Number of matching devices found */
+    unsigned int numDevices;                     /* Number of matching devices found */
     struct OrbtraceIfDevice *devices;            /* List of matching devices found */
 };
 // ====================================================================================================
@@ -99,23 +99,23 @@ struct OrbtraceIf
 int OrbtraceIfValidateVoltage( struct OrbtraceIf *o, int vmv );
 
 /* Device access */
-static inline char *OrbtraceIfGetManufacturer( struct OrbtraceIf *o, unsigned int e )
+static inline const char *OrbtraceIfGetManufacturer( struct OrbtraceIf *o, unsigned int e )
 {
     return ( ( e < o->numDevices ) && ( o->devices[e].manufacturer ) ) ? o->devices[e].manufacturer : "";
 }
-static inline char *OrbtraceIfGetProduct( struct OrbtraceIf *o, unsigned int e )
+static inline const char *OrbtraceIfGetProduct( struct OrbtraceIf *o, unsigned int e )
 {
     return ( ( e < o->numDevices ) && ( o->devices[e].product ) ) ? o->devices[e].product : "";
 }
 static inline enum ORBTraceDevice OrbtraceIfGetDevtype( struct OrbtraceIf *o, unsigned int e )
 {
-    return ( ( e < o->numDevices ) && ( o->devices[e].devtype ) ) ? o->devices[e].devtype : 0;
+    return ( ( e < o->numDevices ) && ( o->devices[e].devtype ) ) ? o->devices[e].devtype : DEVICE_NULL;
 }
-static inline char *OrbtraceIfGetVersion( struct OrbtraceIf *o, unsigned int e )
+static inline const char *OrbtraceIfGetVersion( struct OrbtraceIf *o, unsigned int e )
 {
     return ( ( e < o->numDevices ) && ( o->devices[e].version ) ) ? o->devices[e].version : "";
 }
-static inline char *OrbtraceIfGetSN( struct OrbtraceIf *o, unsigned int e )
+static inline const char *OrbtraceIfGetSN( struct OrbtraceIf *o, unsigned int e )
 {
     return ( ( e < o->numDevices ) && ( o->devices[e].sn ) ) ? o->devices[e].sn : "";
 }
@@ -144,7 +144,7 @@ static inline libusb_device_handle *OrbtraceIfGetHandle( struct OrbtraceIf *o )
 int OrbtraceIfGetDeviceList( struct OrbtraceIf *o, char *sn, uint32_t devmask );
 void OrbtraceIfListDevices( struct OrbtraceIf *o );
 int OrbtraceIfSelectDevice( struct OrbtraceIf *o );
-bool OrbtraceIfOpenDevice( struct OrbtraceIf *o, int entry );
+bool OrbtraceIfOpenDevice( struct OrbtraceIf *o, unsigned int entry );
 bool OrbtraceGetIfandEP( struct OrbtraceIf *o );
 void OrbtraceIfCloseDevice( struct OrbtraceIf *o );
 enum Channel OrbtraceIfNameToChannel( char *x );

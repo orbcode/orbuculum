@@ -206,7 +206,7 @@ int _findOrAddString( const char *stringToFindorAdd, char ***table, unsigned int
 
 {
     /* Find the string in the specified table (and return its index) or create a new string record and return that index */
-    for ( int i = 0; i < *elementCount; i++ )
+    for ( unsigned int i = 0; i < *elementCount; i++ )
     {
         if ( !strcmp( ( *table )[i], stringToFindorAdd ) )
         {
@@ -357,7 +357,7 @@ void _dwarf_print( void *p, const char *line )
 static void _processFunctionDie( struct symbol *p, Dwarf_Debug dbg, Dwarf_Die die, int filenameN, int producerN, Dwarf_Addr cu_base_addr )
 
 {
-    char *name = "";
+    char *name = ( char * )"";
     Dwarf_Addr h = 0;
     Dwarf_Addr l = 0;
     enum Dwarf_Form_Class formclass;
@@ -560,7 +560,7 @@ static bool _readLines( struct symbol *p )
     dwarf_register_printf_callback( dbg, &print_setup );
 
     /* Add an empty string to each string table, so the 0th element is the empty string in all cases */
-    for ( enum symbolTables pt = 0; pt < PT_NUMTABLES; pt++ )
+    for ( int pt = PT_PRODUCER; pt < PT_NUMTABLES; pt++ )
     {
         _findOrAddString( "", &p->stringTable[pt],  &p->tableLen[pt] );
     }
@@ -608,7 +608,7 @@ static bool _readLines( struct symbol *p )
     qsort( p->func, p->nfunc, sizeof( struct symbolFunctionStore * ), _compareFunc );
 
     /* Combine addresses in the lines table which have the same memory location...those aren't too useful for us      */
-    for ( int i = 1; i < p->nlines; i++ )
+    for ( unsigned int i = 1; i < p->nlines; i++ )
     {
         while ( ( i < p->nlines ) && ( ( p->line[i]->filename == p->line[i - 1]->filename ) ) && ( ( p->line[i]->lowaddr == p->line[i - 1]->lowaddr ) ) )
         {
@@ -616,7 +616,7 @@ static bool _readLines( struct symbol *p )
             free( p->line[i - 1] );
 
             /* ...and move the following lines down */
-            for ( int j = i; j < p->nlines; j++ )
+            for ( unsigned int j = i; j < p->nlines; j++ )
             {
                 p->line[j - 1] = p->line[j];
             }
@@ -627,7 +627,7 @@ static bool _readLines( struct symbol *p )
 
     /* Now do the same for lines with the same line number and file */
     /* We can also set the high memory extent for each line here */
-    for ( int i = 1; i < p->nlines; i++ )
+    for ( unsigned int i = 1; i < p->nlines; i++ )
     {
         while ( ( i < p->nlines ) &&
                 ( p->line[i]->startline == p->line[i - 1]->startline ) &&
@@ -637,7 +637,7 @@ static bool _readLines( struct symbol *p )
             p->line[i]->lowaddr = p->line[i - 1]->lowaddr;
             free( p->line[i - 1] );
 
-            for ( int j = i; j < p->nlines; j++ )
+            for ( unsigned int j = i; j < p->nlines; j++ )
             {
                 p->line[j - 1] = p->line[j];
             }
@@ -658,7 +658,7 @@ static bool _readLines( struct symbol *p )
         p->line[0]->lowaddr =     p->line[0]->highaddr - 2;
 
         /* Allocate lines to functions ... these will be in address order 'cos the lines already are */
-        for ( int i = 0; i < p->nlines; i++ )
+        for ( unsigned int i = 0; i < p->nlines; i++ )
         {
             struct symbolFunctionStore *f = symbolFunctionAt( p, p->line[i]->lowaddr );
             p->line[i]->function = f;
@@ -691,7 +691,7 @@ static bool _loadSource( struct symbol *p )
     /* We need to aqquire source code for all of the files that we have an entry in the stringtable, so let's start by making room */
     p->source = ( struct symbolSourcecodeStore ** )calloc( 1, sizeof( struct symbolSourcecodeStore * )*p->tableLen[PT_FILENAME] );
 
-    for ( int i = 0; i < p->tableLen[PT_FILENAME]; i++ )
+    for ( unsigned int i = 0; i < p->tableLen[PT_FILENAME]; i++ )
     {
         r = readsourcefile( p->stringTable[PT_FILENAME][i], &l );
 
@@ -920,7 +920,7 @@ void symbolDelete( struct symbol *p )
         }
 
         /* Flush the string tables */
-        for ( enum symbolTables pt = 0; pt < PT_NUMTABLES; pt++ )
+        for ( int pt = 0; pt < PT_NUMTABLES; pt++ )
         {
             while ( p->tableLen[pt] )
             {
@@ -929,7 +929,7 @@ void symbolDelete( struct symbol *p )
         }
 
         /* Flush the source code line records */
-        for ( int i = 0; i < p->nlines; i++ )
+        for ( unsigned int i = 0; i < p->nlines; i++ )
         {
             free( p->line[i] );
         }
@@ -940,7 +940,7 @@ void symbolDelete( struct symbol *p )
         }
 
         /* Remove any source code we might be holding */
-        for ( int i = 0; i < p->tableLen[PT_FILENAME]; i++ )
+        for ( unsigned int i = 0; i < p->tableLen[PT_FILENAME]; i++ )
         {
             /* Text is all allocated in one block by readsource, so just deleting the firt element is enough */
             free( p->source[i]->linetext[0] );
@@ -957,7 +957,7 @@ void symbolDelete( struct symbol *p )
 
 // ====================================================================================================
 
-char *symbolDisassembleLine( struct symbol *p, enum instructionClass *ic, symbolMemaddr addr, symbolMemaddr *newaddr )
+char *symbolDisassembleLine( struct symbol *p, int *ic, symbolMemaddr addr, symbolMemaddr *newaddr )
 
 /* Return assembly code representing this line */
 
@@ -971,12 +971,12 @@ char *symbolDisassembleLine( struct symbol *p, enum instructionClass *ic, symbol
         *newaddr = NO_ADDRESS;
     }
 
-    *ic = 0;
+    *ic = LE_IC_NONE;
 
     if ( !p->caphandle )
     {
         /* Disassembler isn't initialised yet */
-        if ( cs_open( CS_ARCH_ARM, CS_MODE_THUMB + CS_MODE_LITTLE_ENDIAN, &p->caphandle ) != CS_ERR_OK )
+        if ( cs_open( CS_ARCH_ARM, CS_MODE_THUMB, &p->caphandle ) != CS_ERR_OK )
         {
             return NULL;
         }
@@ -1001,10 +1001,10 @@ char *symbolDisassembleLine( struct symbol *p, enum instructionClass *ic, symbol
         /* Characterise the instruction using rules from F1.3 of ARM IHI0064H.a */
 
         /* Check instruction size */
-        *ic |= ( insn->size == 4 ) ? LE_IC_4BYTE : 0;
+        *ic |= ( insn->size == 4 ) ? LE_IC_4BYTE : LE_IC_NONE;
 
         /* Was it a subroutine call? */
-        *ic |= ( ( insn->id == ARM_INS_BL ) || ( insn->id == ARM_INS_BLX ) ) ? LE_IC_JUMP | LE_IC_CALL : 0;
+        *ic |= ( ( insn->id == ARM_INS_BL ) || ( insn->id == ARM_INS_BLX ) ) ? LE_IC_JUMP | LE_IC_CALL : LE_IC_NONE;
 
         /* Was it a regular call? */
         *ic |= ( ( insn->id == ARM_INS_B )    || ( insn->id == ARM_INS_BX )  || ( insn->id == ARM_INS_ISB ) ||
@@ -1026,11 +1026,14 @@ char *symbolDisassembleLine( struct symbol *p, enum instructionClass *ic, symbol
         /* Add text describing instruction */
         if ( *ic & LE_IC_4BYTE )
         {
-            sprintf( op, "%8"PRIx64":   %02x%02x %02x%02x   %s %s", insn->address, insn->bytes[1], insn->bytes[0], insn->bytes[3], insn->bytes[2], insn->mnemonic, insn->op_str );
+            sprintf( op, "%8" PRIx64 ":   %02x%02x %02x%02x   %s %s",
+                     insn->address, insn->bytes[1], insn->bytes[0], insn->bytes[3], insn->bytes[2],
+                     insn->mnemonic, insn->op_str );
         }
         else
         {
-            sprintf( op, "%8"PRIx64":   %02x%02x        %s  %s", insn->address, insn->bytes[1], insn->bytes[0], insn->mnemonic, insn->op_str  );
+            sprintf( op, "%8" PRIx64 ":   %02x%02x        %s  %s", insn->address, insn->bytes[1],
+                     insn->bytes[0], insn->mnemonic, insn->op_str  );
         }
 
         /* Check to see if operands are immediate */

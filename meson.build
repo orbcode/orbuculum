@@ -33,6 +33,8 @@ else
     install_data('Support/gdbtrace.init', install_dir : 'share/orbcode')
 endif
 
+add_project_arguments('-x', language: 'c')
+add_project_arguments('c++', language: 'c')
 add_project_arguments('-DSCREEN_HANDLING', language: 'c')
 add_project_arguments('-Wno-error=deprecated-declarations', language: 'c')
 add_project_arguments(['-include', 'uicolours_default.h'], language: 'c')
@@ -40,6 +42,9 @@ add_project_arguments(['-include', 'uicolours_default.h'], language: 'c')
 
 libdwarf = subproject('libdwarf').get_variable('libdwarf')
 dependencies += libdwarf
+
+tomlplusplus_dep = dependency('tomlplusplus')
+dependencies += tomlplusplus_dep
 
 if host_machine.system() == 'windows'
     stream_src = [

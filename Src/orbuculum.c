@@ -11,6 +11,8 @@
 #include <fcntl.h>
 #include <ctype.h>
 #include <assert.h>
+#include <iostream>
+//#include <../toml.hpp>
 #ifdef WIN32
     #include <winsock2.h>
 #else
@@ -34,14 +36,8 @@
     #if defined LINUX
         #include <libusb-1.0/libusb.h>
         #include <asm/ioctls.h>
-        #if defined TCGETS2
-            #include <asm/termios.h>
-            /* Manual declaration to avoid conflict. */
-            extern int ioctl ( int __fd, unsigned long int __request, ... ) ;
-        #else
-            #include <sys/ioctl.h>
-            #include <termios.h>
-        #endif
+        #include <asm/termbits.h>
+        #include <sys/ioctl.h>
     #elif defined WIN32
         #include <libusb.h>
     #else
@@ -139,7 +135,7 @@ struct RunTime
     #define SO_REUSEPORT SO_REUSEADDR
 #endif
 
-#define NWSERVER_HOST "localhost"                        /* Address to connect to NW Server */
+#define NWSERVER_HOST (char*)"localhost"                 /* Address to connect to NW Server */
 #define NWSERVER_PORT (2332)
 
 #define NUM_TPIU_CHANNELS 0x80
@@ -153,8 +149,8 @@ struct RunTime
 
 struct Options _options =
 {
-    .listenPort   = NWCLIENT_SERVER_PORT,
     .nwserverHost = NWSERVER_HOST,
+    .listenPort   = NWCLIENT_SERVER_PORT,
 };
 
 struct RunTime _r;
@@ -398,6 +394,7 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
 
 {
     int c, optionIndex = 0;
+    char *a;
 #define DELIMITER ','
 
     while ( ( c = getopt_long ( argc, argv, "a:Ef:hHVl:m:Mn:o:O:p:P:s:t:v:", _longOptions, &optionIndex ) ) != -1 )
@@ -489,7 +486,7 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
                 r->options->nwserverHost = optarg;
 
                 // See if we have an optional port number too
-                char *a = optarg;
+                a = optarg;
 
                 while ( ( *a ) && ( *a != ':' ) )
                 {
@@ -523,7 +520,7 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
                     return false;
                 }
 
-                genericsSetReportLevel( atoi( optarg ) );
+                genericsSetReportLevel( ( enum verbLevel )atoi( optarg ) );
                 break;
 
             // ------------------------------------
@@ -1371,6 +1368,19 @@ int main( int argc, char *argv[] )
     {
         genericsExit( -1, "Failed to establish condition variablee" EOL );
     }
+
+#if 0
+    auto config = toml::parse_file( ".orb.toml" );
+    config.for_each( []( auto & key, auto & value )
+    {
+        std::cout << value << "\n";
+
+        if constexpr ( toml::is_string<decltype( value )> )
+        {
+            do_something_with_string_values( value );
+        }
+    } );
+#endif
 
     if ( !_processOptions( argc, argv, &_r ) )
     {

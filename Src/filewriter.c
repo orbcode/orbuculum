@@ -74,7 +74,7 @@ void _processCompleteName( uint32_t n )
     }
     else
     {
-        compareName = realpath( dirname( "" ), NULL );
+        compareName = realpath( dirname( ( char * )"" ), NULL );
     }
 
     /* Now check that the first part matches, up to the length of the comparison Name */
@@ -195,7 +195,11 @@ bool filewriterProcess( struct swMsg *m )
 {
     /* Split 32-bit word back into its compoenent parts without punning issues */
 
-    uint8_t d[4] = { m->value & 0xff,  ( m->value >> 8 ) & 0xff,  ( m->value >> 16 ) & 0xff,  ( m->value > 24 ) & 0xff};
+    uint8_t d[4] = { ( uint8_t )( m->value & 0xff ),
+                     ( uint8_t )( ( m->value >> 8 ) & 0xff ),
+                     ( uint8_t )( ( m->value >> 16 ) & 0xff ),
+                     ( uint8_t )( ( m->value > 24 ) & 0xff )
+                   };
 
     uint8_t c = d[0]; /* Extract the control word for convinience */
 

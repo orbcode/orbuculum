@@ -51,7 +51,7 @@ struct
 } options =
 {
     .port = NWCLIENT_SERVER_PORT,
-    .server = "localhost"
+    .server = ( char * )"localhost"
 };
 
 struct
@@ -120,7 +120,7 @@ static bool _processOptions( int argc, char *argv[] )
     char *chanName;
     uint chan;
     char *chanIndex;
-
+    char *a;
 
     while ( ( c = getopt_long ( argc, argv, "b:c:Ef:hVn:Ps:t:v:w:", _longOptions, &optionIndex ) ) != -1 )
         switch ( c )
@@ -174,7 +174,7 @@ static bool _processOptions( int argc, char *argv[] )
                 options.server = optarg;
 
                 // See if we have an optional port number too
-                char *a = optarg;
+                a = optarg;
 
                 while ( ( *a ) && ( *a != ':' ) )
                 {
@@ -210,7 +210,7 @@ static bool _processOptions( int argc, char *argv[] )
                     return false;
                 }
 
-                genericsSetReportLevel( atoi( optarg ) );
+                genericsSetReportLevel( ( enum verbLevel )atoi( optarg ) );
                 break;
 
             // ------------------------------------
@@ -327,7 +327,7 @@ static bool _processOptions( int argc, char *argv[] )
     {
         if ( itmfifoGetChannelName( _r.f, g ) )
         {
-            genericsReport( V_INFO, "         %02d [%s] [%s]" EOL, g, genericsEscape( itmfifoGetChannelFormat( _r.f, g ) ? : "RAW" ), itmfifoGetChannelName( _r.f, g ) );
+            genericsReport( V_INFO, "         %02d [%s] [%s]" EOL, g, genericsEscape( itmfifoGetChannelFormat( _r.f, g ) ? : ( char * )"RAW" ), itmfifoGetChannelName( _r.f, g ) );
         }
     }
 

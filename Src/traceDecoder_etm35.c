@@ -461,7 +461,7 @@ static bool _pumpAction( struct TRACEDecoderEngine *e, struct TRACECPUState *cpu
                         /* There is (legacy) exception information in here */
                         cpu->exception = ( c >> 4 ) & 0x07;
                         _stateChange( cpu, EV_CH_EX_ENTRY );
-                        _stateChange( cpu, ( ( c & 0x40 ) != 0 ) ? EV_CH_CANCELLED : 0 );
+                        _stateChange( cpu, ( ( c & 0x40 ) != 0 ) ? EV_CH_CANCELLED : EV_CH_NONE );
                         newState = TRACE_IDLE;
                         retVal = TRACE_EV_MSG_RXED;
 
@@ -500,7 +500,7 @@ static bool _pumpAction( struct TRACEDecoderEngine *e, struct TRACECPUState *cpu
                     }
 
                     cpu->exception = ( c >> 1 ) & 0x0f;
-                    _stateChange( cpu, ( ( c & ( 1 << 5 ) ) != 0 ) ? EV_CH_CANCELLED : 0 );
+                    _stateChange( cpu, ( ( c & ( 1 << 5 ) ) != 0 ) ? EV_CH_CANCELLED : EV_CH_NONE );
 
                     if ( cpu->altISA != ( ( c & ( 1 << 6 ) ) != 0 ) )
                     {
@@ -698,7 +698,7 @@ static bool _pumpAction( struct TRACEDecoderEngine *e, struct TRACECPUState *cpu
 
                 if ( cpu->reason != ( ( c & 0x01100000 ) >> 5 ) )
                 {
-                    cpu->reason    = ( c & 0x01100000 ) >> 5;
+                    cpu->reason    = ( enum Reason )( ( c & 0x01100000 ) >> 5 );
                     _stateChange( cpu, EV_CH_REASON );
                 }
 
@@ -850,10 +850,10 @@ static bool _synced( struct TRACEDecoderEngine *e )
 
 // ====================================================================================================
 
-static void _usingAltAddrEncode( struct TRACEDecoderEngine *e, bool using )
+static void _usingAltAddrEncode( struct TRACEDecoderEngine *e, bool amusing )
 
 {
-    ( ( struct ETM35DecodeState * )e )->usingAltAddrEncode = using;
+    ( ( struct ETM35DecodeState * )e )->usingAltAddrEncode = amusing;
 }
 
 // ====================================================================================================

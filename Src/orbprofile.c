@@ -59,7 +59,7 @@ struct Options                           /* Record for options, either defaults 
 
     char *dotfile;                       /* File to output dot information */
     char *profile;                       /* File to output profile information */
-    int  sampleDuration;                 /* How long we are going to sample for */
+    unsigned int  sampleDuration;        /* How long we are going to sample for */
     bool mono;                           /* Supress colour in output */
     bool noaltAddr;                      /* Dont use alternate addressing */
     bool useTPIU;                        /* Are we using TPIU, and stripping TPIU frames? */
@@ -73,9 +73,9 @@ struct Options                           /* Record for options, either defaults 
 {
     .demangle       = true,
     .sampleDuration = DEFAULT_DURATION_MS,
-    .port           = NWCLIENT_SERVER_PORT,
     .protocol       = TRACE_PROT_ETM35,
-    .server         = "localhost"
+    .port           = NWCLIENT_SERVER_PORT,
+    .server         = ( char * )"localhost"
 };
 
 /* State of routine tracking, maintained across TRACE callbacks to reconstruct program flow */
@@ -268,7 +268,7 @@ static void _hashFindOrCreate( struct RunTime *r, uint32_t addr, struct execEntr
                 genericsExit( -1, "No assembly for function at address %08x, %s" EOL, r->op.workingAddr, SymbolFunction( r->s, n.functionindex ) );
             }
 
-            *h = calloc( 1, sizeof( struct execEntryHash ) );
+            *h = ( struct execEntryHash * )calloc( 1, sizeof( struct execEntryHash ) );
             MEMCHECK( *h, );
 
             ( *h )->addr          = r->op.workingAddr;
@@ -363,7 +363,7 @@ static void _traceCB( void *d )
         printf( EOL "Address 0x%08lx" EOL, r->i.cpu.addr );
     }
 
-    TRACEStateChanged( &r->i, 0xffffffff );
+    TRACEStateChanged( &r->i, ( enum TRACEchanges )0xffffffff );
     return;
 
     /* This routine gets called when valid data are available */
@@ -383,7 +383,7 @@ static void _traceCB( void *d )
         }
 
         /* Create false entry for an interrupt source */
-        r->op.inth = calloc( 1, sizeof( struct execEntryHash ) );
+        r->op.inth = ( struct execEntryHash * )calloc( 1, sizeof( struct execEntryHash ) );
 
         MEMCHECK( r->op.inth, );
         r->op.inth->addr          = INTERRUPT;
@@ -475,7 +475,7 @@ static void _printHelp( const char *const progName )
 
     for ( int i = TRACE_PROT_LIST_START; i < TRACE_PROT_NUM; i++ )
     {
-        genericsPrintf( "%s ", TRACEDecodeGetProtocolName( i ) );
+        genericsPrintf( "%s ", TRACEDecodeGetProtocolName( ( enum TRACEprotocol )i ) );
     }
 
     genericsPrintf( "} trace protocol to use, default is %s" EOL, TRACEDecodeGetProtocolName( TRACE_PROT_LIST_START ) );
@@ -523,6 +523,7 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
 
 {
     int c, optionIndex = 0;
+    char *a;
 
     while ( ( c = getopt_long ( argc, argv, "ADd:e:Ef:hVI:MO:p:s:Tt:v:y:z:", _longOptions, &optionIndex ) ) != -1 )
 
@@ -590,11 +591,12 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
             case 'p':
 
                 /* Index through protocol strings looking for match or end of list */
-                for ( r->options->protocol = TRACE_PROT_LIST_START;
-                        ( ( r->options->protocol != TRACE_PROT_NUM ) && strcasecmp( optarg, TRACEDecodeGetProtocolName( r->options->protocol ) ) );
-                        r->options->protocol++ )
+                for ( c = TRACE_PROT_LIST_START;
+                        ( ( c != TRACE_PROT_NUM ) && strcasecmp( optarg, TRACEDecodeGetProtocolName( ( enum TRACEprotocol )c ) ) );
+                        c++ )
                 {}
 
+                r->options->protocol = ( enum TRACEprotocol )c;
                 break;
 
             // ------------------------------------
@@ -602,7 +604,7 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
                 r->options->server = optarg;
 
                 // See if we have an optional port number too
-                char *a = optarg;
+                a = optarg;
 
                 while ( ( *a ) && ( *a != ':' ) )
                 {
@@ -642,7 +644,7 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
                     return false;
                 }
 
-                genericsSetReportLevel( atoi( optarg ) );
+                genericsSetReportLevel( ( enum verbLevel )atoi( optarg ) );
                 break;
 
             // ------------------------------------

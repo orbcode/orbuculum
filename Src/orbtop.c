@@ -76,7 +76,7 @@ struct                                       /* Record for options, either defau
     bool useTPIU;                            /* Are we decoding via the TPIU? */
     bool reportFilenames;                    /* Report filenames for each routine? */
     bool outputExceptions;                   /* Set to include exceptions in output flow */
-    uint32_t tpiuITMChannel;                 /* What channel? */
+    int8_t tpiuITMChannel;                   /* What channel? */
     bool forceITMSync;                       /* Must ITM start synced? */
     char *file;                              /* File host connection */
 
@@ -102,17 +102,14 @@ struct                                       /* Record for options, either defau
 
 } options =
 {
-    .forceITMSync = true,
     .useTPIU = false,
     .tpiuITMChannel = 1,
-    .outfile = NULL,
-    .logfile = NULL,
-    .lineDisaggregation = false,
+    .forceITMSync = true,
     .maxRoutines = 8,
     .demangle = true,
     .displayInterval = TOP_UPDATE_INTERVAL * 1000,
     .port = NWCLIENT_SERVER_PORT,
-    .server = "localhost"
+    .server = ( char * )"localhost"
 };
 
 /* ----------- LIVE STATE ----------------- */
@@ -282,7 +279,7 @@ void _handleTS( struct TSMsg *m, struct ITMDecoder *i )
 {
     assert( m->msgtype == MSG_TS );
 
-    _r.timeStatus = m->timeStatus;
+    _r.timeStatus = ( enum timeDelay )m->timeStatus;
     _r.timeStamp += m->timeInc;
 }
 // ====================================================================================================
@@ -371,7 +368,7 @@ uint32_t _consolodateReport( struct reportLine **returnReport, uint32_t *returnR
     HASH_SORT( _r.addresses, _routines_sort_fn );
 
     /* Now merge them together */
-    for ( a = _r.addresses; a != NULL; a = a->hh.next )
+    for ( a = _r.addresses; a != NULL; a = ( struct visitedAddr * )a->hh.next )
     {
         if ( !a->visits )
         {
@@ -681,7 +678,7 @@ static void _outputTop( uint32_t total, uint32_t reportLines, struct reportLine 
 
     genericsPrintf( C_RESET "-----------------" EOL );
 
-    genericsPrintf( C_DATA "%3d.%02d%% " C_SUPPORT " %7" PRIu64 " " C_RESET "of "C_DATA" %" PRIu64 " "C_RESET" Samples" EOL, totPercent / 100, totPercent % 100, dispSamples, samples );
+    genericsPrintf( C_DATA "%3d.%02d%% " C_SUPPORT " %7" PRIu64 " " C_RESET "of " C_DATA " %" PRIu64 " " C_RESET " Samples" EOL, totPercent / 100, totPercent % 100, dispSamples, samples );
 
     if ( p )
     {
@@ -724,9 +721,11 @@ static void _outputTop( uint32_t total, uint32_t reportLines, struct reportLine 
 
                 const float util_percent = ( float )_r.er[e].totalTime / ( _r.timeStamp - _r.lastReportTicks ) * 100.0f;
                 genericsPrintf( C_DATA "%3" PRId32 " %-14s" C_RESET " | " C_DATA "%8" PRIu64 C_RESET " |" C_DATA " %5"
-                                PRIu32 C_RESET " | "C_DATA " %9" PRIu64 C_RESET "  |" C_DATA "%6.1f" C_RESET " |  " C_DATA "%9" PRIu64 C_RESET " | " C_DATA "%9" PRIu64 C_RESET "  | " C_DATA" %9" PRIu64 C_RESET " | " C_DATA "%9"
-                                PRIu64 C_RESET EOL,
-                                e, exceptionName, _r.er[e].visits, _r.er[e].maxDepth, _r.er[e].totalTime, util_percent, _r.er[e].totalTime / _r.er[e].visits, _r.er[e].minTime, _r.er[e].maxTime, _r.er[e].maxWallTime );
+                                PRIu32 C_RESET " | " C_DATA " %9" PRIu64 C_RESET "  |" C_DATA "%6.1f" C_RESET " |  " C_DATA
+                                "%9" PRIu64 C_RESET " | " C_DATA "%9" PRIu64 C_RESET "  | " C_DATA " %9" PRIu64 C_RESET
+                                " | " C_DATA "%9" PRIu64 C_RESET EOL,
+                                e, exceptionName, _r.er[e].visits, _r.er[e].maxDepth, _r.er[e].totalTime, util_percent,
+                                _r.er[e].totalTime / _r.er[e].visits, _r.er[e].minTime, _r.er[e].maxTime, _r.er[e].maxWallTime );
             }
         }
     }
@@ -738,11 +737,14 @@ static void _outputTop( uint32_t total, uint32_t reportLines, struct reportLine 
                     ( _r.HWPkt != ITMDecoderGetStats( &_r.i )->HWPkt ) ? C_HW_IND "H" : C_RESET "-" );
 
     if ( ( _r.lastReportTicks ) && ( lastTime != _r.lastReportus ) )
-        genericsPrintf( "Interval = " C_DATA "%" PRIu64 "ms " C_RESET "/ "C_DATA "%" PRIu64 C_RESET " (~" C_DATA "%" PRIu64 C_RESET " Ticks/ms)" EOL,
-                        ( ( lastTime - _r.lastReportus ) + 500 ) / 1000, _r.timeStamp - _r.lastReportTicks, ( ( _r.timeStamp - _r.lastReportTicks ) * 1000 ) / ( lastTime - _r.lastReportus ) );
+        genericsPrintf( "Interval = " C_DATA "%" PRIu64 "ms " C_RESET "/ " C_DATA "%" PRIu64 C_RESET " (~"
+                        C_DATA "%" PRIu64 C_RESET " Ticks/ms)" EOL,
+                        ( ( lastTime - _r.lastReportus ) + 500 ) / 1000, _r.timeStamp - _r.lastReportTicks,
+                        ( ( _r.timeStamp - _r.lastReportTicks ) * 1000 ) / ( lastTime - _r.lastReportus ) );
     else
     {
-        genericsPrintf( C_RESET "Interval = " C_DATA "%" PRIu64 C_RESET "ms" EOL, ( ( lastTime - _r.lastReportus ) + 500 ) / 1000 );
+        genericsPrintf( C_RESET "Interval = " C_DATA "%" PRIu64 C_RESET "ms" EOL,
+                        ( ( lastTime - _r.lastReportus ) + 500 ) / 1000 );
     }
 
     genericsReport( V_INFO, "         Ovf=%3d  ITMSync=%3d TPIUSync=%3d ITMErrors=%3d" EOL,
@@ -801,7 +803,7 @@ void _flushHash( void )
     struct visitedAddr *a;
     UT_hash_handle hh;
 
-    for ( a = _r.addresses; a != NULL; a = hh.next )
+    for ( a = _r.addresses; a != NULL; a = ( struct visitedAddr * )hh.next )
     {
         hh = a->hh;
         free( a );
@@ -999,6 +1001,7 @@ bool _processOptions( int argc, char *argv[] )
 
 {
     int c, optionIndex = 0;
+    char *a;
 
     while ( ( c = getopt_long ( argc, argv, "c:d:DEe:f:g:hVI:j:lMnO:o:r:Rs:t:v:", _longOptions, &optionIndex ) ) != -1 )
         switch ( c )
@@ -1089,7 +1092,7 @@ bool _processOptions( int argc, char *argv[] )
                     return false;
                 }
 
-                genericsSetReportLevel( atoi( optarg ) );
+                genericsSetReportLevel( ( enum verbLevel )atoi( optarg ) );
                 break;
 
             // ------------------------------------
@@ -1108,7 +1111,7 @@ bool _processOptions( int argc, char *argv[] )
                 options.server = optarg;
 
                 // See if we have an optional port number too
-                char *a = optarg;
+                a = optarg;
 
                 while ( ( *a ) && ( *a != ':' ) )
                 {

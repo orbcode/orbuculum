@@ -1,6 +1,10 @@
 #ifndef _ORBLCD_PROTOCOL_H_
 #define _ORBLCD_PROTOCOL_H_
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define LCD_DATA_CHANNEL    (28)
 #define LCD_COMMAND_CHANNEL (LCD_DATA_CHANNEL+1)
 
@@ -30,4 +34,7 @@
 #define ORBLCD_CLOSE_SCREEN       (ORBLCD_ENCODE_C(ORBLCD_CMD_CLOSE_SCREEN))
 #define ORBLCD_CLEAR              (ORBLCD_ENCODE_C(ORBLCD_CMD_CLEAR))
 
+#ifdef __cplusplus
+}
+#endif
 #endif

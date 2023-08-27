@@ -248,7 +248,7 @@ char *genericsGetBaseDirectory( void )
 {
 #ifdef WIN32
     size_t currentSize = MAX_PATH;
-    char *exePath = malloc( currentSize );
+    char *exePath = (char*)malloc( currentSize );
 
     while ( true )
     {
@@ -260,23 +260,23 @@ char *genericsGetBaseDirectory( void )
         }
 
         currentSize *= 2;
-        exePath = realloc( exePath, currentSize );
+        exePath = (char*)realloc( exePath, currentSize );
     }
 
-    char *dirPath = malloc( currentSize );
+    char *dirPath = (char*)malloc( currentSize );
     char drive[_MAX_DRIVE];
     _splitpath_s( exePath, drive, sizeof( drive ), dirPath, currentSize, NULL, 0, NULL, 0 );
     free( exePath );
 
-    char *concatPath = malloc( strlen( drive ) + strlen( dirPath ) + 1 );
+    char *concatPath = (char*)malloc( strlen( drive ) + strlen( dirPath ) + 1 );
     *concatPath = '\0';
     strcat( concatPath, drive );
     strcat( concatPath, dirPath );
     free( dirPath );
     return concatPath;
 #else
-    size_t currentSize = 256;
-    char *exePath = malloc( currentSize );
+    ssize_t currentSize = 256;
+    char *exePath = ( char * )malloc( currentSize );
 
     if ( !exePath )
     {
@@ -303,11 +303,11 @@ char *genericsGetBaseDirectory( void )
         }
 
         currentSize *= 2;
-        exePath = realloc( exePath, currentSize );
+        exePath = ( char * )realloc( exePath, currentSize );
     }
 
     const char *dirPath = dirname( exePath );
-    char *path = malloc( strlen( dirPath ) + 2 );
+    char *path = ( char * )malloc( strlen( dirPath ) + 2 );
     *path = 0;
     strcat( path, dirPath );
     strcat( path, "/" );
@@ -399,7 +399,7 @@ void genericsReport( enum verbLevel l, const char *fmt, ... )
 
 {
     static char op[MAX_STRLEN];
-    static char *colours[V_MAX_VERBLEVEL] = {C_VERB_ERROR, C_VERB_WARN, C_VERB_INFO, C_VERB_DEBUG};
+    static const char *colours[V_MAX_VERBLEVEL] = {C_VERB_ERROR, C_VERB_WARN, C_VERB_INFO, C_VERB_DEBUG};
 
     if ( l <= lstore )
     {

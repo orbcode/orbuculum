@@ -381,7 +381,7 @@ static int _processOptions( struct RunTime *r, int argc, char *argv[]  )
                     return false;
                 }
 
-                genericsSetReportLevel( atoi( optarg ) );
+                genericsSetReportLevel( ( enum verbLevel )atoi( optarg ) );
                 break;
 
             // ------------------------------------

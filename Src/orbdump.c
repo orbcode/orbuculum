@@ -23,7 +23,7 @@
 
 #define MAX_STRING_LENGTH (256)              /* Maximum length that will be output from a fifo for a single event */
 
-#define DEFAULT_OUTFILE "/dev/stdout"
+#define DEFAULT_OUTFILE (char*)"/dev/stdout"
 #define DEFAULT_TIMELEN 10000
 
 /* ---------- CONFIGURATION ----------------- */
@@ -33,7 +33,7 @@ struct                                      /* Record for options, either defaul
     /* Config information */
     bool useTPIU;
     bool forceITMSync;
-    uint32_t tpiuITMChannel;
+    int8_t tpiuITMChannel;
 
     /* File to output dump to */
     char *outfile;
@@ -51,13 +51,13 @@ struct                                      /* Record for options, either defaul
     char *server;
 } options =
 {
-    .forceITMSync = true,
     .useTPIU = false,
+    .forceITMSync = true,
     .tpiuITMChannel = 1,
     .outfile = DEFAULT_OUTFILE,
     .timelen = DEFAULT_TIMELEN,
     .port = NWCLIENT_SERVER_PORT,
-    .server = "localhost"
+    .server = ( char * )"localhost"
 };
 
 /* ----------- LIVE STATE ----------------- */
@@ -229,7 +229,7 @@ bool _processOptions( int argc, char *argv[] )
                     return false;
                 }
 
-                genericsSetReportLevel( atoi( optarg ) );
+                genericsSetReportLevel( ( enum verbLevel )atoi( optarg ) );
                 break;
 
             case 't':

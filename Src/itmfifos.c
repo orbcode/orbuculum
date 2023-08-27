@@ -155,7 +155,11 @@ static void *_runFifo( void *arg )
                 {
                     /* Format contains %c, so execute repeatedly for all characters in sent data */
                     writeDataLen = 0;
-                    uint8_t op[4] = {m.value & 0xff, ( m.value >> 8 ) & 0xff, ( m.value >> 16 ) & 0xff, ( m.value >> 24 ) & 0xff};
+                    uint8_t op[4] = {( uint8_t )( m.value & 0xff ),
+                                     ( uint8_t )( ( m.value >> 8 ) & 0xff ),
+                                     ( uint8_t )( ( m.value >> 16 ) & 0xff ),
+                                     ( uint8_t )( ( m.value >> 24 ) & 0xff )
+                                    };
 
                     uint32_t l = 0;
 
@@ -413,7 +417,7 @@ void _handleTS( struct TSMsg *m, struct itmfifosHandle *f )
     int opLen;
 
     f->timeStamp += m->timeInc;
-    f->timeStatus = m->timeStatus;
+    f->timeStatus = ( enum timeDelay )m->timeStatus;
 
     opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%d,%" PRIu32 EOL, HWEVENT_TS, m->timeStatus, m->timeInc );
     write( f->c[HW_CHANNEL].handle, outputString, opLen );

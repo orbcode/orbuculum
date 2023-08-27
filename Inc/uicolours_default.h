@@ -1,5 +1,11 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 
+#ifndef _UICOLOURS_DEFAULT_
+#define _UICOLOURS_DEFAULT_
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* Default user interface colours */
 
 #define C_OVF_IND    C_LRED        /* Toggile Overflow indicator */
@@ -23,3 +29,8 @@
 
 #define C_SEL        C_LCYAN       /* Element selection */
 #define C_ELEMENT    C_YELLOW      /* Data */
+
+#ifdef __cplusplus
+}
+#endif
+#endif

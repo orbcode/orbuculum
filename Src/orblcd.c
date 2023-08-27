@@ -38,10 +38,10 @@ struct TApp
     int sbcolour;                                         /* Colour to be used for single bit renders */
 
     /* Operational stuff */
-    int x;                                                /* Current X pos */
-    int y;                                                /* Current Y pos */
+    unsigned int x;                                       /* Current X pos */
+    unsigned int y;                                       /* Current Y pos */
     float scale;                                          /* Scale for output window */
-    int modeDescriptor;                                   /* Descriptor for source mode */
+    unsigned int modeDescriptor;                          /* Descriptor for source mode */
     char *windowTitle;                                    /* Title for SDL output window */
 
     /* SDL stuff */
@@ -59,7 +59,7 @@ struct TApp
     .chan        = LCD_DATA_CHANNEL,
     .sbcolour    = 0x00ff00,
     .scale       = 1.5f,
-    .windowTitle = "ORBLcd Output Window"
+    .windowTitle = ( char * )"ORBLcd Output Window"
 
 };
 /************** APPLICATION SPECIFIC ENDS ***************************************************************/
@@ -77,7 +77,12 @@ struct Options
     int tpiuChannel;                                     /* TPIU channel to be used (for case TPIU present, 0 otherwise) */
     bool forceITMSync;                                   /* Do we need ITM syncs? */
 
-} _options = {.forceITMSync = true, .port = NWCLIENT_SERVER_PORT, .server = "localhost"};
+} _options =
+{
+    .port = NWCLIENT_SERVER_PORT,
+    .server = ( char * )"localhost",
+    .forceITMSync = true,
+};
 
 struct RunTime
 {
@@ -473,6 +478,7 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
 
 {
     int c, optionIndex = 0;
+    char *a;
 
     while ( ( c = getopt_long ( argc, argv, "c:Ef:hns:S:t:v:Vw:z:", _longOptions, &optionIndex ) ) != -1 )
         switch ( c )
@@ -513,7 +519,7 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
                 r->options->server = optarg;
 
                 // See if we have an optional port number too
-                char *a = optarg;
+                a = optarg;
 
                 while ( ( *a ) && ( *a != ':' ) )
                 {
@@ -551,7 +557,7 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
                     return false;
                 }
 
-                genericsSetReportLevel( atoi( optarg ) );
+                genericsSetReportLevel( ( enum verbLevel )atoi( optarg ) );
                 break;
 
             // ------------------------------------

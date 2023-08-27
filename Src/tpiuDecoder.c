@@ -33,7 +33,7 @@
 #define HALFSYNC_HIGH 0x7F               // Halfsync indicator, last arriving byte
 #define HALFSYNC_LOW  0XFF               // Halfsync indicator, first arriving byte
 #define NO_CHANNEL_CHANGE (0xFF)         // Flag to not change channel
-#define TPIU_TIMEOUT_US (200000U)        // Note that this timeout must be less than 1sec (<1000000 us)
+#define TPIU_TIMEOUT_US (200000)         // Note that this timeout must be less than 1sec (<1000000 us)
 #define STAT_SYNC_BYTE (0xA6)            // Sync header for status
 
 // ====================================================================================================
@@ -52,7 +52,7 @@ void TPIUDecoderInit( struct TPIUDecoder *t )
 {
     if ( !t )
     {
-        t = calloc( 1, sizeof( struct TPIUDecoder ) );
+        t = ( struct TPIUDecoder * )calloc( 1, sizeof( struct TPIUDecoder ) );
         t->selfAllocated = true;
     }
 

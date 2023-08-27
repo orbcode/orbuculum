@@ -1,0 +1,9 @@
+[wrap-file]
+directory = tomlplusplus-3.3.0
+source_url = https://github.com/marzer/tomlplusplus/archive/v3.3.0.tar.gz
+source_filename = tomlplusplus-3.3.0.tar.gz
+source_hash = fc1a5eb410f3c67e90e5ad1264a1386d020067cfb01b633cc8c0441789aa6cf2
+wrapdb_version = 3.3.0-1
+
+[provide]
+dependency_names = tomlplusplus

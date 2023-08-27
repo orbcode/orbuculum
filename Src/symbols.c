@@ -26,8 +26,8 @@
 #define SOURCE_INDICATOR "sRc##"
 #define SYM_NOT_FOUND (0xffffffff)
 
-#define NO_FUNCTION_TXT "No Function Name"
-#define NO_FILE_TXT      "No Source"
+#define NO_FUNCTION_TXT (char*)"No Function Name"
+#define NO_FILE_TXT     (char*)"No Source"
 
 //#define GPTI_DEBUG 1                 /* Define this for objdump data collection state machine trace */
 
@@ -78,7 +78,7 @@ static uint32_t _getOrAddFileEntryIdx( struct SymbolSet *s, char *filename )
     }
 
     /* If we didn't manage to delete everything then don't delete anything */
-    if ( fl - filename != strlen( s->deleteMaterial ) )
+    if ( fl - filename != ( long int )strlen( s->deleteMaterial ) )
     {
         fl = filename;
     }
@@ -199,7 +199,7 @@ static bool _find_symbol( struct SymbolSet *s, uint32_t workingAddr,
 
 {
     struct sourceLineEntry needle = { .startAddr = workingAddr, .endAddr = workingAddr };
-    struct sourceLineEntry *found = bsearch( &needle, s->sources, s->sourceCount, sizeof( struct sourceLineEntry ), _compareLines );
+    struct sourceLineEntry *found = ( struct sourceLineEntry * )bsearch( &needle, s->sources, s->sourceCount, sizeof( struct sourceLineEntry ), _compareLines );
 
     if ( found )
     {
@@ -1074,14 +1074,14 @@ enum symbolErr SymbolSetCreate( struct SymbolSet **ss, const char *filename, con
     enum symbolErr  ret = SYMBOL_UNSPECIFIED;
 
     s = ( struct SymbolSet * )calloc( sizeof( struct SymbolSet ), 1 );
-    MEMCHECK( s, 0 );
+    MEMCHECK( s, SYMBOL_OOM );
 
     s->odoptions        = strdup( objdumpOptions ? objdumpOptions : "" );
-    MEMCHECK( s->odoptions, 0 );
+    MEMCHECK( s->odoptions, SYMBOL_OOM );
     s->elfFile          = strdup( filename );
-    MEMCHECK( s->elfFile, 0 );
+    MEMCHECK( s->elfFile, SYMBOL_OOM );
     s->deleteMaterial   = strdup( deleteMaterial ? deleteMaterial : "" );
-    MEMCHECK( s->deleteMaterial, 0 );
+    MEMCHECK( s->deleteMaterial, SYMBOL_OOM );
     s->recordSource     = recordSource;
     s->demanglecpp      = demanglecpp;
     s->recordAssy       = recordAssy;

@@ -22,7 +22,7 @@
 #define HWFIFO_NAME "hwevent"
 #define MAX_STRING_LENGTH (100)              /* Maximum length that will be output for a single event */
 
-#define DEFAULT_ZMQ_BIND_URL "tcp://*:3442"  /* by default bind to all source interfaces */
+#define DEFAULT_ZMQ_BIND_URL (char*)"tcp://*:3442"  /* by default bind to all source interfaces */
 
 // Record for options, either defaults or from command line
 
@@ -36,7 +36,7 @@ struct
 {
     /* Config information */
     bool useTPIU;
-    uint32_t tpiuChannel;
+    int8_t tpiuChannel;
     bool forceITMSync;
     uint32_t hwOutputs;
 
@@ -54,11 +54,11 @@ struct
 
 } options =
 {
-    .forceITMSync = true,
     .tpiuChannel = 1,
+    .forceITMSync = true,
     .bindUrl = DEFAULT_ZMQ_BIND_URL,
     .port = NWCLIENT_SERVER_PORT,
-    .server = "localhost"
+    .server = ( char * )"localhost"
 };
 
 struct
@@ -128,7 +128,11 @@ void _handleSW( struct swMsg *m, struct ITMDecoder *i )
         else if ( strstr( channel->format, "%c" ) )
         {
             /* Format contains %c, so execute repeatedly for all characters in sent data */
-            uint8_t op[4] = {m->value & 0xff, ( m->value >> 8 ) & 0xff, ( m->value >> 16 ) & 0xff, ( m->value >> 24 ) & 0xff};
+            uint8_t op[4] = {( uint8_t )( m->value & 0xff ),
+                             ( uint8_t )( ( m->value >> 8 ) & 0xff ),
+                             ( uint8_t )( ( m->value >> 16 ) & 0xff ),
+                             ( uint8_t )( ( m->value >> 24 ) & 0xff )
+                            };
             uint32_t l = 0;
 
             do
@@ -332,7 +336,7 @@ void _handleTS( struct TSMsg *m )
     int opLen;
 
     _r.timeStamp += m->timeInc;
-    _r.timeStatus = m->timeStatus;
+    _r.timeStatus = ( enum timeDelay )m->timeStatus;
 
     opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%" PRIu32, m->timeStatus, m->timeInc );
     _publishMessage( hwEventNames[HWEVENT_TS], outputString, opLen );
@@ -570,6 +574,7 @@ bool _processOptions( int argc, char *argv[] )
     unsigned int chan;
     char *chanIndex;
     int32_t hwOutputs;
+    char *a;
 
     for ( int g = 0; g < NUM_CHANNELS; g++ )
     {
@@ -615,7 +620,7 @@ bool _processOptions( int argc, char *argv[] )
                 options.server = optarg;
 
                 // See if we have an optional port number too
-                char *a = optarg;
+                a = optarg;
 
                 while ( ( *a ) && ( *a != ':' ) )
                 {
@@ -649,7 +654,7 @@ bool _processOptions( int argc, char *argv[] )
                     return false;
                 }
 
-                genericsSetReportLevel( atoi( optarg ) );
+                genericsSetReportLevel( ( enum verbLevel )atoi( optarg ) );
                 break;
 
             // ------------------------------------
@@ -788,11 +793,11 @@ bool _processOptions( int argc, char *argv[] )
 
         if ( channel->topic )
         {
-            genericsReport( V_INFO, "             %02d [%s] [%s]" EOL, g, genericsEscape( channel->format ? : "RAW" ), channel->topic );
+            genericsReport( V_INFO, "             %02d [%s] [%s]" EOL, g, genericsEscape( channel->format ? : ( char * )"RAW" ), channel->topic );
         }
     }
 
-    for ( int g = 0; g < ( sizeof( hwEventNames ) / sizeof( *hwEventNames ) ); g++ )
+    for ( unsigned int g = 0; g < ( sizeof( hwEventNames ) / sizeof( *hwEventNames ) ); g++ )
     {
         if ( hwEventNames[g] == NULL )
         {

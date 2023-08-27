@@ -109,12 +109,12 @@ bool ext_ff_outputDot( char *dotfile, struct subcall *subcallList, struct Symbol
 
         dfunctionidx = s->dsth->functionindex;
         cnt = s->count;
-        s = s->hh.next;
+        s = ( struct subcall * )s->hh.next;
 
         while ( ( s ) && ( functionidx == s->srch->functionindex ) && ( dfunctionidx == s->dsth->functionindex ) )
         {
             cnt += s->count;
-            s = s->hh.next;
+            s = ( struct subcall * )s->hh.next;
         }
 
         fprintf( c, "    \"\n(%s)\n%s\n\n\" -- ", SymbolFilename( ss, fileidx ), SymbolFunction( ss, functionidx ) );
@@ -174,7 +174,7 @@ bool ext_ff_outputProfile( char *profile, char *elffile, char *deleteMaterial, b
             e++;
         }
 
-        if ( e - elffile != strlen( deleteMaterial ) )
+        if ( e - elffile != ( long int )strlen( deleteMaterial ) )
         {
             /* Strings don't match, give up and use the file elffile name */
             e = elffile;
@@ -240,7 +240,7 @@ bool ext_ff_outputProfile( char *profile, char *elffile, char *deleteMaterial, b
         prevaddr = f->addr;
         prevfile = n.fileindex;
         prevfn = n.functionindex;
-        f = f->hh.next;
+        f = ( struct execEntryHash * )f->hh.next;
     }
 
     fprintf( c, "\n\n## ------------------- Calls Follow ------------------------\n" );
@@ -274,7 +274,7 @@ bool ext_ff_outputProfile( char *profile, char *elffile, char *deleteMaterial, b
             fprintf( c, "0x%08x %d %" PRIu64 "\n", s->sig.src, s->srch->line, s->myCost );
         }
 
-        s = s->hh.next;
+        s = ( struct subcall * )s->hh.next;
     }
 
     fclose( c );

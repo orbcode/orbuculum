@@ -66,7 +66,7 @@ struct TRACECPUState *TRACECPUState( struct TRACEDecoder *i )
 const char *TRACEExceptionName( int exceptionNumber )
 
 {
-    return ( ( char *[] )
+    return ( ( const char *[] )
     {"???", "PE Reset", "NMI", "HardFault", "MemManage", "BusFault", "UsageFault", "SecureFault", "???", "???", "???", "SVC", "Debug Monitor", "???", "PendSV", "SysTick", "IRQ"
     } )[( exceptionNumber < 16 ) ? exceptionNumber : 16];
 }

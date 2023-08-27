@@ -4,14 +4,18 @@
 #include <stdbool.h>
 #include <capstone/capstone.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef unsigned long int symbolMemaddr;
 typedef unsigned char *symbolMemptr;
 
 #define MEMADDRF "%08lx"
-#define NO_LINE        (-1)
-#define NO_FILE        (-1)
-#define NO_DESTADDRESS (-1)
-#define NO_ADDRESS     (-1)
+#define NO_LINE        ((uint32_t)(-1))
+#define NO_FILE        ((uint32_t)(-1))
+#define NO_DESTADDRESS ((uint32_t)(-1))
+#define NO_ADDRESS     ((uint32_t)(-1))
 
 /* Structure for a memory segment */
 struct symbolMemoryStore
@@ -76,14 +80,19 @@ struct symbol
     struct symbolLineStore **line;         /* Table of source code address indexes, sorted by start address */
     unsigned int nlines;                   /* Number of lines in source code line table */
 
-    unsigned int cachedSearchIndex;        /* Cached memory search region, to speed up memory fetches */
+    int cachedSearchIndex;                 /* Cached memory search region, to speed up memory fetches */
 
     int fd;                                /* Handle that we read elf from */
 
     csh caphandle;
 };
 
-enum instructionClass { LE_IC_NONE, LE_IC_JUMP = ( 1 << 0 ), LE_IC_4BYTE = ( 1 << 1 ), LE_IC_CALL = ( 1 << 2 ),  LE_IC_IMMEDIATE = ( 1 << 3 ), LE_IC_IRET = ( 1 << 4 ) };
+#define LE_IC_NONE      0
+#define LE_IC_JUMP      ( 1 << 0 )
+#define LE_IC_4BYTE     ( 1 << 1 )
+#define LE_IC_CALL      ( 1 << 2 )
+#define LE_IC_IMMEDIATE ( 1 << 3 )
+#define LE_IC_IRET      ( 1 << 4 )
 
 // ====================================================================================================
 
@@ -115,7 +124,7 @@ const char *symbolGetFilename( struct symbol *p, unsigned int index );
 symbolMemptr symbolCodeAt( struct symbol *p, symbolMemaddr addr, unsigned int *len );
 
 /* Return assembly code representing this line, with annotations */
-char *symbolDisassembleLine( struct symbol *p, enum instructionClass *ic, symbolMemaddr addr, symbolMemaddr *newaddr );
+char *symbolDisassembleLine( struct symbol *p, int *ic, symbolMemaddr addr, symbolMemaddr *newaddr );
 
 /* Delete symbol set */
 void symbolDelete( struct symbol *p );
@@ -128,4 +137,7 @@ bool symbolSetValid( struct symbol *p );
 
 // ====================================================================================================
 
+#ifdef __cplusplus
+}
+#endif
 #endif

@@ -44,6 +44,7 @@ enum TRACEDecoderPumpEvent
 
 enum TRACEchanges
 {
+    EV_CH_NONE,
     EV_CH_EX_ENTRY,
     EV_CH_EX_EXIT,
     EV_CH_CLOCKSPEED,
@@ -163,7 +164,7 @@ struct TRACEDecoderEngine
     const char ( *name )    ( void );
 
     /* Config specific to ETM3.5 */
-    void ( *altAddrEncode ) ( struct TRACEDecoderEngine *e, bool using );
+    void ( *altAddrEncode ) ( struct TRACEDecoderEngine *e, bool amusing );
 };
 
 struct TRACEDecoder

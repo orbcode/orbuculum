@@ -207,7 +207,7 @@ static bool _doInterfaceControlTransfer( struct OrbtraceIf *o, uint8_t interface
                             request,
                             value,
                             ( indexUpperHalf << 8 ) | interface,
-                            data,
+                            ( unsigned char * )data,
                             dlen,
                             0
                 ) >= 0;
@@ -287,7 +287,7 @@ int OrbtraceIfGetDeviceList( struct OrbtraceIf *o, char *sn, uint32_t devmask )
 
     int count = libusb_get_device_list( o->context, &o->list );
 
-    for ( size_t i = 0; i < count; i++ )
+    for ( int i = 0; i < count; i++ )
     {
         o->dev = o->list[i];
         struct libusb_device_descriptor desc = { 0 };
@@ -301,7 +301,7 @@ int OrbtraceIfGetDeviceList( struct OrbtraceIf *o, char *sn, uint32_t devmask )
         if ( _validDevices[y].vid )
         {
             /* We'll store this match for access later */
-            o->devices = realloc( o->devices, ( o->numDevices + 1 ) * sizeof( struct OrbtraceIfDevice ) );
+            o->devices = ( struct OrbtraceIfDevice * )realloc( o->devices, ( o->numDevices + 1 ) * sizeof( struct OrbtraceIfDevice ) );
             d = &o->devices[o->numDevices];
             memset( d, 0, sizeof( struct OrbtraceIfDevice ) );
             d->devtype = _validDevices[y].devtype;
@@ -395,10 +395,11 @@ void OrbtraceIfListDevices( struct OrbtraceIf *o )
     genericsPrintf( C_RESET " Id |               Description                |      Serial      |           Version" EOL );
     genericsPrintf( " ---+------------------------------------------+------------------+----------------------------" EOL );
 
-    for ( int i = 0; i < o->numDevices; i++ )
+    for ( unsigned int i = 0; i < o->numDevices; i++ )
     {
         snprintf( printConstruct, SCRATCH_STRINGLEN, "%s %s", OrbtraceIfGetManufacturer( o, i ), OrbtraceIfGetProduct( o, i ) ) ;
-        genericsPrintf( C_SEL " %2d " C_RESET "|"C_ELEMENT" %-40s "C_RESET"|"C_ELEMENT" %16s "C_RESET"|"C_ELEMENT" %s" C_RESET EOL,
+        genericsPrintf( C_SEL " %2d " C_RESET "|" C_ELEMENT " %-40s " C_RESET "|"
+                        C_ELEMENT " %16s " C_RESET "|" C_ELEMENT " %s" C_RESET EOL,
                         i + 1, printConstruct, OrbtraceIfGetSN( o, i ), OrbtraceIfGetVersion( o, i ) );
     }
 }
@@ -407,7 +408,7 @@ void OrbtraceIfListDevices( struct OrbtraceIf *o )
 int OrbtraceIfSelectDevice( struct OrbtraceIf *o )
 
 {
-    int selection = o->numDevices;
+    unsigned int selection = o->numDevices;
 
     if ( o->numDevices > 1 )
     {
@@ -425,7 +426,7 @@ int OrbtraceIfSelectDevice( struct OrbtraceIf *o )
     return selection - 1;
 }
 // ====================================================================================================
-bool OrbtraceIfOpenDevice( struct OrbtraceIf *o, int entry )
+bool OrbtraceIfOpenDevice( struct OrbtraceIf *o, unsigned int entry )
 
 {
     if ( ( entry < 0 ) || ( entry >= o->numDevices ) )
@@ -546,7 +547,7 @@ bool OrbtraceIfSetupTransfers( struct OrbtraceIf *o, bool hiresTime, struct data
     o->numBlocks = numBlocks;
     o->d = d;
 
-    for ( uint32_t t = 0; t < o->numBlocks ; t++ )
+    for ( int t = 0; t < o->numBlocks ; t++ )
     {
         /* Allocate memory */
         if ( !o->d[t].usbtfr )
@@ -585,7 +586,7 @@ int OrbtraceIfHandleEvents( struct OrbtraceIf *o )
 void OrbtraceIfCloseTransfers( struct OrbtraceIf *o )
 
 {
-    for ( uint32_t t = 0; t < o->numBlocks; t++ )
+    for ( int32_t t = 0; t < o->numBlocks; t++ )
     {
         if ( o->d[t].usbtfr )
         {
@@ -641,7 +642,11 @@ bool OrbtraceIfSetTraceSWO( struct OrbtraceIf *o, bool isMANCH )
 bool OrbtraceIfSetSWOBaudrate( struct OrbtraceIf *o, uint32_t speed )
 
 {
-    uint8_t speed_le[4] = { ( speed & 0xff ), ( speed >> 8 ) & 0xff, ( speed >> 16 ) & 0xff, ( speed >> 24 ) & 0xff };
+    uint8_t speed_le[4] = { ( uint8_t )( speed & 0xff ),
+                            ( uint8_t )( ( speed >> 8 ) & 0xff ),
+                            ( uint8_t )( ( speed >> 16 ) & 0xff ),
+                            ( uint8_t )( ( speed >> 24 ) & 0xff )
+                          };
 
     return _doInterfaceControlTransfer(
                        o,
@@ -669,7 +674,7 @@ enum Channel OrbtraceIfNameToChannel( char *x )
 
         if ( ( ( !*y ) || ( *y == ',' ) ) && ( !_powerNames[i].name[j] ) )
         {
-            return _powerNames[i].num;
+            return ( enum Channel )_powerNames[i].num;
         }
     }
 

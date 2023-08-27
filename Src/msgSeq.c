@@ -70,7 +70,7 @@ void MSGSeqInit( struct MSGSeq *d, struct ITMDecoder *i, uint32_t maxEntries )
     memset( d, 0, sizeof( struct MSGSeq ) );
     d->i = i;
     d->pbl = maxEntries;
-    d->pbuffer = calloc( maxEntries, sizeof( struct msg ) );
+    d->pbuffer = ( struct msg * )calloc( maxEntries, sizeof( struct msg ) );
 }
 // ====================================================================================================
 struct msg *MSGSeqGetPacket( struct MSGSeq *d )

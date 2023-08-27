@@ -55,7 +55,7 @@ struct
 {
     /* Config information */
     bool useTPIU;
-    uint32_t tpiuChannel;
+    uint8_t tpiuChannel;
     bool forceITMSync;
     uint64_t cps;                            /* Cycles per second for target CPU */
 
@@ -75,11 +75,11 @@ struct
 
 } options =
 {
-    .forceITMSync = true,
     .tpiuChannel = 1,
+    .forceITMSync = true,
+    .tsTrigger = DEFAULT_TS_TRIGGER,
     .port = NWCLIENT_SERVER_PORT,
-    .server = "localhost",
-    .tsTrigger = DEFAULT_TS_TRIGGER
+    .server = ( char * )"localhost"
 };
 
 struct
@@ -121,6 +121,7 @@ static void _outputTimestamp( void )
     char opConstruct[MAX_STRING_LENGTH];
     uint64_t res;
     struct tm tm;
+    uint64_t delta;
     time_t td;
 
     switch ( options.tsType )
@@ -199,7 +200,7 @@ static void _outputTimestamp( void )
                 _r.gotte = true;
             }
 
-            uint64_t delta = _r.timeStamp - _r.lastTimeStamp;
+            delta = _r.timeStamp - _r.lastTimeStamp;
             _r.lastTimeStamp = _r.timeStamp;
 
             if ( options.cps )
@@ -282,7 +283,11 @@ static void _handleSW( struct swMsg *m, struct ITMDecoder *i )
         else if ( strstr( options.presFormat[m->srcAddr], "%c" ) )
         {
             /* Format contains %c, so execute repeatedly for all characters in sent data */
-            uint8_t op[4] = {m->value & 0xff, ( m->value >> 8 ) & 0xff, ( m->value >> 16 ) & 0xff, ( m->value >> 24 ) & 0xff};
+            uint8_t op[4] = { ( uint8_t )( m->value & 0xff ),
+                              ( uint8_t )( ( m->value >> 8 ) & 0xff ),
+                              ( uint8_t )( ( m->value >> 16 ) & 0xff ),
+                              ( uint8_t )( ( m->value >> 24 ) & 0xff )
+                            };
             uint32_t l = 0;
 
             do
@@ -485,6 +490,8 @@ bool _processOptions( int argc, char *argv[] )
     int c, optionIndex = 0;
     unsigned int chan;
     char *chanIndex;
+    char *a;
+
 #define DELIMITER ','
 
     while ( ( c = getopt_long ( argc, argv, "c:C:Ef:g:hVns:t:T:v:", _longOptions, &optionIndex ) ) != -1 )
@@ -531,7 +538,7 @@ bool _processOptions( int argc, char *argv[] )
                 options.server = optarg;
 
                 // See if we have an optional port number too
-                char *a = optarg;
+                a = optarg;
 
                 while ( ( *a ) && ( *a != ':' ) )
                 {
@@ -596,7 +603,7 @@ bool _processOptions( int argc, char *argv[] )
                     return false;
                 }
 
-                genericsSetReportLevel( atoi( optarg ) );
+                genericsSetReportLevel( ( enum verbLevel )atoi( optarg ) );
                 break;
 
             // ------------------------------------
