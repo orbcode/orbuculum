@@ -361,6 +361,14 @@ it.  Orbuculum does _not_ require gdb to be running, but you may need a
 gdb session to start the output.  BMP needs traceswo to be turned on
 at the command line before it capture data from the port, for example.
 
+Its worth a quick word about how the orbuculum mux interacts with clients. Pretty obviously, clients need to keep
+up with the flow of data from a probe. For the case that a client doesn't then it will be disconnected. It's then
+free to reconnect again.  When reading from a file (and we don't have the same timing constraints as we do when
+talking to a probe) then a slow client will be accomodated by slowing down the entire flow and waiting for the client
+to catch up. The easiest way to see this in action is to pause a client (e.g. `CTRL-Z` on an orbcat session)...you will
+see orbuculum's data transfer go to zero. When you re-start the client (e.g. `fg` to bring it back into the foreground)
+then it will carry on from where it left off and no client will lose data.
+
 Command Line Options
 ====================
 
@@ -385,6 +393,8 @@ For `orbuculum`, the specific command line options of note are;
   `-O "<options>"`: Run orbtrace on each detected connection of a probe, with the specified options.
 
   `-p, --serial-port [serialPort]`: to use. If not specified then the program defaults to Blackmagic probe.
+
+  `-P, --pace [us delay]`: between file blocks. Used to slow down orbuculum feeding from a file to a set of clients.
 
   `-s, --server [address]:[port]`: Set address for explicit TCP Source connection, (default none:2332).
 

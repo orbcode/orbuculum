@@ -25,6 +25,10 @@
 #include "itmfifos.h"
 #include "msgDecoder.h"
 
+#ifndef O_BINARY
+    #define O_BINARY 0
+#endif
+
 #define MAX_STRING_LENGTH (100)              /* Maximum length that will be output from a fifo for a single event */
 
 struct runThreadParams                       /* Structure for parameters passed to a software task thread */
@@ -120,11 +124,11 @@ static void *_runFifo( void *arg )
         /* We use RDWR to allow the open to proceed without a remote end */
         if ( !params->permafile )
         {
-            opfile = open( c->fifoName, O_RDWR | O_NONBLOCK );
+            opfile = open( c->fifoName, O_RDWR | O_BINARY | O_NONBLOCK );
         }
         else
         {
-            opfile = open( c->fifoName, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH );
+            opfile = open( c->fifoName, O_WRONLY | O_CREAT | O_BINARY  | O_TRUNC, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH );
         }
 
         do
@@ -176,7 +180,7 @@ static void *_runFifo( void *arg )
         }
         while ( ( written > 0 ) && ( !c->ending ) );
 
-	/* Falling out on writen fail means we can re-open the fifo if it overflowed */
+        /* Falling out on writen fail means we can re-open the fifo if it overflowed */
         close( opfile );
     }
     while ( !c->ending );
@@ -212,11 +216,11 @@ static void *_runHWFifo( void *arg )
         if ( !params->permafile )
         {
             /* We use RDWR to allow the open to proceed without a remote end */
-            opfile = open( c->fifoName, O_RDWR | O_NONBLOCK );
+            opfile = open( c->fifoName, O_RDWR | O_BINARY | O_NONBLOCK );
         }
         else
         {
-            opfile = open( c->fifoName, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH );
+            opfile = open( c->fifoName, O_WRONLY | O_CREAT | O_BINARY  | O_TRUNC, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH );
         }
 
         do
@@ -231,7 +235,7 @@ static void *_runHWFifo( void *arg )
         }
         while ( ( writeDataLen > 0 ) && ( !c->ending ) );
 
-	/* Falling out on writeDataLen fail means we can re-open the fifo if it overflowed */
+        /* Falling out on writeDataLen fail means we can re-open the fifo if it overflowed */
         close( opfile );
     }
     while ( !c->ending );
@@ -732,7 +736,7 @@ bool itmfifoCreate( struct itmfifosHandle *f )
                 f->c[t].params.permafile = f->permafile;
                 f->c[t].params.c = &f->c[t];
 
-                f->c[t].fifoName = ( char * )calloc( strlen( f->c[t].chanName ) + 2 + (f->chanPath ? strlen( f->chanPath ) : 0), 1 );
+                f->c[t].fifoName = ( char * )calloc( strlen( f->c[t].chanName ) + 2 + ( f->chanPath ? strlen( f->chanPath ) : 0 ), 1 );
 
                 if ( f->chanPath )
                 {

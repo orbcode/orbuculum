@@ -318,6 +318,8 @@ int main( int argc, char *argv[] )
     size_t receivedSize;
 
     bool haveSynced = false;
+    bool alreadyReported = false;
+    struct Stream *stream;
 
     if ( !_processOptions( argc, argv ) )
     {
@@ -330,13 +332,33 @@ int main( int argc, char *argv[] )
     TPIUDecoderInit( &_r.t );
     ITMDecoderInit( &_r.i, options.forceITMSync );
 
-    struct Stream *stream = _tryOpenStream();
-
-    if ( stream == NULL )
+    while ( true )
     {
-        genericsReport( V_ERROR, "Could not connect" EOL );
-        return -1;
+
+        stream = _tryOpenStream();
+
+        if ( stream != NULL )
+        {
+            if ( alreadyReported )
+            {
+                genericsReport( V_INFO, "Connected" EOL );
+                alreadyReported = false;
+            }
+
+            break;
+        }
+
+        if ( !alreadyReported )
+        {
+            genericsReport( V_INFO, EOL "No connection" EOL );
+            alreadyReported = true;
+        }
+
+        /* Checking every 100ms for a connection is quite often enough */
+        usleep( 10000 );
     }
+
+
 
     /* .... and the file to dump it into */
     opFile = fopen( options.outfile, "wb" );
