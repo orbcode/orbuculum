@@ -607,7 +607,7 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
     if ( r->options->file )
     {
         genericsReport( V_INFO, "Input File     : %s" EOL, r->options->file );
-        genericsReport( V_INFO, "Pace Delay     : %dms" EOL, r->options->paceDelay );
+        genericsReport( V_INFO, "Pace Delay     : %dus" EOL, r->options->paceDelay );
 
         if ( r->options->fileTerminate )
         {
