@@ -22,8 +22,7 @@ char *readsourcefile( char *path, size_t *l )
     *l = 0;
     FILE *f = fopen( path, "r" );
 
-    if ( f == NULL )
-    {
+    if ( f == NULL ) {
         return NULL;
     }
 
@@ -32,8 +31,7 @@ char *readsourcefile( char *path, size_t *l )
     size_t insize = fread( retBuffer, 1, BLOCKSIZE, f );
     *l = insize;
 
-    while ( !feof( f ) )
-    {
+    while ( !feof( f ) ) {
         retBuffer = ( char * )realloc( retBuffer, *l + BLOCKSIZE );
         insize = fread( &retBuffer[*l], 1, BLOCKSIZE, f );
         *l += insize;
@@ -63,13 +61,10 @@ char *readsourcefile( char *path, size_t *l )
     size_t insize;
 
     /* Try and grab the file via a prettyprinter. If that doesn't work, grab it via cat */
-    if ( getenv( "ORB_PRETTYPRINTER" ) )
-    {
+    if ( getenv( "ORB_PRETTYPRINTER" ) ) {
         /* We have an environment variable containing the prettyprinter...lets use that */
         snprintf( commandLine, MAX_LINE_LEN, "%s %s", getenv( "ORB_PRETTYPRINTER" ), path );
-    }
-    else
-    {
+    } else {
         /* No environment variable, use the default */
         snprintf( commandLine, MAX_LINE_LEN, "source-highlight -f esc -o STDOUT -i %s 2>/dev/null", path );
     }
@@ -80,13 +75,11 @@ char *readsourcefile( char *path, size_t *l )
     retBuffer = ( char * )malloc( BLOCKSIZE );
     insize = fread( retBuffer, 1, BLOCKSIZE, fd );
 
-    if ( !insize )
-    {
+    if ( !insize ) {
         pclose( fd );
         isProcess = false;
 
-        if ( ( fd = fopen( path, "r" ) ) )
-        {
+        if ( ( fd = fopen( path, "r" ) ) ) {
             insize = fread( retBuffer, 1, BLOCKSIZE, fd );
         }
     }
@@ -95,8 +88,7 @@ char *readsourcefile( char *path, size_t *l )
     *l = insize;
 
     /* There may be more file to read...if so, then let's do it */
-    while ( insize == BLOCKSIZE )
-    {
+    while ( insize == BLOCKSIZE ) {
         /* Make another block available */
         retBuffer = ( char * )realloc( retBuffer, *l + BLOCKSIZE );
         insize = fread( &retBuffer[*l], 1, BLOCKSIZE, fd );
@@ -104,18 +96,14 @@ char *readsourcefile( char *path, size_t *l )
     }
 
     /* Close the process or file, depending on what it was that actually got opened */
-    if ( fd )
-    {
+    if ( fd ) {
         isProcess ? pclose( fd ) : fclose( fd );
     }
 
     /* Resize the memory to what was actually read in */
-    if ( *l )
-    {
+    if ( *l ) {
         retBuffer = ( char * )realloc( retBuffer, *l );
-    }
-    else
-    {
+    } else {
         free( retBuffer );
         retBuffer = NULL;
     }

@@ -83,10 +83,8 @@ static int _lock_with_timeout( pthread_mutex_t *mutex, const struct timespec *ts
     left = ts->tv_sec * 1000;       /* how much waiting is left, in msec */
     step = 10;                      /* msec to sleep at each trywait() failure */
 
-    do
-    {
-        if ( ( ret = pthread_mutex_trylock( mutex ) ) != 0 )
-        {
+    do {
+        if ( ( ret = pthread_mutex_trylock( mutex ) ) != 0 ) {
             struct timespec dly;
 
             dly.tv_sec = 0;
@@ -95,8 +93,7 @@ static int _lock_with_timeout( pthread_mutex_t *mutex, const struct timespec *ts
 
             left -= step;
         }
-    }
-    while ( ret != 0 && left > 0 );
+    } while ( ret != 0 && left > 0 );
 
     return ret;
 }
@@ -109,17 +106,13 @@ static void _clientRemove( volatile struct nwClient *c )
 {
     close( c->portNo );
 
-    if ( c->prevClient )
-    {
+    if ( c->prevClient ) {
         c->prevClient->nextClient = c->nextClient;
-    }
-    else
-    {
+    } else {
         c->parent->firstClient = c->nextClient;
     }
 
-    if ( c->nextClient )
-    {
+    if ( c->nextClient ) {
         c->nextClient->prevClient = c->prevClient;
     }
 
@@ -145,12 +138,10 @@ static void *_listenTask( void *arg )
     clilen = sizeof( cli_addr );
     listen( h->sockfd, 5 );
 
-    while ( !h->finish )
-    {
+    while ( !h->finish ) {
         newsockfd = accept( h->sockfd, ( struct sockaddr * ) &cli_addr, &clilen );
 
-        if ( h->finish )
-        {
+        if ( h->finish ) {
             close( newsockfd );
             break;
         }
@@ -166,16 +157,14 @@ static void *_listenTask( void *arg )
         client->portNo = newsockfd;
 
         /* Hook into linked list */
-        if ( _lock_with_timeout( &h->clientList, &ts ) < 0 )
-        {
+        if ( _lock_with_timeout( &h->clientList, &ts ) < 0 ) {
             genericsExit( -1, "Failed to acquire mutex" EOL );
         }
 
         client->nextClient = h->firstClient;
         client->prevClient = NULL;
 
-        if ( client->nextClient )
-        {
+        if ( client->nextClient ) {
             client->nextClient->prevClient = client;
         }
 
@@ -200,16 +189,14 @@ void nwclientSend( struct nwclientsHandle *h, uint32_t len, uint8_t *ipbuffer, b
     ssize_t sent = 0;
     const struct timespec ts = {.tv_sec = 1, .tv_nsec = 0};
 
-    if ( _lock_with_timeout( &h->clientList, &ts ) < 0 )
-    {
+    if ( _lock_with_timeout( &h->clientList, &ts ) < 0 ) {
         genericsExit( -1, "Failed to acquire mutex" EOL );
     }
 
     /* Now kick all the clients that new data arrived for them to distribute */
     volatile struct nwClient *n = h->firstClient;
 
-    while ( n )
-    {
+    while ( n ) {
         volatile struct nwClient *nextc = n->nextClient;
         uint32_t tosend = len;
         int8_t *p = ( int8_t * )ipbuffer; /* Cast is needed for Windows */
@@ -222,8 +209,7 @@ void nwclientSend( struct nwclientsHandle *h, uint32_t len, uint8_t *ipbuffer, b
         struct pollfd pfd = { n->portNo, POLLOUT | POLLHUP | POLLERR, 0 };
 #endif
 
-        do
-        {
+        do {
             /* Need to ensure this port has room for more data */
 #ifdef WIN32
             if ( select( n->portNo + 1, NULL, &wfds, NULL, unlimWait ? NULL : &tv ) <= 0 )
@@ -236,17 +222,14 @@ void nwclientSend( struct nwclientsHandle *h, uint32_t len, uint8_t *ipbuffer, b
 
             sent = send( n->portNo, ( char * )p, len, MSG_NOSIGNAL );
 
-            if ( sent > 0 )
-            {
+            if ( sent > 0 ) {
                 tosend -= sent;
                 p += sent;
             }
-        }
-        while ( ( sent >= 0 ) && ( tosend ) );
+        } while ( ( sent >= 0 ) && ( tosend ) );
 
         /* If we didn't manage to send everthing then it's time to get rid of this client */
-        if ( tosend )
-        {
+        if ( tosend ) {
             genericsReport( V_WARN, EOL "Unresponsive client dropped" EOL );
             _clientRemove( n );
         }
@@ -269,10 +252,9 @@ struct nwclientsHandle *nwclientStart( int port )
     MEMCHECK( h, NULL );
 
     h->sockfd = socket( AF_INET, SOCK_STREAM, 0 );
-    setsockopt( h->sockfd, SOL_SOCKET, SO_REUSEPORT, ( const void * )&flag, sizeof( flag ) );
+    setsockopt( h->sockfd, SOL_SOCKET, SO_REUSEPORT, ( const char * )&flag, sizeof( flag ) );
 
-    if ( h->sockfd < 0 )
-    {
+    if ( h->sockfd < 0 ) {
         genericsReport( V_ERROR, "Error opening socket" EOL );
         goto free_and_return;
     }
@@ -282,14 +264,12 @@ struct nwclientsHandle *nwclientStart( int port )
     serv_addr.sin_addr.s_addr = INADDR_ANY;
     serv_addr.sin_port = htons( port );
 
-    if ( setsockopt( h->sockfd, SOL_SOCKET, SO_REUSEADDR, ( const void * ) &flag, sizeof( flag ) ) < 0 )
-    {
+    if ( setsockopt( h->sockfd, SOL_SOCKET, SO_REUSEADDR, ( const char * ) &flag, sizeof( flag ) ) < 0 ) {
         genericsReport( V_ERROR, "setsockopt(SO_REUSEADDR) failed" );
         goto free_and_return;
     }
 
-    if ( bind( h->sockfd, ( struct sockaddr * ) &serv_addr, sizeof( serv_addr ) ) < 0 )
-    {
+    if ( bind( h->sockfd, ( struct sockaddr * ) &serv_addr, sizeof( serv_addr ) ) < 0 ) {
         genericsReport( V_ERROR, "Error on binding" EOL );
         goto free_and_return;
     }
@@ -298,8 +278,7 @@ struct nwclientsHandle *nwclientStart( int port )
     pthread_mutex_init( &h->clientList, NULL );
 
     /* We have the listening socket - spawn a thread to handle it */
-    if ( pthread_create( &( h->ipThread ), NULL, &_listenTask, h ) )
-    {
+    if ( pthread_create( &( h->ipThread ), NULL, &_listenTask, h ) ) {
         genericsReport( V_ERROR, "Failed to create listening thread" EOL );
         goto free_and_return;
     }
@@ -316,24 +295,21 @@ void nwclientShutdown( struct nwclientsHandle *h )
 {
     const struct timespec ts = {.tv_sec = 1, .tv_nsec = 0};
 
-    if ( !h )
-    {
+    if ( !h ) {
         return;
     }
 
     /* Flag that we're ending */
     h->finish = true;
 
-    if ( _lock_with_timeout( &h->clientList, &ts ) < 0 )
-    {
+    if ( _lock_with_timeout( &h->clientList, &ts ) < 0 ) {
         genericsExit( -1, "Failed to acquire mutex" EOL );
     }
 
     /* Shut all the client connections */
     volatile struct nwClient *c = h->firstClient;
 
-    while ( c )
-    {
+    while ( c ) {
         volatile struct nwClient *nextc = c->nextClient;
         _clientRemove( c );
         c = nextc;

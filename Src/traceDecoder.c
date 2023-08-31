@@ -66,8 +66,8 @@ struct TRACECPUState *TRACECPUState( struct TRACEDecoder *i )
 const char *TRACEExceptionName( int exceptionNumber )
 
 {
-    return ( ( const char *[] )
-    {"???", "PE Reset", "NMI", "HardFault", "MemManage", "BusFault", "UsageFault", "SecureFault", "???", "???", "???", "SVC", "Debug Monitor", "???", "PendSV", "SysTick", "IRQ"
+    return ( ( const char *[] ) {
+        "???", "PE Reset", "NMI", "HardFault", "MemManage", "BusFault", "UsageFault", "SecureFault", "???", "???", "???", "SVC", "Debug Monitor", "???", "PendSV", "SysTick", "IRQ"
     } )[( exceptionNumber < 16 ) ? exceptionNumber : 16];
 }
 // ====================================================================================================
@@ -87,14 +87,10 @@ void TRACEDecoderForceSync( struct TRACEDecoder *i, bool isSynced )
     assert( i );
     assert( i->engine );
 
-    if ( isSynced )
-    {
+    if ( isSynced ) {
         i->stats.syncCount++;
-    }
-    else
-    {
-        if ( TRACEDecoderIsSynced( i ) )
-        {
+    } else {
+        if ( TRACEDecoderIsSynced( i ) ) {
             i->stats.lostSyncCount++;
         }
     }
@@ -111,26 +107,19 @@ void TRACEDecoderPump( struct TRACEDecoder *i, uint8_t *buf, int len, traceDecod
 
     /* len can arrive as 0 for the case of an unwrapped buffer */
 
-    if ( i->engine->action )
-    {
-        while ( len-- )
-        {
-            if ( i->engine->action(  i->engine, &i->cpu, *( buf++ ) ) )
-            {
+    if ( i->engine->action ) {
+        while ( len-- ) {
+            if ( i->engine->action(  i->engine, &i->cpu, *( buf++ ) ) ) {
                 /* Something worthy of being reported happened */
                 cb( d );
             }
         }
 
-    }
-    else if ( i->engine->actionPair )
-    {
-        while ( len > 7 )
-        {
+    } else if ( i->engine->actionPair ) {
+        while ( len > 7 ) {
             /* MTB processes two words at a time...a from and to address */
             /* (yes, that could be +1 on a uint32_t increment, but I prefer being explicit) */
-            if ( i->engine->actionPair( i->engine, &i->cpu, *( uint32_t * )buf, *( uint32_t * )( buf + 4 ) ) )
-            {
+            if ( i->engine->actionPair( i->engine, &i->cpu, *( uint32_t * )buf, *( uint32_t * )( buf + 4 ) ) ) {
                 /* Something worthy of being reported happened */
                 cb( d );
             }
@@ -158,8 +147,7 @@ void TRACEDecoderInit( struct TRACEDecoder *i, enum TRACEprotocol protocol, bool
 
     i->engine = _engine[ protocol ]();
 
-    if ( i->engine->altAddrEncode )
-    {
+    if ( i->engine->altAddrEncode ) {
         i->engine->altAddrEncode( i->engine, usingAltAddrEncodeSet );
     }
 }

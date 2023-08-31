@@ -47,12 +47,9 @@ static bool _handlePCSample( struct ITMPacket *packet, struct pcSampleMsg *decod
 {
     decoded->msgtype = MSG_PC_SAMPLE;
 
-    if ( packet->len == 1 )
-    {
+    if ( packet->len == 1 ) {
         decoded->sleep = true;
-    }
-    else
-    {
+    } else {
         decoded->sleep = false;
         decoded->pc = ( packet->d[3] << 24 ) | ( packet->d[2] << 16 ) | ( packet->d[1] << 8 ) | ( packet->d[0] );
     }
@@ -69,8 +66,7 @@ static bool _handleDataRWWP( struct ITMPacket *packet, struct watchMsg *decoded 
     decoded->comp = ( packet->srcAddr >> 1 ) & 0x3;
     decoded->isWrite = ( ( packet->srcAddr & 0x01 ) != 0 );
 
-    switch ( packet->len )
-    {
+    switch ( packet->len ) {
         case 1:
             decoded->data = packet->d[0];
             break;
@@ -117,8 +113,7 @@ static bool _handleHW( struct ITMPacket *packet, struct msg *decoded )
     bool wasDecoded = false;
     decoded->genericMsg.msgtype = MSG_NONE;
 
-    switch ( packet->srcAddr )
-    {
+    switch ( packet->srcAddr ) {
         // --------------
         case 0: /* DWT Event */
             wasDecoded = _handleDWTEvent( packet, ( struct dwtMsg * )decoded );
@@ -136,16 +131,11 @@ static bool _handleHW( struct ITMPacket *packet, struct msg *decoded )
 
         // --------------
         default:
-            if ( ( ( packet->srcAddr & 0x19 ) == 0x10 ) || ( ( packet->srcAddr & 0x19 ) == 0x11 ) )
-            {
+            if ( ( ( packet->srcAddr & 0x19 ) == 0x10 ) || ( ( packet->srcAddr & 0x19 ) == 0x11 ) ) {
                 wasDecoded = _handleDataRWWP( packet, ( struct watchMsg * )decoded );
-            }
-            else if ( ( packet->srcAddr & 0x19 ) == 0x08 )
-            {
+            } else if ( ( packet->srcAddr & 0x19 ) == 0x08 ) {
                 wasDecoded = _handleDataAccessWP( packet, ( struct wptMsg * )decoded );
-            }
-            else if ( ( packet->srcAddr & 0x19 ) == 0x09 )
-            {
+            } else if ( ( packet->srcAddr & 0x19 ) == 0x09 ) {
                 wasDecoded = _handleDataOffsetWP( packet, ( struct oswMsg * )decoded );
             }
 
@@ -194,27 +184,21 @@ static bool _handleTS( struct ITMPacket *packet, struct TSMsg *decoded )
     decoded->msgtype = MSG_TS;
     uint32_t stamp = 0;
 
-    if ( !( ( packet->d[0] ) & 0x80 ) )
-    {
+    if ( !( ( packet->d[0] ) & 0x80 ) ) {
         /* This is packet format 2 ... just a simple increment */
         stamp = packet->d[0] >> 4;
-    }
-    else
-    {
+    } else {
         /* This is packet format 1 ... full decode needed */
         decoded->timeStatus = ( packet->d[0] & 0x30 ) >> 4;
         stamp = ( packet->d[1] ) & 0x7f;
 
-        if ( packet->len > 2 )
-        {
+        if ( packet->len > 2 ) {
             stamp |= ( packet->d[2] ) << 7;
 
-            if ( packet->len > 3 )
-            {
+            if ( packet->len > 3 ) {
                 stamp |= ( packet->d[3] & 0x7F ) << 14;
 
-                if ( packet->len > 4 )
-                {
+                if ( packet->len > 4 ) {
                     stamp |= ( packet->d[4] & 0x7f ) << 21;
                 }
             }
@@ -238,8 +222,7 @@ bool msgDecoder( struct ITMPacket *packet, struct msg *decoded )
     decoded->genericMsg.msgtype = MSG_NONE;
     decoded->genericMsg.ts = genericsTimestampuS(); /* Stamp as early as possible, even if its not real */
 
-    switch ( packet->type )
-    {
+    switch ( packet->type ) {
         case ITM_PT_NONE:
             decoded->genericMsg.msgtype = MSG_NONE;
             break;

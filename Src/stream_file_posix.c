@@ -6,8 +6,7 @@
 #include "generics.h"
 
 
-struct PosixFileStream
-{
+struct PosixFileStream {
     struct Stream base;
     int file;
 };
@@ -25,21 +24,18 @@ static enum ReceiveResult _posixFileStreamReceive( struct Stream *stream, void *
 
     int r = select( self->file + 1, &readFd, NULL, NULL, timeout );
 
-    if ( r < 0 )
-    {
+    if ( r < 0 ) {
         return RECEIVE_RESULT_ERROR;
     }
 
-    if ( r == 0 )
-    {
+    if ( r == 0 ) {
         *receivedSize = 0;
         return RECEIVE_RESULT_TIMEOUT;
     }
 
     *receivedSize = read( self->file, buffer, bufferSize );
 
-    if ( *receivedSize == 0 )
-    {
+    if ( *receivedSize == 0 ) {
         return RECEIVE_RESULT_EOF;
     }
 
@@ -58,8 +54,7 @@ static int _posixFileStreamCreate( const char *file )
 {
     int f = open( file, O_RDONLY );
 
-    if ( f < 0 )
-    {
+    if ( f < 0 ) {
         genericsExit( -4, "Can't open file %s" EOL, file );
     }
 
@@ -84,8 +79,7 @@ struct Stream *streamCreateFile( const char *file )
 {
     struct PosixFileStream *stream = SELF( calloc( 1, sizeof( struct PosixFileStream ) ) );
 
-    if ( stream == NULL )
-    {
+    if ( stream == NULL ) {
         return NULL;
     }
 
@@ -93,8 +87,7 @@ struct Stream *streamCreateFile( const char *file )
     stream->base.close = _posixFileStreamClose;
     stream->file = _posixFileStreamCreate( file );
 
-    if ( stream->file == -1 )
-    {
+    if ( stream->file == -1 ) {
         free( stream );
         return NULL;
     }

@@ -32,8 +32,7 @@ enum SIOEvent { SIO_EV_NONE, SIO_EV_HOLD, SIO_EV_QUIT, SIO_EV_SAVE, SIO_EV_CONSU
 enum LineType { LT_SOURCE, LT_ASSEMBLY, LT_NASSEMBLY, LT_MU_SOURCE, LT_EVENT, LT_LABEL, LT_FILE, LT_DEBUG  };
 
 /* Definition for a single line...collections of these are what get displayed */
-struct sioline
-{
+struct sioline {
     enum LineType lt;
     bool isRef;
     char *buffer;

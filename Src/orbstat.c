@@ -41,8 +41,7 @@
 enum CDState { CD_waitinout, CD_waitsrc, CD_waitdst };
 
 /* ---------- CONFIGURATION ----------------- */
-struct Options                           /* Record for options, either defaults or from command line */
-{
+struct Options {                         /* Record for options, either defaults or from command line */
     bool demangle;                       /* Demangle C++ names */
     char *file;                          /* File host connection */
     bool fileTerminate;                  /* Terminate when file read isn't successful */
@@ -68,8 +67,7 @@ struct Options                           /* Record for options, either defaults 
     int port;                            /* Source information for where to connect to */
     char *server;
 
-} _options =
-{
+} _options = {
     .demangle       = true,
     .traceChannel   = DEFAULT_TRACE_CHANNEL,
     .fileChannel    = DEFAULT_FILE_CHANNEL,
@@ -80,15 +78,13 @@ struct Options                           /* Record for options, either defaults 
 };
 
 /* A block of received data */
-struct dataBlock
-{
+struct dataBlock {
     ssize_t fillLevel;
     uint8_t buffer[TRANSFER_SIZE];
 };
 
 /* ----------- LIVE STATE ----------------- */
-struct RunTime
-{
+struct RunTime {
     struct ITMDecoder i;                /* The decoders and the packets from them */
     struct ITMPacket h;
     struct TPIUDecoder t;
@@ -151,31 +147,25 @@ static void _handleSW( struct RunTime *r )
 
     struct swMsg *m = ( struct swMsg * )&r->m;
 
-    if ( m->srcAddr == r->options->traceChannel )
-    {
-        switch ( r->CDState )
-        {
+    if ( m->srcAddr == r->options->traceChannel ) {
+        switch ( r->CDState ) {
             // -------------------- Reporting the time stamp and if it's an In or Out event
             case CD_waitinout:
-                if ( ( m->value & COMMS_MASK ) == IN_EVENT )
-                {
+                if ( ( m->value & COMMS_MASK ) == IN_EVENT ) {
                     isIn = true;
                     r->CDState = CD_waitsrc;
                 }
 
-                if ( ( m->value & COMMS_MASK ) == OUT_EVENT )
-                {
+                if ( ( m->value & COMMS_MASK ) == OUT_EVENT ) {
                     isIn = false;
                     r->CDState = CD_waitsrc;
                 }
 
-                if ( r->CDState != CD_waitinout )
-                {
+                if ( r->CDState != CD_waitinout ) {
                     /* Time is encoded in lowest three octets ...accomodate rollover */
                     uint32_t t = m->value & 0xFFFFFF;
 
-                    if ( t < _r.oldt )
-                    {
+                    if ( t < _r.oldt ) {
                         r->highOrdert++;
                     }
 
@@ -183,8 +173,7 @@ static void _handleSW( struct RunTime *r )
                     r->tcount = ( _r.highOrdert << 24 ) | t;
 
                     /* Finally, if we're not sampling, then start sampling */
-                    if ( !r->sampling )
-                    {
+                    if ( !r->sampling ) {
                         genericsReport( V_WARN, "Sampling" EOL );
                         /* Fill in a time to start from */
                         r->starttime     = genericsTimestampmS();
@@ -203,14 +192,11 @@ static void _handleSW( struct RunTime *r )
                 r->CDState = CD_waitdst;
                 HASH_FIND_INT( r->insthead, &addr, r->from );
 
-                if ( !r->from )
-                {
-                    if ( SymbolLookup( r->s, addr, &n ) )
-                    {
+                if ( !r->from ) {
+                    if ( SymbolLookup( r->s, addr, &n ) ) {
                         r->from = ( struct execEntryHash * )calloc( 1, sizeof( struct execEntryHash ) );
 
-                        if ( !r->from )
-                        {
+                        if ( !r->from ) {
                             genericsExit( ENOMEM,  "Memory allocation failure at %s::%d", __FILE__, __LINE__ );
                         }
 
@@ -218,9 +204,7 @@ static void _handleSW( struct RunTime *r )
                         r->from->fileindex     = n.fileindex;
                         r->from->line          = n.line;
                         r->from->functionindex = n.functionindex;
-                    }
-                    else
-                    {
+                    } else {
                         genericsReport( V_ERROR, "No symbol for address %08x" EOL, addr );
                         r->CDState = CD_waitinout;
                         return;
@@ -239,14 +223,11 @@ static void _handleSW( struct RunTime *r )
 
                 HASH_FIND_INT( r->insthead, &addr, r->to );
 
-                if ( !r->to )
-                {
-                    if ( SymbolLookup( r->s, addr, &n ) )
-                    {
+                if ( !r->to ) {
+                    if ( SymbolLookup( r->s, addr, &n ) ) {
                         r->to = ( struct execEntryHash * )calloc( 1, sizeof( struct execEntryHash ) );
 
-                        if ( !r->to )
-                        {
+                        if ( !r->to ) {
                             genericsExit( ENOMEM,  "Memory allocation failure at %s::%d", __FILE__, __LINE__ );
                         }
 
@@ -254,9 +235,7 @@ static void _handleSW( struct RunTime *r )
                         r->to->fileindex     = n.fileindex;
                         r->to->line          = n.line;
                         r->to->functionindex = n.functionindex;
-                    }
-                    else
-                    {
+                    } else {
                         genericsReport( V_ERROR, "No symbol for address %08x" EOL, addr );
                         r->CDState = CD_waitinout;
                         return;
@@ -270,8 +249,7 @@ static void _handleSW( struct RunTime *r )
                 /* ----------------------------------------------------------------------------------------------------------*/
                 /* We have everything. Record calls between functions. These are flagged via isIn true/false for call/return */
                 /* ----------------------------------------------------------------------------------------------------------*/
-                if ( isIn )
-                {
+                if ( isIn ) {
                     /* Now make calling record */
                     sig.src = r->from->addr;
                     sig.dst = r->to->addr;
@@ -279,13 +257,11 @@ static void _handleSW( struct RunTime *r )
                     /* Find, or create, the call record */
                     HASH_FIND( hh, r->subhead, &sig, sizeof( struct subcallSig ), s );
 
-                    if ( !s )
-                    {
+                    if ( !s ) {
                         /* This entry doesn't exist...let's create it */
                         s = ( struct subcall * )calloc( 1, sizeof( struct subcall ) );
 
-                        if ( !s )
-                        {
+                        if ( !s ) {
                             genericsExit( ENOMEM,  "Memory allocation failure at %s::%d", __FILE__, __LINE__ );
                         }
 
@@ -304,17 +280,13 @@ static void _handleSW( struct RunTime *r )
                     /* ...and add it to the call stack */
                     r->substack = ( struct subcall ** )realloc( r->substack, ( r->substacklen + 1 ) * sizeof( struct subcall * ) );
                     r->substack[r->substacklen++] = s;
-                }
-                else
-                {
+                } else {
                     /* We've come out */
-                    if ( r->substacklen )
-                    {
+                    if ( r->substacklen ) {
                         /* We don't bother deallocating memory here cos it'll be done on the next isSubCall */
                         s = r->substack[--r->substacklen];
 
-                        if ( ( s->sig.src != r->from->addr ) || ( s->sig.dst != r->to->addr ) )
-                        {
+                        if ( ( s->sig.src != r->from->addr ) || ( s->sig.dst != r->to->addr ) ) {
                             genericsReport( V_WARN, "Address mismatch" EOL );
                         }
 
@@ -338,8 +310,7 @@ void _itmPumpProcess( struct RunTime *r, char c )
     typedef void ( *handlers )( struct RunTime * r );
 
     /* Handlers for each complete message received */
-    static const handlers h[MSG_NUM_MSGS] =
-    {
+    static const handlers h[MSG_NUM_MSGS] = {
         /* MSG_UNKNOWN */         NULL,
         /* MSG_RESERVED */        NULL,
         /* MSG_ERROR */           NULL,
@@ -355,8 +326,7 @@ void _itmPumpProcess( struct RunTime *r, char c )
         /* MSG_TS */              NULL
     };
 
-    switch ( ITMPump( &r->i, c ) )
-    {
+    switch ( ITMPump( &r->i, c ) ) {
         // ------------------------------------
         case ITM_EV_NONE:
             break;
@@ -387,8 +357,7 @@ void _itmPumpProcess( struct RunTime *r, char c )
 
             /* See if we decoded a dispatchable match. genericMsg is just used to access */
             /* the first two members of the decoded structs in a portable way.           */
-            if ( h[r->m.genericMsg.msgtype] )
-            {
+            if ( h[r->m.genericMsg.msgtype] ) {
                 ( h[r->m.genericMsg.msgtype] )( r );
             }
 
@@ -403,10 +372,8 @@ void _protocolPump( struct RunTime *r, uint8_t c )
 /* Top level protocol pump */
 
 {
-    if ( r->options->useTPIU )
-    {
-        switch ( TPIUPump( &r->t, c ) )
-        {
+    if ( r->options->useTPIU ) {
+        switch ( TPIUPump( &r->t, c ) ) {
             // ------------------------------------
             case TPIU_EV_NEWSYNC:
                 genericsReport( V_INFO, "TPIU In Sync (%d)" EOL, TPIUDecoderGetStats( &r->t )->syncCount );
@@ -428,21 +395,17 @@ void _protocolPump( struct RunTime *r, uint8_t c )
 
             // ------------------------------------
             case TPIU_EV_RXEDPACKET:
-                if ( !TPIUGetPacket( &r->t, &r->p ) )
-                {
+                if ( !TPIUGetPacket( &r->t, &r->p ) ) {
                     genericsReport( V_WARN, "TPIUGetPacket fell over" EOL );
                 }
 
-                for ( uint32_t g = 0; g < r->p.len; g++ )
-                {
-                    if ( r->p.packet[g].s == r->options->tpiuITMChannel )
-                    {
+                for ( uint32_t g = 0; g < r->p.len; g++ ) {
+                    if ( r->p.packet[g].s == r->options->tpiuITMChannel ) {
                         _itmPumpProcess( r, r->p.packet[g].d );
                         continue;
                     }
 
-                    if ( r->p.packet[g].s != 0 )
-                    {
+                    if ( r->p.packet[g].s != 0 ) {
                         genericsReport( V_DEBUG, "Unknown TPIU channel %02x" EOL, r->p.packet[g].s );
                     }
                 }
@@ -455,9 +418,7 @@ void _protocolPump( struct RunTime *r, uint8_t c )
                 break;
                 // ------------------------------------
         }
-    }
-    else
-    {
+    } else {
         /* There's no TPIU in use, so this goes straight to the ITM layer */
         _itmPumpProcess( r, c );
     }
@@ -495,8 +456,7 @@ void _printVersion( void )
     genericsPrintf( "orbstat version " GIT_DESCRIBE );
 }
 // ====================================================================================================
-static struct option _longOptions[] =
-{
+static struct option _longOptions[] = {
     {"no-demangle", no_argument, NULL, 'D'},
     {"del-prefix", required_argument, NULL, 'd'},
     {"elf-file", required_argument, NULL, 'e'},
@@ -526,8 +486,7 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
     char *a;
 
     while ( ( c = getopt_long ( argc, argv, "Dd:e:Ef:g:hI:nO:s:t:Tv:Vy:z:", _longOptions, &optionIndex ) ) != -1 )
-        switch ( c )
-        {
+        switch ( c ) {
             // ------------------------------------
             case 'd':
                 r->options->deleteMaterial = optarg;
@@ -596,19 +555,16 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
                 // See if we have an optional port number too
                 a = optarg;
 
-                while ( ( *a ) && ( *a != ':' ) )
-                {
+                while ( ( *a ) && ( *a != ':' ) ) {
                     a++;
                 }
 
-                if ( *a == ':' )
-                {
+                if ( *a == ':' ) {
                     *a = 0;
                     r->options->port = atoi( ++a );
                 }
 
-                if ( !r->options->port )
-                {
+                if ( !r->options->port ) {
                     r->options->port = NWCLIENT_SERVER_PORT;
                 }
 
@@ -627,8 +583,7 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
 
             // ------------------------------------
             case 'v':
-                if ( !isdigit( *optarg ) )
-                {
+                if ( !isdigit( *optarg ) ) {
                     genericsReport( V_ERROR, "-v requires a numeric argument." EOL );
                     return false;
                 }
@@ -648,12 +603,9 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
 
             // ------------------------------------
             case '?':
-                if ( optopt == 'b' )
-                {
+                if ( optopt == 'b' ) {
                     genericsReport( V_ERROR, "Option '%c' requires an argument." EOL, optopt );
-                }
-                else if ( !isprint ( optopt ) )
-                {
+                } else if ( !isprint ( optopt ) ) {
                     genericsReport( V_ERROR, "Unknown option character `\\x%x'." EOL, optopt );
                 }
 
@@ -666,14 +618,12 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
                 // ------------------------------------
         }
 
-    if ( !r->options->elffile )
-    {
+    if ( !r->options->elffile ) {
         genericsReport( V_ERROR, "Elf File not specified" EOL );
         exit( -2 );
     }
 
-    if ( !r->options->sampleDuration )
-    {
+    if ( !r->options->sampleDuration ) {
         genericsReport( V_ERROR, "Illegal sample duration" EOL );
         exit( -2 );
     }
@@ -722,8 +672,7 @@ int main( int argc, char *argv[] )
     /* This is set here to avoid huge .data section in startup image */
     _r.options = &_options;
 
-    if ( !_processOptions( argc, argv, &_r ) )
-    {
+    if ( !_processOptions( argc, argv, &_r ) ) {
         /* processOptions generates its own error messages */
         genericsExit( -1, "" EOL );
     }
@@ -734,16 +683,14 @@ int main( int argc, char *argv[] )
     atexit( _doExit );
 
     /* This ensures the atexit gets called */
-    if ( SIG_ERR == signal( SIGINT, _intHandler ) )
-    {
+    if ( SIG_ERR == signal( SIGINT, _intHandler ) ) {
         genericsExit( -1, "Failed to establish Int handler" EOL );
     }
 
 #if !defined(WIN32)
 
     /* Don't kill a sub-process when any reader or writer evaporates */
-    if ( SIG_ERR == signal( SIGPIPE, SIG_IGN ) )
-    {
+    if ( SIG_ERR == signal( SIGPIPE, SIG_IGN ) ) {
         genericsExit( -1, "Failed to ignore SIGPIPEs" EOL );
     }
 
@@ -753,20 +700,14 @@ int main( int argc, char *argv[] )
     TPIUDecoderInit( &_r.t );
     ITMDecoderInit( &_r.i, _r.options->forceITMSync );
 
-    while ( !_r.ending )
-    {
-        if ( _r.options->file != NULL )
-        {
+    while ( !_r.ending ) {
+        if ( _r.options->file != NULL ) {
             stream = streamCreateFile( _r.options->file );
-        }
-        else
-        {
-            while ( 1 )
-            {
+        } else {
+            while ( 1 ) {
                 stream = streamCreateSocket( _r.options->server, _r.options->port );
 
-                if ( stream )
-                {
+                if ( stream ) {
                     break;
                 }
 
@@ -777,12 +718,10 @@ int main( int argc, char *argv[] )
 
         /* We need symbols constantly while running ... check they are current */
         /* We need symbols constantly while running ... lets get them */
-        if ( !SymbolSetValid( &_r.s, _r.options->elffile ) )
-        {
+        if ( !SymbolSetValid( &_r.s, _r.options->elffile ) ) {
             r = SymbolSetCreate( &_r.s, _r.options->elffile, _r.options->deleteMaterial, _r.options->demangle, true, true, _r.options->odoptions );
 
-            switch ( r )
-            {
+            switch ( r ) {
                 case SYMBOL_NOELF:
                     genericsExit( -1, "Elf file or symbols in it not found" EOL );
                     break;
@@ -805,26 +744,19 @@ int main( int argc, char *argv[] )
         /* ----------------------------------------------------------------------------- */
         /* This is the main active loop...only break out of this when ending or on error */
         /* ----------------------------------------------------------------------------- */
-        while ( !_r.ending )
-        {
+        while ( !_r.ending ) {
             /* Each time segment is restricted */
             tv.tv_sec = 0;
             tv.tv_usec  = TICK_TIME_MS * 1000;
 
             enum ReceiveResult result = stream->receive( stream, _r.rawBlock.buffer, TRANSFER_SIZE, &tv, ( size_t * )&_r.rawBlock.fillLevel );
 
-            if ( result != RECEIVE_RESULT_OK )
-            {
-                if ( result == RECEIVE_RESULT_EOF && _r.options->fileTerminate )
-                {
+            if ( result != RECEIVE_RESULT_OK ) {
+                if ( result == RECEIVE_RESULT_EOF && _r.options->fileTerminate ) {
                     _r.ending = true;
-                }
-                else if ( result == RECEIVE_RESULT_ERROR )
-                {
+                } else if ( result == RECEIVE_RESULT_ERROR ) {
                     break;
-                }
-                else
-                {
+                } else {
                     usleep( 100000 );
                 }
             }
@@ -835,21 +767,18 @@ int main( int argc, char *argv[] )
             /* Pump all of the data through the protocol handler */
             uint8_t *c = _r.rawBlock.buffer;
 
-            while ( _r.rawBlock.fillLevel > 0 )
-            {
+            while ( _r.rawBlock.fillLevel > 0 ) {
                 _protocolPump( &_r, *c++ );
                 _r.rawBlock.fillLevel--;
             }
 
             /* Check to make sure there's not an unexpected TPIU in here */
-            if ( ITMDecoderGetStats( &_r.i )->tpiuSyncCount )
-            {
+            if ( ITMDecoderGetStats( &_r.i )->tpiuSyncCount ) {
                 genericsReport( V_WARN, "Got a TPIU sync while decoding ITM...did you miss a -t option?" EOL );
             }
 
             /* Update the intervals */
-            if ( ( _r.sampling ) && ( ( genericsTimestampmS() - _r.starttime ) > _r.options->sampleDuration ) )
-            {
+            if ( ( _r.sampling ) && ( ( genericsTimestampmS() - _r.starttime ) > _r.options->sampleDuration ) ) {
                 _r.ending = true;
             }
         }
@@ -861,16 +790,13 @@ int main( int argc, char *argv[] )
     /* Data are collected, now process and report */
     genericsReport( V_WARN, "Received %d raw sample bytes, %ld function changes, %ld distinct addresses" EOL, _r.intervalBytes, HASH_COUNT( _r.subhead ), HASH_COUNT( _r.insthead ) );
 
-    if ( HASH_COUNT( _r.subhead ) )
-    {
-        if ( ext_ff_outputDot( _r.options->dotfile, _r.subhead, _r.s ) )
-        {
+    if ( HASH_COUNT( _r.subhead ) ) {
+        if ( ext_ff_outputDot( _r.options->dotfile, _r.subhead, _r.s ) ) {
             genericsReport( V_WARN, "Output DOT" EOL );
         }
 
         if ( ext_ff_outputProfile( _r.options->profile, _r.options->elffile, _r.options->truncateDeleteMaterial ? _r.options->deleteMaterial : NULL, false,
-                                   _r.tcount - _r.starttcount, _r.insthead, _r.subhead, _r.s ) )
-        {
+                                   _r.tcount - _r.starttcount, _r.insthead, _r.subhead, _r.s ) ) {
             genericsReport( V_WARN, "Output Profile" EOL );
         }
     }

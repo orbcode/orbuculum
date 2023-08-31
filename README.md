@@ -369,37 +369,43 @@ to catch up. The easiest way to see this in action is to pause a client (e.g. `C
 see orbuculum's data transfer go to zero. When you re-start the client (e.g. `fg` to bring it back into the foreground)
 then it will carry on from where it left off and no client will lose data.
 
-Command Line Options
-====================
+Program Options
+===============
 
-For `orbuculum`, the specific command line options of note are;
+Options can be set either on the command line or via a configuration file. By default that is called `.orbcfg.toml` and is read from the
+current directory. The reading of this file can be prevented by setting the `-C-` command line option, and it's name can be overridden
+by specifying a new name in the `-C` option. Options are read from the config file first, and are overridden by command line options. The
+config file is in [TOML](https://toml.io/en/v1.0.0) format.
 
- `-a, --serial-speed: [serialSpeed]`: Use serial port and set device speed.
+For `orbuculum`, the specific command line options (and equivalent TOML entries) of note are;
 
- `-E, --eof`: When reading from file, ignore eof.
+ `-a, --serial-speed: [serialSpeed]`: Use serial port and set device speed. Equivalent config file entry `orbuculum.source.serial.speed`.
 
- `-f, --input-file [filename]`: Take input from file rather than device.
+ `-E, --eof`: When reading from file, ignore eof. Equivalent config file entry `orbuculum.source.exit_at_eof`.
 
- `-h, --help`: Brief help.
+ `-f, --input-file [filename]`: Take input from file rather than device. Equivalent config file entry `orbuculum.source.file`.
 
- `-H, --hires`: Use high resolution time. This limits probe interface timeouts to 1ms, which makes host-side timing more accurate, but at the expense of _much_ higher load (literally perhaps x100). Use sparingly.
+ `-h, --help`: Brief help. No config file equivalent.
 
- `-m, --monitor`: Monitor interval (in ms) for reporting on state of the link. If baudrate is specified (using `-a`) and is greater than 100bps then the percentage link occupancy is also reported.
+ `-H, --hires`: Use high resolution time. This limits probe interface timeouts to 1ms, which makes host-side timing more accurate, but at the expense of _much_ higher load (literally perhaps x100). Use sparingly. Equivalent config file entry `orbuculum.processing.hires`.
 
- `-n, --serial-number`: Set a specific serial number for the ORBTrace or BMP device to connect to. Any unambigious sequence is sufficient. Ignored for other probe types.
+ `-m, --monitor`: Monitor interval (in ms) for reporting on state of the link. If baudrate is specified (using `-a`) and is greater than 100bps then the percentage link occupancy is also reported. Equivalent config file entry `orbuculum.presentation.monitor_interval`.
 
-  `-o, --output-file [filename]`: Record trace data locally. This is unfettered data directly from the source device, can be useful for replay purposes or other tool testing.
+ `-n, --serial-number`: Set a specific serial number for the ORBTrace or BMP device to connect to. Any unambigious sequence is sufficient. Ignored for other probe types. Equivalent config file entry `orbuculum.source.serial_number`.
 
-  `-O "<options>"`: Run orbtrace on each detected connection of a probe, with the specified options.
+  `-o, --output-file [filename]`: Record trace data locally. This is unfettered data directly from the source device, can be useful for replay purposes or other tool testing. Equivalent config file entry `orbuculum.output.file`.
 
-  `-p, --serial-port [serialPort]`: to use. If not specified then the program defaults to Blackmagic probe.
+  `-O "<options>"`: Run orbtrace on each detected connection of a probe, with the specified options. Equivalent config file entry `orbuculum.presentation.run_orbtrace`.
 
-  `-P, --pace [us delay]`: between file blocks. Used to slow down orbuculum feeding from a file to a set of clients.
+  `-p, --serial-port [serialPort]`: to use. If not specified then the program defaults to Blackmagic probe or ORBTrace probe, with a selection dialog if multiples are found. Equivalent config file entry `orbuculum.source.port`.
 
-  `-s, --server [address]:[port]`: Set address for explicit TCP Source connection, (default none:2332).
+  `-P, --pace [us delay]`: between file blocks. Used to slow down orbuculum feeding from a file to a set of clients. Equivalent config file entry `orbuculum.output.pace_delay`.
 
-  `-t, --tpiu x,y,...`: Remove TPIU formatting and issue streams x, y etc over incrementing IP port numbers.
+  `-s, --server [address]:[port]`: Set address for explicit TCP Source connection, (default none:2332). Equivalent config file entries `orbuculum.source.server.name` and `orbuculum.source.server.port`.
 
+  `-t, --tpiu x,y,...`: Remove TPIU formatting and issue streams x, y etc over incrementing IP port numbers. Equvalent config file entry `tpiu_channels`.
+
+The config file also let's the data link speed be set independently of the serial link speed by means of the `orbuculum.presentation.data_speed` entry.
 
 Orbfifo
 -------

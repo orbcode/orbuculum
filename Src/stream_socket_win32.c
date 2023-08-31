@@ -9,8 +9,7 @@
 #include "generics.h"
 
 
-struct Win32SocketStream
-{
+struct Win32SocketStream {
     struct Win32Stream base;
 };
 
@@ -48,18 +47,16 @@ static HANDLE _win32SocketStreamCreate( const char *server, int port )
     int sockfd = socket( AF_INET, SOCK_STREAM, IPPROTO_TCP );
 
     int flag = 1;
-    setsockopt( sockfd, SOL_SOCKET, SO_REUSEPORT, ( const void * )&flag, sizeof( flag ) );
+    setsockopt( sockfd, SOL_SOCKET, SO_REUSEPORT, ( const char * )&flag, sizeof( flag ) );
 
-    if ( sockfd < 0 )
-    {
+    if ( sockfd < 0 ) {
         genericsReport( V_ERROR, "Error creating socket" EOL );
         return INVALID_HANDLE_VALUE;
     }
 
     struct hostent *serverEnt = gethostbyname( server );
 
-    if ( !serverEnt )
-    {
+    if ( !serverEnt ) {
         close( sockfd );
         genericsReport( V_ERROR, "Cannot find host" EOL );
         return INVALID_HANDLE_VALUE;
@@ -76,8 +73,7 @@ static HANDLE _win32SocketStreamCreate( const char *server, int port )
 
     serv_addr.sin_port = htons( port );
 
-    if ( connect( sockfd, ( struct sockaddr * ) &serv_addr, sizeof( serv_addr ) ) < 0 )
-    {
+    if ( connect( sockfd, ( struct sockaddr * ) &serv_addr, sizeof( serv_addr ) ) < 0 ) {
         close( sockfd );
         return INVALID_HANDLE_VALUE;
     }
@@ -98,13 +94,11 @@ struct Stream *streamCreateSocket( const char *server, int port )
 {
     struct Win32SocketStream *stream = SELF( calloc( 1, sizeof( struct Win32SocketStream ) ) );
 
-    if ( stream == NULL )
-    {
+    if ( stream == NULL ) {
         return NULL;
     }
 
-    if ( !streamWin32Initialize( ( struct Win32Stream * )stream,  _win32SocketStreamCreate( server, port ) ) )
-    {
+    if ( !streamWin32Initialize( ( struct Win32Stream * )stream,  _win32SocketStreamCreate( server, port ) ) ) {
         free( stream );
         return NULL;
     }

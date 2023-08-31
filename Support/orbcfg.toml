@@ -1,0 +1,30 @@
+# This is the basic configuration file for orbuculum and clients
+# Options set here are overridden by command line settings
+# Syntax is standard TOML at defined at https://toml.io/en/v1.0.0
+# Defaults are present but commented out
+
+[orbuculum.source]
+#serial = { port = '/dev/ttyUSB0', speed = 115_200 }
+#server = { name = "localhost", port = 3333 }
+#serial_number='ABCD1234'
+#file=input.filename
+#exit_at_eof=true
+
+[orbuculum.processing]
+#hires=false
+#tpiu_channels=[1,2]
+
+[orbuculum.presentation]
+#monitor_interval=100
+#data_speed=115_200
+#colour=true
+verbose=2
+#run_orbtrace=
+
+[orbuculum.output]
+#port=
+#file=
+#pace_delay=
+
+##############################################################
+

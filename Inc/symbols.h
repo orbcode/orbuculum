@@ -87,8 +87,7 @@ struct sourceLineEntry
 };
 
 /* The full set of symbols */
-struct SymbolSet
-{
+struct SymbolSet {
     char *elfFile;                         /* File containing structure info */
     char *deleteMaterial;                  /* Material to strip off filenames */
     char *odoptions;                       /* Any options to pass directly to objdump */
@@ -111,8 +110,7 @@ struct SymbolSet
 };
 
 /* An entry in the names table ... what we return to our caller */
-struct nameEntry
-{
+struct nameEntry {
     uint32_t fileindex;                    /* Index of filename */
     uint32_t functionindex;                /* Index of functionname */
     uint32_t line;                         /* Source line containing the address */

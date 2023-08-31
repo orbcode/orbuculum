@@ -18,8 +18,7 @@ typedef unsigned char *symbolMemptr;
 #define NO_ADDRESS     ((uint32_t)(-1))
 
 /* Structure for a memory segment */
-struct symbolMemoryStore
-{
+struct symbolMemoryStore {
     symbolMemaddr   start;                 /* Low address of the memory segment */
     symbolMemaddr   len;                   /* Length of the memory segment */
     char           *name;                  /* Name of the segment as defined by the linker */
@@ -28,8 +27,7 @@ struct symbolMemoryStore
 
 
 /* Structure for a line memory region identified in the image */
-struct symbolLineStore
-{
+struct symbolLineStore {
     unsigned int               filename;   /* Filename index for this line */
     unsigned int               startline;  /* First line in source code covered by this line region */
     bool isinline;
@@ -39,8 +37,7 @@ struct symbolLineStore
 };
 
 /* Structure for a Function identified in the image */
-struct symbolFunctionStore
-{
+struct symbolFunctionStore {
     char                      *funcname;   /* What is the name of the function */
     unsigned int               producer;   /* What code/options produced it? */
     unsigned int               filename;   /* What filename + path off the source root? */
@@ -54,8 +51,7 @@ struct symbolFunctionStore
     unsigned int               nlines;     /* Number of lines in line number storage */
 };
 
-struct symbolSourcecodeStore
-{
+struct symbolSourcecodeStore {
     char                     **linetext;   /* Table of text lines in this file */
 
 
@@ -64,8 +60,7 @@ struct symbolSourcecodeStore
 
 enum symbolTables { PT_PRODUCER, PT_FILENAME, PT_NUMTABLES };
 
-struct symbol
-{
+struct symbol {
     char **stringTable[PT_NUMTABLES];      /* Strings that we don't want to duplicate, so we give them an index */
     unsigned int tableLen[PT_NUMTABLES];   /* Number of strings for each of the deduplication tables */
 

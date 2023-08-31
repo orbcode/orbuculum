@@ -28,8 +28,7 @@
 
 /* ---------- CONFIGURATION ----------------- */
 
-struct                                      /* Record for options, either defaults or from command line */
-{
+struct {                                    /* Record for options, either defaults or from command line */
     /* Config information */
     bool useTPIU;
     bool forceITMSync;
@@ -49,8 +48,7 @@ struct                                      /* Record for options, either defaul
     /* Source information */
     int port;
     char *server;
-} options =
-{
+} options = {
     .useTPIU = false,
     .forceITMSync = true,
     .tpiuITMChannel = 1,
@@ -61,8 +59,7 @@ struct                                      /* Record for options, either defaul
 };
 
 /* ----------- LIVE STATE ----------------- */
-struct
-{
+struct {
     /* The decoders and the packets from them */
     struct ITMDecoder i;
     struct ITMPacket h;
@@ -97,10 +94,8 @@ void _protocolPump( uint8_t c )
 /* Top level protocol pump */
 
 {
-    if ( options.useTPIU )
-    {
-        switch ( TPIUPump( &_r.t, c ) )
-        {
+    if ( options.useTPIU ) {
+        switch ( TPIUPump( &_r.t, c ) ) {
             // ------------------------------------
             case TPIU_EV_NEWSYNC:
             case TPIU_EV_SYNCED:
@@ -119,21 +114,17 @@ void _protocolPump( uint8_t c )
 
             // ------------------------------------
             case TPIU_EV_RXEDPACKET:
-                if ( !TPIUGetPacket( &_r.t, &_r.p ) )
-                {
+                if ( !TPIUGetPacket( &_r.t, &_r.p ) ) {
                     genericsReport( V_WARN, "TPIUGetPacket fell over" EOL );
                 }
 
-                for ( uint32_t g = 0; g < _r.p.len; g++ )
-                {
-                    if ( _r.p.packet[g].s == options.tpiuITMChannel )
-                    {
+                for ( uint32_t g = 0; g < _r.p.len; g++ ) {
+                    if ( _r.p.packet[g].s == options.tpiuITMChannel ) {
                         ITMPump( &_r.i, _r.p.packet[g].d );
                         continue;
                     }
 
-                    if ( _r.p.packet[g].s != 0 )
-                    {
+                    if ( _r.p.packet[g].s != 0 ) {
                         genericsReport( V_DEBUG, "Unknown TPIU channel %02x" EOL, _r.p.packet[g].s );
                     }
                 }
@@ -146,9 +137,7 @@ void _protocolPump( uint8_t c )
                 break;
                 // ------------------------------------
         }
-    }
-    else
-    {
+    } else {
         /* There's no TPIU in use, so this goes straight to the ITM layer */
         ITMPump( &_r.i, c );
     }
@@ -177,8 +166,7 @@ void _printVersion( void )
     genericsPrintf( "orbdump version " GIT_DESCRIBE EOL );
 }
 // ====================================================================================================
-static struct option _longOptions[] =
-{
+static struct option _longOptions[] = {
     {"help", no_argument, NULL, 'h'},
     {"length", required_argument, NULL, 'l'},
     {"itm-sync", no_argument, NULL, 'n'},
@@ -200,8 +188,7 @@ bool _processOptions( int argc, char *argv[] )
     int c, optionIndex = 0;
 
     while ( ( c = getopt_long ( argc, argv, "hVl:Mno:p:s:t:v:w", _longOptions, &optionIndex ) ) != -1 )
-        switch ( c )
-        {
+        switch ( c ) {
             case 'o':
                 options.outfile = optarg;
                 break;
@@ -223,8 +210,7 @@ bool _processOptions( int argc, char *argv[] )
                 break;
 
             case 'v':
-                if ( !isdigit( *optarg ) )
-                {
+                if ( !isdigit( *optarg ) ) {
                     genericsReport( V_ERROR, "-v requires a numeric argument." EOL );
                     return false;
                 }
@@ -256,12 +242,9 @@ bool _processOptions( int argc, char *argv[] )
                 return false;
 
             case '?':
-                if ( optopt == 'b' )
-                {
+                if ( optopt == 'b' ) {
                     genericsReport( V_ERROR, "Option '%c' requires an argument." EOL, optopt );
-                }
-                else if ( !isprint ( optopt ) )
-                {
+                } else if ( !isprint ( optopt ) ) {
                     genericsReport( V_ERROR, "Unknown option character `\\x%x'." EOL, optopt );
                 }
 
@@ -272,8 +255,7 @@ bool _processOptions( int argc, char *argv[] )
                 return false;
         }
 
-    if ( ( options.useTPIU ) && ( !options.tpiuITMChannel ) )
-    {
+    if ( ( options.useTPIU ) && ( !options.tpiuITMChannel ) ) {
         genericsReport( V_ERROR, "TPIU set for use but no channel set for ITM output" EOL );
         return false;
     }
@@ -282,19 +264,15 @@ bool _processOptions( int argc, char *argv[] )
     genericsReport( V_INFO, "Server    : %s:%d" EOL, options.server, options.port );
     genericsReport( V_INFO, "ForceSync : %s" EOL, options.forceITMSync ? "true" : "false" );
 
-    if ( options.timelen )
-    {
+    if ( options.timelen ) {
         genericsReport( V_INFO, "Rec Length: %dmS" EOL, options.timelen );
-    }
-    else
-    {
+    } else {
         genericsReport( V_INFO, "Rec Length: Unlimited" EOL );
     }
 
     genericsReport( V_INFO, "Sync Write: %s" EOL, options.writeSync ? "true" : "false" );
 
-    if ( options.useTPIU )
-    {
+    if ( options.useTPIU ) {
         genericsReport( V_INFO, "Using TPIU: true (ITM on channel %d)" EOL, options.tpiuITMChannel );
     }
 
@@ -321,8 +299,7 @@ int main( int argc, char *argv[] )
     bool alreadyReported = false;
     struct Stream *stream;
 
-    if ( !_processOptions( argc, argv ) )
-    {
+    if ( !_processOptions( argc, argv ) ) {
         exit( -1 );
     }
 
@@ -332,15 +309,12 @@ int main( int argc, char *argv[] )
     TPIUDecoderInit( &_r.t );
     ITMDecoderInit( &_r.i, options.forceITMSync );
 
-    while ( true )
-    {
+    while ( true ) {
 
         stream = _tryOpenStream();
 
-        if ( stream != NULL )
-        {
-            if ( alreadyReported )
-            {
+        if ( stream != NULL ) {
+            if ( alreadyReported ) {
                 genericsReport( V_INFO, "Connected" EOL );
                 alreadyReported = false;
             }
@@ -348,8 +322,7 @@ int main( int argc, char *argv[] )
             break;
         }
 
-        if ( !alreadyReported )
-        {
+        if ( !alreadyReported ) {
             genericsReport( V_INFO, EOL "No connection" EOL );
             alreadyReported = true;
         }
@@ -363,8 +336,7 @@ int main( int argc, char *argv[] )
     /* .... and the file to dump it into */
     opFile = fopen( options.outfile, "wb" );
 
-    if ( !opFile )
-    {
+    if ( !opFile ) {
         genericsReport( V_ERROR, "Could not open output file for writing" EOL );
         return -2;
     }
@@ -372,26 +344,21 @@ int main( int argc, char *argv[] )
     genericsReport( V_INFO, "Waiting for sync" EOL );
 
     /* Start the process of collecting the data */
-    while ( true )
-    {
+    while ( true ) {
         enum ReceiveResult result = stream->receive( stream, cbw, TRANSFER_SIZE, NULL, &receivedSize );
 
-        if ( result != RECEIVE_RESULT_OK )
-        {
-            if ( result == RECEIVE_RESULT_EOF )
-            {
+        if ( result != RECEIVE_RESULT_OK ) {
+            if ( result == RECEIVE_RESULT_EOF ) {
                 break;
             }
 
-            if ( result == RECEIVE_RESULT_ERROR )
-            {
+            if ( result == RECEIVE_RESULT_ERROR ) {
                 genericsReport( V_ERROR, "Reading from connection failed" EOL );
                 return -2;
             }
         }
 
-        if ( ( options.timelen ) && ( ( firstTime != 0 ) && ( ( _timestamp() - firstTime ) > options.timelen ) ) )
-        {
+        if ( ( options.timelen ) && ( ( firstTime != 0 ) && ( ( _timestamp() - firstTime ) > options.timelen ) ) ) {
             /* This packet arrived at the end of the window...finish the write process */
             break;
         }
@@ -400,23 +367,19 @@ int main( int argc, char *argv[] )
 
         t = receivedSize;
 
-        while ( t-- )
-        {
+        while ( t-- ) {
             _protocolPump( *c++ );
         }
 
         /* Check to make sure there's not an unexpected TPIU in here */
-        if ( ITMDecoderGetStats( &_r.i )->tpiuSyncCount )
-        {
+        if ( ITMDecoderGetStats( &_r.i )->tpiuSyncCount ) {
             genericsReport( V_WARN, "Got a TPIU sync while decoding ITM...did you miss a -t option?" EOL );
             break;
         }
 
         /* ... now check if we've acheived sync so can write frames */
-        if ( !haveSynced )
-        {
-            if ( !ITMDecoderIsSynced( &_r.i ) )
-            {
+        if ( !haveSynced ) {
+            if ( !ITMDecoderIsSynced( &_r.i ) ) {
                 continue;
             }
 
@@ -429,13 +392,11 @@ int main( int argc, char *argv[] )
 
         octetsRxed += fwrite( cbw, 1, receivedSize, opFile );
 
-        if ( !ITMDecoderIsSynced( &_r.i ) )
-        {
+        if ( !ITMDecoderIsSynced( &_r.i ) ) {
             genericsReport( V_WARN, "Warning:Sync lost while writing output" EOL );
         }
 
-        if ( options.writeSync )
-        {
+        if ( options.writeSync ) {
 #if defined(WIN32)
             _flushall();
 #else
@@ -448,8 +409,7 @@ int main( int argc, char *argv[] )
     free( stream );
     fclose( opFile );
 
-    if ( receivedSize <= 0 )
-    {
+    if ( receivedSize <= 0 ) {
         genericsReport( V_ERROR, "Network Read failed" EOL );
         return -2;
     }

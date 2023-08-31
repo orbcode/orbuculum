@@ -1,5 +1,5 @@
 
-project('orbuculum', 'c', version:'2.1.0', meson_version: '>=0.63')
+project('orbuculum', 'c', 'cpp', version:'2.1.0', meson_version: '>=0.63', default_options:['cpp_std=c++14'])
 
 uicolours_default = declare_dependency(compile_args: ['-include', 'uicolours_default.h'])
 
@@ -23,11 +23,11 @@ if host_machine.system() == 'windows'
         winsock2
     ]
 elif host_machine.system() == 'darwin'
-    add_project_arguments('-DOSX', language: 'c')
+    add_project_arguments('-DOSX', language: ['c','cpp'])
 else
-    add_project_arguments('-DLINUX', language: 'c')
-    add_project_arguments('-ggdb', language: 'c')
-    add_project_arguments('-D_GNU_SOURCE', language: 'c')
+    add_project_arguments('-DLINUX', language: ['c','cpp'])
+    add_project_arguments('-ggdb', language: ['c','cpp'])
+    add_project_arguments('-D_GNU_SOURCE', language: ['c','cpp'])
 
     install_data('Support/60-orbcode.rules', install_dir : '/etc/udev/rules.d')
     install_data('Support/gdbtrace.init', install_dir : 'share/orbcode')
@@ -35,9 +35,9 @@ endif
 
 add_project_arguments('-x', language: 'c')
 add_project_arguments('c++', language: 'c')
-add_project_arguments('-DSCREEN_HANDLING', language: 'c')
-add_project_arguments('-Wno-error=deprecated-declarations', language: 'c')
-add_project_arguments(['-include', 'uicolours_default.h'], language: 'c')
+add_project_arguments('-DSCREEN_HANDLING', language: ['c','cpp'])
+add_project_arguments('-Wno-error=deprecated-declarations', language: ['c','cpp'])
+add_project_arguments(['-include', 'uicolours_default.h'], language: ['c','cpp'])
 
 
 libdwarf = subproject('libdwarf').get_variable('libdwarf')

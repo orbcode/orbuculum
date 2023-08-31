@@ -8,16 +8,14 @@
 extern "C" {
 #endif
 
-enum ReceiveResult
-{
+enum ReceiveResult {
     RECEIVE_RESULT_OK,
     RECEIVE_RESULT_TIMEOUT,
     RECEIVE_RESULT_EOF,
     RECEIVE_RESULT_ERROR,
 };
 
-struct Stream
-{
+struct Stream {
     enum ReceiveResult ( *receive )( struct Stream *stream, void *buffer, size_t bufferSize,
                                      struct timeval *timeout, size_t *receivedSize );
     void ( *close )( struct Stream *stream );

@@ -17,8 +17,7 @@
 #include "generics.h"
 
 /* Internal states of the protocol machine */
-enum TRACE_ETM35protoState
-{
+enum TRACE_ETM35protoState {
     TRACE_UNSYNCED,
     TRACE_WAIT_ISYNC,
     TRACE_IDLE,
@@ -35,16 +34,14 @@ enum TRACE_ETM35protoState
     TRACE_GET_CONTEXTID
 };
 
-static const char *_protoStateName[] =
-{
+static const char *_protoStateName[] = {
     "UNSYNCED",       "WAIT_ISYNC",        "IDLE",             "COLLECT_BA_STD",
     "COLLECT_BA_ALT", "COLLECT_EXCEPTION", "WAIT_CONTEXTBYTE", "WAIT_INFOBYTE",
     "WAIT_IADDRESS",  "WAIT_ICYCLECOUNT",  "WAIT_CYCLECOUNT",  "GET_VMID",
     "GET_TSTAMP",     "GET_CONTEXTID"
 };
 
-struct ETM35DecodeState
-{
+struct ETM35DecodeState {
     struct TRACEDecoderEngine e;         /* Must be first to allow object method access */
     enum TRACE_ETM35protoState p;        /* Current state of the receiver */
 
@@ -99,17 +96,13 @@ static bool _pumpAction( struct TRACEDecoderEngine *e, struct TRACECPUState *cpu
     enum TRACEDecoderPumpEvent retVal = TRACE_EV_NONE;
 
     /* Perform A-Sync accumulation check */
-    if ( ( j->asyncCount >= 5 ) && ( c == 0x80 ) )
-    {
+    if ( ( j->asyncCount >= 5 ) && ( c == 0x80 ) ) {
         DEBUG( "A-Sync Accumulation complete" EOL );
         newState = TRACE_IDLE;
-    }
-    else
-    {
+    } else {
         j->asyncCount = c ? 0 : j->asyncCount + 1;
 
-        switch ( j->p )
-        {
+        switch ( j->p ) {
             // -----------------------------------------------------
             case TRACE_UNSYNCED:
                 break;
@@ -121,12 +114,10 @@ static bool _pumpAction( struct TRACEDecoderEngine *e, struct TRACECPUState *cpu
                 // *************************************************
                 // ************** BRANCH PACKET ********************
                 // *************************************************
-                if ( c & 0b1 )
-                {
+                if ( c & 0b1 ) {
                     /* The lowest order 6 bits of address info... */
 
-                    switch ( cpu->addrMode )
-                    {
+                    switch ( cpu->addrMode ) {
                         case TRACE_ADDRMODE_ARM:
                             j->addrConstruct = ( j->addrConstruct & ~( 0b11111100 ) ) | ( ( c & 0b01111110 ) << 1 );
                             break;
@@ -152,16 +143,14 @@ static bool _pumpAction( struct TRACEDecoderEngine *e, struct TRACECPUState *cpu
                 // *************************************************
                 // ************** A-SYNC PACKET ********************
                 // *************************************************
-                if ( c == 0b00000000 )
-                {
+                if ( c == 0b00000000 ) {
                     break;
                 }
 
                 // *************************************************
                 // ************ CYCLECOUNT PACKET ******************
                 // *************************************************
-                if ( c == 0b00000100 )
-                {
+                if ( c == 0b00000100 ) {
                     DEBUG( "CYCCNT " EOL );
                     j->byteCount = 0;
                     j->cycleConstruct = 0;
@@ -172,8 +161,7 @@ static bool _pumpAction( struct TRACEDecoderEngine *e, struct TRACECPUState *cpu
                 // *************************************************
                 // ************** ISYNC PACKETS ********************
                 // *************************************************
-                if ( c == 0b00001000 ) /* Normal ISYNC */
-                {
+                if ( c == 0b00001000 ) { /* Normal ISYNC */
                     DEBUG( "Normal ISYNC " EOL );
                     /* Collect either the context or the Info Byte next */
                     j->byteCount = 0;
@@ -181,8 +169,7 @@ static bool _pumpAction( struct TRACEDecoderEngine *e, struct TRACECPUState *cpu
                     newState = j->contextBytes ? TRACE_GET_CONTEXTBYTE : TRACE_GET_INFOBYTE;
 
                     /* We won't start reporting data until a valid ISYNC has been received */
-                    if ( !j->rxedISYNC )
-                    {
+                    if ( !j->rxedISYNC ) {
                         DEBUG( "Initial ISYNC" );
                         cpu->changeRecord = 0;
                         j->rxedISYNC = true;
@@ -191,8 +178,7 @@ static bool _pumpAction( struct TRACEDecoderEngine *e, struct TRACECPUState *cpu
                     break;
                 }
 
-                if ( c == 0b01110000 ) /* ISYNC with Cycle Count */
-                {
+                if ( c == 0b01110000 ) { /* ISYNC with Cycle Count */
                     DEBUG( "ISYNC+CYCCNT " EOL );
                     /* Collect the cycle count next */
                     j->byteCount = 0;
@@ -204,8 +190,7 @@ static bool _pumpAction( struct TRACEDecoderEngine *e, struct TRACECPUState *cpu
                 // *************************************************
                 // ************** TRIGGER PACKET *******************
                 // *************************************************
-                if ( c == 0b00001100 )
-                {
+                if ( c == 0b00001100 ) {
                     DEBUG( "TRIGGER " EOL );
                     _stateChange( cpu, EV_CH_TRIGGER );
                     retVal = TRACE_EV_MSG_RXED;
@@ -215,8 +200,7 @@ static bool _pumpAction( struct TRACEDecoderEngine *e, struct TRACECPUState *cpu
                 // *************************************************
                 // **************** VMID PACKET ********************
                 // *************************************************
-                if ( c == 0b00111100 )
-                {
+                if ( c == 0b00111100 ) {
                     DEBUG( "VMID " EOL );
                     newState = TRACE_GET_VMID;
                     break;
@@ -225,13 +209,11 @@ static bool _pumpAction( struct TRACEDecoderEngine *e, struct TRACECPUState *cpu
                 // *************************************************
                 // *********** TIMESTAMP PACKET ********************
                 // *************************************************
-                if ( ( c & 0b11111011 ) == 0b01000010 )
-                {
+                if ( ( c & 0b11111011 ) == 0b01000010 ) {
                     DEBUG( "TS " EOL );
                     newState = TRACE_GET_TSTAMP;
 
-                    if ( ( c & ( 1 << 2 ) ) != 0 )
-                    {
+                    if ( ( c & ( 1 << 2 ) ) != 0 ) {
                         _stateChange( cpu, EV_CH_CLOCKSPEED );
                     }
 
@@ -242,8 +224,7 @@ static bool _pumpAction( struct TRACEDecoderEngine *e, struct TRACECPUState *cpu
                 // *************************************************
                 // ************** IGNORE PACKET ********************
                 // *************************************************
-                if ( c == 0b01100110 )
-                {
+                if ( c == 0b01100110 ) {
                     DEBUG( "Ignore Packet" EOL );
                     break;
                 }
@@ -251,8 +232,7 @@ static bool _pumpAction( struct TRACEDecoderEngine *e, struct TRACECPUState *cpu
                 // *************************************************
                 // ************ CONTEXTID PACKET *******************
                 // *************************************************
-                if ( c == 0b01101110 )
-                {
+                if ( c == 0b01101110 ) {
                     DEBUG( "CONTEXTID " EOL );
                     newState = TRACE_GET_CONTEXTID;
                     cpu->contextID = 0;
@@ -263,8 +243,7 @@ static bool _pumpAction( struct TRACEDecoderEngine *e, struct TRACECPUState *cpu
                 // *************************************************
                 // ******** EXCEPTION EXIT PACKET ******************
                 // *************************************************
-                if ( c == 0b01110110 )
-                {
+                if ( c == 0b01110110 ) {
                     DEBUG( "EXCEPT-EXIT " EOL );
                     _stateChange( cpu, EV_CH_EX_EXIT );
                     retVal = TRACE_EV_MSG_RXED;
@@ -274,8 +253,7 @@ static bool _pumpAction( struct TRACEDecoderEngine *e, struct TRACECPUState *cpu
                 // *************************************************
                 // ******** EXCEPTION ENTRY PACKET *****************
                 // *************************************************
-                if ( c == 0b01111110 )
-                {
+                if ( c == 0b01111110 ) {
                     /* Note this is only used on CPUs with data tracing */
                     DEBUG( "EXCEPT-ENTRY " EOL );
                     _stateChange( cpu, EV_CH_EX_ENTRY );
@@ -286,12 +264,9 @@ static bool _pumpAction( struct TRACEDecoderEngine *e, struct TRACECPUState *cpu
                 // *************************************************
                 // ************** P-HEADER PACKET ******************
                 // *************************************************
-                if ( ( c & 0b10000001 ) == 0b10000000 )
-                {
-                    if ( !j->cycleAccurate )
-                    {
-                        if ( ( c & 0b10000011 ) == 0b10000000 )
-                        {
+                if ( ( c & 0b10000001 ) == 0b10000000 ) {
+                    if ( !j->cycleAccurate ) {
+                        if ( ( c & 0b10000011 ) == 0b10000000 ) {
                             /* Format-1 P-header */
                             cpu->eatoms = ( c & 0x3C ) >> 2;
                             cpu->natoms = ( c & ( 1 << 6 ) ) ? 1 : 0;
@@ -305,8 +280,7 @@ static bool _pumpAction( struct TRACEDecoderEngine *e, struct TRACECPUState *cpu
                             break;
                         }
 
-                        if ( ( c & 0b11110011 ) == 0b10000010 )
-                        {
+                        if ( ( c & 0b11110011 ) == 0b10000010 ) {
                             /* Format-2 P-header */
                             cpu->eatoms = ( ( c & ( 1 << 2 ) ) == 0 ) + ( ( c & ( 1 << 3 ) ) == 0 );
                             cpu->natoms = 2 - cpu->eatoms;
@@ -323,11 +297,8 @@ static bool _pumpAction( struct TRACEDecoderEngine *e, struct TRACECPUState *cpu
                         }
 
                         DEBUG( "Unprocessed P-Header (%02X)" EOL, c );
-                    }
-                    else
-                    {
-                        if ( c == 0b10000000 )
-                        {
+                    } else {
+                        if ( c == 0b10000000 ) {
                             /* Format 0 cycle-accurate P-header */
                             cpu->watoms = 1;
                             cpu->instCount += cpu->watoms;
@@ -340,8 +311,7 @@ static bool _pumpAction( struct TRACEDecoderEngine *e, struct TRACECPUState *cpu
                             break;
                         }
 
-                        if ( ( c & 0b10100011 ) == 0b10000000 )
-                        {
+                        if ( ( c & 0b10100011 ) == 0b10000000 ) {
                             /* Format 1 cycle-accurate P-header */
                             cpu->eatoms = ( c & 0x1c ) >> 2;
                             cpu->natoms = ( c & 0x40 ) != 0;
@@ -356,8 +326,7 @@ static bool _pumpAction( struct TRACEDecoderEngine *e, struct TRACECPUState *cpu
                             break;
                         }
 
-                        if ( ( c & 0b11110011 ) == 0b10000010 )
-                        {
+                        if ( ( c & 0b11110011 ) == 0b10000010 ) {
                             /* Format 2 cycle-accurate P-header */
                             cpu->eatoms = ( ( c & ( 1 << 2 ) ) != 0 ) + ( ( c & ( 1 << 3 ) ) != 0 );
                             cpu->natoms = 2 - cpu->eatoms;
@@ -372,8 +341,7 @@ static bool _pumpAction( struct TRACEDecoderEngine *e, struct TRACECPUState *cpu
                             break;
                         }
 
-                        if ( ( c & 0b10100000 ) == 0b10100000 )
-                        {
+                        if ( ( c & 0b10100000 ) == 0b10100000 ) {
                             /* Format 3 cycle-accurate P-header */
                             cpu->eatoms = ( c & 0x40 ) != 0;
                             cpu->natoms = 0;
@@ -389,8 +357,7 @@ static bool _pumpAction( struct TRACEDecoderEngine *e, struct TRACECPUState *cpu
                             break;
                         }
 
-                        if ( ( c & 0b11111011 ) == 0b10010010 )
-                        {
+                        if ( ( c & 0b11111011 ) == 0b10010010 ) {
                             /* Format 4 cycle-accurate P-header */
                             cpu->eatoms = ( c & 0x4 ) != 0;
                             cpu->natoms = ( c & 0x4 ) == 0;
@@ -452,12 +419,10 @@ static bool _pumpAction( struct TRACEDecoderEngine *e, struct TRACECPUState *cpu
             terminateAddrByte:
 
                 /* Check to see if this packet is complete, and encode to return if so */
-                if ( ( !C ) || ( j->byteCount == 5 ) )
-                {
+                if ( ( !C ) || ( j->byteCount == 5 ) ) {
                     cpu->addr = j->addrConstruct;
 
-                    if ( ( j->byteCount == 5 ) && ( cpu->addrMode == TRACE_ADDRMODE_ARM ) && C )
-                    {
+                    if ( ( j->byteCount == 5 ) && ( cpu->addrMode == TRACE_ADDRMODE_ARM ) && C ) {
                         /* There is (legacy) exception information in here */
                         cpu->exception = ( c >> 4 ) & 0x07;
                         _stateChange( cpu, EV_CH_EX_ENTRY );
@@ -469,15 +434,12 @@ static bool _pumpAction( struct TRACEDecoderEngine *e, struct TRACECPUState *cpu
                         break;
                     }
 
-                    if ( ( !C ) & ( !X ) )
-                    {
+                    if ( ( !C ) & ( !X ) ) {
                         /* This packet is complete, so can return it */
                         newState = TRACE_IDLE;
                         retVal = TRACE_EV_MSG_RXED;
                         DEBUG( "Branch to %08x" EOL, cpu->addr );
-                    }
-                    else
-                    {
+                    } else {
                         /* This packet also contains exception information, so collect it */
                         j->byteCount = 0; /* Used as a flag of which byte of exception we're collecting */
                         cpu->resume = 0;
@@ -491,10 +453,8 @@ static bool _pumpAction( struct TRACEDecoderEngine *e, struct TRACECPUState *cpu
             // -----------------------------------------------------
 
             case TRACE_COLLECT_EXCEPTION: /* Collecting exception information */
-                if ( j->byteCount == 0 )
-                {
-                    if ( ( ( c & ( 1 << 0 ) ) != 0 ) != cpu->nonSecure )
-                    {
+                if ( j->byteCount == 0 ) {
+                    if ( ( ( c & ( 1 << 0 ) ) != 0 ) != cpu->nonSecure ) {
                         cpu->nonSecure = ( ( c & ( 1 << 0 ) ) != 0 );
                         _stateChange( cpu, EV_CH_SECURE );
                     }
@@ -502,51 +462,39 @@ static bool _pumpAction( struct TRACEDecoderEngine *e, struct TRACECPUState *cpu
                     cpu->exception = ( c >> 1 ) & 0x0f;
                     _stateChange( cpu, ( ( c & ( 1 << 5 ) ) != 0 ) ? EV_CH_CANCELLED : EV_CH_NONE );
 
-                    if ( cpu->altISA != ( ( c & ( 1 << 6 ) ) != 0 ) )
-                    {
+                    if ( cpu->altISA != ( ( c & ( 1 << 6 ) ) != 0 ) ) {
                         cpu->altISA = ( ( c & ( 1 << 6 ) ) != 0 );
                         _stateChange( cpu, EV_CH_ALTISA );
                     }
 
-                    if ( c & 0x80 )
-                    {
+                    if ( c & 0x80 ) {
                         j->byteCount++;
-                    }
-                    else
-                    {
+                    } else {
                         DEBUG( "Exception jump (%d) to 0x%08x" EOL, cpu->exception, cpu->addr );
                         newState = TRACE_IDLE;
                         retVal = TRACE_EV_MSG_RXED;
                     }
-                }
-                else
-                {
-                    if ( c & 0x80 )
-                    {
+                } else {
+                    if ( c & 0x80 ) {
                         /* This is exception byte 1 */
                         cpu->exception |= ( c & 0x1f ) << 4;
 
-                        if ( cpu->hyp != ( ( c & ( 1 << 5 ) ) != 0 ) )
-                        {
+                        if ( cpu->hyp != ( ( c & ( 1 << 5 ) ) != 0 ) ) {
                             cpu->hyp = ( ( c & ( 1 << 5 ) ) != 0 );
                             _stateChange( cpu, EV_CH_HYP );
                         }
 
-                        if ( !( c & 0x40 ) )
-                        {
+                        if ( !( c & 0x40 ) ) {
                             /* There will not be another one along, return idle */
                             DEBUG( "Exception jump (%d) to 0x%08x" EOL, cpu->exception, cpu->addr );
                             newState = TRACE_IDLE;
                             retVal = TRACE_EV_MSG_RXED;
                         }
-                    }
-                    else
-                    {
+                    } else {
                         /* This is exception byte 2 */
                         cpu->resume = ( c & 0xf );
 
-                        if ( cpu->resume )
-                        {
+                        if ( cpu->resume ) {
                             _stateChange( cpu, EV_CH_RESUME );
                         }
 
@@ -564,8 +512,7 @@ static bool _pumpAction( struct TRACEDecoderEngine *e, struct TRACECPUState *cpu
             // VMID RELATED ACTIVITIES
             // -----------------------------------------------------
             case TRACE_GET_VMID: /* Collecting virtual machine ID */
-                if ( cpu->vmid != c )
-                {
+                if ( cpu->vmid != c ) {
                     cpu->vmid = c;
                     _stateChange( cpu, EV_CH_VMID );
                 }
@@ -580,19 +527,15 @@ static bool _pumpAction( struct TRACEDecoderEngine *e, struct TRACECPUState *cpu
             // -----------------------------------------------------
 
             case TRACE_GET_TSTAMP: /* Collecting current timestamp */
-                if ( j->byteCount < 8 )
-                {
+                if ( j->byteCount < 8 ) {
                     j->tsConstruct = ( j->tsConstruct & ( ~( 0x7F << j->byteCount ) ) ) | ( ( c & 0x7f ) << j->byteCount );
-                }
-                else
-                {
+                } else {
                     j->tsConstruct = ( j->tsConstruct & ( ~( 0xff << j->byteCount ) ) ) | ( ( c & 0xff ) << j->byteCount );
                 }
 
                 j->byteCount++;
 
-                if ( ( !( c & 0x80 ) ) || ( j->byteCount == 9 ) )
-                {
+                if ( ( !( c & 0x80 ) ) || ( j->byteCount == 9 ) ) {
                     newState = TRACE_IDLE;
                     cpu->ts = j->tsConstruct;
                     _stateChange( cpu, EV_CH_TSTAMP );
@@ -611,8 +554,7 @@ static bool _pumpAction( struct TRACEDecoderEngine *e, struct TRACECPUState *cpu
                 j->cycleConstruct = ( j->cycleConstruct & ~( 0x7f << ( ( j->byteCount ) * 7 ) ) ) | ( ( c & 0x7f ) << ( ( j->byteCount ) * 7 ) );
                 j->byteCount++;
 
-                if ( ( !( c & ( 1 << 7 ) ) ) || ( j->byteCount == 5 ) )
-                {
+                if ( ( !( c & ( 1 << 7 ) ) ) || ( j->byteCount == 5 ) ) {
                     newState = TRACE_IDLE;
                     cpu->cycleCount = j->cycleConstruct;
                     _stateChange( cpu, EV_CH_CYCLECOUNT );
@@ -632,10 +574,8 @@ static bool _pumpAction( struct TRACEDecoderEngine *e, struct TRACECPUState *cpu
                 j->contextConstruct = j->contextConstruct + ( c << ( 8 * j->byteCount ) );
                 j->byteCount++;
 
-                if ( j->byteCount == j->contextBytes )
-                {
-                    if ( cpu->contextID != j->contextConstruct )
-                    {
+                if ( j->byteCount == j->contextBytes ) {
+                    if ( cpu->contextID != j->contextConstruct ) {
                         cpu->contextID = j->contextConstruct;
                         _stateChange( cpu, EV_CH_CONTEXTID );
                     }
@@ -653,10 +593,8 @@ static bool _pumpAction( struct TRACEDecoderEngine *e, struct TRACECPUState *cpu
             // -----------------------------------------------------
 
             case TRACE_WAIT_ISYNC:
-                if ( c == 0b00001000 )
-                {
-                    if ( !j->rxedISYNC )
-                    {
+                if ( c == 0b00001000 ) {
+                    if ( !j->rxedISYNC ) {
                         retVal = TRACE_EV_SYNCED;
                         j->rxedISYNC = true;
                     }
@@ -674,10 +612,8 @@ static bool _pumpAction( struct TRACEDecoderEngine *e, struct TRACECPUState *cpu
                 j->contextConstruct = j->contextConstruct + ( c << ( 8 * j->byteCount ) );
                 j->byteCount++;
 
-                if ( j->byteCount == j->contextBytes )
-                {
-                    if ( cpu->contextID != j->contextConstruct )
-                    {
+                if ( j->byteCount == j->contextBytes ) {
+                    if ( cpu->contextID != j->contextConstruct ) {
                         cpu->contextID = j->contextConstruct;
                         _stateChange( cpu, EV_CH_CONTEXTID );
                     }
@@ -690,52 +626,43 @@ static bool _pumpAction( struct TRACEDecoderEngine *e, struct TRACECPUState *cpu
             // -----------------------------------------------------
 
             case TRACE_GET_INFOBYTE: /* Collecting I-Sync Information byte */
-                if ( ( ( c & 0x10000000 ) != 0 ) != cpu->isLSiP )
-                {
+                if ( ( ( c & 0x10000000 ) != 0 ) != cpu->isLSiP ) {
                     cpu->isLSiP = ( c & 0x10000000 ) != 0;
                     _stateChange( cpu, EV_CH_ISLSIP );
                 }
 
-                if ( cpu->reason != ( ( c & 0x01100000 ) >> 5 ) )
-                {
+                if ( cpu->reason != ( ( c & 0x01100000 ) >> 5 ) ) {
                     cpu->reason    = ( enum Reason )( ( c & 0x01100000 ) >> 5 );
                     _stateChange( cpu, EV_CH_REASON );
                 }
 
-                if ( cpu->jazelle   != ( ( c & 0x00010000 ) != 0 ) )
-                {
+                if ( cpu->jazelle   != ( ( c & 0x00010000 ) != 0 ) ) {
                     cpu->jazelle   = ( c & 0x00010000 ) != 0;
                     _stateChange( cpu, EV_CH_JAZELLE );
                 }
 
-                if ( cpu->nonSecure != ( ( c & 0x00001000 ) != 0 ) )
-                {
+                if ( cpu->nonSecure != ( ( c & 0x00001000 ) != 0 ) ) {
                     cpu->nonSecure = ( c & 0x00001000 ) != 0;
                     _stateChange( cpu, EV_CH_SECURE );
                 }
 
-                if ( cpu->altISA != ( ( c & 0x00000100 ) != 0 ) )
-                {
+                if ( cpu->altISA != ( ( c & 0x00000100 ) != 0 ) ) {
                     cpu->altISA    = ( c & 0x00000100 ) != 0;
                     _stateChange( cpu, EV_CH_ALTISA );
                 }
 
-                if ( cpu->hyp != ( ( c & 0x00000010 ) != 0 ) )
-                {
+                if ( cpu->hyp != ( ( c & 0x00000010 ) != 0 ) ) {
                     cpu->hyp       = ( c & 0x00000010 ) != 0;
                     _stateChange( cpu, EV_CH_HYP );
                 }
 
                 j->byteCount = 0;
 
-                if ( j->dataOnlyMode )
-                {
+                if ( j->dataOnlyMode ) {
                     DEBUG( "ISYNC in dataOnlyMode" EOL );
                     retVal = TRACE_EV_MSG_RXED;
                     newState = TRACE_IDLE;
-                }
-                else
-                {
+                } else {
                     newState = TRACE_GET_IADDRESS;
                 }
 
@@ -747,45 +674,34 @@ static bool _pumpAction( struct TRACEDecoderEngine *e, struct TRACECPUState *cpu
                 j->addrConstruct = ( j->addrConstruct & ( ~( 0xff << ( 8 * j->byteCount ) ) ) )  | ( c << ( 8 * j->byteCount ) ) ;
                 j->byteCount++;
 
-                if ( j->byteCount == 4 )
-                {
+                if ( j->byteCount == 4 ) {
                     _stateChange( cpu, EV_CH_ADDRESS );
 
-                    if ( cpu->jazelle )
-                    {
+                    if ( cpu->jazelle ) {
                         /* This is Jazelle mode..can ignore the AltISA bit */
                         /* and bit 0 is bit 0 of the address */
                         cpu->addrMode = TRACE_ADDRMODE_JAZELLE;
                         cpu->addr = j->addrConstruct;
-                    }
-                    else
-                    {
-                        if ( ( j->addrConstruct & ( 1 << 0 ) ) ^ ( !cpu->thumb ) )
-                        {
+                    } else {
+                        if ( ( j->addrConstruct & ( 1 << 0 ) ) ^ ( !cpu->thumb ) ) {
                             cpu->thumb     = ( c & 0x00000001 ) != 0;
                             _stateChange( cpu, EV_CH_THUMB );
                         }
 
-                        if ( j->addrConstruct & ( 1 << 0 ) )
-                        {
+                        if ( j->addrConstruct & ( 1 << 0 ) ) {
                             cpu->addrMode = TRACE_ADDRMODE_THUMB;
                             j->addrConstruct &= ~( 1 << 0 );
                             cpu->addr = j->addrConstruct;
-                        }
-                        else
-                        {
+                        } else {
                             cpu->addrMode = TRACE_ADDRMODE_ARM;
                             cpu->addr = j->addrConstruct & 0xFFFFFFFC;
                         }
                     }
 
-                    if ( cpu->isLSiP )
-                    {
+                    if ( cpu->isLSiP ) {
                         /* If this is an LSiP packet we need to go get the address */
                         newState = ( j->usingAltAddrEncode ) ? TRACE_COLLECT_BA_ALT_FORMAT : TRACE_COLLECT_BA_STD_FORMAT;
-                    }
-                    else
-                    {
+                    } else {
                         DEBUG( "ISYNC with IADDRESS 0x%08x" EOL, cpu->addr );
                         newState = TRACE_IDLE;
                         retVal = TRACE_EV_MSG_RXED;
@@ -800,8 +716,7 @@ static bool _pumpAction( struct TRACEDecoderEngine *e, struct TRACECPUState *cpu
                 j->cycleConstruct = ( j->cycleConstruct & ~( 0x7f << ( ( j->byteCount ) * 7 ) ) ) | ( ( c & 0x7f ) << ( ( j->byteCount ) * 7 ) );
                 j->byteCount++;
 
-                if ( ( !( c & ( 1 << 7 ) ) ) || ( j->byteCount == 5 ) )
-                {
+                if ( ( !( c & ( 1 << 7 ) ) ) || ( j->byteCount == 5 ) ) {
                     /* Now go to get the rest of the ISYNC packet */
                     /* Collect either the context or the Info Byte next */
                     cpu->cycleCount = j->cycleConstruct;
@@ -819,8 +734,7 @@ static bool _pumpAction( struct TRACEDecoderEngine *e, struct TRACECPUState *cpu
         }
     }
 
-    if ( j->p != TRACE_UNSYNCED )
-    {
+    if ( j->p != TRACE_UNSYNCED ) {
         DEBUG( "%02x:%s --> %s %s(%d)", c, ( j->p == TRACE_IDLE ) ? _protoStateName[j->p] : "", _protoStateName[newState],
                ( ( newState == TRACE_IDLE ) ? ( ( retVal == TRACE_EV_NONE ) ? "!!!" : "OK" ) : " : " ), retVal );
     }
@@ -861,8 +775,7 @@ static void _usingAltAddrEncode( struct TRACEDecoderEngine *e, bool amusing )
 static void _forceSync(  struct TRACEDecoderEngine *e, bool isSynced )
 
 {
-    if ( !isSynced )
-    {
+    if ( !isSynced ) {
         ( ( struct ETM35DecodeState * )e )->asyncCount = 0;
         ( ( struct ETM35DecodeState * )e )->rxedISYNC = false;
     }

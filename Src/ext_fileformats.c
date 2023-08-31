@@ -33,8 +33,7 @@ static int _calls_src_sort_fn( const void *a, const void *b )
 {
     int i;
 
-    if ( ( i = ( int )( ( ( struct subcall * )a )->srch->functionindex ) - ( int )( ( ( struct subcall * )b )->srch->functionindex ) ) )
-    {
+    if ( ( i = ( int )( ( ( struct subcall * )a )->srch->functionindex ) - ( int )( ( ( struct subcall * )b )->srch->functionindex ) ) ) {
         return i;
     }
 
@@ -49,8 +48,7 @@ static int _calls_dst_sort_fn( const void *a, const void *b )
 {
     int i;
 
-    if ( ( i = ( int )( ( ( struct subcall * )a )->dsth->functionindex ) - ( int )( ( ( struct subcall * )b )->dsth->functionindex ) ) )
-    {
+    if ( ( i = ( int )( ( ( struct subcall * )a )->dsth->functionindex ) - ( int )( ( ( struct subcall * )b )->dsth->functionindex ) ) ) {
         return i;
     }
 
@@ -80,13 +78,11 @@ bool ext_ff_outputDot( char *dotfile, struct subcall *subcallList, struct Symbol
     uint64_t cnt;
     struct subcall *s;
 
-    if ( !dotfile )
-    {
+    if ( !dotfile ) {
         return false;
     }
 
-    if ( !subcallList )
-    {
+    if ( !subcallList ) {
         return false;
     }
 
@@ -102,8 +98,7 @@ bool ext_ff_outputDot( char *dotfile, struct subcall *subcallList, struct Symbol
 
     s = subcallList;
 
-    while ( s )
-    {
+    while ( s ) {
         functionidx = s->srch->functionindex;
         fileidx = s->srch->fileindex;
 
@@ -111,8 +106,7 @@ bool ext_ff_outputDot( char *dotfile, struct subcall *subcallList, struct Symbol
         cnt = s->count;
         s = ( struct subcall * )s->hh.next;
 
-        while ( ( s ) && ( functionidx == s->srch->functionindex ) && ( dfunctionidx == s->dsth->functionindex ) )
-        {
+        while ( ( s ) && ( functionidx == s->srch->functionindex ) && ( dfunctionidx == s->dsth->functionindex ) ) {
             cnt += s->count;
             s = ( struct subcall * )s->hh.next;
         }
@@ -145,20 +139,16 @@ bool ext_ff_outputProfile( char *profile, char *elffile, char *deleteMaterial, b
     char *d = deleteMaterial;
     FILE *c;
 
-    if ( !profile )
-    {
+    if ( !profile ) {
         return false;
     }
 
     c = fopen( profile, "w" );
     fprintf( c, "# callgrind format\n" );
 
-    if ( includeVisits )
-    {
+    if ( includeVisits ) {
         fprintf( c, "creator: orbprofile\npositions: instr line\nevent: Inst : CPU Instructions\nevent: Visits : Visits to source line\nevents: Inst Visits\n" );
-    }
-    else
-    {
+    } else {
         fprintf( c, "creator: orbprofile\npositions: instr line\nevent: Inst : CPU Instructions\nevents: Inst\n" );
     }
 
@@ -166,16 +156,13 @@ bool ext_ff_outputProfile( char *profile, char *elffile, char *deleteMaterial, b
     fprintf( c, "summary: %" PRIu64 "\n", timelen );
 
     /* Try to remove frontmatter off the elfile if nessessary and possible */
-    if ( deleteMaterial )
-    {
-        while ( ( *d ) && ( *d == *e ) )
-        {
+    if ( deleteMaterial ) {
+        while ( ( *d ) && ( *d == *e ) ) {
             d++;
             e++;
         }
 
-        if ( e - elffile != ( long int )strlen( deleteMaterial ) )
-        {
+        if ( e - elffile != ( long int )strlen( deleteMaterial ) ) {
             /* Strings don't match, give up and use the file elffile name */
             e = elffile;
         }
@@ -187,51 +174,36 @@ bool ext_ff_outputProfile( char *profile, char *elffile, char *deleteMaterial, b
     HASH_SORT( insthead, _inst_sort_fn );
     struct execEntryHash *f = insthead;
 
-    while ( f )
-    {
+    while ( f ) {
         SymbolLookup( ss, f->addr, &n );
 
-        if ( prevfile != n.fileindex )
-        {
+        if ( prevfile != n.fileindex ) {
             fprintf( c, "fl=(%u) %s%s\n", n.fileindex & HANDLE_MASK, deleteMaterial  ? deleteMaterial : "", SymbolFilename( ss, n.fileindex ) );
         }
 
-        if ( prevfn != n.functionindex )
-        {
+        if ( prevfn != n.functionindex ) {
             fprintf( c, "fn=(%u) %s\n", n.functionindex & HANDLE_MASK, SymbolFunction( ss, n.functionindex ) );
         }
 
-        if ( ( prevline == NO_LINE ) || ( prevaddr == NO_FUNCTION ) )
-        {
+        if ( ( prevline == NO_LINE ) || ( prevaddr == NO_FUNCTION ) ) {
             fprintf( c, "0x%08x %d ", f->addr, n.line );
-        }
-        else
-        {
-            if ( prevaddr == f->addr )
-            {
+        } else {
+            if ( prevaddr == f->addr ) {
                 fprintf( c, "* " );
-            }
-            else
-            {
+            } else {
                 fprintf( c, "%s%d ", f->addr > prevaddr ? "+" : "", ( int )f->addr - prevaddr );
             }
 
-            if ( prevline == n.line )
-            {
+            if ( prevline == n.line ) {
                 fprintf( c, "* " );
-            }
-            else
-            {
+            } else {
                 fprintf( c, "%s%d ", n.line > prevline ? "+" : "", ( int )n.line - prevline );
             }
         }
 
-        if ( includeVisits )
-        {
+        if ( includeVisits ) {
             fprintf( c, "%" PRIu64 " %" PRIu64 "\n", f->count, f->scount );
-        }
-        else
-        {
+        } else {
             fprintf( c, "%" PRIu64 "\n", f->count );
         }
 
@@ -247,17 +219,14 @@ bool ext_ff_outputProfile( char *profile, char *elffile, char *deleteMaterial, b
     HASH_SORT( subcallList, _calls_src_sort_fn );
     struct subcall *s = subcallList;
 
-    while ( s )
-    {
+    while ( s ) {
         /* Now publish the call destination. By definition is is known, so can be shortformed */
-        if ( prevfile != s->srch->fileindex )
-        {
+        if ( prevfile != s->srch->fileindex ) {
             fprintf( c, "fl=(%u)\n", s->srch->fileindex & HANDLE_MASK );
             prevfile = s->srch->fileindex;
         }
 
-        if ( prevfn != s->srch->functionindex )
-        {
+        if ( prevfn != s->srch->functionindex ) {
             fprintf( c, "fn=(%u)\n", s->srch->functionindex & HANDLE_MASK );
             prevfn = s->srch->functionindex;
         }
@@ -265,12 +234,9 @@ bool ext_ff_outputProfile( char *profile, char *elffile, char *deleteMaterial, b
         fprintf( c, "cfl=(%d)\ncfn=(%d)\n", s->dsth->fileindex, s->dsth->functionindex );
         fprintf( c, "calls=%" PRIu64 " 0x%08x %d\n", s->count, s->sig.dst, s->dsth->line );
 
-        if ( includeVisits )
-        {
+        if ( includeVisits ) {
             fprintf( c, "0x%08x %d %" PRIu64 " %" PRIu64 "\n", s->sig.src, s->srch->line, s->myCost, s->count );
-        }
-        else
-        {
+        } else {
             fprintf( c, "0x%08x %d %" PRIu64 "\n", s->sig.src, s->srch->line, s->myCost );
         }
 

@@ -6,8 +6,7 @@
 #include "generics.h"
 
 
-struct Win32FileStream
-{
+struct Win32FileStream {
     struct Win32Stream base;
 };
 
@@ -50,13 +49,11 @@ struct Stream *streamCreateFile( const char *file )
 {
     struct Win32FileStream *stream = SELF( calloc( 1, sizeof( struct Win32FileStream ) ) );
 
-    if ( stream == NULL )
-    {
+    if ( stream == NULL ) {
         return NULL;
     }
 
-    if ( !streamWin32Initialize( ( struct Win32Stream * )stream,  _win32FileStreamCreate( file ) ) )
-    {
+    if ( !streamWin32Initialize( ( struct Win32Stream * )stream,  _win32FileStreamCreate( file ) ) ) {
         free( stream );
         return NULL;
     }

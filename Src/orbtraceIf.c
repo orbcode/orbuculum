@@ -15,8 +15,7 @@
 #include "generics.h"
 
 /* List of device VID/PID pairs this library works with */
-static const struct OrbtraceInterfaceType _validDevices[DEVICE_NUM_DEVICES] =
-{
+static const struct OrbtraceInterfaceType _validDevices[DEVICE_NUM_DEVICES] = {
     { 0x1209, 0x3443, DEVICE_ORBTRACE_MINI },
     { 0x1d50, 0x6018, DEVICE_BMP},
     { 0,      0      }
@@ -48,12 +47,10 @@ static const struct OrbtraceInterfaceType _validDevices[DEVICE_NUM_DEVICES] =
 
 /* String on front of version number to remove */
 #define VERSION_FRONTMATTER "Version: "
-static const struct
-{
+static const struct {
     const char *name;
     const int num;
-} _powerNames[] =
-{
+} _powerNames[] = {
     POWERNAMES
 };
 
@@ -66,31 +63,25 @@ static void _flushDeviceList( struct OrbtraceIf *o )
 /* Flush out any old device records */
 
 {
-    for ( size_t i = 0; i < o->numDevices; i++ )
-    {
-        if ( o->devices[i].sn )
-        {
+    for ( size_t i = 0; i < o->numDevices; i++ ) {
+        if ( o->devices[i].sn ) {
             free( o->devices[i].sn );
         }
 
-        if ( o->devices[i].manufacturer )
-        {
+        if ( o->devices[i].manufacturer ) {
             free( o->devices[i].manufacturer );
         }
 
-        if ( o->devices[i].product )
-        {
+        if ( o->devices[i].product ) {
             free( o->devices[i].product );
         }
 
-        if ( o->devices[i].version )
-        {
+        if ( o->devices[i].version ) {
             free( o->devices[i].version );
         }
     }
 
-    if ( o->devices )
-    {
+    if ( o->devices ) {
         free( o->devices );
     }
 
@@ -103,13 +94,11 @@ static int _strcmpint( char *s1, char *s2 )
 /* Version of strcmp that accomodates NULLs */
 
 {
-    if ( ( s1 ) && ( !s2 ) )
-    {
+    if ( ( s1 ) && ( !s2 ) ) {
         return -1;
     }
 
-    if ( ( !s1 ) && ( s2 ) )
-    {
+    if ( ( !s1 ) && ( s2 ) ) {
         return 1;
     }
 
@@ -125,23 +114,19 @@ static int _compareFunc( const void *vd1, const void *vd2 )
     const struct OrbtraceIfDevice *d2 = ( const struct OrbtraceIfDevice * )vd2;
     int r = 0;
 
-    if ( ( r = _strcmpint( d1->manufacturer, d2->manufacturer ) ) )
-    {
+    if ( ( r = _strcmpint( d1->manufacturer, d2->manufacturer ) ) ) {
         return r;
     }
 
-    if ( ( r = _strcmpint( d1->product, d2->product ) ) )
-    {
+    if ( ( r = _strcmpint( d1->product, d2->product ) ) ) {
         return r;
     }
 
-    if ( ( r = strcmp( d1->sn, d2->sn ) ) )
-    {
+    if ( ( r = strcmp( d1->sn, d2->sn ) ) ) {
         return r;
     }
 
-    if ( ( r = d1->vid - d2->vid ) )
-    {
+    if ( ( r = d1->vid - d2->vid ) ) {
         return r;
     }
 
@@ -154,18 +139,14 @@ uint16_t _getInterface( struct OrbtraceIf *o, char intType, int *nameIndex )
     struct libusb_config_descriptor *config;
     int iface = NO_INTERFACE;
 
-    if ( ( libusb_get_active_config_descriptor( o->dev, &config ) ) >= 0 )
-    {
-        for ( int if_num = 0; if_num < config->bNumInterfaces; if_num++ )
-        {
+    if ( ( libusb_get_active_config_descriptor( o->dev, &config ) ) >= 0 ) {
+        for ( int if_num = 0; if_num < config->bNumInterfaces; if_num++ ) {
             const struct libusb_interface_descriptor *i = &config->interface[if_num].altsetting[0];
 
-            if ( ( i->bInterfaceClass == 0xff ) && ( i->bInterfaceSubClass == intType ) )
-            {
+            if ( ( i->bInterfaceClass == 0xff ) && ( i->bInterfaceSubClass == intType ) ) {
                 iface = i->bInterfaceNumber;
 
-                if ( nameIndex != NULL )
-                {
+                if ( nameIndex != NULL ) {
                     /* Return the name index of this interface too */
                     *nameIndex = i->iInterface;
                 }
@@ -182,20 +163,17 @@ uint16_t _getInterface( struct OrbtraceIf *o, char intType, int *nameIndex )
 static bool _doInterfaceControlTransfer( struct OrbtraceIf *o, uint8_t interface, uint16_t request, uint16_t value, uint8_t indexUpperHalf, uint8_t dlen, void *data )
 
 {
-    if ( !o->handle )
-    {
+    if ( !o->handle ) {
         return false;
     }
 
-    if ( interface == ( uint8_t )NO_INTERFACE )
-    {
+    if ( interface == ( uint8_t )NO_INTERFACE ) {
         return false;
     }
 
 #ifdef WIN32
 
-    if ( libusb_claim_interface( o->handle,  interface ) != 0 )
-    {
+    if ( libusb_claim_interface( o->handle,  interface ) != 0 ) {
         return false;
     }
 
@@ -214,8 +192,7 @@ static bool _doInterfaceControlTransfer( struct OrbtraceIf *o, uint8_t interface
 
 #ifdef WIN32
 
-    if ( libusb_release_interface( o->handle,  interface ) != 0 )
-    {
+    if ( libusb_release_interface( o->handle,  interface ) != 0 ) {
         return false;
     }
 
@@ -240,13 +217,10 @@ struct OrbtraceIf *OrbtraceIfCreateContext( void )
 {
     struct OrbtraceIf *o = ( struct OrbtraceIf * )calloc( 1, sizeof( struct OrbtraceIf ) );
 
-    if ( libusb_init( &o->context ) < 0 )
-    {
+    if ( libusb_init( &o->context ) < 0 ) {
         free( o );
         return NULL;
-    }
-    else
-    {
+    } else {
         //        libusb_set_debug(o->context, LIBUSB_LOG_LEVEL_DEBUG);
         return o;
     }
@@ -256,8 +230,7 @@ struct OrbtraceIf *OrbtraceIfCreateContext( void )
 void OrbtraceIfDestroyContext( struct OrbtraceIf *o )
 
 {
-    if ( o )
-    {
+    if ( o ) {
         libusb_exit( o->context );
     }
 }
@@ -280,15 +253,13 @@ int OrbtraceIfGetDeviceList( struct OrbtraceIf *o, char *sn, uint32_t devmask )
     /* Flush out any old scans we might be holding */
     _flushDeviceList( o );
 
-    if ( o->list )
-    {
+    if ( o->list ) {
         libusb_free_device_list( o->list, true );
     }
 
     int count = libusb_get_device_list( o->context, &o->list );
 
-    for ( int i = 0; i < count; i++ )
-    {
+    for ( int i = 0; i < count; i++ ) {
         o->dev = o->list[i];
         struct libusb_device_descriptor desc = { 0 };
         libusb_get_device_descriptor( o->dev, &desc );
@@ -298,45 +269,38 @@ int OrbtraceIfGetDeviceList( struct OrbtraceIf *o, char *sn, uint32_t devmask )
                        ( ( _validDevices[y].vid != desc.idVendor ) || ( _validDevices[y].pid != desc.idProduct ) ) ); y++ );
 
         /* If it's one we're interested in then process further */
-        if ( _validDevices[y].vid )
-        {
+        if ( _validDevices[y].vid ) {
             /* We'll store this match for access later */
             o->devices = ( struct OrbtraceIfDevice * )realloc( o->devices, ( o->numDevices + 1 ) * sizeof( struct OrbtraceIfDevice ) );
             d = &o->devices[o->numDevices];
             memset( d, 0, sizeof( struct OrbtraceIfDevice ) );
             d->devtype = _validDevices[y].devtype;
 
-            if ( !libusb_open( o->list[i], &o->handle ) )
-            {
-                if ( desc.iSerialNumber )
-                {
+            if ( !libusb_open( o->list[i], &o->handle ) ) {
+                if ( desc.iSerialNumber ) {
                     libusb_get_string_descriptor_ascii( o->handle, desc.iSerialNumber, ( unsigned char * )tfrString, MAX_USB_DESC_LEN );
                 }
 
                 /* This is a match if no S/N match was requested or if there is a S/N and they part-match, and it's a matching devtype */
-                if ( ( devmask & ( 1 << d->devtype ) ) && ( ( !sn ) || ( ( desc.iSerialNumber ) && ( strstr( tfrString, sn ) ) ) ) )
-                {
+                if ( ( devmask & ( 1 << d->devtype ) ) && ( ( !sn ) || ( ( desc.iSerialNumber ) && ( strstr( tfrString, sn ) ) ) ) ) {
                     /* We will keep this one! */
                     o->numDevices++;
                     d->sn = strdup( desc.iSerialNumber ? tfrString : "" );
 
-                    if ( desc.iManufacturer )
-                    {
+                    if ( desc.iManufacturer ) {
                         libusb_get_string_descriptor_ascii( o->handle, desc.iManufacturer, ( unsigned char * )tfrString, MAX_USB_DESC_LEN );
                     }
 
                     d->manufacturer = strdup( desc.iManufacturer ? tfrString : "" );
 
-                    if ( desc.iProduct )
-                    {
+                    if ( desc.iProduct ) {
                         libusb_get_string_descriptor_ascii( o->handle, desc.iProduct, ( unsigned char * )tfrString, MAX_USB_DESC_LEN );
                     }
 
                     d->product = strdup( desc.iProduct ? tfrString : "" );
                     d->devIndex = i;
 
-                    switch ( d->devtype )
-                    {
+                    switch ( d->devtype ) {
                         case DEVICE_ORBTRACE_MINI:
                             d->powerIf = _getInterface( o, 'P', NULL );
                             d->traceIf = _getInterface( o, 'T', NULL );
@@ -344,14 +308,11 @@ int OrbtraceIfGetDeviceList( struct OrbtraceIf *o, char *sn, uint32_t devmask )
                             /* Collect the probe version from the version interface */
                             d->versionIf = _getInterface( o, 'V', &versionIndex );
 
-                            if ( versionIndex )
-                            {
+                            if ( versionIndex ) {
                                 libusb_get_string_descriptor_ascii( o->handle, versionIndex, ( unsigned char * )tfrString, MAX_USB_DESC_LEN );
                                 /* If string contains 'Version: ' at the start then remove it */
                                 d->version = strdup( ( strstr( tfrString, VERSION_FRONTMATTER ) ) ? &tfrString[strlen( VERSION_FRONTMATTER )] : "" );
-                            }
-                            else
-                            {
+                            } else {
                                 d->version = strdup( "" );
                             }
 
@@ -361,8 +322,7 @@ int OrbtraceIfGetDeviceList( struct OrbtraceIf *o, char *sn, uint32_t devmask )
                             /* On BMP version and serial are merged, so let's unmerge them by making the last word of the product the version */
                             d->version = &d->product[strlen( d->product ) - 1];
 
-                            while ( ( !isspace( *d->version ) ) && ( d->version != d->product ) )
-                            {
+                            while ( ( !isspace( *d->version ) ) && ( d->version != d->product ) ) {
                                 d->version--;
                             }
 
@@ -395,8 +355,7 @@ void OrbtraceIfListDevices( struct OrbtraceIf *o )
     genericsPrintf( C_RESET " Id |               Description                |      Serial      |           Version" EOL );
     genericsPrintf( " ---+------------------------------------------+------------------+----------------------------" EOL );
 
-    for ( unsigned int i = 0; i < o->numDevices; i++ )
-    {
+    for ( unsigned int i = 0; i < o->numDevices; i++ ) {
         snprintf( printConstruct, SCRATCH_STRINGLEN, "%s %s", OrbtraceIfGetManufacturer( o, i ), OrbtraceIfGetProduct( o, i ) ) ;
         genericsPrintf( C_SEL " %2d " C_RESET "|" C_ELEMENT " %-40s " C_RESET "|"
                         C_ELEMENT " %16s " C_RESET "|" C_ELEMENT " %s" C_RESET EOL,
@@ -410,14 +369,12 @@ int OrbtraceIfSelectDevice( struct OrbtraceIf *o )
 {
     unsigned int selection = o->numDevices;
 
-    if ( o->numDevices > 1 )
-    {
+    if ( o->numDevices > 1 ) {
         OrbtraceIfListDevices( o );
 
         selection = 0;
 
-        while ( ( selection < 1 ) || ( selection > o->numDevices ) )
-        {
+        while ( ( selection < 1 ) || ( selection > o->numDevices ) ) {
             genericsPrintf( EOL C_SEL "Selection>" C_RESET );
             scanf( "%d", &selection );
         }
@@ -429,15 +386,13 @@ int OrbtraceIfSelectDevice( struct OrbtraceIf *o )
 bool OrbtraceIfOpenDevice( struct OrbtraceIf *o, unsigned int entry )
 
 {
-    if ( ( entry < 0 ) || ( entry >= o->numDevices ) )
-    {
+    if ( ( entry < 0 ) || ( entry >= o->numDevices ) ) {
         return false;
     }
 
     o->dev = o->list[ o->devices[entry].devIndex];
 
-    if ( libusb_open( o->dev, &o->handle ) )
-    {
+    if ( libusb_open( o->dev, &o->handle ) ) {
         o->dev = NULL;
         o->handle = NULL;
         return false;
@@ -454,14 +409,12 @@ bool OrbtraceGetIfandEP( struct OrbtraceIf *o )
     uint8_t num_altsetting = 0;
     int32_t err;
 
-    if ( ( !o->dev ) || ( !o->handle ) )
-    {
+    if ( ( !o->dev ) || ( !o->handle ) ) {
         return false;
     }
 
     /* For the BMP case we can quickly return the correct values */
-    switch ( o->devices[o->activeDevice].devtype )
-    {
+    switch ( o->devices[o->activeDevice].devtype ) {
         default: // -------------------------------------------------------------------------------------
             return false;
 
@@ -474,8 +427,7 @@ bool OrbtraceGetIfandEP( struct OrbtraceIf *o )
             genericsReport( V_DEBUG, "Searching for trace interface" EOL );
             struct libusb_config_descriptor *config;
 
-            if ( ( err = libusb_get_active_config_descriptor( o->dev, &config ) ) < 0 )
-            {
+            if ( ( err = libusb_get_active_config_descriptor( o->dev, &config ) ) < 0 ) {
                 genericsReport( V_WARN, "Failed to get config descriptor (%d)" EOL, err );
                 return false;
             }
@@ -483,18 +435,15 @@ bool OrbtraceGetIfandEP( struct OrbtraceIf *o )
             /* Loop through the interfaces looking for ours */
             bool interface_found = false;
 
-            for ( int if_num = 0; if_num < config->bNumInterfaces && !interface_found; if_num++ )
-            {
-                for ( int alt_num = 0; alt_num < config->interface[if_num].num_altsetting && !interface_found; alt_num++ )
-                {
+            for ( int if_num = 0; if_num < config->bNumInterfaces && !interface_found; if_num++ ) {
+                for ( int alt_num = 0; alt_num < config->interface[if_num].num_altsetting && !interface_found; alt_num++ ) {
                     const struct libusb_interface_descriptor *i = &config->interface[if_num].altsetting[alt_num];
 
                     if (
                                 i->bInterfaceClass != 0xff ||
                                 i->bInterfaceSubClass != 0x54 ||
                                 ( i->bInterfaceProtocol != 0x00 && i->bInterfaceProtocol != 0x01 ) ||
-                                i->bNumEndpoints != 0x01 )
-                    {
+                                i->bNumEndpoints != 0x01 ) {
                         /* Not the interface we're looking for */
                         continue;
                     }
@@ -512,8 +461,7 @@ bool OrbtraceGetIfandEP( struct OrbtraceIf *o )
 
             libusb_free_config_descriptor( config );
 
-            if ( !interface_found )
-            {
+            if ( !interface_found ) {
                 genericsReport( V_DEBUG, "No supported interfaces found" EOL );
                 return false;
             }
@@ -521,14 +469,12 @@ bool OrbtraceGetIfandEP( struct OrbtraceIf *o )
             break;
     }
 
-    if ( ( err = libusb_claim_interface ( o->handle, o->iface ) ) < 0 )
-    {
+    if ( ( err = libusb_claim_interface ( o->handle, o->iface ) ) < 0 ) {
         genericsReport( V_DEBUG, "Failed to claim interface (%d)" EOL, err );
         return false;
     }
 
-    if ( num_altsetting > 1 && ( err = libusb_set_interface_alt_setting ( o->handle, o->iface, altsetting ) ) < 0 )
-    {
+    if ( num_altsetting > 1 && ( err = libusb_set_interface_alt_setting ( o->handle, o->iface, altsetting ) ) < 0 ) {
         genericsReport( V_WARN, "Failed to set altsetting (%d)" EOL, err );
         return false;
     }
@@ -547,11 +493,9 @@ bool OrbtraceIfSetupTransfers( struct OrbtraceIf *o, bool hiresTime, struct data
     o->numBlocks = numBlocks;
     o->d = d;
 
-    for ( int t = 0; t < o->numBlocks ; t++ )
-    {
+    for ( int t = 0; t < o->numBlocks ; t++ ) {
         /* Allocate memory */
-        if ( !o->d[t].usbtfr )
-        {
+        if ( !o->d[t].usbtfr ) {
             o->d[t].usbtfr = libusb_alloc_transfer( 0 );
         }
 
@@ -563,8 +507,7 @@ bool OrbtraceIfSetupTransfers( struct OrbtraceIf *o, bool hiresTime, struct data
                                     hiresTime ? 1 : 0 /* Use timeout if hires mode */
                                   );
 
-        if ( libusb_submit_transfer( o->d[t].usbtfr ) )
-        {
+        if ( libusb_submit_transfer( o->d[t].usbtfr ) ) {
             genericsReport( V_INFO, "Error submitting USB requests" EOL );
             return false;
         }
@@ -586,10 +529,8 @@ int OrbtraceIfHandleEvents( struct OrbtraceIf *o )
 void OrbtraceIfCloseTransfers( struct OrbtraceIf *o )
 
 {
-    for ( int32_t t = 0; t < o->numBlocks; t++ )
-    {
-        if ( o->d[t].usbtfr )
-        {
+    for ( int32_t t = 0; t < o->numBlocks; t++ ) {
+        if ( o->d[t].usbtfr ) {
             libusb_cancel_transfer( o->d[t].usbtfr );
             libusb_free_transfer( o->d[t].usbtfr );
             o->d[t].usbtfr = 0;
@@ -609,8 +550,7 @@ bool OrbtraceIfSetTraceWidth( struct OrbtraceIf *o, int width )
 {
     uint16_t d = ( width != 4 ) ? width : 3;
 
-    if ( ( d < 1 ) || ( d > 3 ) )
-    {
+    if ( ( d < 1 ) || ( d > 3 ) ) {
         return false;
     }
 
@@ -666,14 +606,12 @@ enum Channel OrbtraceIfNameToChannel( char *x )
 {
     int j;
 
-    for ( int i = 0; _powerNames[i].name; i++ )
-    {
+    for ( int i = 0; _powerNames[i].name; i++ ) {
         char *y = x;
 
         for ( j = 0; _powerNames[i].name[j] && _powerNames[i].name[j] == tolower( *y++ ); j++ );
 
-        if ( ( ( !*y ) || ( *y == ',' ) ) && ( !_powerNames[i].name[j] ) )
-        {
+        if ( ( ( !*y ) || ( *y == ',' ) ) && ( !_powerNames[i].name[j] ) ) {
             return ( enum Channel )_powerNames[i].num;
         }
     }
@@ -684,8 +622,7 @@ enum Channel OrbtraceIfNameToChannel( char *x )
 bool OrbtraceIfVoltage( struct OrbtraceIf *o, enum Channel ch, int voltage )
 
 {
-    if ( ( ch >= CH_MAX ) || !OrbtraceIfValidateVoltage( o, voltage ) )
-    {
+    if ( ( ch >= CH_MAX ) || !OrbtraceIfValidateVoltage( o, voltage ) ) {
         return false;
     }
 
@@ -704,8 +641,7 @@ bool OrbtraceIfVoltage( struct OrbtraceIf *o, enum Channel ch, int voltage )
 bool OrbtraceIfSetVoltageEn( struct OrbtraceIf *o, enum Channel ch, bool isOn )
 
 {
-    if ( ( ch >= CH_MAX ) && ( ch != CH_ALL ) )
-    {
+    if ( ( ch >= CH_MAX ) && ( ch != CH_ALL ) ) {
         return false;
     }
 
@@ -723,8 +659,7 @@ bool OrbtraceIfSetVoltageEn( struct OrbtraceIf *o, enum Channel ch, bool isOn )
 void OrbtraceIfCloseDevice( struct OrbtraceIf *o )
 
 {
-    if ( o->handle )
-    {
+    if ( o->handle ) {
         libusb_close( o->handle );
     }
 

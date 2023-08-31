@@ -17,8 +17,7 @@
 extern "C" {
 #endif
 
-enum TPIUPumpEvent
-{
+enum TPIUPumpEvent {
     TPIU_EV_NONE,
     TPIU_EV_UNSYNCED,
     TPIU_EV_SYNCED,
@@ -28,8 +27,7 @@ enum TPIUPumpEvent
     TPIU_EV_ERROR
 };
 
-enum TPIUPumpState
-{
+enum TPIUPumpState {
     TPIU_UNSYNCED,
     TPIU_SYNCED,
     TPIU_RXING,
@@ -47,8 +45,7 @@ struct TPIUCommsStats
     uint32_t totalFrames;                    /* Total frames received */
 };
 
-struct TPIUDecoderStats
-{
+struct TPIUDecoderStats {
     uint32_t lostSync;                     /* Number of times sync has been lost */
     uint32_t syncCount;                    /* Number of times a sync event has been received */
     uint32_t halfSyncCount;                /* Number of times a half sync event has been received */
@@ -56,8 +53,7 @@ struct TPIUDecoderStats
     uint32_t error;                        /* Number of times an error has been received */
 };
 
-struct TPIUDecoder
-{
+struct TPIUDecoder {
     enum TPIUPumpState state;              /* Current state of TPIU decoder */
     uint8_t byteCount;                     /* Current byte number in reception */
     uint8_t currentStream;                 /* Currently selected stream */
@@ -71,11 +67,9 @@ struct TPIUDecoder
     struct TPIUCommsStats commsStats;      /* Record of Comms stats */
 };
 
-struct TPIUPacket
-{
+struct TPIUPacket {
     uint8_t len;                           /* Received length (after pre-processing) */
-    struct
-    {
+    struct {
         int8_t s;                          /* Stream to which this byte relates */
         int8_t d;                          /* ...the byte itself */
     } packet[TPIU_PACKET_LEN];

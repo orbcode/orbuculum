@@ -20,8 +20,7 @@ extern "C" {
 #endif
 
 /* Hardware event numbers (used for the event fifo) */
-enum hwEvents
-{
+enum hwEvents {
     HWEVENT_TS,
     HWEVENT_EXCEPTION,
     HWEVENT_PCSample,
@@ -34,8 +33,7 @@ enum hwEvents
 };
 
 /* Exception events */
-enum ExceptionEvents
-{
+enum ExceptionEvents {
     EXEVENT_UNKNOWN,
     EXEVENT_ENTER,
     EXEVENT_EXIT,
@@ -56,8 +54,7 @@ enum ITMPacketType
 };
 
 /* Events from the process of pumping bytes through the ITM decoder */
-enum ITMPumpEvent
-{
+enum ITMPumpEvent {
     ITM_EV_NONE,
     ITM_EV_PACKET_RXED,
     ITM_EV_UNSYNCED,
@@ -67,8 +64,7 @@ enum ITMPumpEvent
 };
 
 /* Internal states of the protocol machine */
-enum _protoState
-{
+enum _protoState {
     ITM_UNSYNCED,
     ITM_IDLE,
     ITM_TS,

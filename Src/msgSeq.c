@@ -30,8 +30,7 @@ static bool _bufferPacket( struct MSGSeq *d )
     struct msg p;
 
 
-    if ( !ITMGetDecodedPacket( d->i, &p )  )
-    {
+    if ( !ITMGetDecodedPacket( d->i, &p )  ) {
         /* There wasn't a decodable message in there */
         return false;
     }
@@ -40,13 +39,10 @@ static bool _bufferPacket( struct MSGSeq *d )
     memcpy( &d->pbuffer[d->wp], &p, sizeof( struct msg ) );
 
     /* If this is a timestamp then we put it on the front to be released first */
-    if ( d->pbuffer[d->wp].genericMsg.msgtype == MSG_TS )
-    {
+    if ( d->pbuffer[d->wp].genericMsg.msgtype == MSG_TS ) {
         d->releaseTimeMsg = true;
         return true;
-    }
-    else
-    {
+    } else {
         d->wp = ( d->wp + 1 ) % d->pbl;
 
         assert( d->wp != d->rp );
@@ -79,14 +75,12 @@ struct msg *MSGSeqGetPacket( struct MSGSeq *d )
     uint32_t trp = d->rp;
 
     /* Roll the timestamp off the front if it's present */
-    if ( d->releaseTimeMsg )
-    {
+    if ( d->releaseTimeMsg ) {
         d->releaseTimeMsg = false;
         return &d->pbuffer[d->wp];
     }
 
-    if ( d->wp == d->rp )
-    {
+    if ( d->wp == d->rp ) {
         return NULL;
     }
 
@@ -103,8 +97,7 @@ bool MSGSeqPump( struct MSGSeq *d, uint8_t c )
 {
     bool r = false;
 
-    switch ( ITMPump( d->i, c ) )
-    {
+    switch ( ITMPump( d->i, c ) ) {
         // ------------------------------------
         case ITM_EV_NONE:
             break;

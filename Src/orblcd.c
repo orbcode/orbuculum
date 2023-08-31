@@ -31,8 +31,7 @@
 
 /************** APPLICATION SPECIFIC ********************************************************************/
 /* Target application specifics */
-struct TApp
-{
+struct TApp {
     /* Application specific Options */
     int chan;                                             /* The channel we are listening on */
     int sbcolour;                                         /* Colour to be used for single bit renders */
@@ -54,8 +53,7 @@ struct TApp
     uint32_t      map8to24bit[256];                       /* Colour index table for 8 to 24 bit mapping */
     int pwidth;                                           /* Width of one line of pixel buffer */
 
-} _app =
-{
+} _app = {
     .chan        = LCD_DATA_CHANNEL,
     .sbcolour    = 0x00ff00,
     .scale       = 1.5f,
@@ -65,8 +63,7 @@ struct TApp
 /************** APPLICATION SPECIFIC ENDS ***************************************************************/
 
 /* Record for options, either defaults or from command line */
-struct Options
-{
+struct Options {
     /* Source information */
     int  port;                                           /* Source port, or zero if no port set */
     char *server;                                        /* Source server */
@@ -77,15 +74,13 @@ struct Options
     int tpiuChannel;                                     /* TPIU channel to be used (for case TPIU present, 0 otherwise) */
     bool forceITMSync;                                   /* Do we need ITM syncs? */
 
-} _options =
-{
+} _options = {
     .port = NWCLIENT_SERVER_PORT,
     .server = ( char * )"localhost",
     .forceITMSync = true,
 };
 
-struct RunTime
-{
+struct RunTime {
     /* The decoders and the packets from them */
     struct ITMDecoder  i;
     struct ITMPacket   h;
@@ -99,8 +94,7 @@ struct RunTime
     struct Options *options;                             /* Command line options (reference to above) */
     struct TApp    *app;                                 /* Data storage for target application */
 
-} _r =
-{
+} _r = {
     .options  = &_options,
     .app      = &_app,
 };
@@ -116,21 +110,17 @@ static void _paintPixels( struct swMsg *m, struct RunTime *r )
     int d = m->value;
     int y;
 
-    if ( !r->app->pixels )
-    {
+    if ( !r->app->pixels ) {
         /* For whatever reason we aren't initialised yet */
         return;
     }
 
-    for ( int b = ORBLCD_PIXELS_PER_WORD( r->app->modeDescriptor ) - 1; b >= 0; b-- )
-    {
-        switch ( ORBLCD_DECODE_D( r->app->modeDescriptor ) )
-        {
+    for ( int b = ORBLCD_PIXELS_PER_WORD( r->app->modeDescriptor ) - 1; b >= 0; b-- ) {
+        switch ( ORBLCD_DECODE_D( r->app->modeDescriptor ) ) {
             case ORBLCD_DEPTH_1:
                 y = ( d & ( 1 << ( b % 8 ) ) ) ? r->app->sbcolour : 0;
 
-                if ( !( b % 8 ) )
-                {
+                if ( !( b % 8 ) ) {
                     d >>= 8;
                 }
 
@@ -158,13 +148,11 @@ static void _paintPixels( struct swMsg *m, struct RunTime *r )
         /* Output bitdepth is always the same, so span calculation is too */
         *( uint32_t * )&r->app->pixels[r->app->x * 4 + r->app->y * r->app->pwidth] = y | 0xff000000;
 
-        if ( ++r->app->x >= ORBLCD_DECODE_X( r->app->modeDescriptor ) )
-        {
+        if ( ++r->app->x >= ORBLCD_DECODE_X( r->app->modeDescriptor ) ) {
             r->app->y++;
             r->app->x = 0;
 
-            if ( r->app->y == ORBLCD_DECODE_Y( r->app->modeDescriptor ) )
-            {
+            if ( r->app->y == ORBLCD_DECODE_Y( r->app->modeDescriptor ) ) {
                 r->app->y = 0;
             }
 
@@ -179,11 +167,9 @@ static void _handleCommand( struct swMsg *m, struct RunTime *r )
 
 {
     /* This is control data */
-    switch ( ORBLCD_DECODE_C( m->value ) )
-    {
+    switch ( ORBLCD_DECODE_C( m->value ) ) {
         case ORBLCD_CMD_INIT_LCD: // -------------------------------------------------------
-            if ( ( !r->app->mainWindow ) || ( m->value != r->app->modeDescriptor ) )
-            {
+            if ( ( !r->app->mainWindow ) || ( m->value != r->app->modeDescriptor ) ) {
                 /* Create a new, or replacement, SDL window */
                 genericsReport( V_ERROR, "%s window %dx%d, depth %d" EOL,
                                 ( r->app->modeDescriptor ) ? "Replacement" : "New",
@@ -191,18 +177,15 @@ static void _handleCommand( struct swMsg *m, struct RunTime *r )
                 r->app->modeDescriptor = m->value;
 
                 /* If this is due to a resize activity then destroy the old stuff */
-                if ( r->app->renderer )
-                {
+                if ( r->app->renderer ) {
                     SDL_DestroyRenderer( r->app->renderer );
                 }
 
-                if ( r->app->mainWindow )
-                {
+                if ( r->app->mainWindow ) {
                     SDL_DestroyWindow( r->app->mainWindow );
                 }
 
-                if ( r->app->pixels )
-                {
+                if ( r->app->pixels ) {
                     free( r->app->pixels );
                 }
 
@@ -217,9 +200,7 @@ static void _handleCommand( struct swMsg *m, struct RunTime *r )
                 /* Create the memory for drawing the image */
                 r->app->pwidth        = sizeof( uint32_t ) * ORBLCD_DECODE_X( r->app->modeDescriptor );
                 r->app->pixels        = ( uint8_t * )calloc( ORBLCD_DECODE_Y( r->app->modeDescriptor ) * r->app->pwidth, 1 );
-            }
-            else
-            {
+            } else {
                 /* Repaint the SDL window */
                 SDL_UpdateTexture( r->app->texture, NULL, r->app->pixels, r->app->pwidth );
                 SDL_RenderCopy( r->app->renderer, r->app->texture, NULL, NULL );
@@ -230,21 +211,18 @@ static void _handleCommand( struct swMsg *m, struct RunTime *r )
             break;
 
         case ORBLCD_CMD_CLEAR: // -------------------------------------------------------------
-            if ( r->app->pixels )
-            {
+            if ( r->app->pixels ) {
                 memset( r->app->pixels, 0, ORBLCD_DECODE_Y( r->app->modeDescriptor ) * r->app->pwidth );
             }
 
             break;
 
         case ORBLCD_CMD_GOTOXY: // ------------------------------------------------------------
-            if ( ORBLCD_DECODE_X( m->value ) < ORBLCD_DECODE_X( r->app->modeDescriptor ) )
-            {
+            if ( ORBLCD_DECODE_X( m->value ) < ORBLCD_DECODE_X( r->app->modeDescriptor ) ) {
                 r->app->x = ORBLCD_DECODE_X( m->value );
             }
 
-            if ( ORBLCD_DECODE_Y( m->value ) < ORBLCD_DECODE_Y( r->app->modeDescriptor ) )
-            {
+            if ( ORBLCD_DECODE_Y( m->value ) < ORBLCD_DECODE_Y( r->app->modeDescriptor ) ) {
                 r->app->y = ORBLCD_DECODE_Y( m->value );
             }
 
@@ -261,12 +239,9 @@ static void _handleCommand( struct swMsg *m, struct RunTime *r )
 static void _handleSW( struct swMsg *m, struct RunTime *r )
 
 {
-    if ( ( m->srcAddr == r->app->chan ) && ( r->app->pixels ) )
-    {
+    if ( ( m->srcAddr == r->app->chan ) && ( r->app->pixels ) ) {
         _paintPixels( m, r );
-    }
-    else if ( m->srcAddr == r->app->chan + 1 )
-    {
+    } else if ( m->srcAddr == r->app->chan + 1 ) {
         _handleCommand( m, r );
     }
 }
@@ -283,8 +258,7 @@ void _itmPumpProcess( char c, struct RunTime *r )
 {
     struct msg decoded;
 
-    switch ( ITMPump( &r->i, c ) )
-    {
+    switch ( ITMPump( &r->i, c ) ) {
         case ITM_EV_NONE:
             break;
 
@@ -309,8 +283,7 @@ void _itmPumpProcess( char c, struct RunTime *r )
 
             /* See if we decoded a dispatchable match. genericMsg is just used to access */
             /* the first two members of the decoded structs in a portable way.           */
-            if ( decoded.genericMsg.msgtype == MSG_SOFTWARE )
-            {
+            if ( decoded.genericMsg.msgtype == MSG_SOFTWARE ) {
                 _handleSW( ( struct swMsg * )&decoded, r );
             }
 
@@ -329,13 +302,10 @@ static void _TPIUpacketRxed( enum TPIUPumpEvent e, struct TPIUPacket *p, void *p
 {
     struct RunTime *r = ( struct RunTime * )param;
 
-    switch ( e )
-    {
+    switch ( e ) {
         case TPIU_EV_RXEDPACKET:
-            for ( uint32_t g = 0; g < p->len; g++ )
-            {
-                if ( 1 == p->packet[g].s )
-                {
+            for ( uint32_t g = 0; g < p->len; g++ ) {
+                if ( 1 == p->packet[g].s ) {
                     _itmPumpProcess( p->packet[g].d, r );
                 }
             }
@@ -359,12 +329,9 @@ static void _TPIUpacketRxed( enum TPIUPumpEvent e, struct TPIUPacket *p, void *p
 
 static struct Stream *_tryOpenStream( struct RunTime *r )
 {
-    if ( r->options->file != NULL )
-    {
+    if ( r->options->file != NULL ) {
         return streamCreateFile( r->options->file );
-    }
-    else
-    {
+    } else {
         return streamCreateSocket( r->options->server, r->options->port );
     }
 }
@@ -373,54 +340,40 @@ static struct Stream *_tryOpenStream( struct RunTime *r )
 static bool _feedStream( struct Stream *stream, struct RunTime *r )
 {
     unsigned char cbw[TRANSFER_SIZE];
-    struct timeval t =
-    {
+    struct timeval t = {
         .tv_sec = 0,
         .tv_usec = 100000
     };
     SDL_Event e;
 
-    while ( true )
-    {
+    while ( true ) {
         size_t receivedSize;
         enum ReceiveResult result = stream->receive( stream, cbw, TRANSFER_SIZE, &t, &receivedSize );
 
         /* Check for SDL close */
-        while ( SDL_PollEvent( &e ) != 0 )
-        {
-            if ( e.type == SDL_QUIT )
-            {
+        while ( SDL_PollEvent( &e ) != 0 ) {
+            if ( e.type == SDL_QUIT ) {
                 return false;
             }
         }
 
 
-        if ( result != RECEIVE_RESULT_OK )
-        {
-            if ( result == RECEIVE_RESULT_EOF && r->options->fileTerminate )
-            {
+        if ( result != RECEIVE_RESULT_OK ) {
+            if ( result == RECEIVE_RESULT_EOF && r->options->fileTerminate ) {
                 return true;
-            }
-            else if ( result == RECEIVE_RESULT_ERROR )
-            {
+            } else if ( result == RECEIVE_RESULT_ERROR ) {
                 break;
-            }
-            else
-            {
+            } else {
                 usleep( 100000 );
             }
         }
 
         unsigned char *c = cbw;
 
-        if ( _r.options->tpiuChannel )
-        {
+        if ( _r.options->tpiuChannel ) {
             TPIUPump2( &r->t, cbw, receivedSize, _TPIUpacketRxed, r );
-        }
-        else
-        {
-            while ( receivedSize-- )
-            {
+        } else {
+            while ( receivedSize-- ) {
                 _itmPumpProcess( *c++, r );
             }
         }
@@ -456,8 +409,7 @@ void _printVersion( void )
     genericsPrintf( "orblcd version " GIT_DESCRIBE EOL );
 }
 // ====================================================================================================
-static struct option _longOptions[] =
-{
+static struct option _longOptions[] = {
     {"channel", required_argument, NULL, 'c'},
     {"eof", no_argument, NULL, 'E'},
     {"help", no_argument, NULL, 'h'},
@@ -481,8 +433,7 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
     char *a;
 
     while ( ( c = getopt_long ( argc, argv, "c:Ef:hns:S:t:v:Vw:z:", _longOptions, &optionIndex ) ) != -1 )
-        switch ( c )
-        {
+        switch ( c ) {
             // ------------------------------------
             case 'c':
                 r->app->chan = atoi( optarg );
@@ -521,19 +472,16 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
                 // See if we have an optional port number too
                 a = optarg;
 
-                while ( ( *a ) && ( *a != ':' ) )
-                {
+                while ( ( *a ) && ( *a != ':' ) ) {
                     a++;
                 }
 
-                if ( *a == ':' )
-                {
+                if ( *a == ':' ) {
                     *a = 0;
                     r->options->port = atoi( ++a );
                 }
 
-                if ( !r->options->port )
-                {
+                if ( !r->options->port ) {
                     r->options->port = NWCLIENT_SERVER_PORT;
                 }
 
@@ -551,8 +499,7 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
 
             // ------------------------------------
             case 'v':
-                if ( !isdigit( *optarg ) )
-                {
+                if ( !isdigit( *optarg ) ) {
                     genericsReport( V_ERROR, "-v requires a numeric argument." EOL );
                     return false;
                 }
@@ -572,12 +519,9 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
 
             // ------------------------------------
             case '?':
-                if ( optopt == 'b' )
-                {
+                if ( optopt == 'b' ) {
                     genericsReport( V_ERROR, "Option '%c' requires an argument." EOL, optopt );
-                }
-                else if ( !isprint ( optopt ) )
-                {
+                } else if ( !isprint ( optopt ) ) {
                     genericsReport( V_ERROR, "Unknown option character `\\x%x'." EOL, optopt );
                 }
 
@@ -598,36 +542,27 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
     genericsReport( V_INFO, "Relative Scale : %1.2f:1" EOL, r->app->scale );
     genericsReport( V_INFO, "Window Title   : %s" EOL, r->app->windowTitle );
 
-    if ( r->options->port )
-    {
+    if ( r->options->port ) {
         genericsReport( V_INFO, "NW SERVER H&P  : %s:%d" EOL, r->options->server, r->options->port );
     }
 
-    if ( r->options->tpiuChannel )
-    {
+    if ( r->options->tpiuChannel ) {
         genericsReport( V_INFO, "Use/Strip TPIU : True, channel %d" EOL, r->options->tpiuChannel );
-    }
-    else
-    {
+    } else {
         genericsReport( V_INFO, "Use/Strip TPIU : False" EOL );
     }
 
-    if ( r->options->file )
-    {
+    if ( r->options->file ) {
         genericsReport( V_INFO, "Input File  : %s", r->options->file );
 
-        if ( r->options->fileTerminate )
-        {
+        if ( r->options->fileTerminate ) {
             genericsReport( V_INFO, " (Terminate on exhaustion)" EOL );
-        }
-        else
-        {
+        } else {
             genericsReport( V_INFO, " (Ongoing read)" EOL );
         }
     }
 
-    if ( ( r->options->file ) && ( r->options->port ) )
-    {
+    if ( ( r->options->file ) && ( r->options->port ) ) {
         genericsReport( V_ERROR, "Cannot specify file and port or NW Server at same time" EOL );
         return false;
     }
@@ -646,8 +581,7 @@ int main( int argc, char *argv[] )
 {
     bool alreadyReported = false;
 
-    if ( !_processOptions( argc, argv, &_r ) )
-    {
+    if ( !_processOptions( argc, argv, &_r ) ) {
         exit( -1 );
     }
 
@@ -655,29 +589,23 @@ int main( int argc, char *argv[] )
     TPIUDecoderInit( &_r.t );
     ITMDecoderInit( &_r.i, _r.options->forceITMSync );
 
-    if ( SDL_Init( SDL_INIT_VIDEO ) < 0 )
-    {
+    if ( SDL_Init( SDL_INIT_VIDEO ) < 0 ) {
         genericsExit( -1, "Could not initailise SDL" );
     }
 
     /* Load up default colour index map R3G3B2 */
-    for ( int i = 0; i < 256; i++ )
-    {
+    for ( int i = 0; i < 256; i++ ) {
         _r.app->map8to24bit[i] = ( ( i & 0xE0 ) << 21 ) | ( ( i & 0x1c ) << 13 ) | ( i << 6 );
     }
 
-    while ( true )
-    {
+    while ( true ) {
         struct Stream *stream = NULL;
 
-        while ( true )
-        {
+        while ( true ) {
             stream = _tryOpenStream( &_r );
 
-            if ( stream != NULL )
-            {
-                if ( alreadyReported )
-                {
+            if ( stream != NULL ) {
+                if ( alreadyReported ) {
                     genericsReport( V_INFO, "Connected" EOL );
                     alreadyReported = false;
                 }
@@ -685,14 +613,12 @@ int main( int argc, char *argv[] )
                 break;
             }
 
-            if ( !alreadyReported )
-            {
+            if ( !alreadyReported ) {
                 genericsReport( V_INFO, EOL "No connection" EOL );
                 alreadyReported = true;
             }
 
-            if ( _r.options->fileTerminate )
-            {
+            if ( _r.options->fileTerminate ) {
                 break;
             }
 
@@ -700,10 +626,8 @@ int main( int argc, char *argv[] )
             usleep( 10000 );
         }
 
-        if ( stream != NULL )
-        {
-            if ( !_feedStream( stream, &_r ) )
-            {
+        if ( stream != NULL ) {
+            if ( !_feedStream( stream, &_r ) ) {
                 break;
             }
         }
@@ -711,8 +635,7 @@ int main( int argc, char *argv[] )
         stream->close( stream );
         free( stream );
 
-        if ( _r.options->fileTerminate )
-        {
+        if ( _r.options->fileTerminate ) {
             break;
         }
     }

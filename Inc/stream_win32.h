@@ -10,8 +10,7 @@
 extern "C" {
 #endif
 
-struct Win32Stream
-{
+struct Win32Stream {
     struct Stream base;
     HANDLE source;
     HANDLE readDoneEvent;

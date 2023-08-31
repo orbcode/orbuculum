@@ -47,15 +47,13 @@ enum Channel {CH_VTREF, CH_VTPWR, CH_MAX, CH_NONE, CH_ALL = 0xff};
     { "all"  , CH_ALL   }, \
     { NULL   , CH_NONE  }  \
 
-struct OrbtraceInterfaceType
-{
+struct OrbtraceInterfaceType {
     int vid;
     int pid;
     enum ORBTraceDevice devtype;
 };
 
-struct OrbtraceIfDevice
-{
+struct OrbtraceIfDevice {
     char *sn;
     char *manufacturer;
     char *product;
@@ -70,15 +68,13 @@ struct OrbtraceIfDevice
     const struct OrbtraceInterfaceType *type;
 };
 
-struct dataBlock
-{
+struct dataBlock {
     ssize_t fillLevel;                                   /* How full this block is */
     uint8_t buffer[USB_TRANSFER_SIZE];                   /* Block buffer */
     struct libusb_transfer *usbtfr;                      /* USB Transfer handle */
 };
 
-struct OrbtraceIf
-{
+struct OrbtraceIf {
     int activeDevice;                            /* Number in the list of devices of the active device */
     libusb_device_handle *handle;
     libusb_device *dev;                          /* usb handle for currently active device (or NULL for non active) */

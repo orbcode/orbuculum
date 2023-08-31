@@ -18,8 +18,7 @@ extern "C" {
 #endif
 
 /* Protocol format */
-enum TRACEprotocol
-{
+enum TRACEprotocol {
     TRACE_PROT_LIST_START = 0,
     TRACE_PROT_ETM35      = TRACE_PROT_LIST_START,
     TRACE_PROT_MTB,
@@ -33,8 +32,7 @@ enum TRACEprotocol
 
 
 /* Events from the process of pumping bytes through the TRACE decoder */
-enum TRACEDecoderPumpEvent
-{
+enum TRACEDecoderPumpEvent {
     TRACE_EV_NONE,
     TRACE_EV_UNSYNCED,
     TRACE_EV_SYNCED,
@@ -42,8 +40,7 @@ enum TRACEDecoderPumpEvent
     TRACE_EV_MSG_RXED
 };
 
-enum TRACEchanges
-{
+enum TRACEchanges {
     EV_CH_NONE,
     EV_CH_EX_ENTRY,
     EV_CH_EX_EXIT,
@@ -94,14 +91,12 @@ enum Mode { TRACE_ADDRMODE_THUMB, TRACE_ADDRMODE_ARM, TRACE_ADDRMODE_JAZELLE };
 enum Reason { TRACE_REASON_PERIODIC, TRACE_REASON_TRACEON, TRACE_REASON_TRACEOVF, TRACE_REASON_EXITDBG };
 
 /* TRACE Decoder statistics */
-struct TRACEDecoderStats
-{
+struct TRACEDecoderStats {
     uint32_t lostSyncCount;              /* Number of times sync has been lost */
     uint32_t syncCount;                  /* Number of times a sync event has been received */
 };
 
-struct TRACECPUState
-{
+struct TRACECPUState {
     uint32_t changeRecord;               /* Record of what changed since last report */
 
     // Gross processor state...
@@ -154,8 +149,7 @@ typedef void ( *traceDecodeCB )( void *d );
 
 struct TRACEDecoder;
 
-struct TRACEDecoderEngine
-{
+struct TRACEDecoderEngine {
     bool ( *action )        ( struct TRACEDecoderEngine *e, struct TRACECPUState *cpu, uint8_t c  );
     bool ( *actionPair )    ( struct TRACEDecoderEngine *e, struct TRACECPUState *cpu, uint32_t source, uint32_t dest );
     void ( *destroy )       ( struct TRACEDecoderEngine *e );

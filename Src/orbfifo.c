@@ -33,8 +33,7 @@
 //#define DUMP_BLOCK
 
 /* Record for options, either defaults or from command line */
-struct
-{
+struct {
     /* Config information */
     bool filewriter;                    /* Supporting filewriter functionality */
     char *fwbasedir;                    /* Base directory for filewriter output */
@@ -48,14 +47,12 @@ struct
     int port;                           /* Source information */
     char *server;
 
-} options =
-{
+} options = {
     .port = NWCLIENT_SERVER_PORT,
     .server = ( char * )"localhost"
 };
 
-struct
-{
+struct {
     struct itmfifosHandle *f;           /* Link to the itmfifo subsystem */
     bool      ending;                   /* Flag indicating app is terminating */
 } _r;
@@ -92,8 +89,7 @@ void _printVersion( void )
     genericsPrintf( "orbfifo version " GIT_DESCRIBE );
 }
 // ====================================================================================================
-struct option _longOptions[] =
-{
+struct option _longOptions[] = {
     {"basedir", required_argument, NULL, 'b'},
     {"channel", required_argument, NULL, 'c'},
     {"eof", no_argument, NULL, 'E'},
@@ -123,8 +119,7 @@ static bool _processOptions( int argc, char *argv[] )
     char *a;
 
     while ( ( c = getopt_long ( argc, argv, "b:c:Ef:hVn:Ps:t:v:w:", _longOptions, &optionIndex ) ) != -1 )
-        switch ( c )
-        {
+        switch ( c ) {
             // ------------------------------------
 
             case 'b':
@@ -176,19 +171,16 @@ static bool _processOptions( int argc, char *argv[] )
                 // See if we have an optional port number too
                 a = optarg;
 
-                while ( ( *a ) && ( *a != ':' ) )
-                {
+                while ( ( *a ) && ( *a != ':' ) ) {
                     a++;
                 }
 
-                if ( *a == ':' )
-                {
+                if ( *a == ':' ) {
                     *a = 0;
                     options.port = atoi( ++a );
                 }
 
-                if ( !options.port )
-                {
+                if ( !options.port ) {
                     options.port = NWCLIENT_SERVER_PORT;
                 }
 
@@ -204,8 +196,7 @@ static bool _processOptions( int argc, char *argv[] )
             // ------------------------------------
 
             case 'v':
-                if ( !isdigit( *optarg ) )
-                {
+                if ( !isdigit( *optarg ) ) {
                     genericsReport( V_ERROR, "-v requires a numeric argument." EOL );
                     return false;
                 }
@@ -226,29 +217,25 @@ static bool _processOptions( int argc, char *argv[] )
             case 'c':
                 chanIndex = chanConfig = strdup( optarg );
 
-                if ( NULL == chanConfig )
-                {
+                if ( NULL == chanConfig ) {
                     genericsReport( V_ERROR, "Couldn't allocate memory at %s::%d" EOL, __FILE__, __LINE__ );
                     return false;
                 }
 
                 chan = atoi( optarg );
 
-                if ( chan >= NUM_CHANNELS )
-                {
+                if ( chan >= NUM_CHANNELS ) {
                     genericsReport( V_ERROR, "Channel index out of range" EOL );
                     free( chanConfig );
                     return false;
                 }
 
                 /* Scan for start of filename */
-                while ( ( *chanIndex ) && ( *chanIndex != DELIMITER ) )
-                {
+                while ( ( *chanIndex ) && ( *chanIndex != DELIMITER ) ) {
                     chanIndex++;
                 }
 
-                if ( !*chanIndex )
-                {
+                if ( !*chanIndex ) {
                     genericsReport( V_ERROR, "No filename for channel %d" EOL, chan );
                     free( chanConfig );
                     return false;
@@ -257,13 +244,11 @@ static bool _processOptions( int argc, char *argv[] )
                 chanName = ++chanIndex;
 
                 /* Scan for format */
-                while ( ( *chanIndex ) && ( *chanIndex != DELIMITER ) )
-                {
+                while ( ( *chanIndex ) && ( *chanIndex != DELIMITER ) ) {
                     chanIndex++;
                 }
 
-                if ( !*chanIndex )
-                {
+                if ( !*chanIndex ) {
                     genericsReport( V_WARN, "No output format for channel %d, output raw!" EOL, chan );
                     itmfifoSetChannel( _r.f, chan, chanName, NULL );
                     break;
@@ -276,12 +261,9 @@ static bool _processOptions( int argc, char *argv[] )
             // ------------------------------------
 
             case '?':
-                if ( optopt == 'b' )
-                {
+                if ( optopt == 'b' ) {
                     genericsReport( V_ERROR, "Option '%c' requires an argument." EOL, optopt );
-                }
-                else if ( !isprint ( optopt ) )
-                {
+                } else if ( !isprint ( optopt ) ) {
                     genericsReport( V_ERROR, "Unknown option character `\\x%x'." EOL, optopt );
                 }
 
@@ -298,35 +280,26 @@ static bool _processOptions( int argc, char *argv[] )
     genericsReport( V_INFO, "orbfifo version " GIT_DESCRIBE EOL );
     genericsReport( V_INFO, "Server     : %s:%d" EOL, options.server, options.port );
 
-    if ( itmfifoGetUseTPIU( _r.f ) )
-    {
+    if ( itmfifoGetUseTPIU( _r.f ) ) {
         genericsReport( V_INFO, "Using TPIU  : true (ITM on channel %d)" EOL, itmfifoGettpiuITMChannel( _r.f ) );
-    }
-    else
-    {
+    } else {
         genericsReport( V_INFO, "Using TPIU  : false" EOL );
     }
 
-    if ( options.file )
-    {
+    if ( options.file ) {
         genericsReport( V_INFO, "Input File  : %s", options.file );
 
-        if ( options.fileTerminate )
-        {
+        if ( options.fileTerminate ) {
             genericsReport( V_INFO, " (Terminate on exhaustion)" EOL );
-        }
-        else
-        {
+        } else {
             genericsReport( V_INFO, " (Ongoing read)" EOL );
         }
     }
 
     genericsReport( V_INFO, "Channels    :" EOL );
 
-    for ( int g = 0; g < NUM_CHANNELS; g++ )
-    {
-        if ( itmfifoGetChannelName( _r.f, g ) )
-        {
+    for ( int g = 0; g < NUM_CHANNELS; g++ ) {
+        if ( itmfifoGetChannelName( _r.f, g ) ) {
             genericsReport( V_INFO, "         %02d [%s] [%s]" EOL, g, genericsEscape( itmfifoGetChannelFormat( _r.f, g ) ? : ( char * )"RAW" ), itmfifoGetChannelName( _r.f, g ) );
         }
     }
@@ -343,28 +316,24 @@ static void _processBlock( int s, unsigned char *cbw )
 {
     genericsReport( V_DEBUG, "RXED Packet of %d bytes" EOL, s );
 
-    if ( s )
-    {
+    if ( s ) {
 #ifdef DUMP_BLOCK
         uint8_t *c = cbw;
         uint32_t y = s;
 
         fprintf( stderr, EOL );
 
-        while ( y-- )
-        {
+        while ( y-- ) {
             fprintf( stderr, "%02X ", *c++ );
 
-            if ( !( y % 16 ) )
-            {
+            if ( !( y % 16 ) ) {
                 fprintf( stderr, EOL );
             }
         }
 
 #endif
 
-        while ( s-- )
-        {
+        while ( s-- ) {
             itmfifoProtocolPump( _r.f, *cbw++ );
         }
     }
@@ -404,8 +373,7 @@ int main( int argc, char *argv[] )
     _r.f = itmfifoInit( true, false, 1 );
     assert( _r.f );
 
-    if ( !_processOptions( argc, argv ) )
-    {
+    if ( !_processOptions( argc, argv ) ) {
         /* processOptions generates its own error messages */
         genericsExit( -1, "" EOL );
     }
@@ -421,39 +389,30 @@ int main( int argc, char *argv[] )
     lastTime = genericsTimestampmS();
 
     /* This ensures the atexit gets called */
-    if ( SIG_ERR == signal( SIGINT, _intHandler ) )
-    {
+    if ( SIG_ERR == signal( SIGINT, _intHandler ) ) {
         genericsExit( -1, "Failed to establish Int handler" EOL );
     }
 
     /* Don't kill a sub-process when any reader or writer evaporates */
-    if ( SIG_ERR == signal( SIGPIPE, SIG_IGN ) )
-    {
+    if ( SIG_ERR == signal( SIGPIPE, SIG_IGN ) ) {
         genericsExit( -1, "Failed to ignore SIGPIPEs" EOL );
     }
 
-    if ( ! ( itmfifoCreate( _r.f ) ) )
-    {
+    if ( ! ( itmfifoCreate( _r.f ) ) ) {
         genericsExit( -1, "Failed to make channel devices" EOL );
     }
 
     /* Start the filewriter */
     itmfifoFilewriter( _r.f, options.filewriter, options.fwbasedir );
 
-    while ( !_r.ending )
-    {
-        if ( options.file != NULL )
-        {
+    while ( !_r.ending ) {
+        if ( options.file != NULL ) {
             stream = streamCreateFile( options.file );
-        }
-        else
-        {
-            while ( !_r.ending )
-            {
+        } else {
+            while ( !_r.ending ) {
                 stream = streamCreateSocket( options.server, options.port );
 
-                if ( stream )
-                {
+                if ( stream ) {
                     break;
                 }
 
@@ -462,20 +421,17 @@ int main( int argc, char *argv[] )
             }
         }
 
-        while ( !_r.ending )
-        {
+        while ( !_r.ending ) {
             remainTime = ( ( lastTime + 1000000 - genericsTimestampuS() ) );
 
-            if ( remainTime > 0 )
-            {
+            if ( remainTime > 0 ) {
                 tv.tv_sec = remainTime / 1000000;
                 tv.tv_usec  = remainTime % 1000000;
             }
 
             enum ReceiveResult result = stream->receive( stream, cbw, TRANSFER_SIZE, &tv, ( size_t * )&t );
 
-            if ( ( result == RECEIVE_RESULT_EOF ) || ( result == RECEIVE_RESULT_ERROR ) )
-            {
+            if ( ( result == RECEIVE_RESULT_EOF ) || ( result == RECEIVE_RESULT_ERROR ) ) {
                 break;
             }
 
@@ -483,15 +439,13 @@ int main( int argc, char *argv[] )
         }
 
 
-        if ( stream )
-        {
+        if ( stream ) {
             stream->close( stream );
             free( stream );
             stream = NULL;
         }
 
-        if ( options.fileTerminate )
-        {
+        if ( options.fileTerminate ) {
             break;
         }
     }

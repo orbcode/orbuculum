@@ -37,8 +37,7 @@
 
 #define MSG_REORDER_BUFLEN  (10)             /* Maximum number of samples to re-order for timekeeping */
 
-struct visitedAddr                           /* Structure for Hashmap of visited/observed addresses */
-{
+struct visitedAddr {                         /* Structure for Hashmap of visited/observed addresses */
     uint64_t visits;
     struct nameEntry *n;
 
@@ -71,8 +70,7 @@ struct exceptionRecord                       /* Record of exception activity */
 
 
 /* ---------- CONFIGURATION ----------------- */
-struct                                       /* Record for options, either defaults or from command line */
-{
+struct {                                     /* Record for options, either defaults or from command line */
     bool useTPIU;                            /* Are we decoding via the TPIU? */
     bool reportFilenames;                    /* Report filenames for each routine? */
     bool outputExceptions;                   /* Set to include exceptions in output flow */
@@ -100,8 +98,7 @@ struct                                       /* Record for options, either defau
     int port;                                /* Source information */
     char *server;
 
-} options =
-{
+} options = {
     .useTPIU = false,
     .tpiuITMChannel = 1,
     .forceITMSync = true,
@@ -113,8 +110,7 @@ struct                                       /* Record for options, either defau
 };
 
 /* ----------- LIVE STATE ----------------- */
-struct
-{
+struct {
     struct ITMDecoder i;                               /* The decoders and the packets from them */
     struct MSGSeq    d;                                   /* Message (re-)sequencer */
     struct ITMPacket h;
@@ -165,13 +161,11 @@ int64_t _timestamp( void )
 int _addresses_sort_fn( void *a, void *b )
 
 {
-    if ( ( ( ( struct visitedAddr * )a )->n->addr ) < ( ( ( struct visitedAddr * )b )->n->addr ) )
-    {
+    if ( ( ( ( struct visitedAddr * )a )->n->addr ) < ( ( ( struct visitedAddr * )b )->n->addr ) ) {
         return -1;
     }
 
-    if ( ( ( ( struct visitedAddr * )a )->n->addr ) > ( ( ( struct visitedAddr * )b )->n->addr ) )
-    {
+    if ( ( ( ( struct visitedAddr * )a )->n->addr ) > ( ( ( struct visitedAddr * )b )->n->addr ) ) {
         return 1;
     }
 
@@ -183,20 +177,17 @@ int _routines_sort_fn( void *a, void *b )
 {
     int r;
 
-    if ( ( options.reportFilenames ) && ( ( ( ( struct visitedAddr * )a )->n->fileindex ) && ( ( ( struct visitedAddr * )b )->n->fileindex ) ) )
-    {
+    if ( ( options.reportFilenames ) && ( ( ( ( struct visitedAddr * )a )->n->fileindex ) && ( ( ( struct visitedAddr * )b )->n->fileindex ) ) ) {
         r = ( ( int )( ( struct visitedAddr * )a )->n->fileindex ) - ( ( int )( ( struct visitedAddr * )b )->n->fileindex );
 
-        if ( r )
-        {
+        if ( r ) {
             return r;
         }
     }
 
     r = ( ( int )( ( struct visitedAddr * )a )->n->functionindex ) - ( ( int )( ( struct visitedAddr * )b )->n->functionindex );
 
-    if ( r )
-    {
+    if ( r ) {
         return r;
     }
 
@@ -218,8 +209,7 @@ int _report_sort_fn( const void *a, const void *b )
 void _exitEx( int64_t ts )
 
 {
-    if ( _r.currentException == NO_EXCEPTION )
-    {
+    if ( _r.currentException == NO_EXCEPTION ) {
         /* This can happen under startup and overflow conditions */
         return;
     }
@@ -236,39 +226,33 @@ void _exitEx( int64_t ts )
     _r.er[_r.currentException].entryTime = 0;
 
     /* ...and account for this time */
-    if ( ( !_r.er[_r.currentException].minTime ) || ( _r.er[_r.currentException].thisTime < _r.er[_r.currentException].minTime ) )
-    {
+    if ( ( !_r.er[_r.currentException].minTime ) || ( _r.er[_r.currentException].thisTime < _r.er[_r.currentException].minTime ) ) {
         _r.er[_r.currentException].minTime = _r.er[_r.currentException].thisTime;
     }
 
-    if ( _r.er[_r.currentException].thisTime > _r.er[_r.currentException].maxTime )
-    {
+    if ( _r.er[_r.currentException].thisTime > _r.er[_r.currentException].maxTime ) {
         _r.er[_r.currentException].maxTime = _r.er[_r.currentException].thisTime;
     }
 
     const int64_t walltime = _r.er[_r.currentException].thisTime + _r.er[_r.currentException].stealTime;
 
-    if ( walltime > _r.er[_r.currentException].maxWallTime )
-    {
+    if ( walltime > _r.er[_r.currentException].maxWallTime ) {
         _r.er[_r.currentException].maxWallTime = walltime;
     }
 
-    if ( _r.erDepth > _r.er[_r.currentException].maxDepth )
-    {
+    if ( _r.erDepth > _r.er[_r.currentException].maxDepth ) {
         _r.er[_r.currentException].maxDepth = _r.erDepth;
     }
 
     /* Step out of this exception */
     _r.currentException = _r.er[_r.currentException].prev;
 
-    if ( _r.erDepth )
-    {
+    if ( _r.erDepth ) {
         _r.erDepth--;
     }
 
     /* If we are still in an exception then carry on accounting */
-    if ( _r.currentException != NO_EXCEPTION )
-    {
+    if ( _r.currentException != NO_EXCEPTION ) {
         _r.er[_r.currentException].entryTime = ts;
         _r.er[_r.currentException].stealTime += thisTime + thisStealTime;
     }
@@ -289,11 +273,9 @@ void _handleException( struct excMsg *m, struct ITMDecoder *i )
     assert( m->msgtype == MSG_EXCEPTION );
     assert( m->exceptionNumber < MAX_EXCEPTIONS );
 
-    switch ( m->eventType )
-    {
+    switch ( m->eventType ) {
         case EXEVENT_ENTER:
-            if ( _r.er[m->exceptionNumber].entryTime != 0 )
-            {
+            if ( _r.er[m->exceptionNumber].entryTime != 0 ) {
                 /* We beleive we are already in this exception. This can happen when we've lost
                  * messages due to ITM overflow. Don't process the enter. Everything will get
                  * fixed up in the next EXEXIT_RESUME which will reset everything.
@@ -301,8 +283,7 @@ void _handleException( struct excMsg *m, struct ITMDecoder *i )
                 break;
             }
 
-            if ( _r.currentException != NO_EXCEPTION )
-            {
+            if ( _r.currentException != NO_EXCEPTION ) {
                 /* Already in an exception ... account for time until now */
                 _r.er[_r.currentException].thisTime += _r.timeStamp - _r.er[_r.currentException].entryTime;
             }
@@ -319,8 +300,7 @@ void _handleException( struct excMsg *m, struct ITMDecoder *i )
             break;
 
         case EXEVENT_RESUME: /* Unwind all levels of exception (deals with tail chaining) */
-            while ( ( _r.currentException != m->exceptionNumber ) && ( _r.erDepth ) )
-            {
+            while ( ( _r.currentException != m->exceptionNumber ) && ( _r.erDepth ) ) {
                 _exitEx( _r.timeStamp );
             }
 
@@ -368,18 +348,15 @@ uint32_t _consolodateReport( struct reportLine **returnReport, uint32_t *returnR
     HASH_SORT( _r.addresses, _routines_sort_fn );
 
     /* Now merge them together */
-    for ( a = _r.addresses; a != NULL; a = ( struct visitedAddr * )a->hh.next )
-    {
-        if ( !a->visits )
-        {
+    for ( a = _r.addresses; a != NULL; a = ( struct visitedAddr * )a->hh.next ) {
+        if ( !a->visits ) {
             continue;
         }
 
         if ( ( reportLines == 0 ) ||
-                ( ( options.reportFilenames ) &&  ( report[reportLines - 1].n->fileindex != a->n->fileindex ) ) ||
-                ( report[reportLines - 1].n->functionindex != a->n->functionindex ) ||
-                ( ( report[reportLines - 1].n->line != a->n->line ) && ( options.lineDisaggregation ) ) )
-        {
+             ( ( options.reportFilenames ) &&  ( report[reportLines - 1].n->fileindex != a->n->fileindex ) ) ||
+             ( report[reportLines - 1].n->functionindex != a->n->functionindex ) ||
+             ( ( report[reportLines - 1].n->line != a->n->line ) && ( options.lineDisaggregation ) ) ) {
             /* Make room for a report line */
             reportLines++;
             report = ( struct reportLine * )realloc( report, sizeof( struct reportLine ) * ( reportLines ) );
@@ -399,12 +376,9 @@ uint32_t _consolodateReport( struct reportLine **returnReport, uint32_t *returnR
     uint32_t addr = FN_SLEEPING;
     HASH_FIND_INT( _r.addresses, &addr, a );
 
-    if ( a )
-    {
+    if ( a ) {
         n = a->n;
-    }
-    else
-    {
+    } else {
         n = ( struct nameEntry * )malloc( sizeof( struct nameEntry ) );
     }
 
@@ -480,10 +454,8 @@ static void _outputJson( FILE *f, uint32_t total, uint32_t reportLines, struct r
     assert( jsonTopTable );
     cJSON_AddItemToObject( jsonStore, "toptable", jsonTopTable );
 
-    for ( uint32_t n = 0; n < reportLines; n++ )
-    {
-        if ( report[n].count )
-        {
+    for ( uint32_t n = 0; n < reportLines; n++ ) {
+        if ( report[n].count ) {
             char *d = NULL;
 
             /* Output in JSON Format */
@@ -501,8 +473,7 @@ static void _outputJson( FILE *f, uint32_t total, uint32_t reportLines, struct r
             assert( jsonElement );
             cJSON_AddItemToObject( jsonTableEntry, "function", jsonElement );
 
-            if ( options.lineDisaggregation )
-            {
+            if ( options.lineDisaggregation ) {
                 jsonElement = cJSON_CreateNumber( report[n].n->line ? report[n].n->line : 0 );
                 assert( jsonElement );
                 cJSON_AddItemToObject( jsonTableEntry, "line", jsonElement );
@@ -517,10 +488,8 @@ static void _outputJson( FILE *f, uint32_t total, uint32_t reportLines, struct r
     assert( jsonIntTable );
     cJSON_AddItemToObject( jsonStore, "exceptions", jsonIntTable );
 
-    for ( uint32_t e = 0; e < MAX_EXCEPTIONS; e++ )
-    {
-        if ( _r.er[e].visits )
-        {
+    for ( uint32_t e = 0; e < MAX_EXCEPTIONS; e++ ) {
+        if ( _r.er[e].visits ) {
             jsonTableEntry = cJSON_CreateObject();
             assert( jsonTableEntry );
             cJSON_AddItemToObject( jsonIntTable, "exceptions", jsonTableEntry );
@@ -557,8 +526,7 @@ static void _outputJson( FILE *f, uint32_t total, uint32_t reportLines, struct r
     free( opString );
 }
 
-static const char *ExceptionNames[] =
-{
+static const char *ExceptionNames[] = {
     [0] = "None",
     [1] = "Reset",
     [2] = "NMI",
@@ -593,49 +561,39 @@ static void _outputTop( uint32_t total, uint32_t reportLines, struct reportLine 
     uint32_t printed = 0;
 
     /* This is the file retaining the current samples */
-    if ( options.outfile )
-    {
+    if ( options.outfile ) {
         p = fopen( options.outfile, "w" );
     }
 
     /* This is the file containing the historic samples */
-    if ( options.logfile )
-    {
+    if ( options.logfile ) {
         q = fopen( options.logfile, "a" );
     }
 
     genericsPrintf( CLEAR_SCREEN );
 
-    if ( total )
-    {
-        for ( uint32_t n = 0; n < reportLines; n++ )
-        {
+    if ( total ) {
+        for ( uint32_t n = 0; n < reportLines; n++ ) {
             percentage = ( report[n].count * 10000 ) / total;
             samples += report[n].count;
 
-            if ( report[n].count )
-            {
+            if ( report[n].count ) {
                 char *d = NULL;
 
-                if ( ( percentage >= CUTOFF ) && ( ( !options.cutscreen ) || ( n < options.cutscreen ) ) )
-                {
+                if ( ( percentage >= CUTOFF ) && ( ( !options.cutscreen ) || ( n < options.cutscreen ) ) ) {
                     dispSamples += report[n].count;
                     totPercent += percentage;
 
                     genericsPrintf( C_DATA "%3d.%02d%% " C_SUPPORT " %7" PRIu64 " ", percentage / 100, percentage % 100, report[n].count );
 
 
-                    if ( ( options.reportFilenames ) && ( report[n].n->fileindex != NO_FILE ) )
-                    {
+                    if ( ( options.reportFilenames ) && ( report[n].n->fileindex != NO_FILE ) ) {
                         genericsPrintf( C_CONTEXT "%s" C_RESET "::", SymbolFilename( _r.s, report[n].n->fileindex ) );
                     }
 
-                    if ( ( options.lineDisaggregation ) && ( report[n].n->line ) )
-                    {
+                    if ( ( options.lineDisaggregation ) && ( report[n].n->line ) ) {
                         genericsPrintf( C_SUPPORT2 "%s" C_RESET "::" C_CONTEXT "%d" EOL, d ? d : SymbolFunction( _r.s, report[n].n->functionindex ), report[n].n->line );
-                    }
-                    else
-                    {
+                    } else {
                         genericsPrintf( C_SUPPORT2 "%s" C_RESET EOL, d ? d : SymbolFunction( _r.s, report[n].n->functionindex ) );
                     }
 
@@ -643,29 +601,21 @@ static void _outputTop( uint32_t total, uint32_t reportLines, struct reportLine 
                 }
 
                 /* Write to current and historical data files if appropriate */
-                if ( percentage >= CUTOFF )
-                {
-                    if ( !options.lineDisaggregation )
-                    {
-                        if ( ( p ) && ( n < options.maxRoutines ) )
-                        {
+                if ( percentage >= CUTOFF ) {
+                    if ( !options.lineDisaggregation ) {
+                        if ( ( p ) && ( n < options.maxRoutines ) ) {
                             fprintf( p, "%s,%3d.%02d" EOL, d ? d : SymbolFunction( _r.s, report[n].n->functionindex ), percentage / 100, percentage % 100 );
                         }
 
-                        if ( q )
-                        {
+                        if ( q ) {
                             fprintf( q, "%s,%3d.%02d" EOL, d ? d : SymbolFunction( _r.s, report[n].n->functionindex ), percentage / 100, percentage % 100 );
                         }
-                    }
-                    else
-                    {
-                        if ( ( p ) && ( n < options.maxRoutines ) )
-                        {
+                    } else {
+                        if ( ( p ) && ( n < options.maxRoutines ) ) {
                             fprintf( p, "%s::%d,%3d.%02d" EOL, d ? d : SymbolFunction( _r.s, report[n].n->functionindex ), report[n].n->line, percentage / 100, percentage % 100 );
                         }
 
-                        if ( q )
-                        {
+                        if ( q ) {
                             fprintf( q, "%s::%d,%3d.%02d" EOL, d ? d : SymbolFunction( _r.s, report[n].n->functionindex ), report[n].n->line, percentage / 100, percentage % 100 );
                         }
                     }
@@ -680,42 +630,33 @@ static void _outputTop( uint32_t total, uint32_t reportLines, struct reportLine 
 
     genericsPrintf( C_DATA "%3d.%02d%% " C_SUPPORT " %7" PRIu64 " " C_RESET "of " C_DATA " %" PRIu64 " " C_RESET " Samples" EOL, totPercent / 100, totPercent % 100, dispSamples, samples );
 
-    if ( p )
-    {
+    if ( p ) {
         fclose( p );
     }
 
-    if ( q )
-    {
+    if ( q ) {
         fprintf( q, "===================================" EOL );
         fclose( q );
     }
 
 
-    if ( options.outputExceptions )
-    {
+    if ( options.outputExceptions ) {
         /* Tidy up screen output */
-        while ( printed++ <= options.cutscreen )
-        {
+        while ( printed++ <= options.cutscreen ) {
             genericsPrintf( EOL );
         }
 
         genericsPrintf( EOL " Exception         |   Count  |  MaxD | TotalTicks  |   %%   |  AveTicks  |  minTicks  |  maxTicks  |  maxWall " EOL );
         genericsPrintf( /**/"-------------------+----------+-------+-------------+-------+------------+------------+------------+----------" EOL );
 
-        for ( uint32_t e = 0; e < MAX_EXCEPTIONS; e++ )
-        {
+        for ( uint32_t e = 0; e < MAX_EXCEPTIONS; e++ ) {
 
-            if ( _r.er[e].visits )
-            {
+            if ( _r.er[e].visits ) {
                 char exceptionName[30] = { 0 };
 
-                if ( e < 16 )
-                {
+                if ( e < 16 ) {
                     snprintf( exceptionName, sizeof( exceptionName ), "(%s)", ExceptionNames[e] );
-                }
-                else
-                {
+                } else {
                     snprintf( exceptionName, sizeof( exceptionName ), "(IRQ %d)", e - 16 );
                 }
 
@@ -741,8 +682,7 @@ static void _outputTop( uint32_t total, uint32_t reportLines, struct reportLine 
                         C_DATA "%" PRIu64 C_RESET " Ticks/ms)" EOL,
                         ( ( lastTime - _r.lastReportus ) + 500 ) / 1000, _r.timeStamp - _r.lastReportTicks,
                         ( ( _r.timeStamp - _r.lastReportTicks ) * 1000 ) / ( lastTime - _r.lastReportus ) );
-    else
-    {
+    else {
         genericsPrintf( C_RESET "Interval = " C_DATA "%" PRIu64 C_RESET "ms" EOL,
                         ( ( lastTime - _r.lastReportus ) + 500 ) / 1000 );
     }
@@ -763,21 +703,15 @@ void _handlePCSample( struct pcSampleMsg *m, struct ITMDecoder *i )
 
     struct visitedAddr *a;
 
-    if ( m->sleep )
-    {
+    if ( m->sleep ) {
         /* This is a sleep packet */
         _r.sleeps++;
-    }
-    else
-    {
+    } else {
         HASH_FIND_INT( _r.addresses, &m->pc, a );
 
-        if ( a )
-        {
+        if ( a ) {
             a->visits++;
-        }
-        else
-        {
+        } else {
             struct nameEntry n;
 
             /* Find a matching name record if there is one */
@@ -803,8 +737,7 @@ void _flushHash( void )
     struct visitedAddr *a;
     UT_hash_handle hh;
 
-    for ( a = _r.addresses; a != NULL; a = ( struct visitedAddr * )hh.next )
-    {
+    for ( a = _r.addresses; a != NULL; a = ( struct visitedAddr * )hh.next ) {
         hh = a->hh;
         free( a );
     }
@@ -820,8 +753,7 @@ void _itmPumpProcess( uint8_t c )
     typedef void ( *handlers )( void *decoded, struct ITMDecoder * i );
 
     /* Handlers for each complete message received */
-    static const handlers h[MSG_NUM_MSGS] =
-    {
+    static const handlers h[MSG_NUM_MSGS] = {
         /* MSG_UNKNOWN */         NULL,
         /* MSG_RESERVED */        NULL,
         /* MSG_ERROR */           NULL,
@@ -839,26 +771,22 @@ void _itmPumpProcess( uint8_t c )
 
     struct msg *p;
 
-    if ( !MSGSeqPump( &_r.d, c ) )
-    {
+    if ( !MSGSeqPump( &_r.d, c ) ) {
         return;
     }
 
     /* We are synced timewise, so empty anything that has been waiting */
-    while ( 1 )
-    {
+    while ( 1 ) {
         p = MSGSeqGetPacket( &_r.d );
 
-        if ( !p )
-        {
+        if ( !p ) {
             /* all read */
             break;
         }
 
         assert( p->genericMsg.msgtype < MSG_NUM_MSGS );
 
-        if ( h[p->genericMsg.msgtype] )
-        {
+        if ( h[p->genericMsg.msgtype] ) {
             ( h[p->genericMsg.msgtype] )( p, &_r.i );
         }
     }
@@ -875,10 +803,8 @@ void _protocolPump( uint8_t c )
 /* Top level protocol pump */
 
 {
-    if ( options.useTPIU )
-    {
-        switch ( TPIUPump( &_r.t, c ) )
-        {
+    if ( options.useTPIU ) {
+        switch ( TPIUPump( &_r.t, c ) ) {
             // ------------------------------------
             case TPIU_EV_NEWSYNC:
                 genericsReport( V_INFO, "TPIU In Sync (%d)" EOL, TPIUDecoderGetStats( &_r.t )->syncCount );
@@ -900,21 +826,17 @@ void _protocolPump( uint8_t c )
 
             // ------------------------------------
             case TPIU_EV_RXEDPACKET:
-                if ( !TPIUGetPacket( &_r.t, &_r.p ) )
-                {
+                if ( !TPIUGetPacket( &_r.t, &_r.p ) ) {
                     genericsReport( V_WARN, "TPIUGetPacket fell over" EOL );
                 }
 
-                for ( uint32_t g = 0; g < _r.p.len; g++ )
-                {
-                    if ( _r.p.packet[g].s == options.tpiuITMChannel )
-                    {
+                for ( uint32_t g = 0; g < _r.p.len; g++ ) {
+                    if ( _r.p.packet[g].s == options.tpiuITMChannel ) {
                         _itmPumpProcess( _r.p.packet[g].d );
                         continue;
                     }
 
-                    if ( _r.p.packet[g].s != 0 )
-                    {
+                    if ( _r.p.packet[g].s != 0 ) {
                         genericsReport( V_DEBUG, "Unknown TPIU channel %02x" EOL, _r.p.packet[g].s );
                     }
                 }
@@ -927,9 +849,7 @@ void _protocolPump( uint8_t c )
                 break;
                 // ------------------------------------
         }
-    }
-    else
-    {
+    } else {
         /* There's no TPIU in use, so this goes straight to the ITM layer */
         _itmPumpProcess( c );
     }
@@ -970,8 +890,7 @@ void _printVersion( void )
     genericsPrintf( "orbtop version " GIT_DESCRIBE EOL );
 }
 // ====================================================================================================
-static struct option _longOptions[] =
-{
+static struct option _longOptions[] = {
     {"cut-after", required_argument, NULL, 'c'},
     {"no-demangle", required_argument, NULL, 'D'},
     {"del-prefix", required_argument, NULL, 'd'},
@@ -1004,8 +923,7 @@ bool _processOptions( int argc, char *argv[] )
     char *a;
 
     while ( ( c = getopt_long ( argc, argv, "c:d:DEe:f:g:hVI:j:lMnO:o:r:Rs:t:v:", _longOptions, &optionIndex ) ) != -1 )
-        switch ( c )
-        {
+        switch ( c ) {
             // ------------------------------------
             case 'c':
                 options.cutscreen = atoi( optarg );
@@ -1086,8 +1004,7 @@ bool _processOptions( int argc, char *argv[] )
 
             // ------------------------------------
             case 'v':
-                if ( !isdigit( *optarg ) )
-                {
+                if ( !isdigit( *optarg ) ) {
                     genericsReport( V_ERROR, "-v requires a numeric argument." EOL );
                     return false;
                 }
@@ -1113,19 +1030,16 @@ bool _processOptions( int argc, char *argv[] )
                 // See if we have an optional port number too
                 a = optarg;
 
-                while ( ( *a ) && ( *a != ':' ) )
-                {
+                while ( ( *a ) && ( *a != ':' ) ) {
                     a++;
                 }
 
-                if ( *a == ':' )
-                {
+                if ( *a == ':' ) {
                     *a = 0;
                     options.port = atoi( ++a );
                 }
 
-                if ( !options.port )
-                {
+                if ( !options.port ) {
                     options.port = NWCLIENT_SERVER_PORT;
                 }
 
@@ -1143,12 +1057,9 @@ bool _processOptions( int argc, char *argv[] )
 
             // ------------------------------------
             case '?':
-                if ( optopt == 'b' )
-                {
+                if ( optopt == 'b' ) {
                     genericsReport( V_ERROR, "Option '%c' requires an argument." EOL, optopt );
-                }
-                else if ( !isprint ( optopt ) )
-                {
+                } else if ( !isprint ( optopt ) ) {
                     genericsReport( V_ERROR, "Unknown option character `\\x%x'." EOL, optopt );
                 }
 
@@ -1161,26 +1072,21 @@ bool _processOptions( int argc, char *argv[] )
                 // ------------------------------------
         }
 
-    if ( ( options.useTPIU ) && ( !options.tpiuITMChannel ) )
-    {
+    if ( ( options.useTPIU ) && ( !options.tpiuITMChannel ) ) {
         genericsReport( V_ERROR, "TPIU set for use but no channel set for ITM output" EOL );
         return -EINVAL;
     }
 
-    if ( !options.elffile )
-    {
+    if ( !options.elffile ) {
         genericsReport( V_ERROR, "Elf File not specified" EOL );
         exit( -EBADF );
     }
 
     genericsReport( V_INFO, "orbtop version " GIT_DESCRIBE EOL );
 
-    if ( options.file )
-    {
+    if ( options.file ) {
         genericsReport( V_INFO, "Input File       : %s", options.file );
-    }
-    else
-    {
+    } else {
         genericsReport( V_INFO, "Server           : %s:%d" EOL, options.server, options.port );
     }
 
@@ -1192,12 +1098,9 @@ bool _processOptions( int argc, char *argv[] )
     genericsReport( V_INFO, "Log File         : %s" EOL, options.logfile ? options.logfile : "None" );
     genericsReport( V_INFO, "Objdump options  : %s" EOL, options.odoptions ? options.odoptions : "None" );
 
-    if ( options.useTPIU )
-    {
+    if ( options.useTPIU ) {
         genericsReport( V_INFO, "Using TPIU       : true (ITM on channel %d)" EOL, options.tpiuITMChannel );
-    }
-    else
-    {
+    } else {
         genericsReport( V_INFO, "Using TPIU       : false" EOL );
     }
 
@@ -1207,12 +1110,9 @@ bool _processOptions( int argc, char *argv[] )
 
 static struct Stream *_openStream()
 {
-    if ( options.file != NULL )
-    {
+    if ( options.file != NULL ) {
         return streamCreateFile( options.file );
-    }
-    else
-    {
+    } else {
         return streamCreateSocket( options.server, options.port );
     }
 }
@@ -1242,8 +1142,7 @@ int main( int argc, char *argv[] )
     size_t receivedSize = 0;
     enum symbolErr r;
 
-    if ( OK != _processOptions( argc, argv ) )
-    {
+    if ( OK != _processOptions( argc, argv ) ) {
         exit( -EINVAL );
     }
 
@@ -1252,8 +1151,7 @@ int main( int argc, char *argv[] )
     /* Check we've got _some_ symbols to start from */
     r = SymbolSetCreate( &_r.s, options.elffile, options.deleteMaterial, options.demangle, true, true, options.odoptions );
 
-    switch ( r )
-    {
+    switch ( r ) {
         case SYMBOL_NOELF:
             genericsExit( -1, "Elf file or symbols in it not found" EOL );
             break;
@@ -1282,32 +1180,24 @@ int main( int argc, char *argv[] )
     _r.currentException = NO_EXCEPTION;
 
     /* Open file for JSON output if we have one */
-    if ( options.json )
-    {
-        if ( options.json[0] == '-' )
-        {
+    if ( options.json ) {
+        if ( options.json[0] == '-' ) {
             _r.jsonfile = stdout;
-        }
-        else
-        {
+        } else {
             _r.jsonfile = fopen( options.json, "w" );
 
-            if ( !_r.jsonfile )
-            {
+            if ( !_r.jsonfile ) {
                 perror( "Couldn't open json output file" );
                 return -ENOENT;
             }
         }
     }
 
-    while ( 1 )
-    {
+    while ( 1 ) {
         struct Stream *stream = _openStream();
 
-        if ( stream == NULL )
-        {
-            if ( !alreadyReported )
-            {
+        if ( stream == NULL ) {
+            if ( !alreadyReported ) {
                 genericsReport( V_ERROR, "No connection" EOL );
                 alreadyReported = true;
             }
@@ -1318,8 +1208,7 @@ int main( int argc, char *argv[] )
 
         alreadyReported = false;
 
-        if ( ( !options.json ) || ( options.json[0] != '-' ) )
-        {
+        if ( ( !options.json ) || ( options.json[0] != '-' ) ) {
             genericsPrintf( CLEAR_SCREEN "Connected..." EOL );
         }
 
@@ -1328,44 +1217,36 @@ int main( int argc, char *argv[] )
 
         _r.lastReportus = _timestamp();
 
-        while ( 1 )
-        {
+        while ( 1 ) {
             thisTime = _timestamp();
             remainTime = ( ( _r.lastReportus + options.displayInterval - thisTime ) ) + 500;
 
-            if ( remainTime > 0 )
-            {
+            if ( remainTime > 0 ) {
                 tv.tv_sec = remainTime / 1000000;
                 tv.tv_usec  = remainTime % 1000000;
                 receiveResult = stream->receive( stream, cbw, TRANSFER_SIZE, &tv, &receivedSize );
-            }
-            else
-            {
+            } else {
                 receiveResult = RECEIVE_RESULT_OK;
                 receivedSize = 0;
             }
 
-            if ( receiveResult == RECEIVE_RESULT_ERROR )
-            {
+            if ( receiveResult == RECEIVE_RESULT_ERROR ) {
                 /* Something went wrong in the receive */
                 break;
             }
 
-            if ( receiveResult == RECEIVE_RESULT_EOF )
-            {
+            if ( receiveResult == RECEIVE_RESULT_EOF ) {
                 /* We are at EOF, hopefully next loop will get more data. */
             }
 
             /* Check to make sure our symbols are still appropriate */
-            if ( !SymbolSetValid( &_r.s, options.elffile ) )
-            {
+            if ( !SymbolSetValid( &_r.s, options.elffile ) ) {
                 /* Make sure old references are invalidated */
                 _flushHash();
 
                 r = SymbolSetCreate( &_r.s, options.elffile, options.deleteMaterial, options.demangle, true, true, options.odoptions );
 
-                switch ( r )
-                {
+                switch ( r ) {
                     case SYMBOL_NOELF:
                         genericsReport( V_WARN, "Elf file or symbols in it not found" EOL );
                         break;
@@ -1382,8 +1263,7 @@ int main( int argc, char *argv[] )
                         break;
                 }
 
-                if ( SYMBOL_NOELF == r )
-                {
+                if ( SYMBOL_NOELF == r ) {
                     usleep( 1000000L );
                     continue;
                 }
@@ -1394,25 +1274,21 @@ int main( int argc, char *argv[] )
             /* Pump all of the data through the protocol handler */
             uint8_t *c = cbw;
 
-            while ( receivedSize > 0 )
-            {
+            while ( receivedSize > 0 ) {
                 _protocolPump( *c++ );
                 receivedSize--;
             }
 
             /* See if its time to post-process it */
-            if ( receiveResult == RECEIVE_RESULT_TIMEOUT || remainTime <= 0 )
-            {
+            if ( receiveResult == RECEIVE_RESULT_TIMEOUT || remainTime <= 0 ) {
                 /* Create the report that we will output */
                 total = _consolodateReport( &report, &reportLines );
 
-                if ( options.json )
-                {
+                if ( options.json ) {
                     _outputJson( _r.jsonfile, total, reportLines, report, thisTime );
                 }
 
-                if ( ( !options.json ) || ( options.json[0] != '-' ) )
-                {
+                if ( ( !options.json ) || ( options.json[0] != '-' ) ) {
                     _outputTop( total, reportLines, report, thisTime );
                 }
 
@@ -1420,15 +1296,13 @@ int main( int argc, char *argv[] )
                 free( report );
 
                 /* ...and zero the exception records */
-                for ( uint32_t e = 0; e < MAX_EXCEPTIONS; e++ )
-                {
+                for ( uint32_t e = 0; e < MAX_EXCEPTIONS; e++ ) {
                     _r.er[e].visits = _r.er[e].maxDepth = _r.er[e].totalTime = _r.er[e].minTime = _r.er[e].maxTime = _r.er[e].maxWallTime = 0;
                 }
 
                 /* It's safe to update these here because the ticks won't be updated until more
                  * records arrive. */
-                if ( _r.ITMoverflows != ITMDecoderGetStats( &_r.i )->overflow )
-                {
+                if ( _r.ITMoverflows != ITMDecoderGetStats( &_r.i )->overflow ) {
                     /* We had an overflow, so can't safely track max depth ... reset it */
                     _r.erDepth = 0;
                 }
@@ -1441,8 +1315,7 @@ int main( int argc, char *argv[] )
                 _r.lastReportTicks = _r.timeStamp;
 
                 /* Check to make sure there's not an unexpected TPIU in here */
-                if ( ITMDecoderGetStats( &_r.i )->tpiuSyncCount )
-                {
+                if ( ITMDecoderGetStats( &_r.i )->tpiuSyncCount ) {
                     genericsReport( V_WARN, "Got a TPIU sync while decoding ITM...did you miss a -t option?" EOL );
                     ITMDecoderGetStats( &_r.i )->tpiuSyncCount = 0;
                 }
@@ -1453,8 +1326,7 @@ int main( int argc, char *argv[] )
         free( stream );
     }
 
-    if ( ( !ITMDecoderGetStats( &_r.i )->tpiuSyncCount ) )
-    {
+    if ( ( !ITMDecoderGetStats( &_r.i )->tpiuSyncCount ) ) {
         genericsReport( V_ERROR, "Read failed" EOL );
     }
 

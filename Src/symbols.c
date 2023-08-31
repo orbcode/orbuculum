@@ -54,8 +54,7 @@ static uint32_t _getFileEntryIdx( struct SymbolSet *s, char *filename )
 {
     uint32_t i = 0;
 
-    while ( ( i < s->fileCount ) && ( strcmp( s->files[i].name, filename ) ) )
-    {
+    while ( ( i < s->fileCount ) && ( strcmp( s->files[i].name, filename ) ) ) {
         i++;
     }
 
@@ -71,23 +70,20 @@ static uint32_t _getOrAddFileEntryIdx( struct SymbolSet *s, char *filename )
     char *d  = s->deleteMaterial;
 
     /* Scan forwards past any delete material on the front */
-    while ( ( d ) && ( *d ) && ( *fl == *d ) )
-    {
+    while ( ( d ) && ( *d ) && ( *fl == *d ) ) {
         d++;
         fl++;
     }
 
     /* If we didn't manage to delete everything then don't delete anything */
-    if ( fl - filename != ( long int )strlen( s->deleteMaterial ) )
-    {
+    if ( fl - filename != ( long int )strlen( s->deleteMaterial ) ) {
         fl = filename;
     }
 
 
     uint32_t f = _getFileEntryIdx( s, fl );
 
-    if ( SYM_NOT_FOUND == f )
-    {
+    if ( SYM_NOT_FOUND == f ) {
         /* Doesn't exist, so create it */
         s->files = ( struct fileEntry * )realloc( s->files, sizeof( struct fileEntry ) * ( s->fileCount + 1 ) );
         f = s->fileCount;
@@ -106,8 +102,7 @@ static uint32_t _getFunctionEntryIdx( struct SymbolSet *s, char *function )
 {
     uint32_t i = 0;
 
-    while ( ( i < s->functionCount ) && ( strcmp( s->functions[i].name, function ) ) )
-    {
+    while ( ( i < s->functionCount ) && ( strcmp( s->functions[i].name, function ) ) ) {
         i++;
     }
 
@@ -126,8 +121,7 @@ static uint32_t _getOrAddFunctionEntryIdx( struct SymbolSet *s, char *function )
 {
     uint32_t f = _getFunctionEntryIdx( s, function );
 
-    if ( SYM_NOT_FOUND == f )
-    {
+    if ( SYM_NOT_FOUND == f ) {
         /* Doesn't exist, so create it */
         s->functions = ( struct functionEntry * )realloc( s->functions, sizeof( struct functionEntry ) * ( s->functionCount + 1 ) );
         f = s->functionCount;
@@ -164,14 +158,12 @@ static int _compareLines( const void *a, const void *b )
     struct sourceLineEntry *sb = ( struct sourceLineEntry * )b;
 
     /* Is it before the start of this line? */
-    if ( sa->startAddr < sb->startAddr )
-    {
+    if ( sa->startAddr < sb->startAddr ) {
         return -1;
     }
 
     /* Is it after the end of this line? */
-    if ( sa->startAddr > sb->endAddr )
-    {
+    if ( sa->startAddr > sb->endAddr ) {
         return 1;
     }
 
@@ -201,8 +193,7 @@ static bool _find_symbol( struct SymbolSet *s, uint32_t workingAddr,
     struct sourceLineEntry needle = { .startAddr = workingAddr, .endAddr = workingAddr };
     struct sourceLineEntry *found = ( struct sourceLineEntry * )bsearch( &needle, s->sources, s->sourceCount, sizeof( struct sourceLineEntry ), _compareLines );
 
-    if ( found )
-    {
+    if ( found ) {
         *pline         = found->lineNo;
         *linesInBlock  = found->linesInBlock;
         *psource       = found->lineText;
@@ -211,17 +202,14 @@ static bool _find_symbol( struct SymbolSet *s, uint32_t workingAddr,
         *functionindex = found->functionIdx;
 
         /* If there is assembly then match the line too */
-        for ( *assyLine = 0; *assyLine < found->assyLines; ( *assyLine )++ )
-        {
-            if ( ( *assy )[*assyLine].addr == workingAddr )
-            {
+        for ( *assyLine = 0; *assyLine < found->assyLines; ( *assyLine )++ ) {
+            if ( ( *assy )[*assyLine].addr == workingAddr ) {
                 break;
             }
         }
 
         /* If the assembly line wasn't found then indicate that */
-        if ( *assyLine == found->assyLines )
-        {
+        if ( *assyLine == found->assyLines ) {
             *assyLine = ASSY_NOT_FOUND;
         }
 
@@ -237,70 +225,58 @@ static enum LineType _getLineType( char *sourceLine, char *p1, char *p2, char *p
 
 {
     /* If it's empty, something is badly wrong */
-    if ( !*sourceLine )
-    {
+    if ( !*sourceLine ) {
         return LT_NULL;
     }
 
     /* If it starts with a source tag, it's unambigious */
-    if ( !strncmp( sourceLine, SOURCE_INDICATOR, strlen( SOURCE_INDICATOR ) ) )
-    {
+    if ( !strncmp( sourceLine, SOURCE_INDICATOR, strlen( SOURCE_INDICATOR ) ) ) {
         return LT_SOURCE;
     }
 
     /* If it has an address followed by pairs of hex digits then it's a data block and we're not interested */
-    if ( 1 == sscanf( sourceLine, " %*[0-9a-fA-F]: %[0-9a-fA-F]", p1 ) )
-    {
+    if ( 1 == sscanf( sourceLine, " %*[0-9a-fA-F]: %[0-9a-fA-F]", p1 ) ) {
         /* Match is two digits followed by a whitespace */
-        if ( ( isxdigit( *p1 ) ) && ( isxdigit( *( p1 + 1 ) ) ) && ( !( *( p1 + 2 ) ) ) )
-        {
+        if ( ( isxdigit( *p1 ) ) && ( isxdigit( *( p1 + 1 ) ) ) && ( !( *( p1 + 2 ) ) ) ) {
             return LT_NOISE;
         }
     }
 
     /* If it has something with <xxx> in it, it's a proc label (function) */
-    if ( 2 == sscanf( sourceLine, "%[0-9a-fA-F] <%[^>]>", p1, p2 ) )
-    {
+    if ( 2 == sscanf( sourceLine, "%[0-9a-fA-F] <%[^>]>", p1, p2 ) ) {
         return LT_PROC_LABEL;
     }
 
     /* If it has (): on the end it's a label */
-    if ( 2 == sscanf( sourceLine, "%[^(]()%c", p1, p2 ) )
-    {
-        if ( *p2 == ':' )
-        {
+    if ( 2 == sscanf( sourceLine, "%[^(]()%c", p1, p2 ) ) {
+        if ( *p2 == ':' ) {
             return LT_LABEL;
         }
     }
 
     /* If it starts with a space and has specific fields, it's a 16 or 32 bit assembly line */
-    if ( 4 == sscanf( sourceLine, " %[0-9a-fA-F]: %[0-9a-fA-F]%*1[ ]%[0-9a-fA-F] %[^\n]", p1, p2, p3, p4 ) )
-    {
+    if ( 4 == sscanf( sourceLine, " %[0-9a-fA-F]: %[0-9a-fA-F]%*1[ ]%[0-9a-fA-F] %[^\n]", p1, p2, p3, p4 ) ) {
         return LT_ASSEMBLY;
     }
 
     *p2 = 0;
 
-    if ( 3 == sscanf( sourceLine, " %[0-9a-fA-F]: %[0-9a-fA-F] %[^\n]", p1, p3, p4 ) )
-    {
+    if ( 3 == sscanf( sourceLine, " %[0-9a-fA-F]: %[0-9a-fA-F] %[^\n]", p1, p3, p4 ) ) {
         return LT_ASSEMBLY;
     }
 
     /* If it contains text:num then it's a file and line */
-    if ( 2 == sscanf( sourceLine, "%[^:]:%[0-9]", p1, p2 ) )
-    {
+    if ( 2 == sscanf( sourceLine, "%[^:]:%[0-9]", p1, p2 ) ) {
         return LT_FILEANDLINE;
     }
 
     /* Alternative form for Windows; If it contains Drive:text:num then it's a file and line */
-    if ( 3 == sscanf( sourceLine, "%2c%[^:]:%[0-9]", p1, &p1[2], p2 ) )
-    {
+    if ( 3 == sscanf( sourceLine, "%2c%[^:]:%[0-9]", p1, &p1[2], p2 ) ) {
         return LT_FILEANDLINE;
     }
 
     /* If it contains nothing other than newline then its a newline */
-    if ( ( *sourceLine == '\n' ) || ( *sourceLine == '\r' ) )
-    {
+    if ( ( *sourceLine == '\n' ) || ( *sourceLine == '\r' ) ) {
         return LT_NEWLINE;
     }
 
@@ -316,8 +292,7 @@ static bool _getDest( char *assy, uint32_t *dest )
 {
     int r = sscanf( assy, "%*[^\t]\t%x", dest );
 
-    if ( r == 1 )
-    {
+    if ( r == 1 ) {
         return r;
     }
 
@@ -386,8 +361,7 @@ static FILE *_openProcess( char *commandLine, PROCESS_INFORMATION *processInfo, 
         CloseHandle( processOutPipe );
         CloseHandle( processErrorPipe );
 
-        if ( !success )
-        {
+        if ( !success ) {
             CloseHandle( readingPipe );
             CloseHandle( errorReadingPipe );
             return NULL;
@@ -396,8 +370,7 @@ static FILE *_openProcess( char *commandLine, PROCESS_INFORMATION *processInfo, 
 
     int fd = _open_osfhandle( ( intptr_t )readingPipe, _O_RDONLY );
 
-    if ( fd == -1 )
-    {
+    if ( fd == -1 ) {
         CloseHandle( readingPipe );
         CloseHandle( errorReadingPipe );
         return NULL;
@@ -405,16 +378,14 @@ static FILE *_openProcess( char *commandLine, PROCESS_INFORMATION *processInfo, 
 
     FILE *f = _fdopen( fd, "r" );
 
-    if ( f == NULL )
-    {
+    if ( f == NULL ) {
         _close( fd );
         return NULL;
     }
 
     int errorFd = _open_osfhandle( ( intptr_t )errorReadingPipe, _O_RDONLY );
 
-    if ( errorFd == -1 )
-    {
+    if ( errorFd == -1 ) {
         fclose( f );
         CloseHandle( errorReadingPipe );
         return NULL;
@@ -422,8 +393,7 @@ static FILE *_openProcess( char *commandLine, PROCESS_INFORMATION *processInfo, 
 
     *errorOutput = _fdopen( errorFd, "r" );
 
-    if ( *errorOutput == NULL )
-    {
+    if ( *errorOutput == NULL ) {
         _close( errorFd );
         fclose( f );
         return NULL;
@@ -460,17 +430,13 @@ static enum symbolErr _getTargetProgramInfo( struct SymbolSet *s )
     uint32_t nullFileEntry;                     /* Tag for when we don't have a filename */
     struct sourceLineEntry *sourceEntry = NULL; /* pointer to current source entry */
 
-    if ( stat( s->elfFile, &s->st ) != 0 )
-    {
+    if ( stat( s->elfFile, &s->st ) != 0 ) {
         return SYMBOL_NOELF;
     }
 
-    if ( getenv( OBJENVNAME ) )
-    {
+    if ( getenv( OBJENVNAME ) ) {
         snprintf( commandLine, MAX_LINE_LEN, "%s -Sl%s --source-comment=" SOURCE_INDICATOR " %s %s", getenv( OBJENVNAME ),  s->demanglecpp ? " -C" : "", s->elfFile, s->odoptions );
-    }
-    else
-    {
+    } else {
         snprintf( commandLine, MAX_LINE_LEN, OBJDUMP " -Sl%s --source-comment=" SOURCE_INDICATOR " %s %s",  s->demanglecpp ? " -C" : "", s->elfFile, s->odoptions );
     }
 
@@ -483,8 +449,7 @@ static enum symbolErr _getTargetProgramInfo( struct SymbolSet *s )
     f = popen( commandLine, "r" );
 #endif
 
-    if ( !f )
-    {
+    if ( !f ) {
         return SYMBOL_NOOBJDUMP;
     }
 
@@ -493,14 +458,12 @@ static enum symbolErr _getTargetProgramInfo( struct SymbolSet *s )
     functionEntryIdx = _getOrAddFunctionEntryIdx( s, NO_FUNCTION_TXT );
     nullFileEntry    = fileEntryIdx = _getOrAddFileEntryIdx( s, NO_FILE_TXT );
 
-    while ( !feof( f ) )
-    {
+    while ( !feof( f ) ) {
         fgets( line, MAX_LINE_LEN, f );
 
         lt = _getLineType( line, p1, p2, p3, p4 );
 
-        if ( lt == LT_ERROR )
-        {
+        if ( lt == LT_ERROR ) {
             pclose( f );
             return SYMBOL_UNSPECIFIED;
         }
@@ -511,8 +474,7 @@ static enum symbolErr _getTargetProgramInfo( struct SymbolSet *s )
 
 #ifdef GPTI_DEBUG
 
-        switch ( ps )
-        {
+        switch ( ps ) {
             case PS_IDLE:
                 GTPIP( "IDLE(" );
                 break;
@@ -526,8 +488,7 @@ static enum symbolErr _getTargetProgramInfo( struct SymbolSet *s )
                 break;
         }
 
-        switch ( lt )
-        {
+        switch ( lt ) {
             case LT_NOISE:
                 GTPIP( "NOISE" );
                 break;
@@ -564,11 +525,9 @@ static enum symbolErr _getTargetProgramInfo( struct SymbolSet *s )
         GTPIP( ")" EOL );
 #endif
 
-        switch ( ps )
-        {
+        switch ( ps ) {
             case PS_IDLE: /* Waiting for name of function ================================== */
-                switch ( lt )
-                {
+                switch ( lt ) {
                     case LT_NOISE: /* ------------------------------------------------------ */
                         break;
 
@@ -622,8 +581,7 @@ static enum symbolErr _getTargetProgramInfo( struct SymbolSet *s )
                 break;
 
             case PS_GET_SOURCE: /* Collecting source ========================================== */
-                switch ( lt )
-                {
+                switch ( lt ) {
                     case LT_NOISE: /* ------------------------------------------------------ */
                         break;
 
@@ -634,8 +592,7 @@ static enum symbolErr _getTargetProgramInfo( struct SymbolSet *s )
                         sourceEntry->lineNo = lineNo;
 
                         // Add this to source line repository
-                        if ( s->recordSource )
-                        {
+                        if ( s->recordSource ) {
                             sourceEntry->lineText = ( char * )realloc( sourceEntry->lineText, strlen( line ) - strlen( SOURCE_INDICATOR ) + existingTextLen + 1 );
                             strcpy( &sourceEntry->lineText[existingTextLen], &line[strlen( SOURCE_INDICATOR )] );
                             sourceEntry->linesInBlock++;
@@ -662,8 +619,7 @@ static enum symbolErr _getTargetProgramInfo( struct SymbolSet *s )
                 break;
 
             case PS_GET_ASSY: /* Waiting for assembly ========================================= */
-                switch ( lt )
-                {
+                switch ( lt ) {
                     case LT_NOISE: /* ------------------------------------------------------ */
                         break;
 
@@ -683,15 +639,13 @@ static enum symbolErr _getTargetProgramInfo( struct SymbolSet *s )
                         s->functions[functionEntryIdx].endAddr = sourceEntry->endAddr;
 
                         /* If we're recording entries and this is not seomthing we explicitly want to ignore */
-                        if ( ( s->recordAssy )  && ( !strstr( p4, ".word" ) ) && ( !strstr( p4, ".short" ) ) )
-                        {
+                        if ( ( s->recordAssy )  && ( !strstr( p4, ".word" ) ) && ( !strstr( p4, ".short" ) ) ) {
                             sourceEntry->assy = ( struct assyLineEntry * )realloc( sourceEntry->assy, sizeof( struct assyLineEntry ) * ( sourceEntry->assyLines + 1 ) );
                             sourceEntry->assy[sourceEntry->assyLines].addr = sourceEntry->endAddr;
                             sourceEntry->assy[sourceEntry->assyLines].is4Byte = ( ( *p2 ) != 0 );
                             sourceEntry->assy[sourceEntry->assyLines].codes = strtoul( p3, NULL, 16 );
 
-                            if ( *p2 )
-                            {
+                            if ( *p2 ) {
                                 sourceEntry->assy[sourceEntry->assyLines].codes |= ( strtoul( p2, NULL, 16 ) << 16 );
                             }
 
@@ -725,12 +679,9 @@ static enum symbolErr _getTargetProgramInfo( struct SymbolSet *s )
                                         MASKED_COMPARE( 0xffd08000, 0xe9908000 ) || /* LDMDB */
                                         MASKED_COMPARE( 0xfe10f000, 0xf810f000 ) || /* LDR to PC */
                                         MASKED_COMPARE( 0xf8008000, 0xf0008000 )  /* Branches and misc control */
-                            )
-                            {
+                            ) {
                                 sourceEntry->assy[sourceEntry->assyLines].etm4branch = true;
-                            }
-                            else
-                            {
+                            } else {
                                 sourceEntry->assy[sourceEntry->assyLines].etm4branch = false;
                             }
 
@@ -743,8 +694,7 @@ static enum symbolErr _getTargetProgramInfo( struct SymbolSet *s )
                             if (
                                         MASKED_COMPARE( 0xf800D000, 0xf000D000 ) ||  /* BL Encoding T1 */
                                         MASKED_COMPARE( 0xffffff80, 0x00004780 )     /* BLX rx */
-                            )
-                            {
+                            ) {
                                 sourceEntry->assy[sourceEntry->assyLines].isSubCall = true;
                                 _getDest( sourceEntry->assy[sourceEntry->assyLines].assy, &sourceEntry->assy[sourceEntry->assyLines].jumpdest );
                             }
@@ -760,8 +710,7 @@ static enum symbolErr _getTargetProgramInfo( struct SymbolSet *s )
                                         MASKED_COMPARE( 0xffff8000, 0xe8bd8000 ) ||
                                         MASKED_COMPARE( 0xffffffff, 0x000047f0 ) ||  /* BLX LR */
                                         MASKED_COMPARE( 0xffffffff, 0x00004770 )     /* BX LR */
-                            )
-                            {
+                            ) {
                                 sourceEntry->assy[sourceEntry->assyLines].isReturn = true;
                             }
 
@@ -775,12 +724,10 @@ static enum symbolErr _getTargetProgramInfo( struct SymbolSet *s )
                                         MASKED_COMPARE( 0xf800d000, 0xf0009000 ) || /* Bc Label (T4) */
                                         ( MASKED_COMPARE( 0xf800d000, 0xf0008000 ) &&
                                           ( !( MASKED_COMPARE( 0x03800000, 0x03800000 ) ) ) ) /* Bc Label (T3) (Excludes AL condition ) */
-                            )
-                            {
+                            ) {
                                 sourceEntry->assy[sourceEntry->assyLines].isJump = true;
 
-                                if ( !_getDest( sourceEntry->assy[sourceEntry->assyLines].assy, &sourceEntry->assy[sourceEntry->assyLines].jumpdest ) )
-                                {
+                                if ( !_getDest( sourceEntry->assy[sourceEntry->assyLines].assy, &sourceEntry->assy[sourceEntry->assyLines].jumpdest ) ) {
                                     GTPIP( "Failed to get jump destination for text %s " EOL, sourceEntry->assy[sourceEntry->assyLines].assy );
                                 }
                             }
@@ -790,8 +737,7 @@ static enum symbolErr _getTargetProgramInfo( struct SymbolSet *s )
 
                         *label = 0;
 
-                        if ( !startAddrSet )
-                        {
+                        if ( !startAddrSet ) {
                             startAddrSet = true;
                             sourceEntry->startAddr = sourceEntry->endAddr;
                         }
@@ -819,18 +765,15 @@ static enum symbolErr _getTargetProgramInfo( struct SymbolSet *s )
 
     DWORD exitCode = 1;
 
-    if ( !GetExitCodeProcess( processInfo.hProcess, &exitCode ) )
-    {
+    if ( !GetExitCodeProcess( processInfo.hProcess, &exitCode ) ) {
         exitCode = 1;
     }
 
     CloseHandle( processInfo.hThread );
     CloseHandle( processInfo.hProcess );
 
-    if ( exitCode != 0 )
-    {
-        while ( !feof( errorOut ) )
-        {
+    if ( exitCode != 0 ) {
+        while ( !feof( errorOut ) ) {
             fgets( line, MAX_LINE_LEN, errorOut );
             fputs( line, stderr );
         }
@@ -841,8 +784,7 @@ static enum symbolErr _getTargetProgramInfo( struct SymbolSet *s )
     fclose( errorOut );
 #else
 
-    if ( 0 != pclose( f ) )
-    {
+    if ( 0 != pclose( f ) ) {
         /* Something went wrong in the subprocess */
         return SYMBOL_NOOBJDUMP;
     }
@@ -856,11 +798,9 @@ static enum symbolErr _getTargetProgramInfo( struct SymbolSet *s )
 const char *SymbolFilename( struct SymbolSet *s, uint32_t index )
 
 {
-    switch ( index )
-    {
+    switch ( index ) {
         default:
-            if ( index < s->fileCount )
-            {
+            if ( index < s->fileCount ) {
                 return s->files[index].name;
             }
 
@@ -871,8 +811,7 @@ const char *SymbolFilename( struct SymbolSet *s, uint32_t index )
 const char *SymbolFunction( struct SymbolSet *s, uint32_t index )
 
 {
-    switch ( index )
-    {
+    switch ( index ) {
         case FN_SLEEPING:
             return FN_SLEEPING_STR;
 
@@ -880,8 +819,7 @@ const char *SymbolFunction( struct SymbolSet *s, uint32_t index )
             return FN_INTERRUPT_STR;
 
         default:
-            if ( index < s->functionCount )
-            {
+            if ( index < s->functionCount ) {
                 return s->functions[index].name;
             }
 
@@ -905,16 +843,14 @@ bool SymbolLookup( struct SymbolSet *s, uint32_t addr, struct nameEntry *n )
     memset( n, 0, sizeof( struct nameEntry ) );
     assert( s );
 
-    if ( ( addr & SPECIALS_MASK ) == SPECIALS_MASK )
-    {
+    if ( ( addr & SPECIALS_MASK ) == SPECIALS_MASK ) {
         /* Address is some sort of interrupt */
         n->line = 0;
         n->fileindex = n->functionindex = n->addr = INTERRUPT;
         return true;
     }
 
-    if ( _find_symbol( s, addr, &fileindex, &functionindex, &line, &linesInBlock, &source, &assy, &assyLine ) )
-    {
+    if ( _find_symbol( s, addr, &fileindex, &functionindex, &line, &linesInBlock, &source, &assy, &assyLine ) ) {
         n->fileindex = fileindex;
         n->functionindex = functionindex;
         n->source   = source ? source : "";
@@ -939,17 +875,13 @@ void SymbolSetDelete( struct SymbolSet **s )
 /* Delete existing symbol set, by means of deleting all memory-allocated components of it first */
 
 {
-    if ( *s )
-    {
+    if ( *s ) {
         free( ( *s )->elfFile );
 
         /* Free off any files dynamic memory we allocated */
-        if ( ( *s )->files )
-        {
-            for ( uint32_t i = 0; i < ( *s )->fileCount; i++ )
-            {
-                if ( ( *s )->files[i].name )
-                {
+        if ( ( *s )->files ) {
+            for ( uint32_t i = 0; i < ( *s )->fileCount; i++ ) {
+                if ( ( *s )->files[i].name ) {
                     free( ( *s )->files[i].name );
                 }
             }
@@ -958,12 +890,9 @@ void SymbolSetDelete( struct SymbolSet **s )
         }
 
         /* Free off any functions dynamic memory we allocated */
-        if ( ( *s )->functions )
-        {
-            for ( uint32_t i = 0; i < ( *s )->functionCount; i++ )
-            {
-                if ( ( *s )->functions[i].name )
-                {
+        if ( ( *s )->functions ) {
+            for ( uint32_t i = 0; i < ( *s )->functionCount; i++ ) {
+                if ( ( *s )->functions[i].name ) {
                     free( ( *s )->functions[i].name );
                 }
             }
@@ -972,27 +901,20 @@ void SymbolSetDelete( struct SymbolSet **s )
         }
 
         /* Free off any sources dynamic memory we allocated */
-        if ( ( *s )->sources )
-        {
-            for ( uint32_t i = 0; i < ( *s )->sourceCount; i++ )
-            {
-                if ( ( *s )->sources[i].lineText )
-                {
+        if ( ( *s )->sources ) {
+            for ( uint32_t i = 0; i < ( *s )->sourceCount; i++ ) {
+                if ( ( *s )->sources[i].lineText ) {
                     free( ( *s )->sources[i].lineText );
                 }
 
                 /* For any source line, free off it's assembly if there is some */
-                if ( ( *s )->sources[i].assy )
-                {
-                    if ( ( *s )->sources[i].assy->label )
-                    {
+                if ( ( *s )->sources[i].assy ) {
+                    if ( ( *s )->sources[i].assy->label ) {
                         free( ( *s )->sources[i].assy->label );
                     }
 
-                    for ( uint32_t j = 0; j < ( *s )->sources[i].assyLines; j++ )
-                    {
-                        if ( ( *s )->sources[i].assy[j].lineText )
-                        {
+                    for ( uint32_t j = 0; j < ( *s )->sources[i].assyLines; j++ ) {
+                        if ( ( *s )->sources[i].assy[j].lineText ) {
                             free( ( *s )->sources[i].assy[j].lineText );
                         }
                     }
@@ -1004,13 +926,11 @@ void SymbolSetDelete( struct SymbolSet **s )
             free( ( *s )->sources );
         }
 
-        if ( ( *s )->deleteMaterial )
-        {
+        if ( ( *s )->deleteMaterial ) {
             free( ( *s )->deleteMaterial );
         }
 
-        if ( ( *s )->odoptions )
-        {
+        if ( ( *s )->odoptions ) {
             free( ( *s )->odoptions );
         }
 
@@ -1026,8 +946,7 @@ bool SymbolSetValid( struct SymbolSet **s, char *filename )
 {
     struct stat n;
 
-    if ( 0 != stat( filename, &n ) )
-    {
+    if ( 0 != stat( filename, &n ) ) {
         /* We can't even stat the file, assume it's invalid */
         SymbolSetDelete( s );
         return false;
@@ -1035,25 +954,22 @@ bool SymbolSetValid( struct SymbolSet **s, char *filename )
 
     /* We check filesize, modification time and status change time for any differences */
     if ( ( !( *s ) ) ||
-            ( memcmp( &n.st_size, &( ( *s )->st.st_size ), sizeof( off_t ) ) ) ||
+         ( memcmp( &n.st_size, &( ( *s )->st.st_size ), sizeof( off_t ) ) ) ||
 
 #ifdef OSX
-            ( memcmp( &n.st_mtimespec, &( ( *s )->st.st_mtimespec ), sizeof( struct timespec ) ) ) ||
-            ( memcmp( &n.st_ctimespec, &( ( *s )->st.st_ctimespec ), sizeof( struct timespec ) ) )
+         ( memcmp( &n.st_mtimespec, &( ( *s )->st.st_mtimespec ), sizeof( struct timespec ) ) ) ||
+         ( memcmp( &n.st_ctimespec, &( ( *s )->st.st_ctimespec ), sizeof( struct timespec ) ) )
 #elif WIN32
-            ( memcmp( &n.st_mtime, &( ( *s )->st.st_mtime ), sizeof( n.st_mtime ) ) ) ||
-            ( memcmp( &n.st_ctime, &( ( *s )->st.st_ctime ), sizeof( n.st_ctime ) ) )
+         ( memcmp( &n.st_mtime, &( ( *s )->st.st_mtime ), sizeof( n.st_mtime ) ) ) ||
+         ( memcmp( &n.st_ctime, &( ( *s )->st.st_ctime ), sizeof( n.st_ctime ) ) )
 #else
-            ( memcmp( &n.st_mtim, &( ( *s )->st.st_mtim ), sizeof( struct timespec ) ) ) ||
-            ( memcmp( &n.st_ctim, &( ( *s )->st.st_ctim ), sizeof( struct timespec ) ) )
+         ( memcmp( &n.st_mtim, &( ( *s )->st.st_mtim ), sizeof( struct timespec ) ) ) ||
+         ( memcmp( &n.st_ctim, &( ( *s )->st.st_ctim ), sizeof( struct timespec ) ) )
 #endif
-       )
-    {
+       ) {
         SymbolSetDelete( s );
         return false;
-    }
-    else
-    {
+    } else {
         return true;
     }
 }
@@ -1088,20 +1004,15 @@ enum symbolErr SymbolSetCreate( struct SymbolSet **ss, const char *filename, con
 
 
     /* Make sure this file is stable before trying to load it */
-    if ( ( stat( filename, &statbuf ) != 0 ) || !( statbuf.st_mode & S_IFREG ) )
-    {
+    if ( ( stat( filename, &statbuf ) != 0 ) || !( statbuf.st_mode & S_IFREG ) ) {
         ret = SYMBOL_NOELF;
-    }
-    else
-    {
+    } else {
         /* There is at least a file here */
 
-        while ( 1 )
-        {
+        while ( 1 ) {
             usleep( ELF_RELOAD_DELAY_TIME );
 
-            if ( stat( filename, &newstatbuf ) == 0 )
-            {
+            if ( stat( filename, &newstatbuf ) == 0 ) {
                 /* We check filesize, modification time and status change time for any differences */
                 if (
                             ( !newstatbuf.st_size ) ||
@@ -1116,14 +1027,11 @@ enum symbolErr SymbolSetCreate( struct SymbolSet **ss, const char *filename, con
                             ( memcmp( &statbuf.st_mtim, &newstatbuf.st_mtim, sizeof( struct timespec ) ) ) ||
                             ( memcmp( &statbuf.st_ctim, &newstatbuf.st_ctim, sizeof( struct timespec ) ) )
 #endif
-                )
-                {
+                ) {
                     /* Make this the version we check next time around */
                     memcpy( &statbuf, &newstatbuf, sizeof( struct stat ) );
                     continue;
-                }
-                else
-                {
+                } else {
                     break;
                 }
             }
@@ -1133,8 +1041,7 @@ enum symbolErr SymbolSetCreate( struct SymbolSet **ss, const char *filename, con
         ret =  _getTargetProgramInfo( s );
     }
 
-    if ( ret != SYMBOL_OK )
-    {
+    if ( ret != SYMBOL_OK ) {
         SymbolSetDelete( &s );
         s = NULL;
     }

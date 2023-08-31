@@ -16,8 +16,7 @@
 /* How long to wait for a connection before declaring failure */
 #define CONNECT_WAIT_TIME_MS (2000)
 
-struct PosixSocketStream
-{
+struct PosixSocketStream {
     struct Stream base;
     int socket;
 };
@@ -44,21 +43,18 @@ static enum ReceiveResult _posixSocketStreamReceive( struct Stream *stream, void
 
     int r = select( self->socket + 1, &readFd, NULL, NULL, timeout );
 
-    if ( r < 0 )
-    {
+    if ( r < 0 ) {
         return RECEIVE_RESULT_ERROR;
     }
 
-    if ( r == 0 )
-    {
+    if ( r == 0 ) {
         *receivedSize = 0;
         return RECEIVE_RESULT_TIMEOUT;
     }
 
     ssize_t result = recv( self->socket, buffer, bufferSize, 0 );
 
-    if ( result <= 0 )
-    {
+    if ( result <= 0 ) {
         // report connection broken as error
         return RECEIVE_RESULT_ERROR;
     }
@@ -82,8 +78,7 @@ static int _posixSocketStreamCreate( const char *server, int port )
     struct sockaddr_in serv_addr;
     struct hostent *serverEnt = gethostbyname( server );
 
-    if ( !serverEnt )
-    {
+    if ( !serverEnt ) {
         close( sockfd );
         genericsReport( V_ERROR, "Cannot find host" EOL );
         return -1;
@@ -91,8 +86,7 @@ static int _posixSocketStreamCreate( const char *server, int port )
 
     setsockopt( sockfd, SOL_SOCKET, SO_REUSEPORT, ( const void * )&flag, sizeof( flag ) );
 
-    if ( sockfd < 0 )
-    {
+    if ( sockfd < 0 ) {
         genericsReport( V_ERROR, "Error creating socket" EOL );
         return -1;
     }
@@ -114,16 +108,14 @@ static int _posixSocketStreamCreate( const char *server, int port )
 
     connect( sockfd, ( struct sockaddr * )&serv_addr, sizeof( serv_addr ) );
 
-    if ( ( errno != EWOULDBLOCK ) && ( errno != EINPROGRESS ) )
-    {
+    if ( ( errno != EWOULDBLOCK ) && ( errno != EINPROGRESS ) ) {
         close( sockfd );
         return -1;
     }
 
     struct pollfd pfds[] = { { .fd = sockfd, .events = POLLOUT } };
 
-    if ( 0 == poll( pfds, 1, CONNECT_WAIT_TIME_MS ) )
-    {
+    if ( 0 == poll( pfds, 1, CONNECT_WAIT_TIME_MS ) ) {
         close( sockfd );
         return -1;
     }
@@ -131,16 +123,14 @@ static int _posixSocketStreamCreate( const char *server, int port )
     socklen_t error;
     socklen_t len  = sizeof( socklen_t );
 
-    if ( 0 != getsockopt( sockfd, SOL_SOCKET, SO_ERROR, &error, &len ) )
-    {
+    if ( 0 != getsockopt( sockfd, SOL_SOCKET, SO_ERROR, &error, &len ) ) {
         flag = -1;
     }
 
     fcntl( sockfd, F_SETFL, sockfd_flags_before );
 
     /* If we got an error give up */
-    if ( 0 != error )
-    {
+    if ( 0 != error ) {
         close( sockfd );
         return -1;
     }
@@ -166,8 +156,7 @@ struct Stream *streamCreateSocket( const char *server, int port )
 {
     struct PosixSocketStream *stream = SELF( calloc( 1, sizeof( struct PosixSocketStream ) ) );
 
-    if ( stream == NULL )
-    {
+    if ( stream == NULL ) {
         return NULL;
     }
 
@@ -175,8 +164,7 @@ struct Stream *streamCreateSocket( const char *server, int port )
     stream->base.close = _posixSocketStreamClose;
     stream->socket = _posixSocketStreamCreate( server, port );
 
-    if ( stream->socket == -1 )
-    {
+    if ( stream->socket == -1 ) {
         free( stream );
         return NULL;
     }

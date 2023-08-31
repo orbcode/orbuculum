@@ -38,10 +38,8 @@ char *genericsEscape( char *str )
     char *d = workingBuffer;
     char *s = str;
 
-    do
-    {
-        switch ( *s )
-        {
+    do {
+        switch ( *s ) {
             case 0:
                 break;
 
@@ -83,8 +81,7 @@ char *genericsEscape( char *str )
             default:
                 *d++ = *s;
         }
-    }
-    while ( ( *s++ ) && ( d - workingBuffer < ( _POSIX_ARG_MAX - 1 ) ) );
+    } while ( ( *s++ ) && ( d - workingBuffer < ( _POSIX_ARG_MAX - 1 ) ) );
 
     *d = 0;
     return workingBuffer;
@@ -97,15 +94,12 @@ char *genericsUnescape( char *str )
     char *d = workingBuffer;
     char *s = str;
 
-    do
-    {
-        if ( *s == '\\' )
-        {
+    do {
+        if ( *s == '\\' ) {
             /* This is an escape....put the correct code in its place */
             s++;
 
-            switch ( *s )
-            {
+            switch ( *s ) {
                 case 0:
                     break;
 
@@ -140,8 +134,7 @@ char *genericsUnescape( char *str )
                 case '0'...'7': /* Direct octal number for ASCII Code */
                     *d = 0;
 
-                    while ( ( *s >= '0' ) && ( *s <= '7' ) )
-                    {
+                    while ( ( *s >= '0' ) && ( *s <= '7' ) ) {
                         *d = ( ( *d ) * 8 ) + ( ( *s++ ) - '0' );
                     }
 
@@ -151,13 +144,10 @@ char *genericsUnescape( char *str )
                 default:
                     *d++ = *s;
             }
-        }
-        else
-        {
+        } else {
             *d++ = *s;
         }
-    }
-    while ( ( *s++ ) && ( d - workingBuffer < ( _POSIX_ARG_MAX - 1 ) ) );
+    } while ( ( *s++ ) && ( d - workingBuffer < ( _POSIX_ARG_MAX - 1 ) ) );
 
     *d = 0;
     return workingBuffer;
@@ -196,13 +186,11 @@ uint32_t genericsTimestampmS( void )
 static int _htoi( char c )
 
 {
-    if ( ( c >= '0' ) && ( c <= '9' ) )
-    {
+    if ( ( c >= '0' ) && ( c <= '9' ) ) {
         return c - '0';
     }
 
-    if ( ( c >= 'a' ) && ( c <= 'f' ) )
-    {
+    if ( ( c >= 'a' ) && ( c <= 'f' ) ) {
         return c - 'a' + 10;
     }
 
@@ -216,8 +204,7 @@ const char *genericsBasename( const char *n )
 {
     const char *p = n + strlen( n );
 
-    while ( ( p != n ) && ( *( p - 1 ) != '/' ) )
-    {
+    while ( ( p != n ) && ( *( p - 1 ) != '/' ) ) {
         p--;
     }
 
@@ -231,12 +218,10 @@ const char *genericsBasenameN( const char *n, int c )
 {
     const char *p = n + strlen( n );
 
-    while ( ( p != n ) && ( c ) && ( *( p - 1 ) != '/' ) )
-    {
+    while ( ( p != n ) && ( c ) && ( *( p - 1 ) != '/' ) ) {
         p--;
 
-        if ( *p == '/' )
-        {
+        if ( *p == '/' ) {
             c--;
         }
     }
@@ -248,27 +233,25 @@ char *genericsGetBaseDirectory( void )
 {
 #ifdef WIN32
     size_t currentSize = MAX_PATH;
-    char *exePath = (char*)malloc( currentSize );
+    char *exePath = ( char * )malloc( currentSize );
 
-    while ( true )
-    {
+    while ( true ) {
         DWORD n = GetModuleFileNameA( NULL, exePath, currentSize );
 
-        if ( n < ( currentSize - 1 ) )
-        {
+        if ( n < ( currentSize - 1 ) ) {
             break;
         }
 
         currentSize *= 2;
-        exePath = (char*)realloc( exePath, currentSize );
+        exePath = ( char * )realloc( exePath, currentSize );
     }
 
-    char *dirPath = (char*)malloc( currentSize );
+    char *dirPath = ( char * )malloc( currentSize );
     char drive[_MAX_DRIVE];
     _splitpath_s( exePath, drive, sizeof( drive ), dirPath, currentSize, NULL, 0, NULL, 0 );
     free( exePath );
 
-    char *concatPath = (char*)malloc( strlen( drive ) + strlen( dirPath ) + 1 );
+    char *concatPath = ( char * )malloc( strlen( drive ) + strlen( dirPath ) + 1 );
     *concatPath = '\0';
     strcat( concatPath, drive );
     strcat( concatPath, dirPath );
@@ -278,25 +261,21 @@ char *genericsGetBaseDirectory( void )
     ssize_t currentSize = 256;
     char *exePath = ( char * )malloc( currentSize );
 
-    if ( !exePath )
-    {
+    if ( !exePath ) {
         return NULL;
     }
 
-    while ( true )
-    {
+    while ( true ) {
         ssize_t n = readlink( "/proc/self/exe", exePath, currentSize - 1 );
 
-        if ( n == -1 )
-        {
+        if ( n == -1 ) {
             // Failed to resolve path to current executable, let's hope it is not needed to correctly resolve orbtrace path
             // https://stackoverflow.com/a/933996/995351
             strcpy( exePath, "" );
             return exePath;
         }
 
-        if ( n < ( currentSize - 1 ) )
-        {
+        if ( n < ( currentSize - 1 ) ) {
             // readlink does not insert null terminator
             exePath[n] = 0;
             break;
@@ -329,22 +308,16 @@ void genericsPrintf( const char *fmt, ... )
     vsnprintf( op, MAX_STRLEN, fmt, va );
     va_end( va );
 
-    while ( *p )
-    {
-        if ( *p != CMD_ALERT[0] )
-        {
+    while ( *p ) {
+        if ( *p != CMD_ALERT[0] ) {
             putc( *p++, stderr );
-        }
-        else
-        {
+        } else {
             p++;
 
-            switch ( *p )
-            {
+            switch ( *p ) {
                 case '0'...'9':
                 case 'a'...'f':
-                    if ( _screenHandling )
-                    {
+                    if ( _screenHandling ) {
                         fprintf( stderr, CC_COLOUR, _htoi( *p ) > 7, _htoi( *p ) & 7 );
                     }
 
@@ -352,8 +325,7 @@ void genericsPrintf( const char *fmt, ... )
                     break;
 
                 case 'u':
-                    if ( _screenHandling )
-                    {
+                    if ( _screenHandling ) {
                         fprintf( stderr, CC_PREV_LN );
                     }
 
@@ -361,8 +333,7 @@ void genericsPrintf( const char *fmt, ... )
                     break;
 
                 case 'U':
-                    if ( _screenHandling )
-                    {
+                    if ( _screenHandling ) {
                         fprintf( stderr, CC_CLR_LN );
                     }
 
@@ -370,8 +341,7 @@ void genericsPrintf( const char *fmt, ... )
                     break;
 
                 case 'r':
-                    if ( _screenHandling )
-                    {
+                    if ( _screenHandling ) {
                         fprintf( stderr, CC_RES );
                     }
 
@@ -401,8 +371,7 @@ void genericsReport( enum verbLevel l, const char *fmt, ... )
     static char op[MAX_STRLEN];
     static const char *colours[V_MAX_VERBLEVEL] = {C_VERB_ERROR, C_VERB_WARN, C_VERB_INFO, C_VERB_DEBUG};
 
-    if ( l <= lstore )
-    {
+    if ( l <= lstore ) {
         fflush( stdout );
         genericsPrintf( colours[l] );
         va_list va;

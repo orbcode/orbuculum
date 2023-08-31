@@ -22,8 +22,7 @@ extern "C" {
 
 
 /* Execution of an instruction. We maintain a lot of information, but it's a PC, so we've got the room :-) */
-struct execEntryHash
-{
+struct execEntryHash {
     /* The address in the memory map of the target */
     uint32_t addr;
     uint32_t codes;
@@ -51,22 +50,19 @@ struct execEntryHash
 
 
 /* Signature for a source/dest calling pair */
-struct subcallSig
-{
+struct subcallSig {
     uint32_t src;                       /* Where the call is from */
     uint32_t dst;                       /* Where the call is to */
 };
 
-struct subcallAccount
-{
+struct subcallAccount {
     struct subcallSig sig;
     uint64_t inTicks;
     bool tailChained;
 };
 
 /* Processed subcalls from routine to routine */
-struct subcall
-{
+struct subcall {
     struct subcallSig sig;              /* Calling and called side record, forming an index entry */
 
     struct execEntryHash *srch;         /* Calling side */

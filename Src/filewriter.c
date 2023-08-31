@@ -22,10 +22,8 @@ enum fwState { FW_STATE_CLOSED, FW_STATE_GETNAMEA, FW_STATE_GETNAMEE, FW_STATE_U
 #define MAX_STRLEN 4096
 #define MAX_CONCAT_FILENAMELEN (MAX_STRLEN)
 
-static struct
-{
-    struct
-    {
+static struct {
+    struct {
         enum fwState s;                     /* Current state of the handle */
         FILE        *f;                     /* Handle for the handle */
         char         name[MAX_FILENAMELEN]; /* Filename */
@@ -52,14 +50,11 @@ void _processCompleteName( uint32_t n )
     char *compareName;
 
     /* Concat strings */
-    if ( _f.basedir )
-    {
+    if ( _f.basedir ) {
         strncpy( workingName, _f.basedir, MAX_CONCAT_FILENAMELEN - 1 );
         strcat( workingName, "/" );
         strncat( workingName, _f.file[n].name, MAX_CONCAT_FILENAMELEN - 1 );
-    }
-    else
-    {
+    } else {
         strncpy( workingName, _f.file[n].name, MAX_CONCAT_FILENAMELEN - 1 );
     }
 
@@ -68,12 +63,9 @@ void _processCompleteName( uint32_t n )
     /* real path of the current directory.                               */
     resolvedName = realpath( dirname( workingName ), NULL );
 
-    if ( _f.basedir )
-    {
+    if ( _f.basedir ) {
         compareName = realpath( _f.basedir, NULL );
-    }
-    else
-    {
+    } else {
         compareName = realpath( dirname( ( char * )"" ), NULL );
     }
 
@@ -82,8 +74,7 @@ void _processCompleteName( uint32_t n )
     free( resolvedName );
     free( compareName );
 
-    if ( !goodDirectory )
-    {
+    if ( !goodDirectory ) {
         genericsReport( V_WARN, "Path to [%s] is not in or below current directory" EOL, workingName );
         return;
     }
@@ -91,19 +82,15 @@ void _processCompleteName( uint32_t n )
     genericsReport( V_DEBUG, "Complete name to work with is [%s]" EOL, workingName );
 
     /* OK, now decide what to do... */
-    switch ( _f.file[n].s )
-    {
+    switch ( _f.file[n].s ) {
         // -----------------------
         case FW_STATE_GETNAMEA:     // This is a file append operation
             _f.file[n].f = fopen( workingName, "ab+" );
 
-            if ( _f.file[n].f )
-            {
+            if ( _f.file[n].f ) {
                 genericsReport( V_INFO, "File [%s] opened for append" EOL, workingName, n );
                 _f.file[n].s = FW_STATE_OPEN;
-            }
-            else
-            {
+            } else {
                 genericsReport( V_WARN, "Failed to open [%s] for append" EOL, workingName );
                 memset( _f.file[n].name, 0, MAX_FILENAMELEN );
                 _f.file[n].s = FW_STATE_CLOSED;
@@ -115,13 +102,10 @@ void _processCompleteName( uint32_t n )
         case FW_STATE_GETNAMEE:     // This is a file replacement operation
             _f.file[n].f = fopen( workingName, "wb+" );
 
-            if ( _f.file[n].f )
-            {
+            if ( _f.file[n].f ) {
                 genericsReport( V_INFO, "File [%s] opened for write" EOL, workingName, n );
                 _f.file[n].s = FW_STATE_OPEN;
-            }
-            else
-            {
+            } else {
                 genericsReport( V_WARN, "Failed to open [%s] for write" EOL, workingName );
                 memset( _f.file[n].name, 0, MAX_FILENAMELEN );
                 _f.file[n].s = FW_STATE_CLOSED;
@@ -131,12 +115,9 @@ void _processCompleteName( uint32_t n )
 
         // -----------------------
         case FW_STATE_UNLINK:     // this is a file delete operation
-            if ( !unlink( workingName ) )
-            {
+            if ( !unlink( workingName ) ) {
                 genericsReport( V_INFO, "Removed file [%s]" EOL, workingName );
-            }
-            else
-            {
+            } else {
                 genericsReport( V_WARN, "Failed to remove file [%s]" EOL, workingName );
             }
 
@@ -158,23 +139,16 @@ void _handleNameBytes( uint32_t n, uint8_t h, uint8_t *d )
 
 {
     /* Spin through the received bytes and append them to the filename string */
-    while ( h-- )
-    {
-        if ( *d )
-        {
-            if ( strlen( _f.file[n].name ) < MAX_FILENAMELEN - 2 )
-            {
+    while ( h-- ) {
+        if ( *d ) {
+            if ( strlen( _f.file[n].name ) < MAX_FILENAMELEN - 2 ) {
                 _f.file[n].name[strlen( _f.file[n].name )] = *d;
-            }
-            else
-            {
+            } else {
                 genericsReport( V_WARN, "Attempt to write an overlong filename [%s]" EOL, _f.file[n].name );
             }
 
             d++;
-        }
-        else
-        {
+        } else {
             genericsReport( V_DEBUG, "Got complete name [%s]" EOL, _f.file[n].name );
             _processCompleteName( n );
             break;
@@ -203,15 +177,13 @@ bool filewriterProcess( struct swMsg *m )
 
     uint8_t c = d[0]; /* Extract the control word for convinience */
 
-    switch ( FW_MASK_COMMAND( c ) )
-    {
+    switch ( FW_MASK_COMMAND( c ) ) {
         // -----------------------
         case FW_CMD_OPENA:     // Open file for appending write
         case FW_CMD_OPENE:     // Open file for empty write (i.e. flush and write)
             genericsReport( V_DEBUG, "Attempt to open or create file" EOL );
 
-            if ( _f.file[FW_GET_FILEID( c )].f )
-            {
+            if ( _f.file[FW_GET_FILEID( c )].f ) {
                 /* There was a file open, close it */
                 genericsReport( V_WARN, "Attempt to write to descriptor %d while open writing %s" EOL, FW_GET_FILEID( c ),
                                 _f.file[FW_GET_FILEID( c )].name );
@@ -223,12 +195,9 @@ bool filewriterProcess( struct swMsg *m )
             memset( _f.file[FW_GET_FILEID( c )].name, 0, MAX_FILENAMELEN );
 
             /* Start collecting the name */
-            if ( FW_MASK_COMMAND( c ) == FW_CMD_OPENA )
-            {
+            if ( FW_MASK_COMMAND( c ) == FW_CMD_OPENA ) {
                 _f.file[FW_GET_FILEID( c )].s = FW_STATE_GETNAMEA;
-            }
-            else
-            {
+            } else {
                 _f.file[FW_GET_FILEID( c )].s = FW_STATE_GETNAMEE;
             }
 
@@ -238,13 +207,10 @@ bool filewriterProcess( struct swMsg *m )
         // -----------------------
 
         case FW_CMD_CLOSE:     // Close file
-            if ( !_f.file[FW_GET_FILEID( c )].f )
-            {
+            if ( !_f.file[FW_GET_FILEID( c )].f ) {
                 /* There was no file open, complain */
                 genericsReport( V_DEBUG, "Attempt to close descriptor %d while not open" EOL, FW_GET_FILEID( c ) );
-            }
-            else
-            {
+            } else {
                 genericsReport( V_INFO, "Close %s" EOL,  _f.file[FW_GET_FILEID( c )].name );
                 fclose( _f.file[FW_GET_FILEID( c )].f );
                 _f.file[FW_GET_FILEID( c )].f = NULL;
@@ -257,12 +223,9 @@ bool filewriterProcess( struct swMsg *m )
         // -----------------------
 
         case FW_CMD_ERASE:     // Erase file
-            if ( _f.file[FW_GET_FILEID( c )].s != FW_STATE_CLOSED )
-            {
+            if ( _f.file[FW_GET_FILEID( c )].s != FW_STATE_CLOSED ) {
                 genericsReport( V_WARN, "Attempt to use open descriptor %d to erase a file" EOL, FW_GET_FILEID( c ) );
-            }
-            else
-            {
+            } else {
                 memset( _f.file[FW_GET_FILEID( c )].name, 0, MAX_FILENAMELEN );
                 _f.file[FW_GET_FILEID( c )].s = FW_STATE_UNLINK;
                 _handleNameBytes( FW_GET_FILEID( c ), FW_GET_BYTES( c ), &d[1] );
@@ -273,18 +236,12 @@ bool filewriterProcess( struct swMsg *m )
         // -----------------------
 
         case FW_CMD_WRITE:     // Write to file
-            if ( _f.file[FW_GET_FILEID( c )].s == FW_STATE_CLOSED )
-            {
+            if ( _f.file[FW_GET_FILEID( c )].s == FW_STATE_CLOSED ) {
                 genericsReport( V_WARN, "Request for write on descriptor %d while file closed" EOL, FW_GET_FILEID( c ) );
-            }
-            else
-            {
-                if ( _f.file[FW_GET_FILEID( c )].s != FW_STATE_OPEN )
-                {
+            } else {
+                if ( _f.file[FW_GET_FILEID( c )].s != FW_STATE_OPEN ) {
                     _handleNameBytes( FW_GET_FILEID( c ), FW_GET_BYTES( c ), &d[1] );
-                }
-                else
-                {
+                } else {
                     genericsReport( V_DEBUG, "Wrote %d bytes on descriptor %d" EOL, FW_GET_BYTES( c ), FW_GET_FILEID( c ) );
                     fwrite( &d[1], 1, FW_GET_BYTES( c ), _f.file[FW_GET_FILEID( c )].f );
                 }

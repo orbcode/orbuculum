@@ -37,16 +37,14 @@
 #define DBG_OUT(...) fprintf(stderr,__VA_ARGS__)
 //#define DBG_OUT(...)
 
-struct _subcallAccount
-{
+struct _subcallAccount {
     struct subcallSig sig;
     uint64_t inTicks;
 };
 
 
 /* ---------- CONFIGURATION ----------------- */
-struct Options                           /* Record for options, either defaults or from command line */
-{
+struct Options {                         /* Record for options, either defaults or from command line */
     bool demangle;                       /* Demangle C++ names */
     char *file;                          /* File host connection */
     bool fileTerminate;                  /* Terminate when file read isn't successful */
@@ -69,8 +67,7 @@ struct Options                           /* Record for options, either defaults 
     int  port;                           /* Source information for where to connect to */
     char *server;
 
-} _options =
-{
+} _options = {
     .demangle       = true,
     .sampleDuration = DEFAULT_DURATION_MS,
     .protocol       = TRACE_PROT_ETM35,
@@ -79,8 +76,7 @@ struct Options                           /* Record for options, either defaults 
 };
 
 /* State of routine tracking, maintained across TRACE callbacks to reconstruct program flow */
-struct opConstruct
-{
+struct opConstruct {
     struct execEntryHash *h;             /* The exec entry we were in last (file, function, line, addr etc) */
     struct execEntryHash *oldh;          /* The exec entry we're currently in (file, function, line, addr etc) */
     struct execEntryHash *inth;          /* Fake exec entry for an interrupt source */
@@ -96,15 +92,13 @@ struct opConstruct
 };
 
 /* A block of received data */
-struct dataBlock
-{
+struct dataBlock {
     ssize_t fillLevel;
     uint8_t buffer[TRANSFER_SIZE];
 };
 
 /* ----------- LIVE STATE ----------------- */
-struct RunTime
-{
+struct RunTime {
     /* Information about the program */
     const char *progName;                       /* Name by which this program was called */
 
@@ -179,8 +173,7 @@ static void _callEvent( struct RunTime *r, uint32_t retAddr, uint32_t to )
     /* Find a record for this source/dest pair */
     HASH_FIND( hh, r->subhead, &r->substack[r->substacklen].sig, sizeof( struct subcallSig ), s );
 
-    if ( !s )
-    {
+    if ( !s ) {
         /* This call entry doesn't exist (i.e. it's the first time this from/to pair have been seen...let's create it */
         s = ( struct subcall * )calloc( 1, sizeof( struct subcall ) );
         MEMCHECK( s, );
@@ -190,8 +183,7 @@ static void _callEvent( struct RunTime *r, uint32_t retAddr, uint32_t to )
 
     r->substacklen++;
 
-    for ( uint32_t g = 0; g < r->substacklen; g++ )
-    {
+    for ( uint32_t g = 0; g < r->substacklen; g++ ) {
         putchar( ' ' );
     }
 
@@ -208,16 +200,13 @@ static void _returnEvent( struct RunTime *r, uint32_t to )
     uint32_t orig = r->substacklen;
 
     /* Cover the startup case that we happen to hit a return before a call */
-    if ( !r->substack )
-    {
+    if ( !r->substack ) {
         return;
     }
 
     /* Check we've got a valid stack entry to match to */
-    do
-    {
-        if ( !r->substacklen )
-        {
+    do {
+        if ( !r->substacklen ) {
             DBG_OUT( "OUT OUT OF STACK ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^" EOL );
             break;
         }
@@ -225,8 +214,7 @@ static void _returnEvent( struct RunTime *r, uint32_t to )
         /* The -1th entry was the last written, so see if that is back far enough */
         r->substacklen--;
 
-        for ( uint32_t g = 0; g < r->substacklen + 1; g++ )
-        {
+        for ( uint32_t g = 0; g < r->substacklen + 1; g++ ) {
             putchar( ' ' );
         }
 
@@ -237,14 +225,11 @@ static void _returnEvent( struct RunTime *r, uint32_t to )
         /* We don't bother deallocating memory here cos it'll be done the next time we make a call */
         s->myCost += cpu->instCount - r->substack[r->substacklen].inTicks;
         s->count++;
-    }
-    while ( to != r->substack[r->substacklen].sig.src );
+    } while ( to != r->substack[r->substacklen].sig.src );
 
     /* Check function we popped back to matches where we think we should be */
-    if ( to != r->substack[r->substacklen].sig.src )
-    {
-        for ( uint32_t ty = 0; ty < orig; ty++ )
-        {
+    if ( to != r->substack[r->substacklen].sig.src ) {
+        for ( uint32_t ty = 0; ty < orig; ty++ ) {
             DBG_OUT( "%d:%08X ", ty, r->substack[ty].sig.src );
         }
 
@@ -258,13 +243,10 @@ static void _hashFindOrCreate( struct RunTime *r, uint32_t addr, struct execEntr
 
     HASH_FIND_INT( r->insthead, &addr, *h );
 
-    if ( !( *h ) )
-    {
+    if ( !( *h ) ) {
         /* We don't have this address captured yet, do it now */
-        if ( SymbolLookup( r->s, r->op.workingAddr, &n ) )
-        {
-            if ( n.assyLine == ASSY_NOT_FOUND )
-            {
+        if ( SymbolLookup( r->s, r->op.workingAddr, &n ) ) {
+            if ( n.assyLine == ASSY_NOT_FOUND ) {
                 genericsExit( -1, "No assembly for function at address %08x, %s" EOL, r->op.workingAddr, SymbolFunction( r->s, n.functionindex ) );
             }
 
@@ -282,9 +264,7 @@ static void _hashFindOrCreate( struct RunTime *r, uint32_t addr, struct execEntr
             ( *h )->is4Byte       = n.assy[n.assyLine].is4Byte;
             ( *h )->codes         = n.assy[n.assyLine].codes;
             ( *h )->assyText      = n.assy[n.assyLine].lineText;
-        }
-        else
-        {
+        } else {
             genericsExit( -1, "No symbol for address %08x" EOL, r->op.workingAddr );
         }
 
@@ -311,19 +291,15 @@ static void _handleInstruction( struct RunTime *r, bool actioned )
     r->op.h->count++;
 
     /* If source postion changed then update source code line visitation counts too */
-    if ( ( r->op.oldh ) && ( ( r->op.h->line != r->op.oldh->line ) || ( r->op.h->functionindex != r->op.oldh->functionindex ) ) )
-    {
+    if ( ( r->op.oldh ) && ( ( r->op.h->line != r->op.oldh->line ) || ( r->op.h->functionindex != r->op.oldh->functionindex ) ) ) {
         r->op.h->scount++;
     }
 
     /* If this is a computable destination then action it */
-    if ( ( actioned ) && ( ( r->op.h->isJump ) || ( r->op.h->isSubCall ) ) )
-    {
+    if ( ( actioned ) && ( ( r->op.h->isJump ) || ( r->op.h->isSubCall ) ) ) {
         /* Take this call ... note that the jumpdest may not be known at this point */
         r->op.workingAddr = r->op.h->jumpdest;
-    }
-    else
-    {
+    } else {
         /* If it wasn't a jump or subroutine then increment the address */
         r->op.workingAddr += ( r->op.h->is4Byte ) ? 4 : 2;
     }
@@ -333,16 +309,13 @@ static void _handleInstruction( struct RunTime *r, bool actioned )
 static void _checkJumps( struct RunTime *r )
 
 {
-    if ( r->op.h )
-    {
+    if ( r->op.h ) {
 
-        if ( ( TRACEStateChanged( &r->i, EV_CH_EX_EXIT ) ) || ( r->op.h->isReturn ) )
-        {
+        if ( ( TRACEStateChanged( &r->i, EV_CH_EX_EXIT ) ) || ( r->op.h->isReturn ) ) {
             _returnEvent( r, r->op.workingAddr );
         }
 
-        if ( r->op.h->isSubCall )
-        {
+        if ( r->op.h->isSubCall ) {
             _callEvent( r, r->op.h->addr + ( ( r->op.h->is4Byte ) ? 4 : 2 ), r->op.workingAddr );
         }
     }
@@ -358,8 +331,7 @@ static void _traceCB( void *d )
     static uint32_t incAddr        = 0;
     static uint32_t disposition    = 0;
 
-    if ( TRACEStateChanged( &r->i, EV_CH_ADDRESS ) )
-    {
+    if ( TRACEStateChanged( &r->i, EV_CH_ADDRESS ) ) {
         printf( EOL "Address 0x%08lx" EOL, r->i.cpu.addr );
     }
 
@@ -368,15 +340,13 @@ static void _traceCB( void *d )
 
     /* This routine gets called when valid data are available */
     /* if these are the first data, then reset counters etc.  */
-    if ( !r->sampling )
-    {
+    if ( !r->sampling ) {
         r->op.firsttstamp = cpu->instCount;
         genericsReport( V_INFO, "Sampling" EOL );
         /* Fill in a time to start from */
         r->starttime = genericsTimestampmS();
 
-        if ( TRACEStateChanged( &r->i, EV_CH_ADDRESS ) )
-        {
+        if ( TRACEStateChanged( &r->i, EV_CH_ADDRESS ) ) {
             r->op.workingAddr = cpu->addr;
             DBG_OUT( "Got initial address %08x" EOL, r->op.workingAddr );
             r->sampling  = true;
@@ -398,25 +368,18 @@ static void _traceCB( void *d )
 
     /* Pull changes introduced by this event ============================== */
 
-    if ( TRACEStateChanged( &r->i, EV_CH_ENATOMS ) )
-    {
+    if ( TRACEStateChanged( &r->i, EV_CH_ENATOMS ) ) {
         /* We are going to execute some instructions. Check if the last of the old batch of    */
         /* instructions was cancelled and, if it wasn't and it's still outstanding, action it. */
-        if ( TRACEStateChanged( &r->i, EV_CH_CANCELLED ) )
-        {
+        if ( TRACEStateChanged( &r->i, EV_CH_CANCELLED ) ) {
             DBG_OUT( "CANCELLED" EOL );
-        }
-        else
-        {
-            if ( incAddr )
-            {
+        } else {
+            if ( incAddr ) {
                 DBG_OUT( "***" EOL );
                 _handleInstruction( r, disposition & 1 );
 
-                if ( ( r->op.h->isJump ) || ( r->op.h->isSubCall ) || ( r->op.h->isReturn ) )
-                {
-                    if ( TRACEStateChanged( &r->i, EV_CH_ADDRESS ) )
-                    {
+                if ( ( r->op.h->isJump ) || ( r->op.h->isSubCall ) || ( r->op.h->isReturn ) ) {
+                    if ( TRACEStateChanged( &r->i, EV_CH_ADDRESS ) ) {
                         DBG_OUT( "New addr %08lx" EOL, cpu->addr );
                         r->op.workingAddr = cpu->addr;
                     }
@@ -426,10 +389,8 @@ static void _traceCB( void *d )
             }
         }
 
-        if ( TRACEStateChanged( &r->i, EV_CH_ADDRESS ) )
-        {
-            if ( TRACEStateChanged( &r->i, EV_CH_EX_ENTRY ) )
-            {
+        if ( TRACEStateChanged( &r->i, EV_CH_ADDRESS ) ) {
+            if ( TRACEStateChanged( &r->i, EV_CH_EX_ENTRY ) ) {
                 DBG_OUT( "INTERRUPT!!" EOL );
                 _callEvent( r, r->op.workingAddr, cpu->addr );
             }
@@ -446,8 +407,7 @@ static void _traceCB( void *d )
         DBG_OUT( "E:%d N:%d" EOL, cpu->eatoms, cpu->natoms );
 
         /* Action those changes, except the last one */
-        while ( incAddr > 1 )
-        {
+        while ( incAddr > 1 ) {
             incAddr--;
             _handleInstruction( r, disposition & 1 );
             _checkJumps( r );
@@ -473,8 +433,7 @@ static void _printHelp( const char *const progName )
     genericsPrintf( "    -O, --objdump-opts: <options> Options to pass directly to objdump" EOL );
     genericsPrintf( "    -p, --trace-proto:  { " );
 
-    for ( int i = TRACE_PROT_LIST_START; i < TRACE_PROT_NUM; i++ )
-    {
+    for ( int i = TRACE_PROT_LIST_START; i < TRACE_PROT_NUM; i++ ) {
         genericsPrintf( "%s ", TRACEDecodeGetProtocolName( ( enum TRACEprotocol )i ) );
     }
 
@@ -495,8 +454,7 @@ void _printVersion( void )
     genericsPrintf( "orbprofile version " GIT_DESCRIBE );
 }
 // ====================================================================================================
-static struct option _longOptions[] =
-{
+static struct option _longOptions[] = {
     {"alt-addr-enc", no_argument, NULL, 'A'},
     {"no-demangle", required_argument, NULL, 'D'},
     {"del-prefix", required_argument, NULL, 'd'},
@@ -527,8 +485,7 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
 
     while ( ( c = getopt_long ( argc, argv, "ADd:e:Ef:hVI:MO:p:s:Tt:v:y:z:", _longOptions, &optionIndex ) ) != -1 )
 
-        switch ( c )
-        {
+        switch ( c ) {
             // ------------------------------------
             case 'A':
                 r->options->noaltAddr = true;
@@ -592,8 +549,8 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
 
                 /* Index through protocol strings looking for match or end of list */
                 for ( c = TRACE_PROT_LIST_START;
-                        ( ( c != TRACE_PROT_NUM ) && strcasecmp( optarg, TRACEDecodeGetProtocolName( ( enum TRACEprotocol )c ) ) );
-                        c++ )
+                      ( ( c != TRACE_PROT_NUM ) && strcasecmp( optarg, TRACEDecodeGetProtocolName( ( enum TRACEprotocol )c ) ) );
+                      c++ )
                 {}
 
                 r->options->protocol = ( enum TRACEprotocol )c;
@@ -606,19 +563,16 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
                 // See if we have an optional port number too
                 a = optarg;
 
-                while ( ( *a ) && ( *a != ':' ) )
-                {
+                while ( ( *a ) && ( *a != ':' ) ) {
                     a++;
                 }
 
-                if ( *a == ':' )
-                {
+                if ( *a == ':' ) {
                     *a = 0;
                     r->options->port = atoi( ++a );
                 }
 
-                if ( !r->options->port )
-                {
+                if ( !r->options->port ) {
                     r->options->port = NWCLIENT_SERVER_PORT;
                 }
 
@@ -638,8 +592,7 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
             // ------------------------------------
 
             case 'v':
-                if ( !isdigit( *optarg ) )
-                {
+                if ( !isdigit( *optarg ) ) {
                     genericsReport( V_ERROR, "-v requires a numeric argument." EOL );
                     return false;
                 }
@@ -659,12 +612,9 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
 
             // ------------------------------------
             case '?':
-                if ( optopt == 'b' )
-                {
+                if ( optopt == 'b' ) {
                     genericsReport( V_ERROR, "Option '%c' requires an argument." EOL, optopt );
-                }
-                else if ( !isprint ( optopt ) )
-                {
+                } else if ( !isprint ( optopt ) ) {
                     genericsReport( V_ERROR, "Unknown option character `\\x%x'." EOL, optopt );
                 }
 
@@ -677,18 +627,15 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
                 // ------------------------------------
         }
 
-    if ( !r->options->elffile )
-    {
+    if ( !r->options->elffile ) {
         genericsExit( -2, "Elf File not specified" EOL );
     }
 
-    if ( !r->options->sampleDuration )
-    {
+    if ( !r->options->sampleDuration ) {
         genericsExit( -2, "Illegal sample duration" EOL );
     }
 
-    if ( r->options->protocol >= TRACE_PROT_NONE )
-    {
+    if ( r->options->protocol >= TRACE_PROT_NONE ) {
         genericsExit( V_ERROR, "Unrecognised decode protocol" EOL );
     }
 
@@ -734,17 +681,14 @@ static void *_processBlocks( void *params )
 {
     struct RunTime *r = ( struct RunTime * )params;
 
-    while ( true )
-    {
+    while ( true ) {
         pthread_cond_wait( &r->dataForClients, &r->dataForClients_m );
 
-        if ( r->rp != ( volatile int )r->wp )
-        {
+        if ( r->rp != ( volatile int )r->wp ) {
             genericsReport( V_DEBUG, "RXED Packet of %d bytes" EOL, r->rawBlock[r->rp].fillLevel );
 
             /* Check to see if we've finished (a zero length packet */
-            if ( !r->rawBlock[r->rp].fillLevel )
-            {
+            if ( !r->rawBlock[r->rp].fillLevel ) {
                 break;
             }
 
@@ -754,40 +698,30 @@ static void *_processBlocks( void *params )
 
             DBG_OUT( EOL );
 
-            while ( y-- )
-            {
+            while ( y-- ) {
                 DBG_OUT( "%02X ", *c++ );
 
-                if ( !( y % 16 ) )
-                {
+                if ( !( y % 16 ) ) {
                     DBG_OUT( EOL );
                 }
             }
 
 #endif
 
-            if ( r->options->useTPIU )
-            {
+            if ( r->options->useTPIU ) {
                 struct TPIUPacket p;
                 int j = 0;
 
-                for ( int i = 0; i < r->rawBlock[r->rp].fillLevel; i++ )
-                {
+                for ( int i = 0; i < r->rawBlock[r->rp].fillLevel; i++ ) {
                     /* Strip the TPIU formatting from the block. It can go back into the same block 'cos it will always take less room */
 
-                    if ( TPIU_EV_RXEDPACKET == TPIUPump( &r->t, r->rawBlock[r->rp].buffer[i] ) )
-                    {
-                        if ( !TPIUGetPacket( &r->t, &p ) )
-                        {
+                    if ( TPIU_EV_RXEDPACKET == TPIUPump( &r->t, r->rawBlock[r->rp].buffer[i] ) ) {
+                        if ( !TPIUGetPacket( &r->t, &p ) ) {
                             genericsReport( V_WARN, "TPIUGetPacket fell over" EOL );
-                        }
-                        else
-                        {
+                        } else {
                             /* Iterate through the packet, putting bytes for TRACE into the processing buffer */
-                            for ( uint32_t g = 0; g < p.len; g++ )
-                            {
-                                if ( r->options->channel == p.packet[g].s )
-                                {
+                            for ( uint32_t g = 0; g < p.len; g++ ) {
+                                if ( r->options->channel == p.packet[g].s ) {
                                     r->rawBlock[r->rp].buffer[j++] = p.packet[g].d;
                                 }
                             }
@@ -795,13 +729,10 @@ static void *_processBlocks( void *params )
                     }
                 }
 
-                if ( j > 0 )
-                {
+                if ( j > 0 ) {
                     TRACEDecoderPump( &r->i, r->rawBlock[r->rp].buffer, j, _traceCB, &_r );
                 }
-            }
-            else
-            {
+            } else {
                 /* Pump all of the data through the protocol handler */
                 TRACEDecoderPump( &r->i, r->rawBlock[r->rp].buffer, r->rawBlock[r->rp].fillLevel, _traceCB, &_r );
 
@@ -827,18 +758,15 @@ int main( int argc, char *argv[] )
     _r.progName = genericsBasename( argv[0] );
     _r.options = &_options;
 
-    if ( pthread_mutex_init( &_r.dataForClients_m, NULL ) != 0 )
-    {
+    if ( pthread_mutex_init( &_r.dataForClients_m, NULL ) != 0 ) {
         genericsExit( -1, "Failed to establish mutex for condition variablee" EOL );
     }
 
-    if ( pthread_cond_init( &_r.dataForClients, NULL ) != 0 )
-    {
+    if ( pthread_cond_init( &_r.dataForClients, NULL ) != 0 ) {
         genericsExit( -1, "Failed to establish condition variablee" EOL );
     }
 
-    if ( !_processOptions( argc, argv, &_r ) )
-    {
+    if ( !_processOptions( argc, argv, &_r ) ) {
         /* processOptions generates its own error messages */
         genericsExit( -1, "" EOL );
     }
@@ -849,16 +777,14 @@ int main( int argc, char *argv[] )
     atexit( _doExit );
 
     /* This ensures the atexit gets called */
-    if ( SIG_ERR == signal( SIGINT, _intHandler ) )
-    {
+    if ( SIG_ERR == signal( SIGINT, _intHandler ) ) {
         genericsExit( -1, "Failed to establish Int handler" EOL );
     }
 
 #if !defined(WIN32)
 
     /* Don't kill a sub-process when any reader or writer evaporates */
-    if ( SIG_ERR == signal( SIGPIPE, SIG_IGN ) )
-    {
+    if ( SIG_ERR == signal( SIGPIPE, SIG_IGN ) ) {
         genericsExit( -1, "Failed to ignore SIGPIPEs" EOL );
     }
 
@@ -866,25 +792,18 @@ int main( int argc, char *argv[] )
 
     TRACEDecoderInit( &_r.i, _r.options->protocol, !_r.options->noaltAddr, genericsReport );
 
-    if ( _r.options->useTPIU )
-    {
+    if ( _r.options->useTPIU ) {
         TPIUDecoderInit( &_r.t );
     }
 
-    while ( !_r.ending )
-    {
-        if ( _r.options->file != NULL )
-        {
+    while ( !_r.ending ) {
+        if ( _r.options->file != NULL ) {
             stream = streamCreateFile( _r.options->file );
-        }
-        else
-        {
-            while ( 1 )
-            {
+        } else {
+            while ( 1 ) {
                 stream = streamCreateSocket( _r.options->server, _r.options->port );
 
-                if ( !stream )
-                {
+                if ( !stream ) {
                     break;
                 }
 
@@ -895,12 +814,10 @@ int main( int argc, char *argv[] )
 
 
         /* We need symbols constantly while running ... lets get them */
-        if ( !SymbolSetValid( &_r.s, _r.options->elffile ) )
-        {
+        if ( !SymbolSetValid( &_r.s, _r.options->elffile ) ) {
             r = SymbolSetCreate( &_r.s, _r.options->elffile, _r.options->deleteMaterial, _r.options->demangle, true, true, _r.options->odoptions );
 
-            switch ( r )
-            {
+            switch ( r ) {
                 case SYMBOL_NOELF:
                     genericsExit( -1, "Elf file or symbols in it not found" EOL );
                     break;
@@ -929,8 +846,7 @@ int main( int argc, char *argv[] )
         /* This is the main active loop...only break out of this when ending or on error */
         /* ----------------------------------------------------------------------------- */
 
-        while ( !_r.ending )
-        {
+        while ( !_r.ending ) {
             /* Each time segment is restricted */
             tv.tv_sec = 0;
             tv.tv_usec  = TICK_TIME_MS * 1000;
@@ -940,13 +856,11 @@ int main( int argc, char *argv[] )
 
             enum ReceiveResult result = stream->receive( stream, rxBlock->buffer, TRANSFER_SIZE, &tv, ( size_t * )&rxBlock->fillLevel );
 
-            if ( ( result == RECEIVE_RESULT_EOF ) || ( result == RECEIVE_RESULT_ERROR ) )
-            {
+            if ( ( result == RECEIVE_RESULT_EOF ) || ( result == RECEIVE_RESULT_ERROR ) ) {
                 break;
             }
 
-            if ( rxBlock->fillLevel <= 0 )
-            {
+            if ( rxBlock->fillLevel <= 0 ) {
                 /* We are at EOF (Probably the descriptor closed) */
                 break;
             }
@@ -956,8 +870,7 @@ int main( int argc, char *argv[] )
 
             int nwp = ( _r.wp + 1 ) % NUM_RAW_BLOCKS;
 
-            if ( nwp == ( volatile int )_r.rp )
-            {
+            if ( nwp == ( volatile int )_r.rp ) {
                 genericsExit( -1, "Overflow" EOL );
             }
 
@@ -965,15 +878,13 @@ int main( int argc, char *argv[] )
             pthread_cond_signal( &_r.dataForClients );
 
             /* Update the intervals */
-            if ( ( ( volatile bool ) _r.sampling ) && ( ( genericsTimestampmS() - ( volatile uint32_t )_r.starttime ) > _r.options->sampleDuration ) )
-            {
+            if ( ( ( volatile bool ) _r.sampling ) && ( ( genericsTimestampmS() - ( volatile uint32_t )_r.starttime ) > _r.options->sampleDuration ) ) {
                 _r.ending = true;
 
                 /* Post an empty data packet to flag to packet processor that it's done */
                 int nwp = ( _r.wp + 1 ) % NUM_RAW_BLOCKS;
 
-                if ( nwp == ( volatile int )_r.rp )
-                {
+                if ( nwp == ( volatile int )_r.rp ) {
                     genericsExit( -1, "Overflow" EOL );
                 }
 
@@ -994,16 +905,11 @@ int main( int argc, char *argv[] )
     genericsReport( V_INFO, "Received %d raw sample bytes, %ld function changes, %ld distinct addresses" EOL,
                     _r.intervalBytes, HASH_COUNT( _r.subhead ), HASH_COUNT( _r.insthead ) );
 
-    if ( HASH_COUNT( _r.subhead ) )
-    {
-        if ( ext_ff_outputDot( _r.options->dotfile, _r.subhead, _r.s ) )
-        {
+    if ( HASH_COUNT( _r.subhead ) ) {
+        if ( ext_ff_outputDot( _r.options->dotfile, _r.subhead, _r.s ) ) {
             genericsReport( V_INFO, "Output DOT" EOL );
-        }
-        else
-        {
-            if ( _r.options->dotfile )
-            {
+        } else {
+            if ( _r.options->dotfile ) {
                 genericsExit( -1, "Failed to output DOT" EOL );
             }
         }
@@ -1014,14 +920,10 @@ int main( int argc, char *argv[] )
                                    _r.op.lasttstamp - _r.op.firsttstamp,
                                    _r.insthead,
                                    _r.subhead,
-                                   _r.s ) )
-        {
+                                   _r.s ) ) {
             genericsReport( V_INFO, "Output Profile" EOL );
-        }
-        else
-        {
-            if ( _r.options->profile )
-            {
+        } else {
+            if ( _r.options->profile ) {
                 genericsExit( -1, "Failed to output profile" EOL );
             }
         }

@@ -15,14 +15,12 @@
 #include "generics.h"
 
 /* Internal states of the protocol machine */
-enum TRACE_MTBprotoState
-{
+enum TRACE_MTBprotoState {
     TRACE_UNSYNCED,
     TRACE_IDLE
 };
 
-struct MTBDecodeState
-{
+struct MTBDecodeState {
     struct TRACEDecoderEngine e; /* Must be first to allow object method access */
     enum TRACE_MTBprotoState p;  /* Current state of the receiver */
 };
@@ -55,8 +53,7 @@ static bool _pumpActionPair( struct TRACEDecoderEngine *e, struct TRACECPUState 
 
     REPORT( "[From 0x%08x to 0x%08x]" EOL, source, dest );
 
-    switch ( j->p )
-    {
+    switch ( j->p ) {
         // -----------------------------------------------------
 
         case TRACE_UNSYNCED:
@@ -65,8 +62,7 @@ static bool _pumpActionPair( struct TRACEDecoderEngine *e, struct TRACECPUState 
             cpu->nextAddr = ( dest & 0xFFFFFFFE ) | ( source & 1 );
 
             /* If the low bit of dest was set then this is a start of trace event */
-            if ( dest & 1 )
-            {
+            if ( dest & 1 ) {
                 _stateChange( cpu, EV_CH_TRACESTART );
             }
 
@@ -76,15 +72,13 @@ static bool _pumpActionPair( struct TRACEDecoderEngine *e, struct TRACECPUState 
         // -----------------------------------------------------
 
         case TRACE_IDLE:
-            if ( cpu->nextAddr & 1 )
-            {
+            if ( cpu->nextAddr & 1 ) {
                 /* If low bit of nextAddr is set then we got here via an exception */
                 _stateChange( cpu, EV_CH_EX_ENTRY );
             }
 
             /* If low bit of dest is set then this is a start of trace */
-            if ( dest & 1 )
-            {
+            if ( dest & 1 ) {
                 _stateChange( cpu, EV_CH_TRACESTART );
             }
 

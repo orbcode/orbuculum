@@ -774,7 +774,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
         }                                                                              \
         _ha_head->hh_head = (addhh);                                                   \
         if ((_ha_head->count >= ((_ha_head->expand_mult + 1U) * HASH_BKT_CAPACITY_THRESH)) \
-                && !(addhh)->tbl->noexpand) {                                              \
+            && !(addhh)->tbl->noexpand) {                                              \
             HASH_EXPAND_BUCKETS(addhh,(addhh)->tbl, oomed);                              \
             IF_HASH_NONFATAL_OOM(                                                        \
             if (oomed) {                                                               \
@@ -984,8 +984,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
         if ((src) != NULL) {                                                           \
             for (_src_bkt=0; _src_bkt < (src)->hh_src.tbl->num_buckets; _src_bkt++) {    \
                 for (_src_hh = (src)->hh_src.tbl->buckets[_src_bkt].hh_head;               \
-                        _src_hh != NULL;                                                         \
-                        _src_hh = _src_hh->hh_next) {                                            \
+                     _src_hh != NULL;                                                         \
+                     _src_hh = _src_hh->hh_next) {                                            \
                     _elt = ELMT_FROM_HH((src)->hh_src.tbl, _src_hh);                         \
                     if (cond(_elt)) {                                                        \
                         IF_HASH_NONFATAL_OOM( int _hs_oomed = 0; )                             \
@@ -1054,19 +1054,18 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #ifdef NO_DECLTYPE
 #define HASH_ITER(hh,head,el,tmp)                                                \
     for(((el)=(head)), ((*(char**)(&(tmp)))=(char*)((head!=NULL)?(head)->hh.next:NULL)); \
-            (el) != NULL; ((el)=(tmp)), ((*(char**)(&(tmp)))=(char*)((tmp!=NULL)?(tmp)->hh.next:NULL)))
+        (el) != NULL; ((el)=(tmp)), ((*(char**)(&(tmp)))=(char*)((tmp!=NULL)?(tmp)->hh.next:NULL)))
 #else
 #define HASH_ITER(hh,head,el,tmp)                                                \
     for(((el)=(head)), ((tmp)=DECLTYPE(el)((head!=NULL)?(head)->hh.next:NULL));      \
-            (el) != NULL; ((el)=(tmp)), ((tmp)=DECLTYPE(el)((tmp!=NULL)?(tmp)->hh.next:NULL)))
+        (el) != NULL; ((el)=(tmp)), ((tmp)=DECLTYPE(el)((tmp!=NULL)?(tmp)->hh.next:NULL)))
 #endif
 
 /* obtain a count of items in the hash */
 #define HASH_COUNT(head) HASH_CNT(hh,head)
 #define HASH_CNT(hh,head) ((head != NULL)?((head)->hh.tbl->num_items):0U)
 
-typedef struct UT_hash_bucket
-{
+typedef struct UT_hash_bucket {
     struct UT_hash_handle *hh_head;
     unsigned count;
 
@@ -1090,8 +1089,7 @@ typedef struct UT_hash_bucket
 #define HASH_SIGNATURE 0xa0111fe1u
 #define HASH_BLOOM_SIGNATURE 0xb12220f2u
 
-typedef struct UT_hash_table
-{
+typedef struct UT_hash_table {
     UT_hash_bucket *buckets;
     unsigned num_buckets, log2_num_buckets;
     unsigned num_items;
@@ -1124,8 +1122,7 @@ typedef struct UT_hash_table
 
 } UT_hash_table;
 
-typedef struct UT_hash_handle
-{
+typedef struct UT_hash_handle {
     struct UT_hash_table *tbl;
     void *prev;                       /* prev element in app order      */
     void *next;                       /* next element in app order      */

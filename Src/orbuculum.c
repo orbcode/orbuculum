@@ -12,7 +12,7 @@
 #include <ctype.h>
 #include <assert.h>
 #include <iostream>
-//#include <../toml.hpp>
+#include <../toml.hpp>
 #ifdef WIN32
     #include <winsock2.h>
 #else
@@ -64,43 +64,44 @@
 #define ORBTRACE "orbtrace"
 #define ORBTRACEENVNAME "ORBTRACE"
 
+#define CONFIG_FILENAME ".orbcfg.toml"
+
 /* Record for options, either defaults or from command line */
-struct Options
-{
+struct Options {
     /* Config information */
     bool nwserver;                                       /* Using a nw server source */
 
     /* Source information */
-    char *nwserverHost;                                  /* NW Server host connection */
+    const char *nwserverHost;                            /* NW Server host connection */
     int32_t nwserverPort;                                /* ...and port */
-    char *port;                                          /* Serial host connection */
-    int speed;                                           /* Speed of serial link */
-    bool useTPIU;                                        /* Are we using TPIU, and stripping TPIU frames? */
+    const char *serialPort;                              /* Serial host connection */
+    int serialSpeed;                                     /* Speed of serial link */
     uint32_t dataSpeed;                                  /* Effective data speed (can be less than link speed!) */
-    char *file;                                          /* File host connection */
+    const char *file;                                    /* File host connection */
     bool fileTerminate;                                  /* Terminate when file read isn't successful */
-    char *outfile;                                       /* Output file for raw data dumping */
+    const char *outfile;                                 /* Output file for raw data dumping */
+    bool run_orbtrace;                                   /* Should we explictly run orbtrace on start */
     char *otcl;                                          /* Orbtrace command line options */
     uint32_t intervalReportTime;                         /* If we want interval reports about performance */
     bool mono;                                           /* Supress colour in output */
     int paceDelay;                                       /* Delay between blocks of data transmission in file readout */
     char *channelList;                                   /* List of TPIU channels to be serviced */
     bool hiresTime;                                      /* Use hiresolution time (shorter timeouts...more accurate but higher load */
-    char *sn;                                            /* Any part serial number for identifying a specific device */
+    const char *sn;                                      /* Any part serial number for identifying a specific device */
+    char *config;                                        /* File containing base config, or NULL if there isn't one */
+
     /* Network link */
     int listenPort;                                      /* Listening port for network */
 };
 
-struct handlers
-{
+struct handlers {
     int channel;                                         /* Channel number for this handler */
     uint64_t intervalBytes;                              /* Number of depacketised bytes output on this channel */
     struct dataBlock *strippedBlock;                     /* Processed buffers for output to clients */
     struct nwclientsHandle *n;                           /* Link to the network client subsystem */
 };
 
-struct RunTime
-{
+struct RunTime {
     struct TPIUDecoder t;                                /* TPIU decoder instance, in case we need it */
     struct OrbtraceIf  *o;                               /* For accessing ORBTrace devices + BMPs */
 
@@ -135,7 +136,7 @@ struct RunTime
     #define SO_REUSEPORT SO_REUSEADDR
 #endif
 
-#define NWSERVER_HOST (char*)"localhost"                 /* Address to connect to NW Server */
+#define NWSERVER_HOST "localhost"                       /* Address to connect to NW Server */
 #define NWSERVER_PORT (2332)
 
 #define NUM_TPIU_CHANNELS 0x80
@@ -147,12 +148,8 @@ struct RunTime
 
 //#define DUMP_BLOCK
 
-struct Options _options =
-{
-    .nwserverHost = NWSERVER_HOST,
-    .listenPort   = NWCLIENT_SERVER_PORT,
-};
-
+/* Any non-null options will be set in the setup routine */
+struct Options _options;
 struct RunTime _r;
 
 // ====================================================================================================
@@ -174,8 +171,7 @@ static int _setSerialConfig ( int f, speed_t speed )
     struct termios2 settings;
     int ret = ioctl( f, TCGETS2, &settings );
 
-    if ( ret < 0 )
-    {
+    if ( ret < 0 ) {
         return ( -3 );
     }
 
@@ -194,8 +190,7 @@ static int _setSerialConfig ( int f, speed_t speed )
 
     ret = ioctl( f, TCSETS2, &settings );
 
-    if ( ret < 0 )
-    {
+    if ( ret < 0 ) {
         genericsReport( V_ERROR, "Unsupported baudrate" EOL );
         return ( -3 );
     }
@@ -203,13 +198,11 @@ static int _setSerialConfig ( int f, speed_t speed )
     // Check configuration is ok.
     ret = ioctl( f, TCGETS2, &settings );
 
-    if ( ret < 0 )
-    {
+    if ( ret < 0 ) {
         return ( -3 );
     }
 
-    if ( ( settings.c_ispeed != speed ) || ( settings.c_ospeed != speed ) )
-    {
+    if ( ( settings.c_ispeed != speed ) || ( settings.c_ospeed != speed ) ) {
         genericsReport( V_ERROR, "Failed to set baudrate" EOL );
         return -4;
     }
@@ -231,8 +224,7 @@ static bool _setSerialSpeed( HANDLE handle, int speed )
     dcb.DCBlength = sizeof( DCB );
     BOOL ok = GetCommState( handle, &dcb );
 
-    if ( !ok )
-    {
+    if ( !ok ) {
         return false;
     }
 
@@ -243,8 +235,7 @@ static bool _setSerialSpeed( HANDLE handle, int speed )
 
     ok = SetCommState( handle, &dcb );
 
-    if ( !ok )
-    {
+    if ( !ok ) {
         return false;
     }
 
@@ -252,8 +243,7 @@ static bool _setSerialSpeed( HANDLE handle, int speed )
     COMMTIMEOUTS timeouts;
     ok = GetCommTimeouts( handle, &timeouts );
 
-    if ( !ok )
-    {
+    if ( !ok ) {
         return false;
     }
 
@@ -262,8 +252,7 @@ static bool _setSerialSpeed( HANDLE handle, int speed )
     timeouts.ReadTotalTimeoutMultiplier  = 0;
     ok = SetCommTimeouts( handle, &timeouts );
 
-    if ( !ok )
-    {
+    if ( !ok ) {
         return false;
     }
 
@@ -279,14 +268,12 @@ static int _setSerialConfig ( int f, speed_t speed )
 {
     struct termios settings;
 
-    if ( tcgetattr( f, &settings ) < 0 )
-    {
+    if ( tcgetattr( f, &settings ) < 0 ) {
         perror( "tcgetattr" );
         return ( -3 );
     }
 
-    if ( cfsetspeed( &settings, speed ) < 0 )
-    {
+    if ( cfsetspeed( &settings, speed ) < 0 ) {
         genericsReport( V_ERROR, "Error Setting input speed" EOL );
         return ( -3 );
     }
@@ -299,8 +286,7 @@ static int _setSerialConfig ( int f, speed_t speed )
     settings.c_cflag |= CS8 | CLOCAL; /* 8 bits */
     settings.c_oflag &= ~OPOST; /* raw output */
 
-    if ( tcsetattr( f, TCSANOW, &settings ) < 0 )
-    {
+    if ( tcsetattr( f, TCSANOW, &settings ) < 0 ) {
         genericsReport( V_ERROR, "Unsupported baudrate" EOL );
         return ( -3 );
     }
@@ -320,8 +306,7 @@ static void _doExit( void )
     /* Give them a bit of time, then we're leaving anyway */
     usleep( INTERVAL_100MS );
 
-    if ( _r.opFileHandle )
-    {
+    if ( _r.opFileHandle ) {
         close( _r.opFileHandle );
         _r.opFileHandle = 0;
     }
@@ -342,6 +327,7 @@ void _printHelp( const char *const progName )
 {
     genericsPrintf( "Usage: %s [options]" EOL, progName );
     genericsPrintf( "    -a, --serial-speed:  <serialSpeed> to use" EOL );
+    genericsPrintf( "    -C, --configuration: <filename> to use. Defaults to " CONFIG_FILENAME " (Set to - to avoid loading.)" EOL );
     genericsPrintf( "    -E, --eof:           When reading from file, terminate at end of file" EOL );
     genericsPrintf( "    -f, --input-file:    <filename> Take input from specified file" EOL );
     genericsPrintf( "    -h, --help:          This help" EOL );
@@ -367,9 +353,9 @@ void _printVersion( void )
     genericsPrintf( "orbuculum version " GIT_DESCRIBE );
 }
 // ====================================================================================================
-static struct option _longOptions[] =
-{
+static struct option _longOptions[] = {
     {"serial-speed", required_argument, NULL, 'a'},
+    {"configuration", required_argument, NULL, 'C'},
     {"eof", no_argument, NULL, 'E'},
     {"input-file", required_argument, NULL, 'f'},
     {"help", no_argument, NULL, 'h'},
@@ -389,6 +375,122 @@ static struct option _longOptions[] =
     {"version", no_argument, NULL, 'V'},
     {NULL, no_argument, NULL, 0}
 };
+
+// ====================================================================================================
+bool _getBaseConfig( int argc, char *argv[], struct RunTime *r )
+
+{
+#define SHORTFORM "-C"
+#define LONGFORM  "--configuration="
+    toml::table cfg;
+
+    for ( int i = 0; i < argc; i++ ) {
+        if ( ( !strncmp( SHORTFORM, argv[i], strlen( SHORTFORM ) ) ) || ( !strncmp( LONGFORM, argv[i], strlen( LONGFORM ) ) ) ) {
+            if ( i < argc ) {
+                if ( !strncmp( SHORTFORM, argv[i], strlen( SHORTFORM ) ) ) {
+                    r->options->config = ( argv[i][strlen( SHORTFORM )] ) ? ( &argv[i][strlen( SHORTFORM )] ) : argv[i + 1];
+                } else {
+                    r->options->config = &argv[i][strlen( LONGFORM )];
+                }
+            }
+
+            break;
+        }
+    }
+
+    if ( !r->options->config ) {
+        r->options->config = ( char * )CONFIG_FILENAME;
+    }
+
+    /* Deal with case of a space after the = in the longform, just indicate */
+    if ( !r->options->config[0] ) {
+        r->options->config = ( char * )"-";
+    }
+
+    if ( !strncmp( "-", r->options->config, 1 ) ) {
+        return true;
+    }
+
+    try {
+        cfg = toml::parse_file( r->options->config );
+    } catch ( toml::parse_error &e ) {
+        genericsReport( V_ERROR, "%s: %s" EOL, r->options->config, e.what() );
+
+        if ( e.source().begin ) {
+            genericsReport( V_ERROR, "at line %d column %d" EOL, e.source().begin.line, e.source().begin.column );
+        }
+
+        return false;
+    }
+
+    // ------------------ Source parameters ------------------------------
+    r->options->serialSpeed = cfg["orbuculum"]["source"]["serial"]["speed"].value_or( 0 );
+    {
+        auto s = cfg["orbuculum"]["source"]["serial"]["port"].value<std::string>();
+        r->options->serialPort = s ? strdup( s->c_str() ) : nullptr;
+    }
+    r->options->nwserverPort = cfg["orbuculum"]["source"]["server"]["port"].value_or( NWSERVER_PORT );
+    {
+        auto s = cfg["orbuculum"]["source"]["server"]["name"].value<std::string>();
+        r->options->nwserverHost = strdup( s ? s->c_str() : NWSERVER_HOST );
+    }
+    {
+        auto s = cfg["orbuculum"]["source"]["serial_number"].value<std::string>();
+        r->options->sn = s ? strdup( s->c_str() ) : NULL;
+    }
+    {
+        auto s = cfg["orbuculum"]["source"]["file"].value<std::string>();
+        r->options->file = s ? strdup( s->c_str() ) : NULL;
+    }
+    r->options->fileTerminate = cfg["orbuculum"]["source"]["exit_at_eof"].value_or( false );
+
+    // ------------------ Processing parameters ------------------------------
+    r->options->hiresTime = cfg["orbuculum"]["processing"]["hires"].value_or( false );
+
+    {
+        auto chan = cfg.at_path( "orbuculum.processing.tpiu_channels" );
+        std::string a;
+
+        if ( chan.is_array() ) {
+            auto *s = chan.as_array();
+
+            for ( auto &&n : *s ) {
+                a += "," + std::to_string( n.value_or( 0 ) );
+            }
+
+            a.erase( a.begin() );
+        } else if ( chan.is_integer() ) {
+            a = std::to_string( chan.as_integer()->value_or( 0 ) );
+        }
+
+        if ( a.length() ) {
+            r->options->channelList = strdup( a.c_str() );
+        }
+    }
+
+    // ------------------ Presentation parameters ------------------------------
+    r->options->intervalReportTime = cfg["orbuculum"]["presentation"]["monitor_interval"].value_or( 0 );
+    r->options->dataSpeed = cfg["orbuculum"]["presentation"]["data_speed"].value_or( 0 );
+    r->options->mono = !cfg["orbuculum"]["presentation"]["colour"].value_or( true );
+    genericsSetReportLevel( ( enum verbLevel )cfg["orbuculum"]["presentation"]["verbose"].value_or( 1 ) );
+    r->options->run_orbtrace = cfg["orbuculum"]["presentation"]["run_orbtrace"].value_or( false );
+
+    // ------------------ Output parameters ------------------------------
+    r->options->listenPort = cfg["orbuculum"]["output"]["port"].value_or( NWCLIENT_SERVER_PORT );
+    {
+        auto s = cfg["orbuculum"]["output"]["file"].value<std::string>();
+        r->options->outfile = s ? strdup( s->c_str() ) : NULL;
+    }
+    r->options->paceDelay = cfg["orbuculum"]["output"]["pace_delay"].value_or( 0 );
+
+    /* We can make data Speed implicit if it's not explicitly stated */
+    if ( !r->options->dataSpeed ) {
+        r->options->dataSpeed = r->options->serialSpeed;
+    }
+
+    return true;
+}
+
 // ====================================================================================================
 bool _processOptions( int argc, char *argv[], struct RunTime *r )
 
@@ -397,23 +499,37 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
     char *a;
 #define DELIMITER ','
 
-    while ( ( c = getopt_long ( argc, argv, "a:Ef:hHVl:m:Mn:o:O:p:P:s:t:v:", _longOptions, &optionIndex ) ) != -1 )
-        switch ( c )
-        {
+    /* Read any file based config before command line */
+    if ( !_getBaseConfig( argc, argv, &_r ) ) {
+        return false;
+    }
+
+    optind = opterr = 0;
+
+    while ( ( c = getopt_long ( argc, argv, ":a:C:Ef:hHVl:m:Mn:o:O:p:P:s:t:v:", _longOptions, &optionIndex ) ) != -1 )
+        switch ( c ) {
             // ------------------------------------
             case 'a':
-                r->options->speed = atoi( optarg );
-                r->options->dataSpeed = r->options->speed;
+                r->options->serialSpeed = atoi( optarg );
+                r->options->dataSpeed = r->options->serialSpeed;
                 break;
 
             // ------------------------------------
+            case 'C':
+                /* This is dealt with seperately in _getBaseConfig above, but shouldn't create an error */
+                break;
 
+            // ------------------------------------
             case 'E':
                 r->options->fileTerminate = true;
                 break;
 
             // ------------------------------------
             case 'f':
+                if ( r->options->file ) {
+		  free( (void*)r->options->file );
+                }
+
                 r->options->file = optarg;
                 break;
 
@@ -433,74 +549,84 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
                 return false;
 
             // ------------------------------------
-
             case 'l':
                 r->options->listenPort = atoi( optarg );
                 break;
 
             // ------------------------------------
-
             case 'm':
                 r->options->intervalReportTime = atoi( optarg );
                 break;
 
             // ------------------------------------
-
             case 'M':
                 r->options->mono = true;
                 break;
 
             // ------------------------------------
-
             case 'n':
+                if ( r->options->sn ) {
+		  free( (void*)r->options->sn );
+                }
+
                 r->options->sn = optarg;
                 break;
 
             // ------------------------------------
-
             case 'o':
+                if ( r->options->outfile ) {
+		  free( (void*)r->options->outfile );
+                }
+
                 r->options->outfile = optarg;
                 break;
 
             // ------------------------------------
-
             case 'O':
+                r->options->run_orbtrace = true;
+
+                if ( r->options->otcl ) {
+                    free( r->options->otcl );
+                }
+
                 r->options->otcl = optarg;
                 break;
 
             // ------------------------------------
-
             case 'p':
-                r->options->port = optarg;
+                if ( r->options->serialPort ) {
+		  free( (void*)r->options->serialPort );
+                }
+
+                r->options->serialPort = optarg;
                 break;
 
             // ------------------------------------
-
             case 'P':
                 r->options->paceDelay = atoi( optarg );
                 break;
 
             // ------------------------------------
-
             case 's':
+                if ( r->options->nwserverHost ) {
+		  free( (void*)r->options->nwserverHost );
+                }
+
                 r->options->nwserverHost = optarg;
 
                 // See if we have an optional port number too
                 a = optarg;
 
-                while ( ( *a ) && ( *a != ':' ) )
-                {
+                while ( ( *a ) && ( *a != ':' ) ) {
                     a++;
                 }
 
-                if ( *a == ':' )
-                {
+                if ( *a == ':' ) {
                     *a = 0;
                     r->options->nwserverPort = atoi( ++a );
                 }
 
-                if ( !r->options->nwserverPort )
-                {
+                if ( !r->options->nwserverPort ) {
                     r->options->nwserverPort = NWSERVER_PORT;
                 }
 
@@ -508,14 +634,16 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
 
             // ------------------------------------
             case 't':
-                r->options->useTPIU = true;
+                if ( r->options->channelList ) {
+                    free( r->options->channelList );
+                }
+
                 r->options->channelList = optarg;
                 break;
 
             // ------------------------------------
             case 'v':
-                if ( !isdigit( *optarg ) )
-                {
+                if ( !isdigit( *optarg ) ) {
                     genericsReport( V_ERROR, "-v requires a numeric argument." EOL );
                     return false;
                 }
@@ -524,17 +652,13 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
                 break;
 
             // ------------------------------------
+            case ':':
+                genericsReport( V_ERROR, "Option '%c' requires an argument." EOL, optopt );
+                return false;
 
+            // ------------------------------------
             case '?':
-                if ( optopt == 'b' )
-                {
-                    genericsReport( V_ERROR, "Option '%c' requires an argument." EOL, optopt );
-                }
-                else if ( !isprint ( optopt ) )
-                {
-                    genericsReport( V_ERROR, "Unknown option character `\\x%x'." EOL, optopt );
-                }
-
+                genericsReport( V_ERROR, "Unknown option character %c." EOL, optopt );
                 return false;
 
             // ------------------------------------
@@ -547,91 +671,78 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
     /* ... and dump the config if we're being verbose */
     genericsReport( V_INFO, "orbuculum version " GIT_DESCRIBE EOL );
 
-    if ( r->options->intervalReportTime )
-    {
+    genericsReport( V_INFO, "Base config in : %s" EOL, r->options->config );
+
+    if ( r->options->intervalReportTime ) {
         genericsReport( V_INFO, "Report Intv    : %d mS" EOL, r->options->intervalReportTime );
     }
 
-    if ( r->options->port )
-    {
-        genericsReport( V_INFO, "Serial Port    : %s" EOL, r->options->port );
+    if ( r->options->serialPort ) {
+        genericsReport( V_INFO, "Serial Port    : %s" EOL, r->options->serialPort );
     }
 
-    if ( r->options->speed )
-    {
-        genericsReport( V_INFO, "Serial Speed   : %d baud" EOL, r->options->speed );
+    if ( r->options->serialSpeed ) {
+        genericsReport( V_INFO, "Serial Speed   : %d baud" EOL, r->options->serialSpeed );
     }
 
-    if ( r->options->sn )
-    {
+    if ( r->options->sn ) {
         genericsReport( V_INFO, "Serial Nummber : %s" EOL, r->options->sn );
     }
 
-    if ( r->options->dataSpeed )
-    {
+    if ( r->options->dataSpeed ) {
         genericsReport( V_INFO, "Max Data Rt    : %d bps" EOL, r->options->dataSpeed );
     }
 
-    if ( r->options->outfile )
-    {
+    if ( r->options->outfile ) {
         genericsReport( V_INFO, "Raw Output file: %s" EOL, r->options->outfile );
     }
 
-    if ( r->options->nwserverPort )
-    {
+    if ( r->options->nwserverPort ) {
         genericsReport( V_INFO, "NW SERVER H&P  : %s:%d" EOL, r->options->nwserverHost, r->options->nwserverPort );
     }
 
-    if ( r->options->useTPIU )
-    {
+    if ( r->options->channelList ) {
         genericsReport( V_INFO, "Use/Strip TPIU : True (Channel List %s)" EOL, r->options->channelList );
-    }
-    else
-    {
+    } else {
         genericsReport( V_INFO, "Use/Strip TPIU : False" EOL );
     }
 
-    if ( r->options->otcl )
-    {
-        genericsReport( V_INFO, "Orbtrace CL    : %s" EOL, r->options->otcl );
+    if ( r->options->run_orbtrace ) {
+        genericsReport( V_INFO, "Run Orbtrace" EOL );
+
+        if ( r->options->otcl ) {
+            genericsReport( V_INFO, "Orbtrace CL    : %s" EOL, r->options->otcl );
+        }
     }
 
-    if ( r->options->hiresTime )
-    {
+    if ( r->options->hiresTime ) {
         genericsReport( V_INFO, "High Res Time" EOL );
     }
 
-    if ( r->options->file )
-    {
+    if ( r->options->file ) {
         genericsReport( V_INFO, "Input File     : %s" EOL, r->options->file );
         genericsReport( V_INFO, "Pace Delay     : %dus" EOL, r->options->paceDelay );
 
-        if ( r->options->fileTerminate )
-        {
+        if ( r->options->fileTerminate ) {
             genericsReport( V_INFO, " (Terminate on exhaustion)" EOL );
-        }
-        else
-        {
+        } else {
             genericsReport( V_INFO, " (Ongoing read)" EOL );
         }
     }
 
-    if ( ( r->options->file ) && ( ( r->options->port ) || ( r->options->nwserverPort ) ) )
-    {
-        genericsReport( V_ERROR, "Cannot specify file and port or NW Server at same time" EOL );
+    if ( ( r->options->file ) && ( ( r->options->serialPort ) || ( r->options->nwserverPort ) ) ) {
+        genericsReport( V_ERROR, "Cannot specify file and serial port or NW Server at same time" EOL );
         return false;
     }
 
-    if ( (     r->options->paceDelay ) && ( !r->options->file ) )
-    {
+    if ( (     r->options->paceDelay ) && ( !r->options->file ) ) {
         genericsReport( V_ERROR, "Pace Delay only makes sense when input is from a file" EOL );
         return false;
     }
 
 
-    if ( ( r->options->port ) && ( r->options->nwserverPort ) )
-    {
-        genericsReport( V_ERROR, "Cannot specify port and NW Server at same time" EOL );
+    if ( ( r->options->serialPort ) && ( r->options->nwserverPort ) ) {
+        genericsReport( V_ERROR, "Cannot specify serial port and NW Server at same time" EOL );
         return false;
     }
 
@@ -647,8 +758,7 @@ void *_checkInterval( void *params )
     uint64_t snapInterval;
     struct handlers *h;
 
-    while ( !r->ending )
-    {
+    while ( !r->ending ) {
         usleep( r->options->intervalReportTime * INTERVAL_1MS );
 
         /* Grab the interval and scale to 1 second */
@@ -656,30 +766,22 @@ void *_checkInterval( void *params )
 
         snapInterval *= 8;
 
-        if ( r->conn )
-        {
+        if ( r->conn ) {
             genericsPrintf( C_PREV_LN C_CLR_LN C_DATA );
 
-            if ( snapInterval / 1000000 )
-            {
+            if ( snapInterval / 1000000 ) {
                 genericsPrintf( "%4d.%d " C_RESET "MBits/sec ", snapInterval / 1000000, ( snapInterval * 1 / 100000 ) % 10 );
-            }
-            else if ( snapInterval / 1000 )
-            {
+            } else if ( snapInterval / 1000 ) {
                 genericsPrintf( "%4d.%d " C_RESET "KBits/sec ", snapInterval / 1000, ( snapInterval / 100 ) % 10 );
-            }
-            else
-            {
+            } else {
                 genericsPrintf( "  %4d " C_RESET " Bits/sec ", snapInterval );
             }
 
             h = r->handler;
             uint64_t totalDat = 0;
 
-            if ( ( r->intervalBytes ) && ( r->options->useTPIU ) )
-            {
-                for ( int chIndex = 0; chIndex < r->numHandlers; chIndex++ )
-                {
+            if ( ( r->intervalBytes ) && ( r->options->channelList ) ) {
+                for ( int chIndex = 0; chIndex < r->numHandlers; chIndex++ ) {
                     genericsPrintf( " %d:%3d%% ",  h->channel, ( h->intervalBytes * 100 ) / r->intervalBytes );
                     totalDat += h->intervalBytes;
                     /* TODO: This needs a mutex */
@@ -693,8 +795,7 @@ void *_checkInterval( void *params )
 
             r->intervalBytes = 0;
 
-            if ( r->options->dataSpeed > 100 )
-            {
+            if ( r->options->dataSpeed > 100 ) {
                 /* Conversion to percentage done as a division to avoid overflow */
                 uint32_t fullPercent = ( snapInterval * 100 ) / r->options->dataSpeed;
                 genericsPrintf( "(" C_DATA " %3d%% " C_RESET "full)", ( fullPercent > 100 ) ? 100 : fullPercent );
@@ -712,15 +813,12 @@ static void _purgeBlock( struct RunTime *r )
 {
     /* Now send any packets to clients who want it */
 
-    if ( r->options->useTPIU )
-    {
+    if ( r->options->channelList ) {
         struct handlers *h = r->handler;
         int i = r->numHandlers;
 
-        while ( i-- )
-        {
-            if ( h->strippedBlock->fillLevel )
-            {
+        while ( i-- ) {
+            if ( h->strippedBlock->fillLevel ) {
                 nwclientSend( h->n, h->strippedBlock->fillLevel, h->strippedBlock->buffer, ( r->options->file != NULL ) );
                 h->intervalBytes += h->strippedBlock->fillLevel;
                 h->strippedBlock->fillLevel = 0;
@@ -742,25 +840,20 @@ static void _TPIUpacketRxed( enum TPIUPumpEvent e, struct TPIUPacket *p, void *p
     int cachedChannel = -1;
     int chIndex = 0;
 
-    switch ( e )
-    {
+    switch ( e ) {
         case TPIU_EV_RXEDPACKET:
 
             /* Iterate through the packet, putting it into the correct output buffers */
-            for ( uint32_t g = 0; g < p->len; g++ )
-            {
-                if ( cachedChannel != p->packet[g].s )
-                {
+            for ( uint32_t g = 0; g < p->len; g++ ) {
+                if ( cachedChannel != p->packet[g].s ) {
                     /* Whatever happens, cache this result */
                     cachedChannel = p->packet[g].s;
 
                     /* Search for channel */
                     h = r->handler;
 
-                    for ( chIndex = 0; chIndex < r->numHandlers; chIndex++ )
-                    {
-                        if ( h->channel == p->packet[g].s )
-                        {
+                    for ( chIndex = 0; chIndex < r->numHandlers; chIndex++ ) {
+                        if ( h->channel == p->packet[g].s ) {
                             break;
                         }
 
@@ -768,13 +861,10 @@ static void _TPIUpacketRxed( enum TPIUPumpEvent e, struct TPIUPacket *p, void *p
                     }
                 }
 
-                if ( ( chIndex != r->numHandlers ) && ( h ) )
-                {
+                if ( ( chIndex != r->numHandlers ) && ( h ) ) {
                     /* We must have found a match for this at some point, so add it to the queue */
                     h->strippedBlock->buffer[h->strippedBlock->fillLevel++] = p->packet[g].d;
-                }
-                else
-                {
+                } else {
                     genericsReport( V_WARN, "No handler for %d" EOL, p->packet[g].s );
                 }
             }
@@ -801,8 +891,7 @@ static void _processBlock( struct RunTime *r, ssize_t fillLevel, uint8_t *buffer
 {
     genericsReport( V_DEBUG, "RXED Packet of %d bytes%s" EOL, fillLevel, ( r->options->intervalReportTime ) ? EOL : "" );
 
-    if ( fillLevel )
-    {
+    if ( fillLevel ) {
         /* Account for this reception */
         r->intervalBytes += fillLevel;
 
@@ -812,34 +901,27 @@ static void _processBlock( struct RunTime *r, ssize_t fillLevel, uint8_t *buffer
 
         genericsPrintf( EOL );
 
-        while ( y-- )
-        {
+        while ( y-- ) {
             genericsPrintf( "%02X ", *c++ );
 
-            if ( !( y % 16 ) )
-            {
+            if ( !( y % 16 ) ) {
                 genericsPrinttf( EOL );
             }
         }
 
 #endif
 
-        if ( r->opFileHandle )
-        {
-            if ( write( r->opFileHandle, buffer, fillLevel ) < 0 )
-            {
+        if ( r->opFileHandle ) {
+            if ( write( r->opFileHandle, buffer, fillLevel ) < 0 ) {
                 genericsExit( -3, "Writing to file failed" EOL );
             }
         }
 
-        if ( r-> options->useTPIU )
-        {
+        if ( r-> options->channelList ) {
             /* Strip the TPIU framing from this input */
             TPIUPump2( &r->t, r->rawBlock[r->rp].buffer, r->rawBlock[r->rp].fillLevel, _TPIUpacketRxed, r );
             _purgeBlock( r );
-        }
-        else
-        {
+        } else {
             /* Do it the old fashioned way and send out the unfettered block */
             nwclientSend( _r.n, r->rawBlock[r->rp].fillLevel, r->rawBlock[r->rp].buffer, ( r->options->file != NULL ) );
         }
@@ -854,12 +936,10 @@ static void *_processBlocksQueue( void *params )
 {
     struct RunTime *r = ( struct RunTime * )params;
 
-    while ( !r->ending )
-    {
+    while ( !r->ending ) {
         pthread_cond_wait( &r->dataForClients, &r->dataForClients_m );
 
-        while ( r->rp != r->wp )
-        {
+        while ( r->rp != r->wp ) {
             _processBlock( r, r->rawBlock[r->rp].fillLevel, r->rawBlock[r->rp].buffer );
             r->rp = ( r->rp + 1 ) % NUM_RAW_BLOCKS;
         }
@@ -881,14 +961,11 @@ static void _usb_callback( struct libusb_transfer *t )
 
 {
     /* Whatever the status that comes back, there may be data... */
-    if ( t->actual_length > 0 )
-    {
+    if ( t->actual_length > 0 ) {
         _r.intervalBytes += t->actual_length;
 
-        if ( _r.opFileHandle )
-        {
-            if ( write( _r.opFileHandle, t->buffer, t->actual_length ) < 0 )
-            {
+        if ( _r.opFileHandle ) {
+            if ( write( _r.opFileHandle, t->buffer, t->actual_length ) < 0 ) {
                 genericsExit( -4, "Writing to file failed (%s)" EOL, strerror( errno ) );
             }
         }
@@ -899,47 +976,37 @@ static void _usb_callback( struct libusb_transfer *t )
 
         genericsPrintf( stderr, EOL );
 
-        while ( y-- )
-        {
+        while ( y-- ) {
             genericsPrintf( stderr, "%02X ", *c++ );
 
-            if ( !( y % 16 ) )
-            {
+            if ( !( y % 16 ) ) {
                 genericsPrintf( stderr, EOL );
             }
         }
 
 #endif
 
-        if ( _r.options->useTPIU )
-        {
+        if ( _r.options->channelList ) {
             /* Strip the TPIU framing from this input */
             TPIUPump2( &_r.t, t->buffer, t->actual_length, _TPIUpacketRxed, &_r );
             _purgeBlock( &_r );
-        }
-        else
-        {
+        } else {
             /* Do it the old fashioned way and send out the unfettered block */
             nwclientSend( _r.n, t->actual_length, t->buffer, false );
         }
     }
 
     if ( ( t->status != LIBUSB_TRANSFER_COMPLETED ) &&
-            ( t->status != LIBUSB_TRANSFER_TIMED_OUT ) &&
-            ( t->status != LIBUSB_TRANSFER_CANCELLED )
-       )
-    {
-        if ( !_r.errored )
-        {
+         ( t->status != LIBUSB_TRANSFER_TIMED_OUT ) &&
+         ( t->status != LIBUSB_TRANSFER_CANCELLED )
+       ) {
+        if ( !_r.errored ) {
             genericsReport( V_WARN, "Errored out with status %d (%s)" EOL, t->status, libusb_error_name( t->status ) );
         }
 
         _r.errored = true;
-    }
-    else
-    {
-        if ( t->status != LIBUSB_TRANSFER_CANCELLED )
-        {
+    } else {
+        if ( t->status != LIBUSB_TRANSFER_CANCELLED ) {
             libusb_submit_transfer( t );
         }
     }
@@ -952,29 +1019,23 @@ void _actionOrbtraceCommand( struct RunTime *r, char *sn, enum ORBTraceDevice d 
     char commandLine[MAX_LINE_LEN];
 
     /* If we have any configuration to do on this device, go ahead */
-    if ( r->options->otcl )
-    {
-        if ( getenv( ORBTRACEENVNAME ) )
-        {
-            snprintf( commandLine, MAX_LINE_LEN, "%s %s %s %s", getenv( ORBTRACEENVNAME ), r->options->otcl, sn ? ( ( d == DEVICE_ORBTRACE_MINI ) ? "-n " : "-s " ) : "", sn ? sn : "" );
-        }
-        else
-        {
+    if ( r->options->run_orbtrace ) {
+        if ( getenv( ORBTRACEENVNAME ) ) {
+            snprintf( commandLine, MAX_LINE_LEN, "%s %s %s %s", getenv( ORBTRACEENVNAME ), r->options->otcl ? r->options->otcl : "", sn ? ( ( d == DEVICE_ORBTRACE_MINI ) ? "-n " : "-s " ) : "", sn ? sn : "" );
+        } else {
             char *baseDirectory = genericsGetBaseDirectory( );
 
-            if ( !baseDirectory )
-            {
+            if ( !baseDirectory ) {
                 genericsExit( -1, "Failed to establish base directory" EOL );
             }
 
-            snprintf( commandLine, MAX_LINE_LEN, "%s" ORBTRACE " %s %s %s", baseDirectory, r->options->otcl, sn ? ( ( d == DEVICE_ORBTRACE_MINI ) ? "-n " : "-s " ) : "", sn ? sn : "" );
+            snprintf( commandLine, MAX_LINE_LEN, "%s" ORBTRACE " %s %s %s", baseDirectory, r->options->otcl ? r->options->otcl : "", sn ? ( ( d == DEVICE_ORBTRACE_MINI ) ? "-n " : "-s " ) : "", sn ? sn : "" );
             free( baseDirectory );
         }
 
         genericsReport( V_INFO, "%s" EOL, commandLine );
 
-        if (  system( commandLine ) )
-        {
+        if (  system( commandLine ) ) {
             genericsReport( V_ERROR, "Invoking orbtrace failed" EOL );
         }
     }
@@ -987,13 +1048,11 @@ static int _usbFeeder( struct RunTime *r )
     int workingDev;
 
     /* Copy any part serial number across */
-    if ( r->options->sn )
-    {
+    if ( r->options->sn ) {
         r->sn = strdup( r->options->sn );
     }
 
-    while ( !r->ending )
-    {
+    while ( !r->ending ) {
         r->errored = false;
 
         /* ...just in case we had a context */
@@ -1001,23 +1060,20 @@ static int _usbFeeder( struct RunTime *r )
         r->o = OrbtraceIfCreateContext();
         assert( r->o );
 
-        while ( 0 == OrbtraceIfGetDeviceList( r->o, r->sn, DEVTYPE_ALL ) )
-        {
+        while ( 0 == OrbtraceIfGetDeviceList( r->o, r->sn, DEVTYPE_ALL ) ) {
             usleep( INTERVAL_1S );
         }
 
         genericsReport( V_INFO, "Found device" EOL );
         workingDev = OrbtraceIfSelectDevice( r->o );
 
-        if ( !OrbtraceIfOpenDevice( r->o, workingDev ) )
-        {
+        if ( !OrbtraceIfOpenDevice( r->o, workingDev ) ) {
             genericsReport( V_INFO, "Couldn't open device" EOL );
             break;
         }
 
         /* Take a record of what device we're using...we'll use that next time around to re-connect */
-        if ( r->sn )
-        {
+        if ( r->sn ) {
             free( r->sn );
         }
 
@@ -1026,8 +1082,7 @@ static int _usbFeeder( struct RunTime *r )
         /* Before we open, perform any orbtrace configuration that is needed */
         _actionOrbtraceCommand( r, r->sn, OrbtraceIfGetDevtype( r->o, workingDev ) );
 
-        if ( !OrbtraceGetIfandEP( r->o ) )
-        {
+        if ( !OrbtraceGetIfandEP( r->o ) ) {
             genericsReport( V_INFO, "Couldn't get IF and EP" EOL );
             break;
         }
@@ -1038,12 +1093,10 @@ static int _usbFeeder( struct RunTime *r )
         r->errored = !( r->conn = OrbtraceIfSetupTransfers( r->o, r->options->hiresTime, r->rawBlock, NUM_RAW_BLOCKS, _usb_callback ) );
 
         /* =========================== The main dispatch loop ======================================= */
-        while ( ( !r->ending )  && ( !r->errored ) )
-        {
+        while ( ( !r->ending )  && ( !r->errored ) ) {
             int ret =   OrbtraceIfHandleEvents( r->o );
 
-            if ( ( ret ) && ( ret != LIBUSB_ERROR_INTERRUPTED ) )
-            {
+            if ( ( ret ) && ( ret != LIBUSB_ERROR_INTERRUPTED ) ) {
                 genericsReport( V_ERROR, "Error waiting for USB requests to complete %d" EOL, ret );
             }
         }
@@ -1055,8 +1108,7 @@ static int _usbFeeder( struct RunTime *r )
         /* Remove transfers from list and release the memory */
         OrbtraceIfCloseTransfers( r->o );
 
-        if ( !r->ending )
-        {
+        if ( !r->ending ) {
             genericsReport( V_INFO, "USB connection lost" EOL );
         }
 
@@ -1068,12 +1120,10 @@ static int _usbFeeder( struct RunTime *r )
 // ====================================================================================================
 static int _nwserverFeeder( struct RunTime *r )
 {
-    while ( true )
-    {
+    while ( true ) {
         struct Stream *stream = streamCreateSocket( r->options->nwserverHost, r->options->nwserverPort );
 
-        if ( stream == NULL )
-        {
+        if ( stream == NULL ) {
             continue;
         }
 
@@ -1081,15 +1131,13 @@ static int _nwserverFeeder( struct RunTime *r )
 
         r->conn = true;
 
-        while ( !r->ending )
-        {
+        while ( !r->ending ) {
             struct dataBlock *rxBlock = &r->rawBlock[r->wp];
 
             size_t receivedSize;
             enum ReceiveResult result = stream->receive( stream, rxBlock->buffer, USB_TRANSFER_SIZE, NULL, &receivedSize );
 
-            if ( result != RECEIVE_RESULT_OK )
-            {
+            if ( result != RECEIVE_RESULT_OK ) {
                 break;
             }
 
@@ -1098,8 +1146,7 @@ static int _nwserverFeeder( struct RunTime *r )
             _dataAvailable( r );
         }
 
-        if ( !r->ending )
-        {
+        if ( !r->ending ) {
             genericsReport( V_INFO, "Lost NW Server Link" EOL );
         }
 
@@ -1120,10 +1167,9 @@ static int _nwserverFeeder( struct RunTime *r )
 static int _serialFeeder( struct RunTime *r )
 {
     char portPath[MAX_PATH] = { 0 };
-    snprintf( portPath, sizeof( portPath ), "\\\\.\\%s", r->options->port );
+    snprintf( portPath, sizeof( portPath ), "\\\\.\\%s", r->options->serialPort );
 
-    while ( !r->ending )
-    {
+    while ( !r->ending ) {
         HANDLE portHandle = CreateFile( portPath,
                                         GENERIC_READ,
                                         0,      //  must be opened with exclusive-access
@@ -1132,15 +1178,13 @@ static int _serialFeeder( struct RunTime *r )
                                         0,    //  not overlapped I/O
                                         NULL ); //  hTemplate must be NULL for comm devices
 
-        if ( portHandle == INVALID_HANDLE_VALUE )
-        {
+        if ( portHandle == INVALID_HANDLE_VALUE ) {
             genericsExit( 1, "Can't open serial port" EOL );
         }
 
         genericsReport( V_INFO, "Port opened" EOL );
 
-        if ( !_setSerialSpeed( portHandle, r->options->speed ) )
-        {
+        if ( !_setSerialSpeed( portHandle, r->options->serialSpeed ) ) {
             genericsExit( 2, "setSerialConfig failed" EOL );
         }
 
@@ -1150,16 +1194,14 @@ static int _serialFeeder( struct RunTime *r )
 
         r->conn = true;
 
-        while ( !r->ending )
-        {
+        while ( !r->ending ) {
             DWORD eventMask = 0;
             WaitCommEvent( portHandle, &eventMask, NULL );
             DWORD unused;
             COMSTAT stats;
             ClearCommError( portHandle, &unused, &stats );
 
-            if ( stats.cbInQue == 0 )
-            {
+            if ( stats.cbInQue == 0 ) {
                 continue;
             }
 
@@ -1167,8 +1209,7 @@ static int _serialFeeder( struct RunTime *r )
 
             DWORD transferSize = stats.cbInQue;
 
-            if ( transferSize > USB_TRANSFER_SIZE )
-            {
+            if ( transferSize > USB_TRANSFER_SIZE ) {
                 transferSize = USB_TRANSFER_SIZE;
             }
 
@@ -1177,8 +1218,7 @@ static int _serialFeeder( struct RunTime *r )
 
             rxBlock->fillLevel = readBytes;
 
-            if ( rxBlock->fillLevel <= 0 )
-            {
+            if ( rxBlock->fillLevel <= 0 ) {
                 break;
             }
 
@@ -1188,8 +1228,7 @@ static int _serialFeeder( struct RunTime *r )
 
         r->conn = false;
 
-        if ( ! r->ending )
-        {
+        if ( ! r->ending ) {
             genericsReport( V_INFO, "Read failed" EOL );
         }
 
@@ -1208,52 +1247,46 @@ static int _serialFeeder( struct RunTime *r )
 {
     int ret;
 
-    while ( !r->ending )
-    {
+    while ( !r->ending ) {
 #ifdef OSX
         int flags;
 
-        while ( !r->ending && ( r->f = open( r->options->port, O_RDONLY | O_NONBLOCK ) ) < 0 )
+        while ( !r->ending && ( r->f = open( r->options->serialPort, O_RDONLY | O_NONBLOCK ) ) < 0 )
 #else
-        while ( !r->ending && ( r->f = open( r->options->port, O_RDONLY ) ) < 0 )
+        while ( !r->ending && ( r->f = open( r->options->serialPort, O_RDONLY ) ) < 0 )
 #endif
         {
             genericsReport( V_WARN, "Can't open serial port" EOL );
             usleep( INTERVAL_100MS );
         }
 
-        genericsReport( V_INFO, "Port opened" EOL );
+        genericsReport( V_INFO, "Serial Port opened" EOL );
 
 #ifdef OSX
         /* Remove the O_NONBLOCK flag now the port is open (OSX Only) */
 
-        if ( ( flags = fcntl( r->f, F_GETFL, NULL ) ) < 0 )
-        {
+        if ( ( flags = fcntl( r->f, F_GETFL, NULL ) ) < 0 ) {
             genericsExit( -3, "F_GETFL failed" EOL );
         }
 
         flags &= ~O_NONBLOCK;
 
-        if ( ( flags = fcntl( r->f, F_SETFL, flags ) ) < 0 )
-        {
+        if ( ( flags = fcntl( r->f, F_SETFL, flags ) ) < 0 ) {
             genericsExit( -3, "F_SETFL failed" EOL );
         }
 
 #endif
 
-        if ( ( ret = _setSerialConfig ( r->f, r->options->speed ) ) < 0 )
-        {
+        if ( ( ret = _setSerialConfig ( r->f, r->options->serialSpeed ) ) < 0 ) {
             genericsExit( ret, "setSerialConfig failed" EOL );
         }
 
         r->conn = true;
 
-        while ( !r->ending )
-        {
+        while ( !r->ending ) {
             struct dataBlock *rxBlock = &r->rawBlock[r->wp];
 
-            if ( ( rxBlock->fillLevel = read( r->f, rxBlock->buffer, USB_TRANSFER_SIZE ) ) <= 0 )
-            {
+            if ( ( rxBlock->fillLevel = read( r->f, rxBlock->buffer, USB_TRANSFER_SIZE ) ) <= 0 ) {
                 break;
             }
 
@@ -1263,8 +1296,7 @@ static int _serialFeeder( struct RunTime *r )
 
         r->conn = false;
 
-        if ( ! r->ending )
-        {
+        if ( ! r->ending ) {
             genericsReport( V_INFO, "Read failed" EOL );
         }
 
@@ -1279,8 +1311,7 @@ static int _serialFeeder( struct RunTime *r )
 static int _fileFeeder( struct RunTime *r )
 
 {
-    if ( ( r->f = open( r->options->file, O_RDONLY | O_BINARY ) ) < 0 )
-    {
+    if ( ( r->f = open( r->options->file, O_RDONLY | O_BINARY ) ) < 0 ) {
         genericsExit( -4, "Can't open file %s" EOL, r->options->file );
     }
 
@@ -1289,8 +1320,7 @@ static int _fileFeeder( struct RunTime *r )
     /* We will read from the file very quickly, so let's give a chance for clients to connect before we do */
     usleep( INTERVAL_1S );
 
-    while ( !r->ending )
-    {
+    while ( !r->ending ) {
         struct dataBlock *rxBlock = &r->rawBlock[r->wp];
         rxBlock->fillLevel = read( r->f, rxBlock->buffer, USB_TRANSFER_SIZE );
 
@@ -1298,27 +1328,21 @@ static int _fileFeeder( struct RunTime *r )
         _dataAvailable( r );
         int nwp = ( r->wp + 1 ) % NUM_RAW_BLOCKS;
 
-        if ( r->options->paceDelay )
-        {
+        if ( r->options->paceDelay ) {
             usleep( r->options->paceDelay );
         }
 
         /* Spin waiting for buffer space to become available */
-        while ( nwp == r->rp )
-        {
+        while ( nwp == r->rp ) {
             usleep( INTERVAL_1MS );
         }
 
         r->wp = nwp;
 
-        if ( !rxBlock->fillLevel )
-        {
-            if ( r->options->fileTerminate )
-            {
+        if ( !rxBlock->fillLevel ) {
+            if ( r->options->fileTerminate ) {
                 break;
-            }
-            else
-            {
+            } else {
                 // Just spin for a while to avoid clogging the CPU
                 usleep( INTERVAL_100MS );
                 continue;
@@ -1328,8 +1352,7 @@ static int _fileFeeder( struct RunTime *r )
 
     r->conn = false;
 
-    if ( !r->options->fileTerminate )
-    {
+    if ( !r->options->fileTerminate ) {
         genericsReport( V_INFO, "File read error" EOL );
     }
 
@@ -1359,31 +1382,15 @@ int main( int argc, char *argv[] )
     /* Setup TPIU in case we call it into service later */
     TPIUDecoderInit( &_r.t );
 
-    if ( pthread_mutex_init( &_r.dataForClients_m, NULL ) != 0 )
-    {
+    if ( pthread_mutex_init( &_r.dataForClients_m, NULL ) != 0 ) {
         genericsExit( -1, "Failed to establish mutex for condition variablee" EOL );
     }
 
-    if ( pthread_cond_init( &_r.dataForClients, NULL ) != 0 )
-    {
-        genericsExit( -1, "Failed to establish condition variablee" EOL );
+    if ( pthread_cond_init( &_r.dataForClients, NULL ) != 0 ) {
+        genericsExit( -1, "Failed to establish condition variable" EOL );
     }
 
-#if 0
-    auto config = toml::parse_file( ".orb.toml" );
-    config.for_each( []( auto & key, auto & value )
-    {
-        std::cout << value << "\n";
-
-        if constexpr ( toml::is_string<decltype( value )> )
-        {
-            do_something_with_string_values( value );
-        }
-    } );
-#endif
-
-    if ( !_processOptions( argc, argv, &_r ) )
-    {
+    if ( !_processOptions( argc, argv, &_r ) ) {
         /* processOptions generates its own error messages */
         genericsExit( -1, "" EOL );
     }
@@ -1394,48 +1401,39 @@ int main( int argc, char *argv[] )
     atexit( _doExit );
 
     /* This ensures the atexit gets called */
-    if ( SIG_ERR == signal( SIGINT, _intHandler ) )
-    {
+    if ( SIG_ERR == signal( SIGINT, _intHandler ) ) {
         genericsExit( -1, "Failed to establish Int handler" EOL );
     }
 
     /* Don't kill a sub-process when any reader or writer evaporates */
 #if !defined WIN32
 
-    if ( SIG_ERR == signal( SIGPIPE, SIG_IGN ) )
-    {
+    if ( SIG_ERR == signal( SIGPIPE, SIG_IGN ) ) {
         genericsExit( -1, "Failed to ignore SIGPIPEs" EOL );
     }
 
 #endif
 
-    if ( _r.options->useTPIU )
-    {
+    if ( _r.options->channelList ) {
         char *c = _r.options->channelList;
         int x = 0;
 
-        while ( *c )
-        {
-            while ( *c == ',' )
-            {
+        while ( *c ) {
+            while ( *c == ',' ) {
                 c++;
             }
 
-            while ( isdigit( *c ) )
-            {
+            while ( isdigit( *c ) ) {
                 x = x * 10 + ( *c++ -'0' );
             }
 
-            if ( ( *c ) && ( *c != ',' ) )
-            {
+            if ( ( *c ) && ( *c != ',' ) ) {
                 genericsExit( -1, "Illegal character in channel list (%c)" EOL, *c );
             }
 
-            if ( x )
-            {
+            if ( x ) {
                 /* This is a good number, so open */
-                if ( ( x < 0 ) || ( x >= NUM_TPIU_CHANNELS ) )
-                {
+                if ( ( x < 0 ) || ( x >= NUM_TPIU_CHANNELS ) ) {
                     genericsExit( -1, "Channel number out of range" EOL );
                 }
 
@@ -1451,52 +1449,41 @@ int main( int argc, char *argv[] )
         }
 
         /* ...a blank line so this doesn't get erased by monitoring reports */
-        if ( _r.options->intervalReportTime )
-        {
+        if ( _r.options->intervalReportTime ) {
             genericsReport( V_WARN, EOL );
         }
-    }
-    else
-    {
-        if ( !( _r.n = nwclientStart( _r.options->listenPort ) ) )
-        {
+    } else {
+        if ( !( _r.n = nwclientStart( _r.options->listenPort ) ) ) {
             genericsExit( -1, "Failed to make network server" EOL );
         }
     }
 
-    if ( _r.options->intervalReportTime )
-    {
+    if ( _r.options->intervalReportTime ) {
         pthread_create( &_r.intervalThread, NULL, &_checkInterval, &_r );
     }
 
-    if ( _r.options->outfile )
-    {
+    if ( _r.options->outfile ) {
         _r.opFileHandle = open( _r.options->outfile, O_CREAT | O_TRUNC | O_WRONLY | O_BINARY, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH );
 
-        if ( _r.opFileHandle < 0 )
-        {
+        if ( _r.opFileHandle < 0 ) {
             genericsReport( V_ERROR, "Could not open output file for writing" EOL );
             return -2;
         }
     }
 
-    if ( ( _r.options->nwserverPort ) || ( _r.options->port ) || ( _r.options->file ) )
-    {
+    if ( ( _r.options->nwserverPort ) || ( _r.options->serialPort ) || ( _r.options->file ) ) {
         /* Start the distribution task */
         pthread_create( &_r.processThread, NULL, &_processBlocksQueue, &_r );
 
-        if ( _r.options->nwserverPort )
-        {
+        if ( _r.options->nwserverPort ) {
             exit( _nwserverFeeder( &_r ) );
         }
 
-        if ( _r.options->port )
-        {
+        if ( _r.options->serialPort ) {
             exit( _serialFeeder( &_r ) );
         }
 
-        if ( _r.options->file )
-        {
+        if ( _r.options->file ) {
             exit( _fileFeeder( &_r ) );
         }
     }

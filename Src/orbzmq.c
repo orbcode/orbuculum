@@ -26,14 +26,12 @@
 
 // Record for options, either defaults or from command line
 
-struct Channel
-{
+struct Channel {
     char *topic;
     char *format;
 };
 
-struct
-{
+struct {
     /* Config information */
     bool useTPIU;
     int8_t tpiuChannel;
@@ -52,8 +50,7 @@ struct
     char *file;                                         /* File host connection */
     bool endTerminate;                                  /* Terminate when file/socket "ends" */
 
-} options =
-{
+} options = {
     .tpiuChannel = 1,
     .forceITMSync = true,
     .bindUrl = DEFAULT_ZMQ_BIND_URL,
@@ -61,8 +58,7 @@ struct
     .server = ( char * )"localhost"
 };
 
-struct
-{
+struct {
     /* The decoders and the packets from them */
     struct ITMDecoder i;
     struct ITMPacket h;
@@ -85,8 +81,7 @@ void _publishMessage( const char *topic, void *payload, size_t size )
     zmq_send( _r.zmqSocket, payload, size, 0 );
 }
 
-static const char *hwEventNames[] =
-{
+static const char *hwEventNames[] = {
     [HWEVENT_TS] = HWFIFO_NAME "TS",
     [HWEVENT_EXCEPTION] = HWFIFO_NAME "EXCP",
     [HWEVENT_PCSample] = HWFIFO_NAME "PC",
@@ -106,27 +101,21 @@ void _handleSW( struct swMsg *m, struct ITMDecoder *i )
 {
     assert( m->msgtype == MSG_SOFTWARE );
 
-    if ( ( m->srcAddr < NUM_CHANNELS ) && ( options.channel[m->srcAddr].topic ) )
-    {
+    if ( ( m->srcAddr < NUM_CHANNELS ) && ( options.channel[m->srcAddr].topic ) ) {
         struct Channel *channel = &options.channel[m->srcAddr];
         char formatted[30];
         size_t size = 0;
 
         // formatted output....start with specials
-        if ( channel->format == NULL )
-        {
+        if ( channel->format == NULL ) {
             memcpy( formatted, &m->value, m->len );
             size = m->len;
-        }
-        else if ( strstr( channel->format, "%f" ) )
-        {
+        } else if ( strstr( channel->format, "%f" ) ) {
             /* type punning on same host, after correctly building 32bit val
              * only unsafe on systems where u32/float have diff byte order */
             float *nastycast = ( float * )&m->value;
             size = snprintf( formatted, sizeof( formatted ), channel->format, *nastycast, *nastycast, *nastycast, *nastycast );
-        }
-        else if ( strstr( channel->format, "%c" ) )
-        {
+        } else if ( strstr( channel->format, "%c" ) ) {
             /* Format contains %c, so execute repeatedly for all characters in sent data */
             uint8_t op[4] = {( uint8_t )( m->value & 0xff ),
                              ( uint8_t )( ( m->value >> 8 ) & 0xff ),
@@ -135,14 +124,10 @@ void _handleSW( struct swMsg *m, struct ITMDecoder *i )
                             };
             uint32_t l = 0;
 
-            do
-            {
+            do {
                 size += snprintf( formatted + size, sizeof( formatted ) - size, channel->format, op[l], op[l], op[l] );
-            }
-            while ( ++l < m->len );
-        }
-        else
-        {
+            } while ( ++l < m->len );
+        } else {
             size = snprintf( formatted, sizeof( formatted ), channel->format, m->value, m->value, m->value, m->value );
         }
 
@@ -154,8 +139,7 @@ void _handleException( struct excMsg *m )
 {
     assert( m->msgtype == MSG_EXCEPTION );
 
-    if ( !( options.hwOutputs & ( 1 << HWEVENT_EXCEPTION ) ) )
-    {
+    if ( !( options.hwOutputs & ( 1 << HWEVENT_EXCEPTION ) ) ) {
         return;
     }
 
@@ -170,13 +154,10 @@ void _handleException( struct excMsg *m )
 
     _r.lastHWExceptionTS = m->ts;
 
-    if ( m->exceptionNumber < 16 )
-    {
+    if ( m->exceptionNumber < 16 ) {
         /* This is a system based exception */
         opLen = snprintf( outputString, MAX_STRING_LENGTH, "%" PRIu64 ",%s,%s", eventdifftS, exEvent[m->eventType & 0x03], exNames[m->exceptionNumber & 0x0F] );
-    }
-    else
-    {
+    } else {
         /* This is a CPU defined exception */
         opLen = snprintf( outputString, MAX_STRING_LENGTH, "%" PRIu64 ",%s,External,%d", eventdifftS, exEvent[m->eventType & 0x03], m->exceptionNumber - 16 );
     }
@@ -189,8 +170,7 @@ void _handleDWTEvent( struct dwtMsg *m )
 {
     assert( m->msgtype == MSG_DWT_EVENT );
 
-    if ( !( options.hwOutputs & ( 1 << HWEVENT_DWT ) ) )
-    {
+    if ( !( options.hwOutputs & ( 1 << HWEVENT_DWT ) ) ) {
         return;
     }
 
@@ -204,19 +184,15 @@ void _handleDWTEvent( struct dwtMsg *m )
     _r.lastHWExceptionTS = m->ts;
     opLen = snprintf( outputString, MAX_STRING_LENGTH, "%" PRIu64, eventdifftS );
 
-    for ( uint32_t i = 0; i < NUM_EVENTS; i++ )
-    {
-        if ( m->event & ( 1 << i ) )
-        {
+    for ( uint32_t i = 0; i < NUM_EVENTS; i++ ) {
+        if ( m->event & ( 1 << i ) ) {
             // Copy this event into the output string
             outputString[opLen++] = ',';
             const char *u = evName[i];
 
-            do
-            {
+            do {
                 outputString[opLen++] = *u++;
-            }
-            while ( *u );
+            } while ( *u );
         }
     }
 
@@ -230,8 +206,7 @@ void _handlePCSample( struct pcSampleMsg *m )
 {
     assert( m->msgtype == MSG_PC_SAMPLE );
 
-    if ( !( options.hwOutputs & ( 1 << HWEVENT_PCSample ) ) )
-    {
+    if ( !( options.hwOutputs & ( 1 << HWEVENT_PCSample ) ) ) {
         return;
     }
 
@@ -241,13 +216,10 @@ void _handlePCSample( struct pcSampleMsg *m )
 
     _r.lastHWExceptionTS = m->ts;
 
-    if ( m->sleep )
-    {
+    if ( m->sleep ) {
         /* This is a sleep packet */
         opLen = snprintf( outputString, ( MAX_STRING_LENGTH - 1 ), "%" PRIu64 ",**SLEEP**", eventdifftS );
-    }
-    else
-    {
+    } else {
         opLen = snprintf( outputString, ( MAX_STRING_LENGTH - 1 ), "%" PRIu64 ",0x%08x", eventdifftS, m->pc );
     }
 
@@ -261,8 +233,7 @@ void _handleDataRWWP( struct watchMsg *m )
 {
     assert( m->msgtype == MSG_DATA_RWWP );
 
-    if ( !( options.hwOutputs & ( 1 << HWEVENT_RWWT ) ) )
-    {
+    if ( !( options.hwOutputs & ( 1 << HWEVENT_RWWT ) ) ) {
         return;
     }
 
@@ -283,8 +254,7 @@ void _handleDataAccessWP( struct wptMsg *m )
 {
     assert( m->msgtype == MSG_DATA_ACCESS_WP );
 
-    if ( !( options.hwOutputs & ( 1 << HWEVENT_AWP ) ) )
-    {
+    if ( !( options.hwOutputs & ( 1 << HWEVENT_AWP ) ) ) {
         return;
     }
 
@@ -305,8 +275,7 @@ void _handleDataOffsetWP( struct oswMsg *m )
 {
     assert( m->msgtype == MSG_OSW );
 
-    if ( !( options.hwOutputs & ( 1 << HWEVENT_OFS ) ) )
-    {
+    if ( !( options.hwOutputs & ( 1 << HWEVENT_OFS ) ) ) {
         return;
     }
 
@@ -326,8 +295,7 @@ void _handleTS( struct TSMsg *m )
 {
     assert( m->msgtype == MSG_TS );
 
-    if ( !( options.hwOutputs & ( 1 << HWEVENT_TS ) ) )
-    {
+    if ( !( options.hwOutputs & ( 1 << HWEVENT_TS ) ) ) {
         return;
     }
 
@@ -349,8 +317,7 @@ void _itmPumpProcess( char c )
     typedef void ( *handlers )( void *decoded, struct ITMDecoder * i );
 
     /* Handlers for each complete message received */
-    static const handlers h[MSG_NUM_MSGS] =
-    {
+    static const handlers h[MSG_NUM_MSGS] = {
         /* MSG_UNKNOWN */         NULL,
         /* MSG_RESERVED */        NULL,
         /* MSG_ERROR */           NULL,
@@ -366,8 +333,7 @@ void _itmPumpProcess( char c )
         /* MSG_TS */              ( handlers )_handleTS
     };
 
-    switch ( ITMPump( &_r.i, c ) )
-    {
+    switch ( ITMPump( &_r.i, c ) ) {
         case ITM_EV_NONE:
             break;
 
@@ -392,8 +358,7 @@ void _itmPumpProcess( char c )
 
             /* See if we decoded a dispatchable match. genericMsg is just used to access */
             /* the first two members of the decoded structs in a portable way.           */
-            if ( h[decoded.genericMsg.msgtype] )
-            {
+            if ( h[decoded.genericMsg.msgtype] ) {
                 ( h[decoded.genericMsg.msgtype] )( &decoded, &_r.i );
             }
 
@@ -412,10 +377,8 @@ void _itmPumpProcess( char c )
 // ====================================================================================================
 void _protocolPump( uint8_t c )
 {
-    if ( options.useTPIU )
-    {
-        switch ( TPIUPump( &_r.t, c ) )
-        {
+    if ( options.useTPIU ) {
+        switch ( TPIUPump( &_r.t, c ) ) {
             case TPIU_EV_NEWSYNC:
             case TPIU_EV_SYNCED:
                 ITMDecoderForceSync( &_r.i, true );
@@ -430,21 +393,17 @@ void _protocolPump( uint8_t c )
                 break;
 
             case TPIU_EV_RXEDPACKET:
-                if ( !TPIUGetPacket( &_r.t, &_r.p ) )
-                {
+                if ( !TPIUGetPacket( &_r.t, &_r.p ) ) {
                     genericsReport( V_WARN, "TPIUGetPacket fell over" EOL );
                 }
 
-                for ( uint32_t g = 0; g < _r.p.len; g++ )
-                {
-                    if ( _r.p.packet[g].s == options.tpiuChannel )
-                    {
+                for ( uint32_t g = 0; g < _r.p.len; g++ ) {
+                    if ( _r.p.packet[g].s == options.tpiuChannel ) {
                         _itmPumpProcess( _r.p.packet[g].d );
                         continue;
                     }
 
-                    if  ( _r.p.packet[g].s != 0 )
-                    {
+                    if  ( _r.p.packet[g].s != 0 ) {
                         genericsReport( V_DEBUG, "Unknown TPIU channel %02x" EOL, _r.p.packet[g].s );
                     }
                 }
@@ -455,9 +414,7 @@ void _protocolPump( uint8_t c )
                 genericsReport( V_WARN, "****ERROR****" EOL );
                 break;
         }
-    }
-    else
-    {
+    } else {
         _itmPumpProcess( c );
     }
 }
@@ -494,8 +451,7 @@ void _printVersion( void )
 
 static int32_t _parseHWEventsArg( char *s )
 {
-    if ( strcasecmp( s, "all" ) == 0 )
-    {
+    if ( strcasecmp( s, "all" ) == 0 ) {
         return 0xFF;
     }
 
@@ -503,38 +459,22 @@ static int32_t _parseHWEventsArg( char *s )
 
     char *token = strtok( s, "," );
 
-    while ( token )
-    {
-        if ( strcasecmp( token, "TS" ) == 0 )
-        {
+    while ( token ) {
+        if ( strcasecmp( token, "TS" ) == 0 ) {
             result |= 1 << HWEVENT_TS;
-        }
-        else if ( strcasecmp( token, "EXCP" ) == 0 )
-        {
+        } else if ( strcasecmp( token, "EXCP" ) == 0 ) {
             result |= 1 << HWEVENT_EXCEPTION;
-        }
-        else if ( strcasecmp( token, "PC" ) == 0 )
-        {
+        } else if ( strcasecmp( token, "PC" ) == 0 ) {
             result |= 1 << HWEVENT_PCSample;
-        }
-        else if ( strcasecmp( token, "DWT" ) == 0 )
-        {
+        } else if ( strcasecmp( token, "DWT" ) == 0 ) {
             result |= 1 << HWEVENT_DWT;
-        }
-        else if ( strcasecmp( token, "RWWT" ) == 0 )
-        {
+        } else if ( strcasecmp( token, "RWWT" ) == 0 ) {
             result |= 1 << HWEVENT_RWWT;
-        }
-        else if ( strcasecmp( token, "AWP" ) == 0 )
-        {
+        } else if ( strcasecmp( token, "AWP" ) == 0 ) {
             result |= 1 << HWEVENT_AWP;
-        }
-        else if ( strcasecmp( token, "OFS" ) == 0 )
-        {
+        } else if ( strcasecmp( token, "OFS" ) == 0 ) {
             result |= 1 << HWEVENT_OFS;
-        }
-        else
-        {
+        } else {
             genericsReport( V_ERROR, "Unrecognied hardware event '%s'" EOL, token );
             return -1;
         }
@@ -546,8 +486,7 @@ static int32_t _parseHWEventsArg( char *s )
 }
 
 // ====================================================================================================
-static struct option _longOptions[] =
-{
+static struct option _longOptions[] = {
     {"zbind", required_argument, NULL, 'z'},
     {"channel", required_argument, NULL, 'c'},
     {"hwevent", required_argument, NULL, 'e'},
@@ -576,15 +515,12 @@ bool _processOptions( int argc, char *argv[] )
     int32_t hwOutputs;
     char *a;
 
-    for ( int g = 0; g < NUM_CHANNELS; g++ )
-    {
+    for ( int g = 0; g < NUM_CHANNELS; g++ ) {
         options.channel[g].topic = NULL;
     }
 
-    while ( ( c = getopt_long ( argc, argv, "c:e:Ef:hns:t:v:Vz:", _longOptions, &optionIndex ) ) != -1 )
-    {
-        switch ( c )
-        {
+    while ( ( c = getopt_long ( argc, argv, "c:e:Ef:hns:t:v:Vz:", _longOptions, &optionIndex ) ) != -1 ) {
+        switch ( c ) {
             // ------------------------------------
             case 'h':
                 _printHelp( argv[0] );
@@ -622,19 +558,16 @@ bool _processOptions( int argc, char *argv[] )
                 // See if we have an optional port number too
                 a = optarg;
 
-                while ( ( *a ) && ( *a != ':' ) )
-                {
+                while ( ( *a ) && ( *a != ':' ) ) {
                     a++;
                 }
 
-                if ( *a == ':' )
-                {
+                if ( *a == ':' ) {
                     *a = 0;
                     options.port = atoi( ++a );
                 }
 
-                if ( !options.port )
-                {
+                if ( !options.port ) {
                     options.port = NWCLIENT_SERVER_PORT;
                 }
 
@@ -648,8 +581,7 @@ bool _processOptions( int argc, char *argv[] )
 
             // ------------------------------------
             case 'v':
-                if ( !isdigit( *optarg ) )
-                {
+                if ( !isdigit( *optarg ) ) {
                     genericsReport( V_ERROR, "-v requires a numeric argument." EOL );
                     return false;
                 }
@@ -662,29 +594,25 @@ bool _processOptions( int argc, char *argv[] )
             case 'c':
                 chanIndex = chanConfig = strdup( optarg );
 
-                if ( NULL == chanConfig )
-                {
+                if ( NULL == chanConfig ) {
                     genericsReport( V_ERROR, "Couldn't allocate memory at %s::%d" EOL, __FILE__, __LINE__ );
                     return false;
                 }
 
                 chan = atoi( optarg );
 
-                if ( chan >= NUM_CHANNELS )
-                {
+                if ( chan >= NUM_CHANNELS ) {
                     genericsReport( V_ERROR, "Channel index out of range" EOL );
                     free( chanConfig );
                     return false;
                 }
 
                 /* Scan for start of topic */
-                while ( ( *chanIndex ) && ( *chanIndex != DELIMITER ) )
-                {
+                while ( ( *chanIndex ) && ( *chanIndex != DELIMITER ) ) {
                     chanIndex++;
                 }
 
-                if ( !*chanIndex )
-                {
+                if ( !*chanIndex ) {
                     genericsReport( V_ERROR, "No filename for channel %d" EOL, chan );
                     free( chanConfig );
                     return false;
@@ -693,13 +621,11 @@ bool _processOptions( int argc, char *argv[] )
                 chanName = ++chanIndex;
 
                 /* Scan for format */
-                while ( ( *chanIndex ) && ( *chanIndex != DELIMITER ) )
-                {
+                while ( ( *chanIndex ) && ( *chanIndex != DELIMITER ) ) {
                     chanIndex++;
                 }
 
-                if ( !*chanIndex )
-                {
+                if ( !*chanIndex ) {
                     genericsReport( V_WARN, "No output format for channel %d, output raw!" EOL, chan );
                     break;
                 }
@@ -707,8 +633,7 @@ bool _processOptions( int argc, char *argv[] )
                 *chanIndex++ = 0;
                 options.channel[chan].topic = strdup( chanName );
 
-                if ( strcmp( chanIndex, "" ) != 0 )
-                {
+                if ( strcmp( chanIndex, "" ) != 0 ) {
                     options.channel[chan].format = strdup( genericsUnescape( chanIndex ) );
                 }
 
@@ -717,8 +642,7 @@ bool _processOptions( int argc, char *argv[] )
             case 'e':
                 hwOutputs = _parseHWEventsArg( optarg );
 
-                if ( hwOutputs == -1 )
-                {
+                if ( hwOutputs == -1 ) {
                     return false;
                 }
 
@@ -726,12 +650,9 @@ bool _processOptions( int argc, char *argv[] )
                 break;
 
             case '?':
-                if ( optopt == 'b' )
-                {
+                if ( optopt == 'b' ) {
                     genericsReport( V_ERROR, "Option '%c' requires an argument." EOL, optopt );
-                }
-                else if ( !isprint ( optopt ) )
-                {
+                } else if ( !isprint ( optopt ) ) {
                     genericsReport( V_ERROR, "Unknown option character `\\x%x'." EOL, optopt );
                 }
 
@@ -750,8 +671,7 @@ bool _processOptions( int argc, char *argv[] )
         }
     }
 
-    if ( ( options.useTPIU ) && ( !options.tpiuChannel ) )
-    {
+    if ( ( options.useTPIU ) && ( !options.tpiuChannel ) ) {
         genericsReport( V_ERROR, "TPIU set for use but no channel set for ITM output" EOL );
         return false;
     }
@@ -760,52 +680,40 @@ bool _processOptions( int argc, char *argv[] )
     genericsReport( V_INFO, "Server      : %s:%d" EOL, options.server, options.port );
     genericsReport( V_INFO, "ForceSync   : %s" EOL, options.forceITMSync ? "true" : "false" );
 
-    if ( options.file )
-    {
+    if ( options.file ) {
 
         genericsReport( V_INFO, "Input File  : %s", options.file );
 
-        if ( options.endTerminate )
-        {
+        if ( options.endTerminate ) {
             genericsReport( V_INFO, " (Terminate on exhaustion)" EOL );
-        }
-        else
-        {
+        } else {
             genericsReport( V_INFO, " (Ongoing read)" EOL );
         }
     }
 
-    if ( options.useTPIU )
-    {
+    if ( options.useTPIU ) {
         genericsReport( V_INFO, "Using TPIU  : true (ITM on channel %d)" EOL, options.tpiuChannel );
-    }
-    else
-    {
+    } else {
         genericsReport( V_INFO, "Using TPIU  : false" EOL );
     }
 
     genericsReport( V_INFO, "ZeroMQ bind : %s" EOL, options.bindUrl );
     genericsReport( V_INFO, "Channels    :" EOL );
 
-    for ( int g = 0; g < NUM_CHANNELS; g++ )
-    {
+    for ( int g = 0; g < NUM_CHANNELS; g++ ) {
         struct Channel *channel = &options.channel[g];
 
-        if ( channel->topic )
-        {
+        if ( channel->topic ) {
             genericsReport( V_INFO, "             %02d [%s] [%s]" EOL, g, genericsEscape( channel->format ? : ( char * )"RAW" ), channel->topic );
         }
     }
 
-    for ( unsigned int g = 0; g < ( sizeof( hwEventNames ) / sizeof( *hwEventNames ) ); g++ )
-    {
-        if ( hwEventNames[g] == NULL )
-        {
+    for ( unsigned int g = 0; g < ( sizeof( hwEventNames ) / sizeof( *hwEventNames ) ); g++ ) {
+        if ( hwEventNames[g] == NULL ) {
             continue;
         }
 
-        if ( ( options.hwOutputs & ( 1 << g ) ) == 0 )
-        {
+        if ( ( options.hwOutputs & ( 1 << g ) ) == 0 ) {
             continue;;
         }
 
@@ -819,12 +727,9 @@ bool _processOptions( int argc, char *argv[] )
 
 static struct Stream *_tryOpenStream()
 {
-    if ( options.file != NULL )
-    {
+    if ( options.file != NULL ) {
         return streamCreateFile( options.file );
-    }
-    else
-    {
+    } else {
         return streamCreateSocket( options.server, options.port );
     }
 }
@@ -833,31 +738,23 @@ static void _feedStream( struct Stream *stream )
 {
     unsigned char cbw[TRANSFER_SIZE];
 
-    while ( true )
-    {
+    while ( true ) {
         size_t receivedSize;
         enum ReceiveResult result = stream->receive( stream, cbw, TRANSFER_SIZE, NULL, &receivedSize );
 
-        if ( result != RECEIVE_RESULT_OK )
-        {
-            if ( result == RECEIVE_RESULT_EOF && options.endTerminate )
-            {
+        if ( result != RECEIVE_RESULT_OK ) {
+            if ( result == RECEIVE_RESULT_EOF && options.endTerminate ) {
                 return;
-            }
-            else if ( result == RECEIVE_RESULT_ERROR )
-            {
+            } else if ( result == RECEIVE_RESULT_ERROR ) {
                 break;
-            }
-            else
-            {
+            } else {
                 usleep( 100000 );
             }
         }
 
         unsigned char *c = cbw;
 
-        while ( receivedSize-- )
-        {
+        while ( receivedSize-- ) {
             _protocolPump( *c++ );
         }
 
@@ -870,8 +767,7 @@ int main( int argc, char *argv[] )
 {
     bool alreadyReported = false;
 
-    if ( !_processOptions( argc, argv ) )
-    {
+    if ( !_processOptions( argc, argv ) ) {
         exit( -1 );
     }
 
@@ -885,18 +781,14 @@ int main( int argc, char *argv[] )
     TPIUDecoderInit( &_r.t );
     ITMDecoderInit( &_r.i, options.forceITMSync );
 
-    while ( true )
-    {
+    while ( true ) {
         struct Stream *stream = NULL;
 
-        while ( true )
-        {
+        while ( true ) {
             stream = _tryOpenStream();
 
-            if ( stream != NULL )
-            {
-                if ( alreadyReported )
-                {
+            if ( stream != NULL ) {
+                if ( alreadyReported ) {
                     genericsReport( V_INFO, "Connected" EOL );
                     alreadyReported = false;
                 }
@@ -904,14 +796,12 @@ int main( int argc, char *argv[] )
                 break;
             }
 
-            if ( !alreadyReported )
-            {
+            if ( !alreadyReported ) {
                 genericsReport( V_INFO, EOL "No connection" EOL );
                 alreadyReported = true;
             }
 
-            if ( options.endTerminate )
-            {
+            if ( options.endTerminate ) {
                 break;
             }
 
@@ -919,16 +809,14 @@ int main( int argc, char *argv[] )
             usleep( 10000 );
         }
 
-        if ( stream != NULL )
-        {
+        if ( stream != NULL ) {
             _feedStream( stream );
         }
 
         stream->close( stream );
         free( stream );
 
-        if ( options.endTerminate )
-        {
+        if ( options.endTerminate ) {
             break;
         }
     }

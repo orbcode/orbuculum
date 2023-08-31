@@ -31,16 +31,14 @@
 
 #define MAX_STRING_LENGTH (100)              /* Maximum length that will be output from a fifo for a single event */
 
-struct runThreadParams                       /* Structure for parameters passed to a software task thread */
-{
+struct runThreadParams {                     /* Structure for parameters passed to a software task thread */
     int portNo;
     int listenHandle;
     bool permafile;
     struct Channel *c;
 };
 
-struct Channel                               /* Information for an individual channel */
-{
+struct Channel {                             /* Information for an individual channel */
     char *chanName;                          /* Filename to be used for the fifo */
     char *presFormat;                        /* Format of data presentation to be used */
 
@@ -109,50 +107,38 @@ static void *_runFifo( void *arg )
     /* Remove the file if it exists */
     unlink( c->fifoName );
 
-    if ( !params->permafile )
-    {
+    if ( !params->permafile ) {
         /* This is a 'conventional' fifo, so it must be created */
-        if ( mkfifo( c->fifoName, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH ) < 0 )
-        {
+        if ( mkfifo( c->fifoName, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH ) < 0 ) {
             pthread_exit( NULL );
         }
     }
 
-    do
-    {
+    do {
         /* Keep on opening the file (in case the fifo is opened/closed multiple times) */
         /* We use RDWR to allow the open to proceed without a remote end */
-        if ( !params->permafile )
-        {
+        if ( !params->permafile ) {
             opfile = open( c->fifoName, O_RDWR | O_BINARY | O_NONBLOCK );
-        }
-        else
-        {
+        } else {
             opfile = open( c->fifoName, O_WRONLY | O_CREAT | O_BINARY  | O_TRUNC, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH );
         }
 
-        do
-        {
+        do {
             /* ....get the packet. This will hang here until a packet arrives or the link closes */
             readDataLen = read( params->listenHandle, &m, sizeof( struct swMsg ) );
 
-            if ( readDataLen < 0 )
-            {
+            if ( readDataLen < 0 ) {
                 continue;
             }
 
-            if ( c->presFormat )
-            {
+            if ( c->presFormat ) {
                 // formatted output....start with specials
-                if ( strstr( c->presFormat, "%f" ) )
-                {
+                if ( strstr( c->presFormat, "%f" ) ) {
                     /* type punning on same host, after correctly building 32bit val
                      * only unsafe on systems where u32/float have diff byte order */
                     float *nastycast = ( float * )&m.value;
                     writeDataLen = snprintf( constructString, MAX_STRING_LENGTH, c->presFormat, *nastycast, *nastycast, *nastycast, *nastycast );
-                }
-                else if ( strstr( c->presFormat, "%c" ) )
-                {
+                } else if ( strstr( c->presFormat, "%c" ) ) {
                     /* Format contains %c, so execute repeatedly for all characters in sent data */
                     writeDataLen = 0;
                     uint8_t op[4] = {( uint8_t )( m.value & 0xff ),
@@ -163,31 +149,23 @@ static void *_runFifo( void *arg )
 
                     uint32_t l = 0;
 
-                    do
-                    {
+                    do {
                         writeDataLen += snprintf( &constructString[writeDataLen], MAX_STRING_LENGTH - writeDataLen, c->presFormat, op[l], op[l], op[l], op[l] );
-                    }
-                    while ( ++l < m.len );
-                }
-                else
-                {
+                    } while ( ++l < m.len );
+                } else {
                     writeDataLen = snprintf( constructString, MAX_STRING_LENGTH, c->presFormat, m.value, m.value, m.value, m.value );
                 }
 
                 written = write( opfile, constructString, ( writeDataLen < MAX_STRING_LENGTH ) ? writeDataLen : MAX_STRING_LENGTH );
-            }
-            else
-            {
+            } else {
                 // raw output.
                 written = write( opfile, &w, sizeof ( w ) );
             }
-        }
-        while ( ( written > 0 ) && ( !c->ending ) );
+        } while ( ( written > 0 ) && ( !c->ending ) );
 
         /* Falling out on writen fail means we can re-open the fifo if it overflowed */
         close( opfile );
-    }
-    while ( !c->ending );
+    } while ( !c->ending );
 
     pthread_exit( NULL );
 }
@@ -206,43 +184,33 @@ static void *_runHWFifo( void *arg )
     /* Remove the file if it exists */
     unlink( c->fifoName );
 
-    if ( !params->permafile )
-    {
+    if ( !params->permafile ) {
         /* This is a 'conventional' fifo, so it must be created */
-        if ( mkfifo( c->fifoName, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH ) < 0 )
-        {
+        if ( mkfifo( c->fifoName, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH ) < 0 ) {
             pthread_exit( NULL );
         }
     }
 
-    do
-    {
-        if ( !params->permafile )
-        {
+    do {
+        if ( !params->permafile ) {
             /* We use RDWR to allow the open to proceed without a remote end */
             opfile = open( c->fifoName, O_RDWR | O_BINARY | O_NONBLOCK );
-        }
-        else
-        {
+        } else {
             opfile = open( c->fifoName, O_WRONLY | O_CREAT | O_BINARY  | O_TRUNC, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH );
         }
 
-        do
-        {
+        do {
             /* ....get the packet. We will hang here until a packet arrives or the link closes */
             readDataLen = read( params->listenHandle, p, MAX_STRING_LENGTH );
 
-            if ( readDataLen > 0 )
-            {
+            if ( readDataLen > 0 ) {
                 writeDataLen = write( opfile, p, readDataLen );
             }
-        }
-        while ( ( writeDataLen > 0 ) && ( !c->ending ) );
+        } while ( ( writeDataLen > 0 ) && ( !c->ending ) );
 
         /* Falling out on writeDataLen fail means we can re-open the fifo if it overflowed */
         close( opfile );
-    }
-    while ( !c->ending );
+    } while ( !c->ending );
 
     pthread_exit( NULL );
 }
@@ -263,13 +231,10 @@ void _handleException( struct excMsg *m, struct itmfifosHandle *f )
 
     f->lastHWExceptionTS = m->ts;
 
-    if ( m->exceptionNumber < 16 )
-    {
+    if ( m->exceptionNumber < 16 ) {
         /* This is a system based exception */
         opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%" PRIu64 ",%s,%s" EOL, HWEVENT_EXCEPTION, eventdifftS, exEvent[m->eventType & 0x03], exNames[m->exceptionNumber & 0x0F] );
-    }
-    else
-    {
+    } else {
         /* This is a CPU defined exception */
         opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%" PRIu64 ",%s,External,%d" EOL, HWEVENT_EXCEPTION, eventdifftS, exEvent[m->eventType & 0x03], m->exceptionNumber - 16 );
     }
@@ -290,19 +255,15 @@ void _handleDWTEvent( struct dwtMsg *m, struct itmfifosHandle *f )
     f->lastHWExceptionTS = m->ts;
     opLen = snprintf( outputString, MAX_STRING_LENGTH, "%d,%" PRIu64, HWEVENT_DWT, eventdifftS );
 
-    for ( uint32_t i = 0; i < NUM_EVENTS; i++ )
-    {
-        if ( m->event & ( 1 << i ) )
-        {
+    for ( uint32_t i = 0; i < NUM_EVENTS; i++ ) {
+        if ( m->event & ( 1 << i ) ) {
             // Copy this event into the output string
             outputString[opLen++] = ',';
             const char *u = evName[i];
 
-            do
-            {
+            do {
                 outputString[opLen++] = *u++;
-            }
-            while ( *u );
+            } while ( *u );
         }
     }
 
@@ -321,13 +282,10 @@ void _handlePCSample( struct pcSampleMsg *m, struct itmfifosHandle *f )
 
     f->lastHWExceptionTS = m->ts;
 
-    if ( m->sleep )
-    {
+    if ( m->sleep ) {
         /* This is a sleep packet */
         opLen = snprintf( outputString, ( MAX_STRING_LENGTH - 1 ), "%d,%" PRIu64 ",**SLEEP**" EOL, HWEVENT_PCSample, eventdifftS );
-    }
-    else
-    {
+    } else {
         opLen = snprintf( outputString, ( MAX_STRING_LENGTH - 1 ), "%d,%" PRIu64 ",0x%08x" EOL, HWEVENT_PCSample, eventdifftS, m->pc );
     }
 
@@ -383,14 +341,10 @@ void _handleSW( struct swMsg *m, struct itmfifosHandle *f )
 
 {
     /* Filter off filewriter packets and let the filewriter module deal with those */
-    if ( ( m->srcAddr == FW_CHANNEL ) && ( f->filewriter ) )
-    {
+    if ( ( m->srcAddr == FW_CHANNEL ) && ( f->filewriter ) ) {
         filewriterProcess( m );
-    }
-    else
-    {
-        if ( ( m->srcAddr < NUM_CHANNELS ) && ( f->c[m->srcAddr].handle ) )
-        {
+    } else {
+        if ( ( m->srcAddr < NUM_CHANNELS ) && ( f->c[m->srcAddr].handle ) ) {
             write( f->c[m->srcAddr].handle, m, sizeof( struct swMsg ) );
         }
     }
@@ -433,8 +387,7 @@ void _itmPumpProcess( struct itmfifosHandle *f, char c )
     typedef void ( *handlers )( void *decoded, struct itmfifosHandle * f );
 
     /* Handlers for each complete message received */
-    static const handlers h[MSG_NUM_MSGS] =
-    {
+    static const handlers h[MSG_NUM_MSGS] = {
         /* MSG_UNKNOWN */         NULL,
         /* MSG_RESERVED */        NULL,
         /* MSG_ERROR */           NULL,
@@ -450,8 +403,7 @@ void _itmPumpProcess( struct itmfifosHandle *f, char c )
         /* MSG_TS */              ( handlers )_handleTS
     };
 
-    switch ( ITMPump( &f->i, c ) )
-    {
+    switch ( ITMPump( &f->i, c ) ) {
         // ------------------------------------
         case ITM_EV_NONE:
             break;
@@ -482,8 +434,7 @@ void _itmPumpProcess( struct itmfifosHandle *f, char c )
 
             /* See if we decoded a dispatchable match. genericMsg is just used to access */
             /* the first two members of the decoded structs in a portable way.           */
-            if ( h[decoded.genericMsg.msgtype] )
-            {
+            if ( h[decoded.genericMsg.msgtype] ) {
                 ( h[decoded.genericMsg.msgtype] )( &decoded, f );
             }
 
@@ -496,8 +447,7 @@ void _itmPumpProcess( struct itmfifosHandle *f, char c )
 static void _tpiuProtocolPump( struct itmfifosHandle *f, uint8_t c )
 
 {
-    switch ( TPIUPump( &f->t, c ) )
-    {
+    switch ( TPIUPump( &f->t, c ) ) {
         // ------------------------------------
         case TPIU_EV_NEWSYNC:
             genericsReport( V_INFO, "TPIU In Sync (%d)" EOL, TPIUDecoderGetStats( &f->t )->syncCount );
@@ -521,22 +471,18 @@ static void _tpiuProtocolPump( struct itmfifosHandle *f, uint8_t c )
 
         // ------------------------------------
         case TPIU_EV_RXEDPACKET:
-            if ( !TPIUGetPacket( &f->t, &f->p ) )
-            {
+            if ( !TPIUGetPacket( &f->t, &f->p ) ) {
                 genericsReport( V_WARN, "TPIUGetPacket fell over" EOL );
             }
 
-            for ( uint32_t g = 0; g < f->p.len; g++ )
-            {
-                if ( f->p.packet[g].s == f->tpiuITMChannel )
-                {
+            for ( uint32_t g = 0; g < f->p.len; g++ ) {
+                if ( f->p.packet[g].s == f->tpiuITMChannel ) {
                     _itmPumpProcess( f, f->p.packet[g].d );
                     continue;
                 }
 
                 /* Its perfectly legal for TPIU channels to arrive that we aren't interested in */
-                if ( ( f->p.packet[g].s != 0 ) && ( f->p.packet[g].s != 0x7f ) )
-                {
+                if ( ( f->p.packet[g].s != 0 ) && ( f->p.packet[g].s != 0x7f ) ) {
                     genericsReport( V_INFO, "Unhandled TPIU channel %02x" EOL, f->p.packet[g].s );
                 }
             }
@@ -565,8 +511,7 @@ static void _tpiuProtocolPump( struct itmfifosHandle *f, uint8_t c )
 void itmfifoSetChanPath( struct itmfifosHandle *f, char *s )
 
 {
-    if ( f->chanPath )
-    {
+    if ( f->chanPath ) {
         free( f->chanPath );
     }
 
@@ -585,13 +530,11 @@ void itmfifoSetChannel( struct itmfifosHandle *f, int chan, char *n, char *s )
 {
     assert( chan <= NUM_CHANNELS );
 
-    if ( f->c[chan].presFormat )
-    {
+    if ( f->c[chan].presFormat ) {
         free( f->c[chan].presFormat );
     }
 
-    if ( f->c[chan].chanName )
-    {
+    if ( f->c[chan].chanName ) {
         free( f->c[chan].chanName );
     }
 
@@ -679,12 +622,9 @@ void itmfifoProtocolPump( struct itmfifosHandle *f, uint8_t c )
 /* Top level protocol pump */
 
 {
-    if ( f->useTPIU )
-    {
+    if ( f->useTPIU ) {
         _tpiuProtocolPump( f, c );
-    }
-    else
-    {
+    } else {
         /* There's no TPIU in use, so this goes straight to the ITM layer */
         _itmPumpProcess( f, c );
     }
@@ -714,20 +654,15 @@ bool itmfifoCreate( struct itmfifosHandle *f )
     ITMDecoderInit( &f->i, f->forceITMSync );
 
     /* Cycle through channels and create a fifo for each one that is enabled */
-    for ( int t = 0; t < ( NUM_CHANNELS + 1 ); t++ )
-    {
-        if ( t < NUM_CHANNELS )
-        {
-            if ( f->c[t].chanName )
-            {
+    for ( int t = 0; t < ( NUM_CHANNELS + 1 ); t++ ) {
+        if ( t < NUM_CHANNELS ) {
+            if ( f->c[t].chanName ) {
                 /* This is a live software channel fifo */
-                if ( pipe( fd ) < 0 )
-                {
+                if ( pipe( fd ) < 0 ) {
                     return false;
                 }
 
-                if ( !f->permafile )
-                {
+                if ( !f->permafile ) {
                     /* If this is not a permanent file then some data is allowed to get lost */
                     fcntl( fd[1], F_SETFL, O_NONBLOCK );
                 }
@@ -742,30 +677,24 @@ bool itmfifoCreate( struct itmfifosHandle *f )
 
                 f->c[t].fifoName = ( char * )calloc( strlen( f->c[t].chanName ) + 2 + ( f->chanPath ? strlen( f->chanPath ) : 0 ), 1 );
 
-                if ( f->chanPath )
-                {
+                if ( f->chanPath ) {
                     strcpy( f->c[t].fifoName, f->chanPath );
                     strcat( f->c[t].fifoName, "/" );
                 }
 
                 strcat( f->c[t].fifoName, f->c[t].chanName );
 
-                if ( pthread_create( &( f->c[t].thread ), NULL, &_runFifo, &( f->c[t].params ) ) )
-                {
+                if ( pthread_create( &( f->c[t].thread ), NULL, &_runFifo, &( f->c[t].params ) ) ) {
                     return false;
                 }
             }
-        }
-        else
-        {
+        } else {
             /* This is the hardware fifo channel */
-            if ( pipe( fd ) < 0 )
-            {
+            if ( pipe( fd ) < 0 ) {
                 return false;
             }
 
-            if ( !f->permafile )
-            {
+            if ( !f->permafile ) {
                 /* If this is not a permanent file then some data is allowed to get lost */
                 fcntl( fd[1], F_SETFL, O_NONBLOCK );
             }
@@ -779,16 +708,14 @@ bool itmfifoCreate( struct itmfifosHandle *f )
 
             f->c[t].fifoName = ( char * )calloc( strlen( HWFIFO_NAME ) + 2 + ( ( f->chanPath ) ? strlen( f->chanPath ) : 0 ), 1 );
 
-            if ( f->chanPath )
-            {
+            if ( f->chanPath ) {
                 strcpy( f->c[t].fifoName, f->chanPath );
                 strcat( f->c[t].fifoName, "/" );
             }
 
             strcat( f->c[t].fifoName, HWFIFO_NAME );
 
-            if ( pthread_create( &( f->c[t].thread ), NULL, &_runHWFifo, &( f->c[t].params ) ) )
-            {
+            if ( pthread_create( &( f->c[t].thread ), NULL, &_runHWFifo, &( f->c[t].params ) ) ) {
                 return false;
             }
         }
@@ -802,41 +729,34 @@ void itmfifoShutdown( struct itmfifosHandle *f )
 /* Destroy the per-port sub-processes. These will terminate when the fifos close */
 
 {
-    if ( f->amEnding )
-    {
+    if ( f->amEnding ) {
         return;
     }
 
     f->amEnding = true;
 
     /* Firstly go tell everything they're doomed */
-    for ( int t = 0; t < NUM_CHANNELS + 1; t++ )
-    {
+    for ( int t = 0; t < NUM_CHANNELS + 1; t++ ) {
         f->c[t].ending = true;
 
-        if ( f->c[t].handle > 0 )
-        {
+        if ( f->c[t].handle > 0 ) {
             /* This will cause the read to end, thus terminating the pthread */
             close( f->c[t].handle );
         }
     }
 
     /* ...now clean up */
-    for ( int t = 0; t < NUM_CHANNELS + 1; t++ )
-    {
-        if ( f->c[t].handle > 0 )
-        {
+    for ( int t = 0; t < NUM_CHANNELS + 1; t++ ) {
+        if ( f->c[t].handle > 0 ) {
             pthread_join( f->c[t].thread, NULL );
 
-            if ( ! f->permafile )
-            {
+            if ( ! f->permafile ) {
                 unlink( f->c[t].fifoName );
             }
         }
 
         /* Remove the name string too */
-        if ( f->c[t].presFormat )
-        {
+        if ( f->c[t].presFormat ) {
             free( f->c[t].presFormat );
         }
     }
@@ -848,8 +768,7 @@ void itmfifoFilewriter( struct itmfifosHandle *f, bool useFilewriter, char *work
 {
     f->filewriter = useFilewriter;
 
-    if ( f->filewriter )
-    {
+    if ( f->filewriter ) {
         filewriterInit( workingPath );
     }
 }

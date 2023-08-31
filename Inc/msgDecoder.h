@@ -11,8 +11,7 @@ extern "C" {
 #include <stdbool.h>
 
 /* Do not change the order of existing message types! */
-enum MSGType
-{
+enum MSGType {
     MSG_UNKNOWN,
     MSG_RESERVED,
     MSG_ERROR,
@@ -33,14 +32,12 @@ enum MSGType
 };
 
 /* Generic message with no content */
-struct genericMsg
-{
+struct genericMsg {
     enum MSGType msgtype;
     uint64_t ts;
 };
 
-struct TSMsg
-{
+struct TSMsg {
     enum MSGType msgtype;
     uint64_t ts;
     uint8_t timeStatus;
@@ -48,8 +45,7 @@ struct TSMsg
 };
 
 /* Software message */
-struct swMsg
-{
+struct swMsg {
     enum MSGType msgtype;
     uint64_t ts;
     uint8_t srcAddr;
@@ -58,8 +54,7 @@ struct swMsg
 };
 
 /* NISYNC message */
-struct nisyncMsg
-{
+struct nisyncMsg {
     enum MSGType msgtype;
     uint64_t ts;
     uint8_t type;
@@ -67,8 +62,7 @@ struct nisyncMsg
 };
 
 /* PC sample message */
-struct pcSampleMsg
-{
+struct pcSampleMsg {
     enum MSGType msgtype;
     uint64_t ts;
     bool sleep;
@@ -76,8 +70,7 @@ struct pcSampleMsg
 };
 
 /*  offset write message */
-struct oswMsg
-{
+struct oswMsg {
     enum MSGType msgtype;
     uint64_t ts;
     uint8_t comp;
@@ -85,8 +78,7 @@ struct oswMsg
 };
 
 /* watchpoint */
-struct wptMsg
-{
+struct wptMsg {
     enum MSGType msgtype;
     uint64_t ts;
     uint8_t comp;
@@ -94,8 +86,7 @@ struct wptMsg
 };
 
 /* watch pointer */
-struct watchMsg
-{
+struct watchMsg {
     enum MSGType msgtype;
     uint64_t ts;
     uint8_t comp;
@@ -104,16 +95,14 @@ struct watchMsg
 };
 
 /* DWT event */
-struct dwtMsg
-{
+struct dwtMsg {
     enum MSGType msgtype;
     uint64_t ts;
     uint8_t event;
 };
 
 /* Exception */
-struct excMsg
-{
+struct excMsg {
     enum MSGType msgtype;
     uint64_t ts;
     uint32_t exceptionNumber;
@@ -121,11 +110,9 @@ struct excMsg
 };
 
 
-struct msg
-{
+struct msg {
     /* ...all the possible types of message that could be conveyed */
-    union
-    {
+    union {
         struct genericMsg genericMsg;
         struct swMsg swMsg;
         struct nisyncMsg nisyncMsg;
