@@ -887,6 +887,8 @@ static void _COBSpacketRxed( enum COBSPumpEvent e, struct Frame *p, void *param 
 /* Callback for when a COBS frame has been assembled */
 
 {
+
+  
     struct RunTime *r = ( struct RunTime * )param;
 
     struct handlers *h;
@@ -896,6 +898,13 @@ static void _COBSpacketRxed( enum COBSPumpEvent e, struct Frame *p, void *param 
     switch ( e )
     {
         case COBS_EV_RXEDFRAME:
+	  /////////////////////////////////////////////////////////////////////
+	  //// HACK FOR CASE THAT COBS IS JUST TRANSITING RAW TPIU FRAMES /////
+	  TPIUPump2( &r->t, p->d, p->len, _TPIUpacketRxed, r );
+	  _purgeBlock( r );
+	  break;
+	  /////////////////////////////////////////////////////////////////////
+	  
             if ( p->len > 1 )
             {
                 incomingChannel = p->d[0];
