@@ -3,6 +3,12 @@ project('orbuculum', 'c', version:'2.1.0', meson_version: '>=0.63')
 
 uicolours_default = declare_dependency(compile_args: ['-include', 'uicolours_default.h'])
 
+cc = meson.get_compiler('c')
+
+sockets = declare_dependency(
+    dependencies: host_machine.system() == 'windows' ? [cc.find_library('ws2_32')] : []
+)
+
 dependencies = [
     dependency('threads'),
     dependency('libusb-1.0'),
@@ -12,16 +18,12 @@ dependencies = [
     dependency('capstone'),
     dependency('libelf'),
     uicolours_default,
+    sockets,
 ]
 
 incdirs = include_directories(['Inc', 'Inc/external'])
-cc = meson.get_compiler('c')
 
 if host_machine.system() == 'windows'
-    winsock2 = cc.find_library('ws2_32')
-    dependencies += [
-        winsock2
-    ]
 elif host_machine.system() == 'darwin'
     add_project_arguments('-DOSX', language: 'c')
 else
@@ -78,7 +80,7 @@ liborb = library('orb',
 	'Src/readsource.c'
     ] + stream_src,
     include_directories: incdirs,
-    dependencies: dependencies,
+    dependencies: sockets,
     soversion: meson.project_version(),
     install: true,
 )
