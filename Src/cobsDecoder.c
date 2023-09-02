@@ -95,8 +95,6 @@ void COBSPump( struct COBSDecoder *t, uint8_t *incoming, int len,
         switch ( t->s )
         {
             case COBS_UNSYNCED: // ----------------------------------------------------------------
-
-                /* This case was already dealt with above */
                 if ( COBS_SYNC_CHAR == *fp )
                 {
                     packetRxed( COBS_EV_NEWSYNC, NULL, NULL );
@@ -152,6 +150,14 @@ void COBSPump( struct COBSDecoder *t, uint8_t *incoming, int len,
                     {
                         t->f.d[t->f.len++] = *fp;
                     }
+                }
+
+                /* Check for frame overflow ... if it's max then error */
+                if ( COBS_MAX_PACKET_LEN == t->f.len )
+                {
+                    t->stats.error++;
+                    packetRxed( COBS_EV_ERROR, &t->f, param );
+                    t->s = COBS_IDLE;
                 }
 
                 break;

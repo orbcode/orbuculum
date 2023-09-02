@@ -809,7 +809,7 @@ static void _COBSpacketRxed( enum COBSPumpEvent e, struct Frame *p, void *param 
 
 {
 
-  
+
     struct RunTime *r = ( struct RunTime * )param;
 
     struct handlers *h;
@@ -819,13 +819,6 @@ static void _COBSpacketRxed( enum COBSPumpEvent e, struct Frame *p, void *param 
     switch ( e )
     {
         case COBS_EV_RXEDFRAME:
-	  /////////////////////////////////////////////////////////////////////
-	  //// HACK FOR CASE THAT COBS IS JUST TRANSITING RAW TPIU FRAMES /////
-	  TPIUPump2( &r->t, p->d, p->len, _TPIUpacketRxed, r );
-	  _purgeBlock( r );
-	  break;
-	  /////////////////////////////////////////////////////////////////////
-	  
             if ( p->len > 1 )
             {
                 incomingChannel = p->d[0];
@@ -855,8 +848,6 @@ static void _COBSpacketRxed( enum COBSPumpEvent e, struct Frame *p, void *param 
                             _purgeBlock( r );
                         }
                     }
-
-                    _purgeBlock( r );
                 }
             }
 
@@ -916,6 +907,7 @@ static void _processBlock( struct RunTime *r, ssize_t fillLevel, uint8_t *buffer
         {
             /* Strip the COBS framing from this input */
             COBSPump( &r->c, r->rawBlock[r->rp].buffer, r->rawBlock[r->rp].fillLevel, _COBSpacketRxed, r );
+            _purgeBlock( r );
         }
         else if ( r-> options->useTPIU )
         {
