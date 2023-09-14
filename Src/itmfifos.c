@@ -21,6 +21,7 @@
 #include "generics.h"
 #include "tpiuDecoder.h"
 #include "itmDecoder.h"
+#include "cobs.h"
 #include "fileWriter.h"
 #include "itmfifos.h"
 #include "msgDecoder.h"
@@ -60,6 +61,7 @@ struct itmfifosHandle
     struct ITMPacket h;
     struct TPIUDecoder t;
     struct TPIUPacket p;
+    struct COBS cobs;
     enum timeDelay timeStatus;                    /* Indicator of if this time is exact */
     uint64_t timeStamp;                           /* Latest received time */
 
@@ -68,12 +70,14 @@ struct itmfifosHandle
 
     /* Configuration information */
     char *chanPath;                               /* Path to where to put the fifos */
-    bool useTPIU;                                 /* Is the TPIU active? */
     bool filewriter;                              /* Is the filewriter in use? */
     bool forceITMSync;                            /* Is ITM to be forced into sync? */
     bool permafile;                               /* Use permanent files rather than fifos */
-    int tpiuITMChannel;                           /* TPIU channel on which ITM appears */
+    int tag;                                      /* Which COBS or TPIU stream are we decoding? */
+    struct Frame cobsPart;                        /* Any part frame that has been received */
     bool amEnding;                                /* Flag indicating end is in progress */
+
+    enum Prot protocol;                           /* What protocol to communicate (default to COBS (== orbuculum)) */
 
     struct Channel c[NUM_CHANNELS + 1];           /* Output for each channel */
 };
@@ -524,7 +528,7 @@ static void _tpiuProtocolPump( struct itmfifosHandle *f, uint8_t c )
 
             for ( uint32_t g = 0; g < f->p.len; g++ )
             {
-                if ( f->p.packet[g].s == f->tpiuITMChannel )
+                if ( f->p.packet[g].s == f->tag )
                 {
                     _itmPumpProcess( f, f->p.packet[g].d );
                     continue;
@@ -546,6 +550,24 @@ static void _tpiuProtocolPump( struct itmfifosHandle *f, uint8_t c )
             // ------------------------------------
     }
 }
+
+// ====================================================================================================
+
+static void _COBSpacketRxed ( struct Frame *p, void *param )
+
+{
+    struct itmfifosHandle *f = ( struct itmfifosHandle * )param;
+
+    if ( p->d[0] == f->tag )
+    {
+        for ( int i = 1; i < p->len; i++ )
+        {
+            _itmPumpProcess( f, p->d[i] );
+        }
+    }
+}
+
+// ====================================================================================================
 
 // ====================================================================================================
 // ====================================================================================================
@@ -600,10 +622,10 @@ void itmfifoSetChannel( struct itmfifosHandle *f, int chan, char *n, char *s )
 }
 #pragma GCC diagnostic pop
 // ====================================================================================================
-void itmfifoSetUseTPIU( struct itmfifosHandle *f, bool s )
+void itmfifoSetProtocol( struct itmfifosHandle *f, enum Prot p )
 
 {
-    f->useTPIU = s;
+    f->protocol = p;
 }
 // ====================================================================================================
 void itmfifoSetForceITMSync( struct itmfifosHandle *f, bool s )
@@ -612,10 +634,10 @@ void itmfifoSetForceITMSync( struct itmfifosHandle *f, bool s )
     f->forceITMSync = s;
 }
 // ====================================================================================================
-void itmfifoSettpiuITMChannel( struct itmfifosHandle *f, int channel )
+void itmfifoSettag( struct itmfifosHandle *f, int stream )
 
 {
-    f->tpiuITMChannel = channel;
+    f->tag = stream;
 }
 // ====================================================================================================
 char *itmfifoGetChannelName( struct itmfifosHandle *f, int chan )
@@ -638,10 +660,10 @@ char *itmfifoGetChanPath( struct itmfifosHandle *f )
     return f->chanPath;
 }
 // ====================================================================================================
-bool itmfifoGetUseTPIU( struct itmfifosHandle *f )
+enum Prot itmfifoGetProtocol( struct itmfifosHandle *f )
 
 {
-    return f->useTPIU;
+    return f->protocol;
 }
 // ====================================================================================================
 bool itmfifoGetForceITMSync( struct itmfifosHandle *f )
@@ -650,10 +672,10 @@ bool itmfifoGetForceITMSync( struct itmfifosHandle *f )
     return f->forceITMSync;
 }
 // ====================================================================================================
-int itmfifoGettpiuITMChannel( struct itmfifosHandle *f )
+int itmfifoGettag( struct itmfifosHandle *f )
 
 {
-    return f->tpiuITMChannel;
+    return f->tag;
 }
 // ====================================================================================================
 struct TPIUCommsStats *itmfifoGetCommsStats( struct itmfifosHandle *f )
@@ -670,20 +692,29 @@ struct ITMDecoderStats *fifoGetITMDecoderStats( struct itmfifosHandle *f )
 // ====================================================================================================
 // Main interface components
 // ====================================================================================================
-void itmfifoProtocolPump( struct itmfifosHandle *f, uint8_t c )
+void itmfifoProtocolPump( struct itmfifosHandle *f, uint8_t *c, int len )
 
 /* Top level protocol pump */
 
 {
-    if ( f->useTPIU )
+
+    if ( PROT_COBS == f->protocol )
     {
-        _tpiuProtocolPump( f, c );
+        COBSPump( &f->cobs, c, len, _COBSpacketRxed, f );
     }
     else
-    {
-        /* There's no TPIU in use, so this goes straight to the ITM layer */
-        _itmPumpProcess( f, c );
-    }
+        while ( len-- )
+        {
+            if ( PROT_TPIU == f->protocol )
+            {
+                _tpiuProtocolPump( f, *c++ );
+            }
+            else
+            {
+                /* There's no TPIU in use, so this goes straight to the ITM layer */
+                _itmPumpProcess( f, *c++ );
+            }
+        }
 }
 // ====================================================================================================
 void itmfifoForceSync( struct itmfifosHandle *f, bool synced )
@@ -707,6 +738,7 @@ bool itmfifoCreate( struct itmfifosHandle *f )
 
     /* Reset the TPIU handler before we start */
     TPIUDecoderInit( &f->t );
+    COBSInit( &f->cobs );
     ITMDecoderInit( &f->i, f->forceITMSync );
 
     /* Cycle through channels and create a fifo for each one that is enabled */
@@ -857,18 +889,17 @@ void itmfifoUsePermafiles( struct itmfifosHandle *f, bool usePermafilesSet )
     f->permafile = usePermafilesSet;
 }
 // ====================================================================================================
-struct itmfifosHandle *itmfifoInit( bool forceITMSyncSet, bool useTPIUSet, int TPIUchannelSet )
+struct itmfifosHandle *itmfifoInit( bool forceITMSyncSet, enum Prot p, int tag )
 
 {
     struct itmfifosHandle *f = ( struct itmfifosHandle * )calloc( 1, sizeof( struct itmfifosHandle  ) );
 
     MEMCHECK( f, NULL );
 
-    f->chanPath = NULL;
-    f->useTPIU = useTPIUSet;
+    f->chanPath = strdup( "" );
+    f->protocol = p;
     f->forceITMSync = forceITMSyncSet;
-    f->tpiuITMChannel = TPIUchannelSet;
-
+    f->tag = tag;
     return f;
 }
 // ====================================================================================================

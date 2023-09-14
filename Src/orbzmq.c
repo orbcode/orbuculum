@@ -17,12 +17,16 @@
 #include "tpiuDecoder.h"
 #include "itmDecoder.h"
 #include "msgDecoder.h"
+#include "cobs.h"
 
 #define NUM_CHANNELS  32
 #define HWFIFO_NAME "hwevent"
 #define MAX_STRING_LENGTH (100)              /* Maximum length that will be output for a single event */
 
 #define DEFAULT_ZMQ_BIND_URL "tcp://*:3442"  /* by default bind to all source interfaces */
+
+enum Prot { PROT_COBS, PROT_ITM, PROT_TPIU, PROT_UNKNOWN };
+const char *protString[] = {"COBS", "ITM", "TPIU", NULL};
 
 // Record for options, either defaults or from command line
 
@@ -35,8 +39,7 @@ struct Channel
 struct
 {
     /* Config information */
-    bool useTPIU;
-    uint32_t tpiuChannel;
+    uint32_t tag;
     bool forceITMSync;
     uint32_t hwOutputs;
 
@@ -47,6 +50,7 @@ struct
     /* Source information */
     int port;
     char *server;
+    enum Prot protocol;                                 /* What protocol to communicate (default to COBS (== orbuculum)) */
     bool mono;                                          /* Supress colour in output */
 
     char *file;                                         /* File host connection */
@@ -55,9 +59,9 @@ struct
 } options =
 {
     .forceITMSync = true,
-    .tpiuChannel = 1,
+    .tag = 1,
     .bindUrl = DEFAULT_ZMQ_BIND_URL,
-    .port = NWCLIENT_SERVER_PORT,
+    .port = OTCLIENT_SERVER_PORT,
     .server = "localhost"
 };
 
@@ -68,6 +72,7 @@ struct
     struct ITMPacket h;
     struct TPIUDecoder t;
     struct TPIUPacket p;
+    struct COBS c;
 
     /* Timestamp info */
     uint64_t lastHWExceptionTS;
@@ -408,7 +413,7 @@ void _itmPumpProcess( char c )
 // ====================================================================================================
 void _protocolPump( uint8_t c )
 {
-    if ( options.useTPIU )
+    if ( PROT_TPIU == options.protocol )
     {
         switch ( TPIUPump( &_r.t, c ) )
         {
@@ -433,7 +438,7 @@ void _protocolPump( uint8_t c )
 
                 for ( uint32_t g = 0; g < _r.p.len; g++ )
                 {
-                    if ( _r.p.packet[g].s == options.tpiuChannel )
+                    if ( _r.p.packet[g].s == options.tag )
                     {
                         _itmPumpProcess( _r.p.packet[g].d );
                         continue;
@@ -469,8 +474,10 @@ void _printHelp( const char *const progName )
     genericsPrintf( "    -h, --help:       This help" EOL );
     genericsPrintf( "    -M, --no-colour:    Supress colour in output" EOL );
     genericsPrintf( "    -n, --itm-sync:   Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
+    genericsPrintf( "    -p, --protocol:     Protocol to communicate. Defaults to COBS if -s is not set, otherwise ITM unless" EOL \
+                    "                        explicitly set to TPIU to decode TPIU frames on channel set by -t" EOL );
     genericsPrintf( "    -s, --server:     <Server>:<Port> to use, default %s:%d" EOL, options.server, options.port );
-    genericsPrintf( "    -t, --tpiu:       <channel>: Use TPIU decoder on specified channel (normally 1)" EOL );
+    genericsPrintf( "    -t, --tag:          <stream>: Which TPIU stream or COBS tag to use (normally 1)" EOL );
     genericsPrintf( "    -v, --verbose:    <level> Verbose mode 0(errors)..3(debug)" EOL );
     genericsPrintf( "    -V, --version:    Print version and exit" EOL );
     genericsPrintf( "    -z, --zbind:      <url>: ZeroMQ bind URL, default %s" EOL, options.bindUrl );
@@ -553,6 +560,7 @@ static struct option _longOptions[] =
     {"itm-sync", no_argument, NULL, 'n'},
     {"no-colour", no_argument, NULL, 'M'},
     {"no-color", no_argument, NULL, 'M'},
+    {"protocol", required_argument, NULL, 'p'},
     {"server", required_argument, NULL, 's'},
     {"tpiu", required_argument, NULL, 't'},
     {"verbose", required_argument, NULL, 'v'},
@@ -570,13 +578,15 @@ bool _processOptions( int argc, char *argv[] )
     unsigned int chan;
     char *chanIndex;
     int32_t hwOutputs;
+    bool protExplicit = false;
+    bool serverExplicit = false;
 
     for ( int g = 0; g < NUM_CHANNELS; g++ )
     {
         options.channel[g].topic = NULL;
     }
 
-    while ( ( c = getopt_long ( argc, argv, "c:e:Ef:hns:t:v:Vz:", _longOptions, &optionIndex ) ) != -1 )
+    while ( ( c = getopt_long ( argc, argv, "c:e:Ef:hnp:s:t:v:Vz:", _longOptions, &optionIndex ) ) != -1 )
     {
         switch ( c )
         {
@@ -611,8 +621,32 @@ bool _processOptions( int argc, char *argv[] )
                 break;
 
             // ------------------------------------
+
+            case 'p':
+                options.protocol = PROT_UNKNOWN;
+                protExplicit = true;
+
+                for ( int i = 0; protString[i]; i++ )
+                {
+                    if ( !strcmp( protString[i], optarg ) )
+                    {
+                        options.protocol = i;
+                        break;
+                    }
+                }
+
+                if ( options.protocol == PROT_UNKNOWN )
+                {
+                    genericsReport( V_ERROR, "Unrecognised protocol type" EOL );
+                    return false;
+                }
+
+                break;
+
+            // ------------------------------------
             case 's':
                 options.server = optarg;
+                serverExplicit = true;
 
                 // See if we have an optional port number too
                 char *a = optarg;
@@ -637,8 +671,7 @@ bool _processOptions( int argc, char *argv[] )
 
             // ------------------------------------
             case 't':
-                options.useTPIU = true;
-                options.tpiuChannel = atoi( optarg );
+                options.tag = atoi( optarg );
                 break;
 
             // ------------------------------------
@@ -745,10 +778,10 @@ bool _processOptions( int argc, char *argv[] )
         }
     }
 
-    if ( ( options.useTPIU ) && ( !options.tpiuChannel ) )
+    /* If we set an explicit server and port and didn't set a protocol chances are we want ITM, not COBS */
+    if ( serverExplicit && !protExplicit )
     {
-        genericsReport( V_ERROR, "TPIU set for use but no channel set for ITM output" EOL );
-        return false;
+        options.protocol = PROT_ITM;
     }
 
     genericsReport( V_INFO, "orbzmq version " GIT_DESCRIBE EOL );
@@ -770,15 +803,7 @@ bool _processOptions( int argc, char *argv[] )
         }
     }
 
-    if ( options.useTPIU )
-    {
-        genericsReport( V_INFO, "Using TPIU  : true (ITM on channel %d)" EOL, options.tpiuChannel );
-    }
-    else
-    {
-        genericsReport( V_INFO, "Using TPIU  : false" EOL );
-    }
-
+    genericsReport( V_INFO, "Tag         : " EOL, options.tag );
     genericsReport( V_INFO, "ZeroMQ bind : %s" EOL, options.bindUrl );
     genericsReport( V_INFO, "Channels    :" EOL );
 
@@ -807,6 +832,25 @@ bool _processOptions( int argc, char *argv[] )
         genericsReport( V_INFO, "             HW [Predefined] [%s]" EOL, hwEventNames[g] );
     }
 
+    switch ( options.protocol )
+    {
+        case PROT_COBS:
+            genericsReport( V_INFO, "Decoding COBS (Orbuculum) with ITM in stream %d" EOL, options.tag );
+            break;
+
+        case PROT_ITM:
+            genericsReport( V_INFO, "Decoding ITM" EOL );
+            break;
+
+        case  PROT_TPIU:
+            genericsReport( V_INFO, "Using TPIU with ITM in stream %d" EOL, options.tag );
+            break;
+
+        default:
+            genericsReport( V_INFO, "Decoding unknown" EOL );
+            break;
+    }
+
     return true;
 }
 
@@ -823,6 +867,21 @@ static struct Stream *_tryOpenStream()
         return streamCreateSocket( options.server, options.port );
     }
 }
+// ====================================================================================================
+
+static void _COBSpacketRxed ( struct Frame *p, void *param )
+
+{
+
+    if ( p->d[0] == options.tag )
+    {
+        for ( int i = 1; i < p->len; i++ )
+        {
+            _itmPumpProcess( p->d[i] );
+        }
+    }
+}
+
 // ====================================================================================================
 static void _feedStream( struct Stream *stream )
 {
@@ -849,14 +908,21 @@ static void _feedStream( struct Stream *stream )
             }
         }
 
-        unsigned char *c = cbw;
-
-        while ( receivedSize-- )
+        if ( PROT_COBS == options.protocol )
         {
-            _protocolPump( *c++ );
+            COBSPump( &_r.c, cbw, receivedSize, _COBSpacketRxed, &_r );
         }
+        else
+        {
+            unsigned char *c = cbw;
 
-        fflush( stdout );
+            while ( receivedSize-- )
+            {
+                _protocolPump( *c++ );
+            }
+
+            fflush( stdout );
+        }
     }
 }
 
@@ -879,6 +945,7 @@ int main( int argc, char *argv[] )
     /* Reset the TPIU handler before we start */
     TPIUDecoderInit( &_r.t );
     ITMDecoderInit( &_r.i, options.forceITMSync );
+    COBSInit( &_r.c );
 
     while ( true )
     {

@@ -24,11 +24,15 @@
 #include "nw.h"
 #include "traceDecoder.h"
 #include "tpiuDecoder.h"
-#include "loadelf.h"
+#include "cobs.h"
+#include "symbols.h"
 #include "sio.h"
 #include "stream.h"
 
 #define REMOTE_SERVER       "localhost"
+
+enum Prot { PROT_COBS, PROT_ITM, PROT_TPIU, PROT_UNKNOWN };
+const char *protString[] = {"COBS", "ITM", "TPIU", NULL};
 
 #define SCRATCH_STRING_LEN  (65535)     /* Max length for a string under construction */
 //#define DUMP_BLOCK
@@ -52,24 +56,24 @@ struct Options
     char *odoptions;                    /* Options to pass directly to objdump */
 
     int buflen;                         /* Length of post-mortem buffer, in bytes */
-    bool useTPIU;                       /* Are we using TPIU, and stripping TPIU frames? */
-    int channel;                        /* When TPIU is in use, which channel to decode? */
+    int tag;                            /* ch TPIU or COBS stream are we decoding? */
     int port;                           /* Source information */
     char *server;
+    enum Prot protocol;
     bool mono;                          /* Supress colour in output */
-    enum TRACEprotocol protocol;        /* Encoding protocol to use */
+    enum TRACEprotocol tProtocol;       /* Encoding protocol to use */
     bool noAltAddr;                     /* Flag to *not* use alternate addressing */
     char *openFileCL;                   /* Command line for opening refernced file */
 
     bool withDebugText;                 /* Include debug text (hidden in) output...screws line numbering a bit */
 } _options =
 {
-    .port     = NWCLIENT_SERVER_PORT,
-    .server   = REMOTE_SERVER,
-    .demangle = true,
-    .protocol = TRACE_PROT_ETM35,
-    .channel  = 2,
-    .buflen   = DEFAULT_PM_BUFLEN_K * 1024
+    .port      = OTCLIENT_SERVER_PORT,
+    .server    = REMOTE_SERVER,
+    .demangle  = true,
+    .tProtocol = TRACE_PROT_ETM35,
+    .tag       = 2,
+    .buflen    = DEFAULT_PM_BUFLEN_K * 1024
 };
 
 /* A block of received data */
@@ -95,7 +99,7 @@ struct RunTime
 {
     struct TRACEDecoder i;
     struct TPIUDecoder t;
-
+    struct COBS c;
     const char *progName;               /* Name by which this program was called */
 
     struct symbol *s;                   /* Symbols read from elf */
@@ -177,16 +181,10 @@ static void _printHelp( const char *const progName )
     genericsPrintf( "    -h, --help:         This help" EOL );
     genericsPrintf( "    -M, --no-colour:    Supress colour in output" EOL );
     genericsPrintf( "    -O, --objdump-opts: <options> Options to pass directly to objdump" EOL );
-    genericsPrintf( "    -p, --trace-proto:  { " );
-
-    for ( int i = TRACE_PROT_LIST_START; i < TRACE_PROT_NUM; i++ )
-    {
-        genericsPrintf( "%s ", TRACEDecodeGetProtocolName( i ) );
-    }
-
-    genericsPrintf( "} trace protocol to use, default is %s" EOL, TRACEDecodeGetProtocolName( TRACE_PROT_LIST_START ) );
+    genericsPrintf( "    -p, --protocol:     Protocol to communicate. Defaults to COBS if -s is not set, otherwise TPIU" EOL );
+    genericsPrintf( "    -P, --trace-proto:  {ETM35|MTB} trace protocol to use, default is ETM35" EOL );
     genericsPrintf( "    -s, --server:       <Server>:<Port> to use" EOL );
-    genericsPrintf( "    -t, --tpiu:         <channel>: Use TPIU to strip TPIU on specfied channel" EOL );
+    genericsPrintf( "    -t, --tag:          <stream>: Which TPIU stream or COBS tag to use (normally 2)" EOL );
     genericsPrintf( "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
     genericsPrintf( "    -V, --version:      Print version and exit" EOL );
     genericsPrintf( EOL "(Will connect one port higher than that set in -s when TPIU is not used)" EOL );
@@ -213,7 +211,8 @@ static struct option _longOptions[] =
     {"no-colour", no_argument, NULL, 'M'},
     {"no-color", no_argument, NULL, 'M'},
     {"objdump-opts", required_argument, NULL, 'O'},
-    {"trace-proto", required_argument, NULL, 'p'},
+    {"trace-proto", required_argument, NULL, 'P'},
+    {"protocol", required_argument, NULL, 'p'},
     {"server", required_argument, NULL, 's'},
     {"tpiu", required_argument, NULL, 't'},
     {"verbose", required_argument, NULL, 'v'},
@@ -225,8 +224,10 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
 
 {
     int c, optionIndex = 0;
+    bool protExplicit = false;
+    bool serverExplicit = false;
 
-    while ( ( c = getopt_long ( argc, argv, "Ab:C:Dd:Ee:f:hVMO:p:s:t:v:w", _longOptions, &optionIndex ) ) != -1 )
+    while ( ( c = getopt_long ( argc, argv, "Ab:C:Dd:Ee:f:hVMO:p:P:s:t:v:", _longOptions, &optionIndex ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -294,19 +295,43 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
                 break;
 
             // ------------------------------------
-            case 'p':
+            case 'P':
 
                 /* Index through protocol strings looking for match or end of list */
-                for ( r->options->protocol = TRACE_PROT_LIST_START;
-                        ( ( r->options->protocol != TRACE_PROT_NUM ) && strcasecmp( optarg, TRACEDecodeGetProtocolName( r->options->protocol ) ) );
-                        r->options->protocol++ )
+                for ( r->options->tProtocol = TRACE_PROT_LIST_START;
+                        ( ( r->options->tProtocol != TRACE_PROT_LIST_END ) && strcasecmp( optarg, TRACEprotocolString[r->options->tProtocol] ) );
+                        r->options->tProtocol++ )
                 {}
 
                 break;
 
             // ------------------------------------
 
+            case 'p':
+                r->options->protocol = PROT_UNKNOWN;
+                protExplicit = true;
+
+                for ( int i = 0; protString[i]; i++ )
+                {
+                    if ( !strcmp( protString[i], optarg ) )
+                    {
+                        r->options->protocol = i;
+                        break;
+                    }
+                }
+
+                if ( r->options->protocol == PROT_UNKNOWN )
+                {
+                    genericsReport( V_ERROR, "Unrecognised protocol type" EOL );
+                    return false;
+                }
+
+                break;
+
+            // ------------------------------------
+
             case 's':
+                serverExplicit = true;
                 r->options->server = optarg;
 
                 // See if we have an optional port number too
@@ -333,8 +358,7 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
             // ------------------------------------
 
             case 't':
-                r->options->useTPIU = true;
-                r->options->channel = atoi( optarg );
+                r->options->tag = atoi( optarg );
                 break;
 
             // ------------------------------------
@@ -376,6 +400,12 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
                 // ------------------------------------
         }
 
+    /* If we set an explicit server and port and didn't set a protocol chances are we want TPIU, not COBS */
+    if ( serverExplicit && !protExplicit )
+    {
+        r->options->protocol = PROT_TPIU;
+    }
+
     /* ... and dump the config if we're being verbose */
     genericsReport( V_INFO, "orbmortem version " GIT_DESCRIBE EOL );
 
@@ -384,16 +414,16 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
         genericsReport( V_INFO, "Incoporate debug text in output buffer" EOL );
     }
 
-    if ( r->options->protocol >= TRACE_PROT_NONE )
+    if ( r->options->tProtocol >= TRACE_PROT_NONE )
     {
         genericsExit( V_ERROR, "Unrecognised decode protocol" EOL );
     }
     else
     {
-        genericsReport( V_INFO, "Protocol %s" EOL, TRACEDecodeGetProtocolName( r->options->protocol ) );
+        genericsReport( V_INFO, "Protocol %s" EOL, TRACEprotocolString[r->options->tProtocol] );
     }
 
-    if ( ( r->options->protocol == TRACE_PROT_MTB ) && ( !r->options->file ) )
+    if ( ( r->options->tProtocol == TRACE_PROT_MTB ) && ( !r->options->file ) )
     {
         genericsExit( V_ERROR, "MTB only makes sense when input is from a file" EOL );
     }
@@ -408,9 +438,54 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
         genericsExit( -1, "Illegal value for Post Mortem Buffer length" EOL );
     }
 
+    switch ( r->options->protocol )
+    {
+        case PROT_COBS:
+            genericsReport( V_INFO, "Decoding COBS (Orbuculum) with ITM in stream %d" EOL, r->options->tag );
+            break;
+
+        case PROT_ITM:
+            genericsReport( V_INFO, "Decoding ITM...not legal for TRACE" EOL );
+            return false;
+
+        case  PROT_TPIU:
+            genericsReport( V_INFO, "Using TPIU with ITM in stream %d" EOL, r->options->tag );
+            break;
+
+        default:
+            genericsReport( V_INFO, "Decoding unknown" EOL );
+            break;
+    }
+
     return true;
 }
 // ====================================================================================================
+static bool _rxAdd( struct RunTime *r, uint8_t c )
+
+{
+    r->newTotalBytes ++;
+
+    r->pmBuffer[r->wp] = c;
+    uint32_t nwp = ( r->wp + 1 ) % r->options->buflen;
+
+    if ( nwp == r->rp )
+    {
+        if ( r->singleShot )
+        {
+            r->held = true;
+            return true;
+        }
+        else
+        {
+            r->rp = ( r->rp + 1 ) % r->options->buflen;
+        }
+    }
+
+    r->wp = nwp;
+    return false;
+}
+// ====================================================================================================
+
 static void _processBlock( struct RunTime *r )
 
 /* Generic block processor for received data */
@@ -440,7 +515,7 @@ static void _processBlock( struct RunTime *r )
         y = r->rawBlock.fillLevel;
 #endif
 
-        if ( r->options->useTPIU )
+        if ( PROT_TPIU == r->options->protocol )
         {
             struct TPIUPacket p;
 
@@ -457,59 +532,50 @@ static void _processBlock( struct RunTime *r )
                         /* Iterate through the packet, putting bytes for TRACE into the processing buffer */
                         for ( uint32_t g = 0; g < p.len; g++ )
                         {
-                            if ( r->options->channel == p.packet[g].s )
+                            if ( r->options->tag == p.packet[g].s )
                             {
-                                r->pmBuffer[r->wp] = p.packet[g].d;
-                                r->newTotalBytes++;
-                                uint32_t nwp = ( r->wp + 1 ) % r->options->buflen;
-
-                                if ( nwp == r->rp )
+                                if ( _rxAdd( r, p.packet[g].d ) )
                                 {
-                                    if ( r->singleShot )
-                                    {
-                                        r->held = true;
-                                        return;
-                                    }
-                                    else
-                                    {
-                                        r->rp = ( r->rp + 1 ) % r->options->buflen;
-                                    }
+                                    return;
                                 }
-
-                                r->wp = nwp;
                             }
+                        }
+                    }
+                }
+                else
+                {
+                    while ( y-- )
+                    {
+                        if ( _rxAdd( r, *c++ ) )
+                        {
+                            return;
                         }
                     }
                 }
             }
         }
-        else
+    }
+}
+
+// ====================================================================================================
+
+static void _COBSpacketRxed ( struct Frame *p, void *param )
+
+{
+    struct RunTime *r = ( struct RunTime * )param;
+
+    if ( p->d[0] == r->options->tag )
+    {
+        for ( int i = 1; i < p->len; i++ )
         {
-            r->newTotalBytes += y;
-
-            while ( y-- )
+            if ( _rxAdd( r, p->d[i] ) )
             {
-                r->pmBuffer[r->wp] = *c++;
-                uint32_t nwp = ( r->wp + 1 ) % r->options->buflen;
-
-                if ( nwp == r->rp )
-                {
-                    if ( r->singleShot )
-                    {
-                        r->held = true;
-                        return;
-                    }
-                    else
-                    {
-                        r->rp = ( r->rp + 1 ) % r->options->buflen;
-                    }
-                }
-
-                r->wp = nwp;
+                return;
             }
         }
     }
 }
+
 // ====================================================================================================
 static void _flushBuffer( struct RunTime *r )
 
@@ -795,7 +861,7 @@ static void _traceCB( void *d )
         /* address reporting is switched on. It will give 'false positives' for uncalculable instructions (e.g. bx lr) but */
         /* it's a decent safety net to be sure the jump decoder is working correctly.                                      */
 
-        if ( r->options->protocol != TRACE_PROT_MTB )
+        if ( r->options->tProtocol != TRACE_PROT_MTB )
         {
             _traceReport( V_DEBUG, "%sCommanded CPU Address change (Was:0x%08x Commanded:0x%08x)" EOL,
                           ( r->op.workingAddr == cpu->addr ) ? "" : "***INCONSISTENT*** ", r->op.workingAddr, cpu->addr );
@@ -847,6 +913,91 @@ static void _traceCB( void *d )
 
     /* 4: Execute the flow instructions */
     /* ================================ */
+    if ( TRACEStateChanged( &r->i, EV_CH_VMID ) )
+    {
+        _appendToOPBuffer( r, r->op.currentLine, LT_EVENT, "*** VMID Set to %d", cpu->vmid );
+    }
+
+    if ( TRACEStateChanged( &r->i, EV_CH_EX_ENTRY ) )
+    {
+        if ( r->options->tProtocol != TRACE_PROT_MTB )
+        {
+            _appendToOPBuffer( r, r->op.currentLine, LT_EVENT, "========== Exception Entry%s (%d at 0x%08x) ==========",
+                               TRACEStateChanged( &r->i, EV_CH_CANCELLED ) ? ", Last Instruction Cancelled" : "", cpu->exception, cpu->addr );
+        }
+        else
+        {
+            _appendToOPBuffer( r, r->op.currentLine, LT_EVENT, "========== Exception Entry ==========" );
+        }
+    }
+
+    if ( TRACEStateChanged( &r->i, EV_CH_EX_EXIT ) )
+    {
+        _appendRefToOPBuffer( r, r->op.currentLine, LT_EVENT, "========== Exception Exit ==========" );
+    }
+
+    if ( TRACEStateChanged( &r->i, EV_CH_TSTAMP ) )
+    {
+        _appendToOPBuffer( r, r->op.currentLine, LT_EVENT, "*** Timestamp %ld", cpu->ts );
+    }
+
+    if ( TRACEStateChanged( &r->i, EV_CH_TRIGGER ) )
+    {
+        _appendRefToOPBuffer( r, r->op.currentLine, LT_EVENT, "*** Trigger" );
+    }
+
+    if ( TRACEStateChanged( &r->i, EV_CH_CLOCKSPEED ) )
+    {
+        _appendRefToOPBuffer( r, r->op.currentLine, LT_EVENT, "*** Change Clockspeed" );
+    }
+
+    if ( TRACEStateChanged( &r->i, EV_CH_ISLSIP ) )
+    {
+        _appendRefToOPBuffer( r, r->op.currentLine, LT_EVENT, "*** ISLSIP Triggered" );
+    }
+
+    if ( TRACEStateChanged( &r->i, EV_CH_CYCLECOUNT ) )
+    {
+        _appendToOPBuffer( r, r->op.currentLine, LT_EVENT, "(Cycle Count %d)", cpu->cycleCount );
+    }
+
+    if ( TRACEStateChanged( &r->i, EV_CH_VMID ) )
+    {
+        _appendToOPBuffer( r, r->op.currentLine, LT_EVENT, "(VMID is now %d)", cpu->vmid );
+    }
+
+    if ( TRACEStateChanged( &r->i, EV_CH_CONTEXTID ) )
+    {
+        _appendToOPBuffer( r, r->op.currentLine, LT_EVENT, "(Context ID is now %d)", cpu->contextID );
+    }
+
+    if ( TRACEStateChanged( &r->i, EV_CH_SECURE ) )
+    {
+        _appendToOPBuffer( r, r->op.currentLine, LT_EVENT, "(Non-Secure State is now %s)", cpu->nonSecure ? "True" : "False" );
+    }
+
+    if ( TRACEStateChanged( &r->i, EV_CH_ALTISA ) )
+    {
+        _appendToOPBuffer( r, r->op.currentLine, LT_EVENT, "(Using AltISA  is now %s)", cpu->altISA ? "True" : "False" );
+    }
+
+    if ( TRACEStateChanged( &r->i, EV_CH_HYP ) )
+    {
+        _appendToOPBuffer( r, r->op.currentLine,  LT_EVENT, "(Using Hypervisor is now %s)", cpu->hyp ? "True" : "False" );
+    }
+
+    if ( TRACEStateChanged( &r->i, EV_CH_JAZELLE ) )
+    {
+        _appendToOPBuffer( r, r->op.currentLine, LT_EVENT, "(Using Jazelle is now %s)", cpu->jazelle ? "True" : "False" );
+    }
+
+    if ( TRACEStateChanged( &r->i, EV_CH_THUMB ) )
+    {
+        _appendToOPBuffer( r, r->op.currentLine, LT_EVENT, "(Using Thumb is now %s)", cpu->thumb ? "True" : "False" );
+    }
+
+    /* End of dealing with changes introduced by this event =============== */
+
     while ( ( incAddr && !linearRun ) || ( ( r->op.workingAddr <= targetAddr ) && linearRun ) )
     {
         /* Firstly, lets get the source code line...*/
@@ -1304,9 +1455,10 @@ int main( int argc, char *argv[] )
     /* Create the buffer memory */
     _r.pmBuffer = ( uint8_t * )calloc( 1, _r.options->buflen );
 
-    TRACEDecoderInit( &_r.i, _r.options->protocol, !( _r.options->noAltAddr ), _traceReport );
+    TRACEDecoderInit( &_r.i, _r.options->tProtocol, !( _r.options->noAltAddr ) );
+    COBSInit( &_r.c );
 
-    if ( _r.options->useTPIU )
+    if ( PROT_TPIU == _r.options->protocol )
     {
         TPIUDecoderInit( &_r.t );
     }
@@ -1315,7 +1467,7 @@ int main( int argc, char *argv[] )
     _r.sio = SIOsetup( _r.progName, _r.options->elffile, ( _r.options->file != NULL ) );
 
     /* Put a record of the protocol in use on screen */
-    SIOtagText( _r.sio, TRACEDecodeGetProtocolName( _r.options->protocol ) );
+    SIOtagText( _r.sio, TRACEprotocolString[_r.options->tProtocol] );
 
     while ( !_r.ending )
     {
@@ -1324,7 +1476,7 @@ int main( int argc, char *argv[] )
             /* Keep trying to open a network connection at half second intervals */
             while ( 1 )
             {
-                stream = streamCreateSocket( _r.options->server, _r.options->port + ( _r.options->useTPIU ? 0 : 1 ) );
+                stream = streamCreateSocket( _r.options->server, _r.options->port );
 
                 if ( stream )
                 {
@@ -1381,7 +1533,15 @@ int main( int argc, char *argv[] )
             if ( !_r.held )
             {
                 /* Pump all of the data through the protocol handler */
-                _processBlock( &_r );
+
+                if ( PROT_COBS == _r.options->protocol )
+                {
+                    COBSPump( &_r.c, _r.rawBlock.buffer, _r.rawBlock.fillLevel, _COBSpacketRxed, &_r );
+                }
+                else
+                {
+                    _processBlock( &_r );
+                }
             }
 
             /* Update the outputs and deal with any keys that made it up this high */

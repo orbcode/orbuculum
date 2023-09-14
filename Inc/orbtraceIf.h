@@ -90,6 +90,7 @@ struct OrbtraceIf
     int numBlocks;                               /* ...and how many */
     uint8_t ep;                                  /* Endpoint used for data transfer */
     uint8_t iface;                               /* ...and the interface */
+    bool isOrbtrace;                             /* Is this an orbtrace device? */
 
     int numDevices;                              /* Number of matching devices found */
     struct OrbtraceIfDevice *devices;            /* List of matching devices found */
@@ -148,6 +149,7 @@ bool OrbtraceIfOpenDevice( struct OrbtraceIf *o, int entry );
 bool OrbtraceGetIfandEP( struct OrbtraceIf *o );
 void OrbtraceIfCloseDevice( struct OrbtraceIf *o );
 enum Channel OrbtraceIfNameToChannel( char *x );
+bool OrbtraceIsOrbtrace( struct OrbtraceIf *o );
 
 /* Device manipulation */
 bool OrbtraceIfSetTraceWidth( struct OrbtraceIf *o, int width );

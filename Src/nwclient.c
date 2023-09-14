@@ -172,7 +172,7 @@ static void *_listenTask( void *arg )
         /* Hook into linked list */
         if ( _lock_with_timeout( &h->clientList, &ts ) < 0 )
         {
-            genericsExit( -1, "Failed to acquire mutex" EOL );
+            genericsExit( -1, "Failed to establish mutex for condition variable" EOL );
         }
 
         client->nextClient = h->firstClient;
@@ -198,7 +198,7 @@ static void *_listenTask( void *arg )
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
-void nwclientSend( struct nwclientsHandle *h, uint32_t len, uint8_t *ipbuffer, bool unlimWait )
+void nwclientSend( struct nwclientsHandle *h, uint32_t len, const uint8_t *ipbuffer, bool unlimWait )
 
 {
     ssize_t sent = 0;

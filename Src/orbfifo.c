@@ -29,6 +29,7 @@
 
 #include "itmfifos.h"
 
+const char *protString[] = {"COBS", "ITM", "TPIU", NULL};
 
 //#define DUMP_BLOCK
 
@@ -50,7 +51,7 @@ struct
 
 } options =
 {
-    .port = NWCLIENT_SERVER_PORT,
+    .port = OTCLIENT_SERVER_PORT,
     .server = "localhost"
 };
 
@@ -78,9 +79,10 @@ static void _printHelp( const char *const progName )
     genericsPrintf( "    -h, --help:         This help" EOL );
     genericsPrintf( "    -M, --no-colour:    Supress colour in output" EOL );
     genericsPrintf( "    -P, --permanent:    Create permanent files rather than fifos" EOL );
-    genericsPrintf(
-                "    -s, --server:       <Server>:<Port> to use" EOL );
-    genericsPrintf( "    -t, --tpiu:         <channel> Use TPIU decoder on specified channel, normally 1" EOL );
+    genericsPrintf( "    -p, --protocol:     Protocol to communicate. Defaults to COBS if -s is not set, otherwise ITM unless" EOL \
+                    "                        explicitly set to TPIU to decode TPIU frames on stream set by -t" EOL );
+    genericsPrintf( "    -s, --server:       <Server>:<Port> to use" EOL );
+    genericsPrintf( "    -t, --tag:          <stream> Which TPIU stream or COBS tag to use (normally 1)" EOL );
     genericsPrintf( "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
     genericsPrintf( "    -V, --version:      Print version and exit" EOL );
     genericsPrintf( "    -W, --writer-path:  <path> Enable filewriter functionality using specified base path" EOL );
@@ -102,8 +104,9 @@ struct option _longOptions[] =
     {"no-colour", no_argument, NULL, 'M'},
     {"no-color", no_argument, NULL, 'M'},
     {"permanent", no_argument, NULL, 'P'},
+    {"protocol", required_argument, NULL, 'p'},
     {"server", required_argument, NULL, 's'},
-    {"tpiu", required_argument, NULL, 't'},
+    {"tag", required_argument, NULL, 't'},
     {"verbose", required_argument, NULL, 'v'},
     {"version", no_argument, NULL, 'V'},
     {"writer-path", required_argument, NULL, 'W'},
@@ -120,9 +123,10 @@ static bool _processOptions( int argc, char *argv[] )
     char *chanName;
     uint chan;
     char *chanIndex;
+    bool protExplicit = false;
+    bool serverExplicit = false;
 
-
-    while ( ( c = getopt_long ( argc, argv, "b:c:Ef:hVn:Ps:t:v:w:", _longOptions, &optionIndex ) ) != -1 )
+    while ( ( c = getopt_long ( argc, argv, "b:c:Ef:hVn:Pp:s:t:v:w:", _longOptions, &optionIndex ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -196,9 +200,58 @@ static bool _processOptions( int argc, char *argv[] )
 
             // ------------------------------------
 
+            case 'p':
+                enum Prot p = PROT_UNKNOWN;
+                protExplicit = true;
+
+                for ( int i = 0; protString[i]; i++ )
+                {
+                    if ( !strcmp( protString[i], optarg ) )
+                    {
+                        p = i;
+                        break;
+                    }
+                }
+
+                if ( PROT_UNKNOWN == p )
+                {
+                    genericsReport( V_ERROR, "Unrecognised protocol type" EOL );
+                    return false;
+                }
+
+                itmfifoSetProtocol( _r.f, p );
+                break;
+
+            // ------------------------------------
+            case 's':
+                options.server = optarg;
+                serverExplicit = true;
+
+                // See if we have an optional port number too
+                char *a = optarg;
+
+                while ( ( *a ) && ( *a != ':' ) )
+                {
+                    a++;
+                }
+
+                if ( *a == ':' )
+                {
+                    *a = 0;
+                    options.port = atoi( ++a );
+                }
+
+                if ( !options.port )
+                {
+                    options.port = NWCLIENT_SERVER_PORT;
+                }
+
+                break;
+
+            // ------------------------------------
+
             case 't':
-                itmfifoSetUseTPIU( _r.f, true );
-                itmfifoSettpiuITMChannel( _r.f, atoi( optarg ) );
+                itmfifoSettag( _r.f, atoi( optarg ) );
                 break;
 
             // ------------------------------------
@@ -294,18 +347,16 @@ static bool _processOptions( int argc, char *argv[] )
                 // ------------------------------------
         }
 
+    /* If we set an explicit server and port and didn't set a protocol chances are we want ITM, not COBS */
+    if ( serverExplicit && !protExplicit )
+    {
+        itmfifoSetProtocol( _r.f, PROT_ITM );
+    }
+
+
     /* ... and dump the config if we're being verbose */
     genericsReport( V_INFO, "orbfifo version " GIT_DESCRIBE EOL );
     genericsReport( V_INFO, "Server     : %s:%d" EOL, options.server, options.port );
-
-    if ( itmfifoGetUseTPIU( _r.f ) )
-    {
-        genericsReport( V_INFO, "Using TPIU  : true (ITM on channel %d)" EOL, itmfifoGettpiuITMChannel( _r.f ) );
-    }
-    else
-    {
-        genericsReport( V_INFO, "Using TPIU  : false" EOL );
-    }
 
     if ( options.file )
     {
@@ -319,6 +370,26 @@ static bool _processOptions( int argc, char *argv[] )
         {
             genericsReport( V_INFO, " (Ongoing read)" EOL );
         }
+    }
+
+
+    switch ( itmfifoGetProtocol( _r.f ) )
+    {
+        case PROT_COBS:
+            genericsReport( V_INFO, "Decoding COBS (Orbuculum) with ITM in stream %d" EOL, itmfifoGettag( _r.f ) );
+            break;
+
+        case PROT_ITM:
+            genericsReport( V_INFO, "Decoding ITM" EOL );
+            break;
+
+        case  PROT_TPIU:
+            genericsReport( V_INFO, "Using TPIU with ITM in stream %d" EOL, itmfifoGettag( _r.f ) );
+            break;
+
+        default:
+            genericsReport( V_INFO, "Decoding unknown" EOL );
+            break;
     }
 
     genericsReport( V_INFO, "Channels    :" EOL );
@@ -363,10 +434,7 @@ static void _processBlock( int s, unsigned char *cbw )
 
 #endif
 
-        while ( s-- )
-        {
-            itmfifoProtocolPump( _r.f, *cbw++ );
-        }
+        itmfifoProtocolPump( _r.f, cbw, s );
     }
 
 }

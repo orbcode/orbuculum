@@ -569,6 +569,7 @@ bool OrbtraceGetIfandEP( struct OrbtraceIf *o )
                 return false;
             }
 
+            o->isOrbtrace = true;
             break;
     }
 
@@ -585,6 +586,14 @@ bool OrbtraceGetIfandEP( struct OrbtraceIf *o )
     }
 
     return true;
+}
+
+// ====================================================================================================
+
+bool OrbtraceIsOrbtrace( struct OrbtraceIf *o )
+
+{
+    return o->isOrbtrace;
 }
 
 // ====================================================================================================
