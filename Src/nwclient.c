@@ -230,7 +230,7 @@ static void *_listenTask( void *arg )
 
         if ( pthread_mutex_init( &client->dataAvailable_m, NULL ) != 0 )
         {
-            genericsExit( -1, "Failed to establish mutex for condition variablee" EOL );
+            genericsExit( -1, "Failed to establish mutex for condition variable" EOL );
         }
 
         if ( pthread_cond_init( &client->dataAvailable, NULL ) != 0 )
@@ -277,7 +277,7 @@ static void *_listenTask( void *arg )
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
-void nwclientSend( struct nwclientsHandle *h, uint32_t len, uint8_t *ipbuffer )
+void nwclientSend( struct nwclientsHandle *h, uint32_t len, const uint8_t *ipbuffer )
 
 {
     const struct timespec ts = {.tv_sec = 1, .tv_nsec = 0};

@@ -11,6 +11,7 @@
 
 #include "tpiuDecoder.h"
 #include "itmDecoder.h"
+#include "cobs.h"
 
 #include "generics.h"
 
@@ -26,24 +27,26 @@ extern "C" {
 struct Channel;
 struct itmfifosHandle;
 
+enum Prot { PROT_COBS, PROT_ITM, PROT_TPIU, PROT_UNKNOWN };
+
 /* Fifos running */
 void itmfifoForceSync( struct itmfifosHandle *f, bool synced );                  /* Force sync status */
-void itmfifoProtocolPump( struct itmfifosHandle *f, uint8_t c );                 /* Send undecoded data to the fifo */
+void itmfifoProtocolPump( struct itmfifosHandle *f, uint8_t *c, int len );       /* Send undecoded data to the fifo */
 
 /* Getters and setters */
 void itmfifoSetChannel( struct itmfifosHandle *f, int chan, char *n, char *s );
 void itmfifoSetChanPath( struct itmfifosHandle *f, char *s );
-void itmfifoSetUseTPIU( struct itmfifosHandle *f, bool s );
+void itmfifoSetProtocol( struct itmfifosHandle *f, enum Prot p );
 void itmfifoSetForceITMSync( struct itmfifosHandle *f, bool s );
-void itmfifoSettpiuITMChannel( struct itmfifosHandle *f, int channel );
+void itmfifoSettag( struct itmfifosHandle *f, int tag );
 char *itmfifoGetChannelName( struct itmfifosHandle *f, int chan );
 char *itmfifoGetChannelFormat( struct itmfifosHandle *f, int chan );
 char *itmfifoGetChanPath( struct itmfifosHandle *f );
-bool itmfifoGetUseTPIU( struct itmfifosHandle *f );
+enum Prot itmfifoGetProtocol( struct itmfifosHandle *f );
 struct TPIUCommsStats *itmfifoGetCommsStats( struct itmfifosHandle *f );
 struct ITMDecoderStats *itmfifoGetITMDecoderStats( struct itmfifosHandle *f );
 bool itmfifoGetForceITMSync( struct itmfifosHandle *f );
-int itmfifoGettpiuITMChannel( struct itmfifosHandle *f );
+int itmfifoGettag( struct itmfifosHandle *f );
 void itmfifoUsePermafiles( struct itmfifosHandle *f, bool usePermafilesSet );
 
 /* Filewriting */
@@ -52,9 +55,7 @@ void itmfifoFilewriter( struct itmfifosHandle *f, bool useFilewriter, char *work
 /* Fifos management */
 bool itmfifoCreate( struct itmfifosHandle *f );                                  /* Create the fifo set */
 void itmfifoShutdown( struct itmfifosHandle *f );                                /* Destroy the fifo set */
-struct itmfifosHandle *itmfifoInit( bool forceITMSyncSet,
-                                    bool useTPIUSet,
-                                    int TPIUchannelSet );                        /* Create an instance */
+struct itmfifosHandle *itmfifoInit( bool forceITMSyncSet, enum Prot p, int tag );
 // ====================================================================================================
 #ifdef __cplusplus
 }

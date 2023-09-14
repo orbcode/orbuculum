@@ -467,6 +467,7 @@ bool OrbtraceGetIfandEP( struct OrbtraceIf *o )
         case DEVICE_BMP: // -----------------------------------------------------------------------------
             o->iface = BMP_IFACE;
             o->ep = BMP_EP;
+            o->isOrbtrace = false;
             break;
 
         case DEVICE_ORBTRACE_MINI: // -------------------------------------------------------------------
@@ -517,6 +518,7 @@ bool OrbtraceGetIfandEP( struct OrbtraceIf *o )
                 return false;
             }
 
+            o->isOrbtrace = true;
             break;
     }
 
@@ -533,6 +535,14 @@ bool OrbtraceGetIfandEP( struct OrbtraceIf *o )
     }
 
     return true;
+}
+
+// ====================================================================================================
+
+bool OrbtraceIsOrbtrace( struct OrbtraceIf *o )
+
+{
+    return o->isOrbtrace;
 }
 
 // ====================================================================================================

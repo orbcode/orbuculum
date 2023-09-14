@@ -21,6 +21,7 @@
 #include "uthash.h"
 #include "generics.h"
 #include "traceDecoder.h"
+#include "cobs.h"
 #include "symbols.h"
 #include "nw.h"
 #include "ext_fileformats.h"
@@ -29,6 +30,9 @@
 #define TICK_TIME_MS        (1)          /* Time intervals for checks */
 #define DEFAULT_DURATION_MS (1000)       /* Default time to sample, in mS */
 #define HANDLE_MASK         (0xFFFFFF)   /* cachegrind cannot cope with large file handle numbers */
+
+enum Prot { PROT_COBS, PROT_ITM, PROT_TPIU, PROT_UNKNOWN };
+const char *protString[] = {"COBS", "ITM", "TPIU", NULL};
 
 /* How many transfer buffers from the source to allocate */
 #define NUM_RAW_BLOCKS (1000)
@@ -61,19 +65,21 @@ struct Options                           /* Record for options, either defaults 
     int  sampleDuration;                 /* How long we are going to sample for */
     bool mono;                           /* Supress colour in output */
     bool noaltAddr;                      /* Dont use alternate addressing */
-    bool useTPIU;                        /* Are we using TPIU, and stripping TPIU frames? */
-    int  channel;                        /* When TPIU is in use, which channel to decode? */
-    enum TRACEprotocol protocol;         /* Encoding protocol to use */
+    int  tag;                        /*  Which TPIU or COBS stream are we decoding? */
+    enum TRACEprotocol tProtocol;         /* Encoding protocol to use */
 
     int  port;                           /* Source information for where to connect to */
     char *server;
+    enum Prot protocol;                  /* What protocol to communicate (default to COBS (== orbuculum)) */
+
 
 } _options =
 {
     .demangle       = true,
     .sampleDuration = DEFAULT_DURATION_MS,
-    .port           = NWCLIENT_SERVER_PORT,
-    .protocol       = TRACE_PROT_ETM35,
+    .port           = OTCLIENT_SERVER_PORT,
+    .tProtocol      = TRACE_PROT_ETM35,
+    .tag            = 2,
     .server         = "localhost"
 };
 
@@ -110,6 +116,7 @@ struct RunTime
     /* Subsystem data support */
     struct TRACEDecoder i;
     struct SymbolSet *s;                        /* Symbols read from elf */
+    struct COBS c;
 
     /* Calls related info */
     struct edge *calls;                         /* Call data table */
@@ -461,9 +468,10 @@ static void _printHelp( const char *const progName )
     genericsPrintf( "    -I, --interval:     <Interval> Time between samples (in ms)" EOL );
     genericsPrintf( "    -M, --no-colour:    Supress colour in output" EOL );
     genericsPrintf( "    -O, --objdump-opts: <options> Options to pass directly to objdump" EOL );
-    genericsPrintf( "    -p, --trace-proto:  {ETM35|MTB} trace protocol to use, default is ETM35" EOL );
+    genericsPrintf( "    -P, --trace-proto:  {ETM35|MTB} trace protocol to use, default is ETM35" EOL );
+    genericsPrintf( "    -p, --protocol:     Protocol to communicate. Defaults to COBS if -s is not set, otherwise TPIU" EOL );
     genericsPrintf( "    -s, --server:       <Server>:<Port> to use" EOL );
-    //genericsPrintf( "    -t, --tpiu:         <channel>: Use TPIU to strip TPIU on specfied channel (defaults to 2)" EOL );
+    genericsPrintf( "    -t, --tag:          <stream>: Which TPIU stream or COBS tag to use (normally 2)" EOL );
     genericsPrintf( "    -T, --all-truncate: truncate -d material off all references (i.e. make output relative)" EOL );
     genericsPrintf( "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
     genericsPrintf( "    -V, --version:      Print version and exit" EOL );
@@ -491,9 +499,11 @@ static struct option _longOptions[] =
     {"no-colour", no_argument, NULL, 'M'},
     {"no-color", no_argument, NULL, 'M'},
     {"objdump-opts", required_argument, NULL, 'O'},
-    {"trace-proto", required_argument, NULL, 'p'},
+    {"trace-proto", required_argument, NULL, 'P'},
+    {"protocol", required_argument, NULL, 'p'},
     {"server", required_argument, NULL, 's'},
     {"all-truncate", no_argument, NULL, 'T'},
+    {"tag", required_argument, NULL, 't'},
     {"verbose", required_argument, NULL, 'v'},
     {"version", no_argument, NULL, 'V'},
     {"graph-file", required_argument, NULL, 'y'},
@@ -505,8 +515,10 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
 
 {
     int c, optionIndex = 0;
+    bool protExplicit = false;
+    bool serverExplicit = false;
 
-    while ( ( c = getopt_long ( argc, argv, "ADd:e:Ef:hVI:MO:p:s:Tv:y:z:", _longOptions, &optionIndex ) ) != -1 )
+    while ( ( c = getopt_long ( argc, argv, "ADd:e:Ef:hVI:MO:P:p:s:t:Tv:y:z:", _longOptions, &optionIndex ) ) != -1 )
 
         switch ( c )
         {
@@ -569,19 +581,43 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
 
             // ------------------------------------
 
-            case 'p':
+            case 'P':
 
                 /* Index through protocol strings looking for match or end of list */
-                for ( r->options->protocol = TRACE_PROT_LIST_START;
-                        ( ( r->options->protocol != TRACE_PROT_LIST_END ) && strcasecmp( optarg, TRACEprotocolString[r->options->protocol] ) );
-                        r->options->protocol++ )
+                for ( r->options->tProtocol = TRACE_PROT_LIST_START;
+                        ( ( r->options->tProtocol != TRACE_PROT_LIST_END ) && strcasecmp( optarg, TRACEprotocolString[r->options->tProtocol] ) );
+                        r->options->tProtocol++ )
                 {}
+
+                break;
+
+            // ------------------------------------
+
+            case 'p':
+                r->options->protocol = PROT_UNKNOWN;
+                protExplicit = true;
+
+                for ( int i = 0; protString[i]; i++ )
+                {
+                    if ( !strcmp( protString[i], optarg ) )
+                    {
+                        r->options->protocol = i;
+                        break;
+                    }
+                }
+
+                if ( r->options->protocol == PROT_UNKNOWN )
+                {
+                    genericsReport( V_ERROR, "Unrecognised protocol type" EOL );
+                    return false;
+                }
 
                 break;
 
             // ------------------------------------
             case 's':
                 r->options->server = optarg;
+                serverExplicit = true;
 
                 // See if we have an optional port number too
                 char *a = optarg;
@@ -602,6 +638,11 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
                     r->options->port = NWCLIENT_SERVER_PORT;
                 }
 
+                break;
+
+            // ------------------------------------
+            case 't':
+                r->options->tag = atoi( optarg );
                 break;
 
             // ------------------------------------
@@ -650,6 +691,12 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
                 // ------------------------------------
         }
 
+    /* If we set an explicit server and port and didn't set a protocol chances are we want TPIU, not COBS */
+    if ( serverExplicit && !protExplicit )
+    {
+        r->options->protocol = PROT_TPIU;
+    }
+
     if ( !r->options->elffile )
     {
         genericsExit( -2, "Elf File not specified" EOL );
@@ -660,7 +707,7 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
         genericsExit( -2, "Illegal sample duration" EOL );
     }
 
-    if ( r->options->protocol >= TRACE_PROT_NONE )
+    if ( r->options->tProtocol >= TRACE_PROT_NONE )
     {
         genericsExit( V_ERROR, "Unrecognised decode protocol" EOL );
     }
@@ -671,13 +718,32 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
     genericsReport( V_INFO, "Delete Material : %s" EOL, r->options->deleteMaterial ? r->options->deleteMaterial : "None" );
     genericsReport( V_INFO, "Elf File        : %s (%s Names)" EOL, r->options->elffile, r->options->truncateDeleteMaterial ? "Truncate" : "Don't Truncate" );
     genericsReport( V_INFO, "Objdump options : %s" EOL, r->options->odoptions ? r->options->odoptions : "None" );
-    genericsReport( V_INFO, "Protocol        : %s" EOL, TRACEprotocolString[r->options->protocol] );
+    genericsReport( V_INFO, "Protocol        : %s" EOL, TRACEprotocolString[r->options->tProtocol] );
+    genericsReport( V_INFO, "Tag (TPIU/COBS) : %d" EOL, r->options->tag );
     genericsReport( V_INFO, "DOT file        : %s" EOL, r->options->dotfile ? r->options->dotfile : "None" );
     genericsReport( V_INFO, "Sample Duration : %d mS" EOL, r->options->sampleDuration );
 
+    switch ( r->options->protocol )
+    {
+        case PROT_COBS:
+            genericsReport( V_INFO, "Decoding COBS (Orbuculum) with ITM in stream %d" EOL, r->options->tag );
+            break;
+
+        case PROT_ITM:
+            genericsReport( V_INFO, "Decoding ITM. Not sensible for this application" EOL );
+            return false;
+
+        case  PROT_TPIU:
+            genericsReport( V_INFO, "Using TPIU with ITM in stream %d" EOL, r->options->tag );
+            break;
+
+        default:
+            genericsReport( V_INFO, "Decoding unknown" EOL );
+            break;
+    }
+
     return true;
 }
-// ====================================================================================================
 // ====================================================================================================
 static void _doExit( void )
 
@@ -698,6 +764,16 @@ static void _intHandler( int sig )
     _doExit();
 }
 
+// ====================================================================================================
+
+static void _COBSpacketRxed ( struct Frame *p, void *param )
+
+{
+    if ( p->d[0] == _r.options->tag )
+    {
+        TRACEDecoderPump( &_r.i, &( p->d[1] ), p->len - 1, _traceCB, genericsReport, &_r );
+    }
+}
 // ====================================================================================================
 static void *_processBlocks( void *params )
 
@@ -738,8 +814,16 @@ static void *_processBlocks( void *params )
             }
 
 #endif
-            /* Pump all of the data through the protocol handler */
-            TRACEDecoderPump( &r->i, r->rawBlock[r->rp].buffer, r->rawBlock[r->rp].fillLevel, _traceCB, genericsReport, &_r );
+
+            if ( PROT_COBS == r->options->protocol )
+            {
+                COBSPump( &_r.c, r->rawBlock[r->rp].buffer, r->rawBlock[r->rp].fillLevel, _COBSpacketRxed, &_r );
+            }
+            else
+            {
+                /* Pump all of the data through the protocol handler */
+                TRACEDecoderPump( &r->i, r->rawBlock[r->rp].buffer, r->rawBlock[r->rp].fillLevel, _traceCB, genericsReport, &_r );
+            }
 
             r->rp = ( r->rp + 1 ) % NUM_RAW_BLOCKS;
         }
@@ -798,7 +882,8 @@ int main( int argc, char *argv[] )
 
 #endif
 
-    TRACEDecoderInit( &_r.i, _r.i.protocol, !_r.options->noaltAddr );
+    TRACEDecoderInit( &_r.i, _r.options->tProtocol, !_r.options->noaltAddr );
+    COBSInit( &_r.c );
 
     while ( !_r.ending )
     {
