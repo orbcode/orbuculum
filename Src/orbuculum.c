@@ -108,7 +108,8 @@ struct RunTime
 
     struct OrbtraceIf  *o;                               /* For accessing ORBTrace devices + BMPs */
 
-    uint64_t  intervalBytes;                             /* Number of bytes transferred in current interval */
+    uint64_t  intervalRawBytes;                          /* Number of bytes transferred in current interval */
+    uint64_t cobsDataLenRxed;                            /* Number of bytes of decoded COBS data */
 
     pthread_t intervalThread;                            /* Thread reporting on intervals */
     pthread_t processThread;                             /* Thread for processing prior to distributing to clients */
@@ -129,7 +130,7 @@ struct RunTime
     struct dataBlock rawBlock[NUM_RAW_BLOCKS];           /* Transfer buffers from the receiver */
 
     struct nwclientsHandle *cobsHandler;                 /* Handle to COBS output handler */
-  
+
     int numHandlers;                                     /* Number of TPIU channel handlers in use */
     struct handlers *handler;
     struct nwclientsHandle *n;                           /* Link to the network client subsystem (used for non-TPIU/COBS case) */
@@ -151,12 +152,11 @@ struct RunTime
 #define INTERVAL_100MS (100*INTERVAL_1MS)
 #define INTERVAL_1S    (10*INTERVAL_100MS)
 
-//#define DUMP_BLOCK
-
 struct Options _options =
 {
     .listenPort   = OTCLIENT_SERVER_PORT,
     .nwserverHost = NWSERVER_HOST,
+    .channelList  = "1"
 };
 
 struct RunTime _r;
@@ -360,7 +360,8 @@ void _printHelp( const char *const progName )
     genericsPrintf( "    -O, --orbtrace:      \"<options>\" run orbtrace with specified options on each new ORBTrace device connect" EOL );
     genericsPrintf( "    -p, --serial-port:   <serialPort> to use" EOL );
     genericsPrintf( "    -s, --server:        <Server>:<Port> to use" EOL );
-    genericsPrintf( "    -t, --tpiu:          Decode TPIU channels (and strip TPIU framing from output flows)" EOL );
+    genericsPrintf( "    -T, --tpiu:          Decode TPIU channels (and strip TPIU framing from output flows)" EOL );
+    genericsPrintf( "    -t, --tag:           <stream,stream....> List of streams to decode (and onward route) from COBS or TPIU frames" EOL );
     genericsPrintf( "    -v, --verbose:       <level> Verbose mode 0(errors)..3(debug)" EOL );
     genericsPrintf( "    -V, --version:       Print version and exit" EOL );
 }
@@ -388,7 +389,8 @@ static struct option _longOptions[] =
     {"orbtrace", required_argument, NULL, 'O'},
     {"serial-port", required_argument, NULL, 'p'},
     {"server", required_argument, NULL, 's'},
-    {"tpiu", required_argument, NULL, 't'},
+    {"tpiu", required_argument, NULL, 'T'},
+    {"tag", required_argument, NULL, 't'},
     {"verbose", required_argument, NULL, 'v'},
     {"version", no_argument, NULL, 'V'},
     {NULL, no_argument, NULL, 0}
@@ -400,7 +402,7 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
     int c, optionIndex = 0;
 #define DELIMITER ','
 
-    while ( ( c = getopt_long ( argc, argv, "a:Ef:hHVl:m:Mn:o:O:p:s:t:v:", _longOptions, &optionIndex ) ) != -1 )
+    while ( ( c = getopt_long ( argc, argv, "a:Ef:hHVl:m:Mn:o:O:p:s:T:t:v:", _longOptions, &optionIndex ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -505,8 +507,12 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
                 break;
 
             // ------------------------------------
-            case 't':
+            case 'T':
                 r->options->useTPIU = true;
+                break;
+
+            // ------------------------------------
+            case 't':
                 r->options->channelList = optarg;
                 break;
 
@@ -580,14 +586,8 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
         genericsReport( V_INFO, "NW SERVER H&P  : %s:%d" EOL, r->options->nwserverHost, r->options->nwserverPort );
     }
 
-    if ( r->options->useTPIU )
-    {
-        genericsReport( V_INFO, "Use/Strip TPIU : True (Channel List %s)" EOL, r->options->channelList );
-    }
-    else
-    {
-        genericsReport( V_INFO, "Use/Strip TPIU : False" EOL );
-    }
+    genericsReport( V_INFO, "Use/Strip TPIU : %s" EOL, r->options->useTPIU ? "True" : "False" );
+    genericsReport( V_INFO, "Decode/Forward : %s" EOL, r->options->channelList );
 
     if ( r->options->otcl )
     {
@@ -642,7 +642,7 @@ void *_checkInterval( void *params )
         usleep( r->options->intervalReportTime * INTERVAL_1MS );
 
         /* Grab the interval and scale to 1 second */
-        snapInterval = r->intervalBytes * 1000 / r->options->intervalReportTime;
+        snapInterval = r->intervalRawBytes * 1000 / r->options->intervalReportTime;
 
         snapInterval *= 8;
 
@@ -666,22 +666,31 @@ void *_checkInterval( void *params )
             h = r->handler;
             uint64_t totalDat = 0;
 
-            if ( ( r->intervalBytes ) && ( r->options->useTPIU ) )
+            /* If we are decoding from TPIU then calculate per channel */
+            if ( ( r->intervalRawBytes ) && ( r->options->useTPIU ) )
             {
                 for ( int chIndex = 0; chIndex < r->numHandlers; chIndex++ )
                 {
-                    genericsPrintf( " %d:%3d%% ",  h->channel, ( h->intervalBytes * 100 ) / r->intervalBytes );
+                    genericsPrintf( " %d:%3d%% ",  h->channel, ( h->intervalBytes * 100 ) / r->intervalRawBytes );
                     totalDat += h->intervalBytes;
-                    /* TODO: This needs a mutex */
                     h->intervalBytes = 0;
-
                     h++;
                 }
 
-                genericsPrintf( " Waste:%3d%% ",  100 - ( ( totalDat * 100 ) / r->intervalBytes ) );
+                genericsPrintf( " Waste:%3d%% ",  100 - ( ( totalDat * 100 ) / r->intervalRawBytes ) );
+            }
+            else
+            {
+                /* Either raw ITM or COBs frames */
+                if ( OrbtraceIsOrbtrace( _r.o ) && r->intervalRawBytes )
+                {
+                    int w = 1000 - ( ( r->cobsDataLenRxed * 1000 ) / r->intervalRawBytes );
+                    genericsPrintf( " Waste:%01d.%01d%%",  w / 10, w % 10 );
+                }
             }
 
-            r->intervalBytes = 0;
+            r->cobsDataLenRxed = 0;
+            r->intervalRawBytes = 0;
 
             if ( r->options->dataSpeed > 100 )
             {
@@ -702,22 +711,19 @@ static void _purgeBlock( struct RunTime *r )
 {
     /* Now send any packets to clients who want it */
 
-    if ( r->options->useTPIU )
+    struct handlers *h = r->handler;
+    int i = r->numHandlers;
+
+    while ( i-- )
     {
-        struct handlers *h = r->handler;
-        int i = r->numHandlers;
-
-        while ( i-- )
+        if ( h->strippedBlock->fillLevel )
         {
-            if ( h->strippedBlock->fillLevel )
-            {
-                nwclientSend( h->n, h->strippedBlock->fillLevel, h->strippedBlock->buffer );
-                h->intervalBytes += h->strippedBlock->fillLevel;
-                h->strippedBlock->fillLevel = 0;
-            }
-
-            h++;
+            nwclientSend( h->n, h->strippedBlock->fillLevel, h->strippedBlock->buffer );
+            h->intervalBytes += h->strippedBlock->fillLevel;
+            h->strippedBlock->fillLevel = 0;
         }
+
+        h++;
     }
 }
 // ====================================================================================================
@@ -802,8 +808,8 @@ static void _cobsDispatch( struct RunTime *r, const uint8_t *buffer, int length 
                 memcpy( &r->cobsPart.d[r->cobsPart.len], b, flen - b );
                 r->cobsPart.len += flen - b;
 
-		nwclientSend( r->cobsHandler, r->cobsPart.len, r->cobsPart.d );
-		nwclientSend( r->cobsHandler, COBS_EOP_LEN, cobs_eop );
+                nwclientSend( r->cobsHandler, r->cobsPart.len, r->cobsPart.d );
+                nwclientSend( r->cobsHandler, COBS_EOP_LEN, cobs_eop );
             }
 
             r->cobsPart.len = 0;
@@ -845,9 +851,9 @@ static void _cobsDispatch( struct RunTime *r, const uint8_t *buffer, int length 
         }
 
         /* This is a complete COBS frame to send */
-	nwclientSend( r->cobsHandler, flen - b, b );
-	/* We need an end of packet on the end of every packet */
-	nwclientSend( r->cobsHandler, COBS_EOP_LEN, cobs_eop );
+        nwclientSend( r->cobsHandler, flen - b, b );
+        /* We need an end of packet on the end of every packet */
+        nwclientSend( r->cobsHandler, COBS_EOP_LEN, cobs_eop );
 
         length -= flen - b;
         b = flen;
@@ -867,24 +873,7 @@ static void _processBlock( struct RunTime *r, ssize_t fillLevel, uint8_t *buffer
     if ( fillLevel )
     {
         /* Account for this reception */
-        r->intervalBytes += fillLevel;
-
-#ifdef DUMP_BLOCK
-        uint8_t *c = buffer;
-        uint32_t y = fillLevel;
-
-        genericsPrintf( EOL );
-
-        while ( y-- )
-        {
-            genericsPrintf( "%02X ", *c++ );
-
-            if ( !( y % 16 ) )
-            {
-                genericsPrinttf( EOL );
-            }
-        }
-#endif
+        r->intervalRawBytes += fillLevel;
 
         if ( r->opFileHandle )
         {
@@ -893,7 +882,6 @@ static void _processBlock( struct RunTime *r, ssize_t fillLevel, uint8_t *buffer
                 genericsExit( -3, "Writing to file failed" EOL );
             }
         }
-
 
         if ( r-> options->useTPIU )
         {
@@ -938,6 +926,47 @@ static void _dataAvailable( struct RunTime *r )
     pthread_cond_signal( &r->dataForClients );
 }
 // ====================================================================================================
+
+static void _COBSpacketRxed( struct Frame *p, void *param )
+
+/* Put the packet into the correct output buffer */
+
+{
+    int chIndex;
+    struct handlers *h = _r.handler;
+
+    /* Record the length we received...first byte is channel number */
+    _r.cobsDataLenRxed += p->len - 1;
+
+    /* Search for channel */
+    for ( chIndex = 0; chIndex < _r.numHandlers; chIndex++ )
+    {
+        if ( h->channel == p->d[0] )
+        {
+            break;
+        }
+
+        h++;
+    }
+
+    if ( ( chIndex != _r.numHandlers ) && ( h ) )
+    {
+        /* We must have found a match for this at some point, so add it to the queue */
+        for ( int i = 1; i < p->len; i++ )
+        {
+            h->strippedBlock->buffer[h->strippedBlock->fillLevel++] = p->d[i];
+
+            if ( h->strippedBlock->fillLevel == sizeof( h->strippedBlock->buffer ) )
+            {
+                /* We filled this block...better send it right now */
+                nwclientSend( h->n, h->strippedBlock->fillLevel, h->strippedBlock->buffer );
+                h->strippedBlock->fillLevel = 0;
+            }
+        }
+    }
+}
+// ====================================================================================================
+
 static void _usb_callback( struct libusb_transfer *t )
 
 /* For the USB case the ringbuffer isn't used .. packets are sent directly from this callback */
@@ -946,7 +975,7 @@ static void _usb_callback( struct libusb_transfer *t )
     /* Whatever the status that comes back, there may be data... */
     if ( t->actual_length > 0 )
     {
-        _r.intervalBytes += t->actual_length;
+        _r.intervalRawBytes += t->actual_length;
 
         if ( _r.opFileHandle )
         {
@@ -956,27 +985,12 @@ static void _usb_callback( struct libusb_transfer *t )
             }
         }
 
-#ifdef DUMP_BLOCK
-        uint8_t *c = t->buffer;
-        uint32_t y = t->actual_length;
-
-        genericsPrintf( stderr, EOL );
-
-        while ( y-- )
-        {
-            genericsPrintf( stderr, "%02X ", *c++ );
-
-            if ( !( y % 16 ) )
-            {
-                genericsPrintf( stderr, EOL );
-            }
-        }
-
-#endif
-
         if ( OrbtraceIsOrbtrace( _r.o ) )
         {
             _cobsDispatch( &_r, t->buffer, t->actual_length );
+            /* We need to decode this so it can go through the 'normal' output channels too */
+            COBSPump( &_r.c, t->buffer, t->actual_length, _COBSpacketRxed, &_r );
+            _purgeBlock( &_r );
         }
         else
         {
@@ -1454,6 +1468,7 @@ int main( int argc, char *argv[] )
 
     if ( _r.options->channelList )
     {
+        /* Channel list is only needed for legacy ports that we are re-exporting (i.e. clean unencapsulated flows) */
         char *c = _r.options->channelList;
         int x = 0;
 
@@ -1474,8 +1489,6 @@ int main( int argc, char *argv[] )
                 genericsExit( -1, "Illegal character in channel list (%c)" EOL, *c );
             }
 
-	    _r.cobsHandler = nwclientStart(  OTCLIENT_SERVER_PORT );
-	    
             if ( x )
             {
                 /* This is a good number, so open */
@@ -1488,8 +1501,8 @@ int main( int argc, char *argv[] )
 
                 _r.handler[_r.numHandlers].channel = x;
                 _r.handler[_r.numHandlers].strippedBlock = ( struct dataBlock * )calloc( 1, sizeof( struct dataBlock ) );
-                _r.handler[_r.numHandlers].n = nwclientStart(  _r.options->listenPort + _r.numHandlers );
-                genericsReport( V_WARN, "Started Network interface for channel %d on port %d" EOL, x, _r.options->listenPort + _r.numHandlers );
+                _r.handler[_r.numHandlers].n = nwclientStart(  _r.options->listenPort + LEGACY_SERVER_PORT_OFS + _r.numHandlers );
+                genericsReport( V_WARN, "Started Network interface for legacy channel %d on port %d" EOL, x, _r.options->listenPort + LEGACY_SERVER_PORT_OFS + _r.numHandlers );
                 _r.numHandlers++;
                 x = 0;
             }
@@ -1503,11 +1516,15 @@ int main( int argc, char *argv[] )
     }
     else
     {
-        if ( !( _r.n = nwclientStart( _r.options->listenPort ) ) )
+        if ( !( _r.n = nwclientStart( _r.options->listenPort + LEGACY_SERVER_PORT_OFS ) ) )
         {
             genericsExit( -1, "Failed to make network server" EOL );
         }
     }
+
+    /* The COBS handler doesn't need a channel list ... it works on all channels */
+    _r.cobsHandler = nwclientStart( _r.options->listenPort );
+    genericsReport( V_WARN, "Started Network interface for COBS on port %d" EOL, _r.options->listenPort );
 
     if ( _r.options->intervalReportTime )
     {

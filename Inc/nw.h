@@ -19,6 +19,8 @@ extern "C" {
 
 #define OTCLIENT_SERVER_PORT (3402)           /* ORBTrace COBS server port definition */
 #define NWCLIENT_SERVER_PORT (3443)           /* Server port definition */
+#define LEGACY_SERVER_PORT_OFS (NWCLIENT_SERVER_PORT-OTCLIENT_SERVER_PORT)
+
 #define TRANSFER_SIZE (65536*4)
 
 #define DEFAULT_ITM_STREAM 1
