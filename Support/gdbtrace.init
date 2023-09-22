@@ -445,19 +445,6 @@ end
 
 # ====================================================================
 
-define stopETM
-  #set language c
-
-  set *($ETMBASE) |= 0x400
-
-  #set language auto
-end
-document stopETM
-stopETM
-end
-
-# ====================================================================
-
 define prepareSWO
   #set language c
 
