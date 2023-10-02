@@ -27,6 +27,10 @@ NRF;
 EFR32MG12;
   enableEFR32MG12SWO : Start SWO on EFR32MG12 pins
 
+S32K344;
+  enableS32K344SWO   : Enable SWO on S32K344 pins
+  enableS32K344TRACE : Start TRACE on S32K344 pins
+
 TM4C;
   enableTM4C123TRACE : Start TRACE on TM4C123 pins (defaults to 2 pin mode as 4 pin trace is unavailable on all)
   
@@ -80,6 +84,7 @@ set $CPU_IMXRT106X=1
 set $CPU_NRF=3
 set $CPU_EFR32=4
 set $CPU_TM4C=5
+set $CPU_S32K344=6
 
 # ====================================================================
 set $CDBBASE=0xE000EDF0
@@ -191,6 +196,76 @@ define _setAddressesTM4C
   set $GPIOPCTL=0x52C
 
   set $GPIOUNLOCKKEY=0x4C4F434B
+end
+
+
+define _setAddressesS32K344
+  # Below are the base addresses of trace bus components that must be
+  # configured in S32K344. Refer to Table 695 and Figure 512 in
+  # NXP S32K3XXRM for info about where all these funnels are placed.
+  set $FUNNEL_0_BASE              = 0x40241000
+  set $FUNNEL_1_BASE              = 0x40242000
+  set $FUNNEL_2_BASE              = 0x40243000
+  set $ETF_CM7_CLUSTER_ETMI_BASE  = 0x40244000
+  set $ETF_CM7_CLUSTER_ETMD_BASE  = 0x40245000
+  set $ETF_SHARED_SYSTEM_BASE     = 0x40247000
+  set $TPIU_TRACE_BASE            = 0x4024A000
+  set $TPIU_SWO_BASE              = 0x4024B000
+
+  # Indicate use of S32K344 as the target.
+  set $CPU = $CPU_S32K344
+end
+
+define _setupTraceBusS32K344
+  # Configures the trace bus components in S32K344 to allow trace messages to
+  # flow from trace sources to TPIUs. Also configures internal trace clock to
+  # drive the TPIUs. Assumes that _setAdressesS32K344 has been run prior.
+
+  # Parse divider argument.
+  if $argc >= 1
+    set $traceclk_div = $arg0
+  else
+    # When divider is not specified, we're likely using SWO. In that case, we
+    # want to set the internal trace clock very fast (i.e. divider very low) to
+    # ensure the SWO TPIU can keep up with the trace bus and SWO data rate.
+    set $traceclk_div = 1
+  end
+
+  # Enable access to the funnels and ETFs.
+  set *($FUNNEL_0_BASE + 0xfb0) = 0xc5acce55
+  set *($FUNNEL_1_BASE + 0xfb0) = 0xc5acce55
+  set *($FUNNEL_2_BASE + 0xfb0) = 0xc5acce55
+  set *($ETF_CM7_CLUSTER_ETMI_BASE + 0xfb0) = 0xc5acce55
+  set *($ETF_CM7_CLUSTER_ETMD_BASE + 0xfb0) = 0xc5acce55
+  set *($ETF_SHARED_SYSTEM_BASE + 0xfb0) = 0xc5acce55
+
+  # Enable all inputs of all funnels to ensure that all trace sources
+  # can pass. Enabling all inputs is probably not optimal, so this
+  # might be changed in the future.
+  set *($FUNNEL_0_BASE) |= 0xff
+  set *($FUNNEL_1_BASE) |= 0xff
+  set *($FUNNEL_2_BASE) |= 0xff
+
+  # Configure all ETFs in hardware FIFO mode. This configuration is
+  # based on section 2.2.2 from ARM DDI0461B.
+  set *($ETF_CM7_CLUSTER_ETMI_BASE + 0x28) = 0x2
+  set *($ETF_CM7_CLUSTER_ETMI_BASE + 0x304) = 0x3
+  set *($ETF_CM7_CLUSTER_ETMI_BASE + 0x20) = 0x1
+
+  set *($ETF_CM7_CLUSTER_ETMD_BASE + 0x28) = 0x2
+  set *($ETF_CM7_CLUSTER_ETMD_BASE + 0x304) = 0x3
+  set *($ETF_CM7_CLUSTER_ETMD_BASE + 0x20) = 0x1
+
+  set *($ETF_SHARED_SYSTEM_BASE + 0x28) = 0x2
+  set *($ETF_SHARED_SYSTEM_BASE + 0x304) = 0x3
+  set *($ETF_SHARED_SYSTEM_BASE + 0x20) = 0x1
+
+  # Configure trace clock source (MC_CGM MUX_11_CSC) and divider (MC_CGM
+  # MUX_11_DC_0). PLL_PHI0_CLK is selected as the clock source in the clocking
+  # multiplexer, and the division factor between PLL_PHI0_CLK and the trace
+  # clock is derived from command arguments.
+  set *(0x402d85c0) = 0x08000000
+  set *(0x402d85c8) = (1 << 31) | ($traceclk_div << 16)
 end
 
 # ====================================================================
@@ -820,6 +895,30 @@ document enableEFR32MG12SWO
 enableEFR32MG12SWO Configure output pin on EFR32MG12 for SWO use.
 end
 
+# ====================================================================
+define enableS32K344SWO
+  #set language c
+
+  _setAddressesS32K344
+  _setupTraceBusS32K344
+
+  # Disable parallel trace TPIU backpressure (we only use SWO) through MDM_AP
+  # register. Note: uses monitor command from pyOCD, since accessing this
+  # register through the system bus doesn't work for some reason.
+  monitor wap 6 0x4 0x06100000
+
+  # Configure I/O pad PTA10 for SWO: output mode, high slew rate, etc.
+  set *(0x40290268) = 0x00200127
+
+  # Overwrite TPIUBASE with TPIU_SWO_BASE of S32K344 for use in subsequent
+  # commands.
+  set $TPIUBASE = $TPIU_SWO_BASE
+
+  #set language auto
+end
+document enableS32K344SWO
+enableS32K344SWO Configure output pin on S32K344 for SWO use.
+end
 
 # ====================================================================
 # Enable CORTEX TRACE on preconfigured pins
@@ -1181,6 +1280,100 @@ enableTM4C123TRACE <Width>: Enable TRACE on STM32 pins
   <Width>   : Number of bits wide (1,2 or 4 only (2 default))
   <Drive>   : Drive strength (0=lowest, 2=highest)
 end
+
+# ====================================================================
+define enableS32K344TRACE
+  #set language c
+
+  set $bits = 4
+  set $drive = 1
+  set $traceclk_div = 2
+  set $args_valid = 1
+
+  # Parse width argument.
+  if $argc >= 1
+    if (($arg0 < 1) || ($arg0 == 3) || ($arg0 > 4))
+      help enableS32K344TRACE
+      set $args_valid = 0
+    end
+
+    # _doTRACE command (called at the end) expects bitcount to be decremented
+    # by 1 compared to value provided by argument, so do that here.
+    set $bits = $arg0 - 1
+  end
+
+  # Parse drive argument.
+  if $argc >= 2
+    if (($arg1 < 0) || ($arg1 > 1))
+      help enableS32K344TRACE
+      set $args_valid = 0
+    end
+
+    set $drive = $arg1
+  end
+
+  # Parse divider argument.
+  if $argc >= 3
+    if (($arg2 < 1) || ($arg2 > 8))
+      help enableS32K344TRACE
+      set $args_valid = 0
+    end
+
+    # Clock divider for trace clock divides by division value + 1, so we must
+    # write the argument provided decremented by 1 into the register.
+    set $traceclk_div = $arg2 - 1
+  end
+
+  # Only execute the rest if all arguments were valid.
+  if $args_valid
+    _setAddressesS32K344
+    _setupTraceBusS32K344 $traceclk_div
+
+    # Disable SWO TPIU backpressure (we only use parallel trace) through MDM_AP
+    # register. Note: uses monitor command from pyOCD, since accessing this
+    # register through the system bus doesn't work for some reason.
+    monitor wap 6 0x4 0x06400000
+
+    # Note: the configuration of the trace pins below assume that specific pins
+    # are used. Depending on the development kit, however, other chip pins
+    # could have been used to expose the parallel trace interface.
+
+    # I/O pad PTC2 for TRACECLK (SIUL2 MSCR66).
+    set *(0x40290348) = 0x00204026 | ($drive << 8)
+
+    # I/O pad PTD7 for trace D0 (SIUL2 MSCR103).
+    set *(0x402903dc) = 0x00200026 | ($drive << 8)
+
+    if $bits > 0
+      # I/O pad PTD12 for trace D1 (SIUL2 MSCR108).
+      set *(0x402903f0) = 0x00200024 | ($drive << 8)
+    end
+
+    if $bits > 1
+      # I/O pad PTD11 for trace D2 (SIUL2 MSCR107).
+      set *(0x402903ec) = 0x00200024 | ($drive << 8)
+
+      # I/O pad PTD10 for trace D3 (SIUL2 MSCR106).
+      set *(0x402903e8) = 0x00200024 | ($drive << 8)
+    end
+
+    # Overwrite TPIUBASE with TPIU_TRACE_BASE of S32K344 for use in subsequent
+    # function calls.
+    set $TPIUBASE = $TPIU_TRACE_BASE
+
+    # Start the trace output.
+    _doTRACE
+
+    #set language auto
+  end
+end
+document enableS32K344TRACE
+enableS32K344TRACE <width> <drive> <divider> : Enable parallel trace on S32K344
+  <width>   : Number of bits wide (1, 2 or 4)
+  <drive>   : Drive strength (0 (lowest) or 1 (highest))
+  <divider> : Clock speed divider to derive TRACECLK from PLL_PHI0_CLK (0 (fastest) .. 8 (slowest))
+end
+
 # ====================================================================
 define dwtPOSTCNT
   #set language c
