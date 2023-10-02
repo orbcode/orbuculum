@@ -14,11 +14,7 @@
 #include <stdint.h>
 #include <errno.h>
 
-#if defined LINUX
-    #define EOL "\n"
-#else
-    #define EOL "\r\n"
-#endif
+#define EOL "\n"
 #ifdef __cplusplus
 extern "C" {
 #endif
