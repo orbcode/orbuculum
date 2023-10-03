@@ -16,6 +16,7 @@ IMXRT;
   enableIMXRT102XSWO  : Enable SWO on IMXRT102X series pins (AD_B0_04)
   enableIMXRT102XTRACE: Start TRACE on IMXRT102X series pins  
   enableIMXRT106XSWO  : Enable SWO on IMXRT106X series pins (AD_B0_10)
+  enableIMXRT117XSWO  : Enable SWO on IMXRT117X series pin (LPSR_11)
 
 SAM5X;
   enableSAMD5XSWD    : Enable SWO on SAM5X output pin on SAM5X
@@ -85,6 +86,7 @@ set $CPU_NRF=3
 set $CPU_EFR32=4
 set $CPU_TM4C=5
 set $CPU_S32K344=6
+set $CPU_IMXRT117X=7
 
 # ====================================================================
 set $CDBBASE=0xE000EDF0
@@ -101,6 +103,17 @@ end
 
 define _setAddressesIMXRT
 # Locations in the memory map for interesting things on IMXRT
+end
+
+define _setAddressesIMXRT117X
+  # Locations in the memory map for interesting things on IMXRT117X.
+  set $TPIU_TRACE_BASE    = 0xe0046000
+  set $TPIU_SWO_BASE      = 0xe0048000
+  set $FUNNEL_CSSYS_BASE  = 0xe0045000
+  set $FUNNEL_M7_BASE     = 0xe0043000
+
+  # Indicate use of IMXRT117X as the target.
+  set $CPU = $CPU_IMXRT117X
 end
 
 define _setAddressesNRF
@@ -799,6 +812,34 @@ end
 document enableIMXRT106XSWO
 enableIMXRT1021SWO Configure output pin on IMXRT1060 for SWO use.
 end
+# ====================================================================
+
+define enableIMXRT117XSWO
+  #set language c
+  _setAddressesIMXRT117X
+
+  # Configure trace funnels/ATB.
+  set *($FUNNEL_CSSYS_BASE + 0xfb0) = 0xc5acce55
+  set *($FUNNEL_CSSYS_BASE) |= 0xff
+
+  set *($FUNNEL_M7_BASE + 0xfb0) = 0xc5acce55
+  set *($FUNNEL_M7_BASE) |= 0xff
+
+  # TODO: configure trace subsystem clocks.
+
+  # Configure GPIO_LPSR_11 mux and pad for SWO.
+  set *(0x40c0802c) = 0x7
+  set *(0x40c0806c) = 0x2
+
+  # Allow access to SWO TPIU registers.
+  set *($TPIU_SWO_BASE + 0xfb0) = 0xc5acce55
+
+  # Set $TPIUBASE for use by other commands in this file.
+  set $TPIUBASE = $TPIU_SWO_BASE
+
+  #set language auto
+end
+
 # ====================================================================
 
 define enableSTM32SWO
