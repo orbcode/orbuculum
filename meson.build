@@ -31,8 +31,8 @@ else
     add_project_arguments('-ggdb', language: 'c')
     add_project_arguments('-D_GNU_SOURCE', language: 'c')
 
-    install_data('Support/60-orbcode.rules', install_dir : '/etc/udev/rules.d')
-    install_data('Support/gdbtrace.init', install_dir : 'share/orbcode')
+    install_data('Support/60-orbcode.rules', install_dir : '/etc/udev/rules.d', install_tag: 'support')
+    install_data('Support/gdbtrace.init', install_dir : 'share/orbcode', install_tag: 'support')
 endif
 
 add_project_arguments('-DSCREEN_HANDLING', language: 'c')
@@ -83,6 +83,7 @@ liborb = library('orb',
     dependencies: sockets,
     soversion: meson.project_version(),
     install: true,
+    install_tag: 'lib',
 )
 
 executable('orbuculum',
@@ -96,6 +97,7 @@ executable('orbuculum',
     dependencies: dependencies,
     link_with: liborb,
     install: true,
+    install_tag: 'bin',
 )
 
 if host_machine.system() != 'windows'
@@ -110,6 +112,7 @@ if host_machine.system() != 'windows'
         dependencies: dependencies,
         link_with: liborb,
         install: true,
+        install_tag: 'bin',
     )
 endif
 
@@ -122,6 +125,7 @@ executable('orbcat',
     dependencies: dependencies,
     link_with: liborb,
     install: true,
+    install_tag: 'bin',
 )
 
 executable('orbtop',
@@ -135,6 +139,7 @@ executable('orbtop',
     dependencies: dependencies,
     link_with: liborb,
     install: true,
+    install_tag: 'bin',
 )
 
 executable('orbdump',
@@ -146,6 +151,7 @@ executable('orbdump',
     dependencies: dependencies,
     link_with: liborb,
     install: true,
+    install_tag: 'bin',
 )
 
 executable('orbstat',
@@ -159,6 +165,7 @@ executable('orbstat',
     dependencies: dependencies,
     link_with: liborb,
     install: true,
+    install_tag: 'bin',
 )
 
 executable('orbmortem',
@@ -172,6 +179,7 @@ executable('orbmortem',
     dependencies: dependencies,
     link_with: liborb,
     install: true,
+    install_tag: 'bin',
 )
 
 executable('orbprofile',
@@ -185,6 +193,7 @@ executable('orbprofile',
     dependencies: dependencies,
     link_with: liborb,
     install: true,
+    install_tag: 'bin',
 )
 
 executable('orbtrace',
@@ -198,6 +207,7 @@ executable('orbtrace',
     dependencies: dependencies,
     link_with: liborb,
     install: true,
+    install_tag: 'bin',
 )
 
 executable('orbzmq',
@@ -209,6 +219,7 @@ executable('orbzmq',
     dependencies: dependencies,
     link_with: liborb,
     install: true,
+    install_tag: 'bin',
 )
 
 executable('orblcd',
@@ -220,4 +231,5 @@ executable('orblcd',
     dependencies: dependencies,
     link_with: liborb,
     install: true,
+    install_tag: 'bin',
 )
