@@ -1128,7 +1128,7 @@ struct symbol *symbolAquire( char *filename, bool loadlines, bool loadmem, bool 
     }
 
     /* Load the functions and source code line mappings if requested */
-    if ( !_readLines( p ) )
+    if ( loadlines && !_readLines( p ) )
     {
         symbolDelete( p );
         return NULL;
