@@ -4,6 +4,10 @@
 #include <stdbool.h>
 #include <capstone/capstone.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef unsigned long int symbolMemaddr;
 typedef unsigned char *symbolMemptr;
 
@@ -128,4 +132,7 @@ bool symbolSetValid( struct symbol *p );
 
 // ====================================================================================================
 
+#ifdef __cplusplus
+}
+#endif
 #endif
