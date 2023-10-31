@@ -17,8 +17,10 @@
 extern "C" {
 #endif
 
+#define COBS_FRONTMATTER (10)
 #define COBS_MAX_PACKET_LEN (4096)
-#define COBS_MAX_ENC_PACKET_LEN (COBS_MAX_PACKET_LEN + COBS_MAX_PACKET_LEN / 254)
+#define COBS_OVERALL_MAX_PACKET_LEN (COBS_MAX_PACKET_LEN+COBS_FRONTMATTER)
+#define COBS_MAX_ENC_PACKET_LEN (COBS_OVERALL_MAX_PACKET_LEN + COBS_OVERALL_MAX_PACKET_LEN / 254)
 
 enum COBSPumpState
 {
@@ -52,8 +54,8 @@ const uint8_t *COBSgetFrameExtent( const uint8_t *inputEnc, int len );
 const uint8_t *COBSsimpleDecode( const uint8_t *inputEnc, int len, struct Frame *o );
 bool COBSisEOFRAME( const uint8_t *inputEnc );
 
-void COBSEncode( const uint8_t *inputMsg, int len, struct Frame *o );
-
+void COBSEncode( const uint8_t *frontMsg, int lfront, const uint8_t *inputMsg, int len, struct Frame *o );
+  
 /* Context free functions */
 void COBSPump( struct COBS *t, uint8_t *incoming, int len,
                void ( *packetRxed )( struct Frame *p, void *param ),
