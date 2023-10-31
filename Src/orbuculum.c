@@ -65,6 +65,9 @@
 #define ORBTRACE "orbtrace"
 #define ORBTRACEENVNAME "ORBTRACE"
 
+// Define this to use original clean ORBTRACE code
+#define LEGACY_ORBTRACE 1
+
 /* Record for options, either defaults or from command line */
 struct Options
 {
@@ -105,7 +108,7 @@ struct RunTime
     struct COBS c;                                       /* COBS instance, in case we need it */
 
     struct Frame cobsPart;                               /* COBS part frame for maintaining continuity across packets */
-
+    struct Frame cobsOtg;                                /* Outgoing COBS frame for legacy use */
     struct OrbtraceIf  *o;                               /* For accessing ORBTrace devices + BMPs */
 
     uint64_t  intervalRawBytes;                          /* Number of bytes transferred in current interval */
@@ -402,7 +405,7 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
     int c, optionIndex = 0;
 #define DELIMITER ','
 
-    while ( ( c = getopt_long ( argc, argv, "a:Ef:hHVl:m:Mn:o:O:p:s:T:t:v:", _longOptions, &optionIndex ) ) != -1 )
+    while ( ( c = getopt_long ( argc, argv, "a:Ef:hHVl:m:Mn:o:O:p:s:Tt:v:", _longOptions, &optionIndex ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -679,6 +682,7 @@ void *_checkInterval( void *params )
 
                 genericsPrintf( " Waste:%3d%% ",  100 - ( ( totalDat * 100 ) / r->intervalRawBytes ) );
             }
+#ifndef LEGACY_ORBTRACE
             else
             {
                 /* Either raw ITM or COBs frames */
@@ -688,6 +692,7 @@ void *_checkInterval( void *params )
                     genericsPrintf( " Waste:%01d.%01d%%",  w / 10, w % 10 );
                 }
             }
+#endif
 
             r->cobsDataLenRxed = 0;
             r->intervalRawBytes = 0;
@@ -720,9 +725,23 @@ static void _purgeBlock( struct RunTime *r )
         {
             nwclientSend( h->n, h->strippedBlock->fillLevel, h->strippedBlock->buffer );
             h->intervalBytes += h->strippedBlock->fillLevel;
+
+	    /* The COBs encoded version goes out on the combined COBs channel, with a specific channel header */
+	    int j=h->strippedBlock->fillLevel;
+	    const uint8_t frontMatter[1] = { h->channel };
+	    const uint8_t* b = h->strippedBlock->buffer;
+	    
+	    while ( j )
+	      {
+		COBSEncode( frontMatter, 1,
+			    b,(j<COBS_MAX_PACKET_LEN)?j:COBS_MAX_PACKET_LEN,
+			    &r->cobsOtg );
+		nwclientSend( _r.cobsHandler, r->cobsOtg.len,r->cobsOtg.d );
+		b+= (j<COBS_MAX_PACKET_LEN)?j:COBS_MAX_PACKET_LEN;
+		j-= (j<COBS_MAX_PACKET_LEN)?j:COBS_MAX_PACKET_LEN;
+	      }	    
             h->strippedBlock->fillLevel = 0;
         }
-
         h++;
     }
 }
@@ -788,7 +807,7 @@ static void _TPIUpacketRxed( enum TPIUPumpEvent e, struct TPIUPacket *p, void *p
 }
 // ====================================================================================================
 
-static void _cobsDispatch( struct RunTime *r, const uint8_t *buffer, int length )
+static void _cobsIncoming( struct RunTime *r, const uint8_t *buffer, int length )
 
 {
     const uint8_t *flen;
@@ -868,6 +887,7 @@ static void _cobsDispatch( struct RunTime *r, const uint8_t *buffer, int length 
 static void _processBlock( struct RunTime *r, ssize_t fillLevel, uint8_t *buffer )
 
 {
+  static const uint8_t frontMatter[1] = { DEFAULT_ITM_STREAM };
     genericsReport( V_DEBUG, "RXED Packet of %d bytes%s" EOL, fillLevel, ( r->options->intervalReportTime ) ? EOL : "" );
 
     if ( fillLevel )
@@ -886,13 +906,26 @@ static void _processBlock( struct RunTime *r, ssize_t fillLevel, uint8_t *buffer
         if ( r-> options->useTPIU )
         {
             /* Strip the TPIU framing from this input */
-            TPIUPump2( &r->t, r->rawBlock[r->rp].buffer, r->rawBlock[r->rp].fillLevel, _TPIUpacketRxed, r );
+            TPIUPump2( &r->t, buffer, fillLevel, _TPIUpacketRxed, r );
             _purgeBlock( r );
         }
         else
         {
             /* Do it the old fashioned way and send out the unfettered block */
-            nwclientSend( _r.n, r->rawBlock[r->rp].fillLevel, r->rawBlock[r->rp].buffer );
+            nwclientSend( _r.n, fillLevel, buffer );
+
+	    /* The COBs encoded version goes out on the default COBs channel */
+	    uint8_t* b = buffer;
+	    while ( fillLevel )
+	      {
+		COBSEncode( frontMatter, 1,
+			    b,
+			    (fillLevel<COBS_MAX_PACKET_LEN)?fillLevel:COBS_MAX_PACKET_LEN,
+			    &r->cobsOtg );
+		nwclientSend( _r.cobsHandler, r->cobsOtg.len,r->cobsOtg.d );
+		b+=(fillLevel<COBS_MAX_PACKET_LEN)?fillLevel:COBS_MAX_PACKET_LEN;
+		fillLevel-=(fillLevel<COBS_MAX_PACKET_LEN)?fillLevel:COBS_MAX_PACKET_LEN;
+	      }
         }
     }
 }
@@ -975,8 +1008,6 @@ static void _usb_callback( struct libusb_transfer *t )
     /* Whatever the status that comes back, there may be data... */
     if ( t->actual_length > 0 )
     {
-        _r.intervalRawBytes += t->actual_length;
-
         if ( _r.opFileHandle )
         {
             if ( write( _r.opFileHandle, t->buffer, t->actual_length ) < 0 )
@@ -985,16 +1016,20 @@ static void _usb_callback( struct libusb_transfer *t )
             }
         }
 
+#ifndef LEGACY_ORBTRACE
         if ( OrbtraceIsOrbtrace( _r.o ) )
         {
-            _cobsDispatch( &_r, t->buffer, t->actual_length );
+            _cobsIncoming( &_r, t->buffer, t->actual_length );
             /* We need to decode this so it can go through the 'normal' output channels too */
             COBSPump( &_r.c, t->buffer, t->actual_length, _COBSpacketRxed, &_r );
+	    _r.intervalRawBytes += t->actual_length;
             _purgeBlock( &_r );
         }
         else
+#endif
         {
             _processBlock( &_r, t->actual_length, t->buffer );
+	    _r.intervalRawBytes += t->actual_length;
         }
 
         if ( ( t->status != LIBUSB_TRANSFER_COMPLETED ) &&
@@ -1466,7 +1501,11 @@ int main( int argc, char *argv[] )
 
 #endif
 
+#ifndef LEGACY_ORBTRACE    
     if ( _r.options->channelList )
+#else
+      if ( ( _r.options->channelList ) && ( _r.options->useTPIU ))
+#endif
     {
         /* Channel list is only needed for legacy ports that we are re-exporting (i.e. clean unencapsulated flows) */
         char *c = _r.options->channelList;

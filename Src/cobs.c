@@ -10,6 +10,7 @@
 
 #include <string.h>
 #include <stdlib.h>
+#include <assert.h>
 #include "cobs.h"
 
 #define COBS_SYNC_CHAR (0)
@@ -45,7 +46,7 @@ void COBSDelete( struct COBS *t )
 
 // ====================================================================================================
 
-void COBSEncode( const uint8_t *inputMsg, int len, struct Frame *o )
+void COBSEncode( const uint8_t *frontMsg, int lfront, const uint8_t *inputMsg, int len, struct Frame *o )
 
 /* Encode frame and write into provided output Frame buffer */
 
@@ -53,16 +54,20 @@ void COBSEncode( const uint8_t *inputMsg, int len, struct Frame *o )
     uint8_t *wp = o->d;
     o->len = 0;
 
-    /* We always start a frame with a sync so the receivers got a chance */
-    *wp++ = COBS_SYNC_CHAR;
+    len+=lfront;
+
+    assert(len<=COBS_OVERALL_MAX_PACKET_LEN);
 
     if ( len )
     {
         uint8_t *cp = wp++;
         int seglen = 1;
 
-        for ( const uint8_t *rp = inputMsg; len--; rp++ )
+	for ( int i = 0; len--; i++ )
         {
+	  /* Take byte either from frontmatter or main message */
+	  const uint8_t* rp = (i<lfront)?&frontMsg[i]:&inputMsg[i-lfront];
+
             if ( COBS_SYNC_CHAR != *rp )
             {
                 *wp++ = *rp;
@@ -84,7 +89,8 @@ void COBSEncode( const uint8_t *inputMsg, int len, struct Frame *o )
 
         *cp = seglen;
     }
-
+    
+    *wp++ = COBS_SYNC_CHAR;
 
     o->len = ( wp - o->d );
 }
@@ -387,11 +393,11 @@ int main( int argc, void **argv )
     for ( int i = 0; i < sizeof( testSet ) / sizeof( struct test ); i++ )
     {
         fprintf( stderr, "%d: ", i + 1 );
-        COBSEncode( testSet[i].dec.d, testSet[i].dec.len, &o );
+        COBSEncode( NULL, 0, testSet[i].dec.d, testSet[i].dec.len, &o );
 
-        if ( o.len != COBSgetFrameExtent( o.d, o.len ) - o.d )
+        if ( o.len != COBSgetFrameExtent( o.d, o.len ) - o.d + 1 )
         {
-            fprintf( stderr, "Static framelen assessment failed %d vs expected %d\n", o.len, COBSgetFrameExtent( o.d, o.len ) - o.d );
+            fprintf( stderr, "Static framelen assessment failed %d vs expected %d\n", o.len, COBSgetFrameExtent( o.d, o.len ) - o.d + 1 );
             continue;
         }
 
