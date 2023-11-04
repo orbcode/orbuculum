@@ -357,7 +357,7 @@ void _dwarf_print( void *p, const char *line )
 static void _processFunctionDie( struct symbol *p, Dwarf_Debug dbg, Dwarf_Die die, int filenameN, int producerN, Dwarf_Addr cu_base_addr )
 
 {
-    char *name = "";
+    char *name = NULL;
     Dwarf_Addr h = 0;
     Dwarf_Addr l = 0;
     enum Dwarf_Form_Class formclass;
@@ -368,12 +368,12 @@ static void _processFunctionDie( struct symbol *p, Dwarf_Debug dbg, Dwarf_Die di
     struct symbolFunctionStore *newFunc;
 
     attr_tag = DW_AT_inline;
-
+    /*
     if ( dwarf_attr( die, attr_tag, &attr_data, 0 ) == DW_DLV_OK )
     {
         return;
     }
-
+    */
     /* See if this is an inline die usage */
     attr_tag = DW_AT_abstract_origin;
 
@@ -386,7 +386,7 @@ static void _processFunctionDie( struct symbol *p, Dwarf_Debug dbg, Dwarf_Die di
         dwarf_attr( die, attr_tag, &attr_data, 0 );
         dwarf_global_formref( attr_data, &abstract_origin_offset, 0 );
         dwarf_offdie_b( dbg, abstract_origin_offset, IS_INFO, &abstract_origin_die, 0 );
-        fprintf( stderr, "Instance at %08x...%08x\n\n\n", ( uint32_t )l, ( uint32_t )h );
+	//   fprintf( stderr, "Instance at %08x...%08x\n\n\n", ( uint32_t )l, ( uint32_t )h );
         isinline = true;
     }
     else
@@ -400,27 +400,27 @@ static void _processFunctionDie( struct symbol *p, Dwarf_Debug dbg, Dwarf_Die di
         h += l;
     }
 
-    if ( l && ( l != h ) )
-    {
-        if ( DW_DLV_OK != dwarf_diename( die, &name, 0 ) )
-        {
-            /* Name will be hidden in a specification reference */
-            attr_tag = DW_AT_specification;
-
-            if ( dwarf_attr( die, attr_tag, &attr_data, 0 ) == DW_DLV_OK )
-            {
-                Dwarf_Off specification_offset;
-                Dwarf_Die specification_die;
-                dwarf_attr( die, attr_tag, &attr_data, 0 );
-
-                if ( DW_DLV_OK == dwarf_global_formref( attr_data, &specification_offset, 0 ) )
-                {
-                    dwarf_offdie_b( dbg, specification_offset, IS_INFO, &specification_die, 0 );
-                    dwarf_diename( specification_die, &name, 0 );
-                }
+    if ( DW_DLV_OK != dwarf_diename( die, &name, 0 ) )
+      {
+	/* Name will be hidden in a specification reference */
+	attr_tag = DW_AT_specification;
+	
+	if ( dwarf_attr( die, attr_tag, &attr_data, 0 ) == DW_DLV_OK )
+	  {
+	    Dwarf_Off specification_offset;
+	    Dwarf_Die specification_die;
+	    dwarf_attr( die, attr_tag, &attr_data, 0 );
+	    
+	    if ( DW_DLV_OK == dwarf_global_formref( attr_data, &specification_offset, 0 ) )
+	      {
+		dwarf_offdie_b( dbg, specification_offset, IS_INFO, &specification_die, 0 );
+		dwarf_diename( specification_die, &name, 0 );
+	      }
             }
         }
 
+    if ( name && l && h )
+      {	
         p->func = ( struct symbolFunctionStore ** )realloc( p->func, sizeof( struct symbolFunctionStore * ) * ( p->nfunc + 1 ) );
         newFunc = p->func[p->nfunc] = ( struct symbolFunctionStore * )calloc( 1, sizeof( struct symbolFunctionStore ) );
         newFunc->isinline = isinline;
@@ -450,6 +450,8 @@ static void _processFunctionDie( struct symbol *p, Dwarf_Debug dbg, Dwarf_Die di
             dwarf_formudata( attr_data, &no, 0 );
             newFunc->startcol = no;
         }
+
+	//	fprintf(stderr,"%s %08x %08x %d,%d\n",name,l,h,newFunc->startline,newFunc->startcol);
     }
 }
 
@@ -608,45 +610,52 @@ static bool _readLines( struct symbol *p )
     qsort( p->func, p->nfunc, sizeof( struct symbolFunctionStore * ), _compareFunc );
 
     /* Combine addresses in the lines table which have the same memory location...those aren't too useful for us      */
+
+    int nlines = 0;
+    struct symbolLineStore **nls = NULL;
+
     for ( int i = 1; i < p->nlines; i++ )
     {
-        while ( ( i < p->nlines ) && ( ( p->line[i]->filename == p->line[i - 1]->filename ) ) && ( ( p->line[i]->lowaddr == p->line[i - 1]->lowaddr ) ) )
-        {
-            /* This line needs to be freed in memory 'cos otherwise there is no reference to it anywhere */
-            free( p->line[i - 1] );
+	  nls = ( struct symbolLineStore ** )realloc( nls, sizeof( struct symbolLineStore * ) * ( nlines + 1 ) );
+	  struct symbolLineStore *nl = nls[nlines++] = ( struct symbolLineStore * )calloc( 1, sizeof( struct symbolLineStore ) );
 
-            /* ...and move the following lines down */
-            for ( int j = i; j < p->nlines; j++ )
-            {
-                p->line[j - 1] = p->line[j];
+	  while ( ( i < p->nlines ) &&
+		( ( p->line[i]->filename == p->line[i - 1]->filename ) ) &&
+		( ( p->line[i]->lowaddr == p->line[i - 1]->lowaddr ) ) )
+	    {
+	      /* This line needs to be freed in memory 'cos otherwise there is no reference to it anywhere */
+	      free( p->line[i - 1] );
+	      i++;
             }
-
-            p->nlines--;
-        }
+	    nl = p->line[i];
     }
+    free(p->line);
+    p->line = nls;
+    p->nlines = nlines;
 
+    nlines = 0;
+    nls = NULL;
+	
     /* Now do the same for lines with the same line number and file */
     /* We can also set the high memory extent for each line here */
     for ( int i = 1; i < p->nlines; i++ )
     {
-        while ( ( i < p->nlines ) &&
-                ( p->line[i]->startline == p->line[i - 1]->startline ) &&
-                ( p->line[i]->filename == p->line[i - 1]->filename ) )
+      nls = ( struct symbolLineStore ** )realloc( nls, sizeof( struct symbolLineStore * ) * ( nlines + 1 ) );
+      struct symbolLineStore *nl = nls[nlines++] = ( struct symbolLineStore * )calloc( 1, sizeof( struct symbolLineStore ) );
+      nl = p->line[i];
+      
+      while ( ( i < p->nlines ) &&
+	      ( p->line[i]->startline == nl->startline ) &&
+	      ( p->line[i]->filename == nl->filename ) )
         {
-
-            p->line[i]->lowaddr = p->line[i - 1]->lowaddr;
-            free( p->line[i - 1] );
-
-            for ( int j = i; j < p->nlines; j++ )
-            {
-                p->line[j - 1] = p->line[j];
-            }
-
-            p->nlines--;
-        }
-
-        p->line[i - 1]->highaddr = p->line[i]->lowaddr - 1;
+	  free(p->line[i]);
+	  i++;
+	}
     }
+
+    free(p->line);
+    p->line = nls;
+    p->nlines = nlines;
 
     if ( !p->nlines )
     {
@@ -1245,6 +1254,7 @@ void main( int argc, char *argv[] )
         exit( -1 );
     }
 
+    fprintf( stderr, "Got functions" EOL);
     _listFunctions( p, false );
     exit( -1 );
 

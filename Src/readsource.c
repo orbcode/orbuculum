@@ -53,36 +53,42 @@ char *readsourcefile( char *path, size_t *l )
 /* Return either a malloced buffer containing the source file, or NULL if the file isn't available */
 
 {
-    FILE *fd;
+    FILE *fd = NULL;
+    static bool prettyPrinterTested = false;
     char commandLine[MAX_LINE_LEN];
     bool isProcess = true;
 
-    char *retBuffer;
+    char *retBuffer = ( char * )malloc( BLOCKSIZE );
+    size_t insize = 0;
 
-    size_t insize;
+    if (!prettyPrinterTested)
+      {
+	/* Try and grab the file via a prettyprinter. If that doesn't work, grab it via cat */
+	if ( getenv( "ORB_PRETTYPRINTER" ) )
+	  {
+	    /* We have an environment variable containing the prettyprinter...lets use that */
+	    snprintf( commandLine, MAX_LINE_LEN, "%s %s", getenv( "ORB_PRETTYPRINTER" ), path );
+	  }
+	else
+	  {
+	    /* No environment variable, use the default */
+	    snprintf( commandLine, MAX_LINE_LEN, "source-highlight -f esc -o STDOUT -i %s 2>/dev/null", path );
+	  }
 
-    /* Try and grab the file via a prettyprinter. If that doesn't work, grab it via cat */
-    if ( getenv( "ORB_PRETTYPRINTER" ) )
-    {
-        /* We have an environment variable containing the prettyprinter...lets use that */
-        snprintf( commandLine, MAX_LINE_LEN, "%s %s", getenv( "ORB_PRETTYPRINTER" ), path );
-    }
-    else
-    {
-        /* No environment variable, use the default */
-        snprintf( commandLine, MAX_LINE_LEN, "source-highlight -f esc -o STDOUT -i %s 2>/dev/null", path );
-    }
+	fd = popen( commandLine, "r" );
 
-    fd = popen( commandLine, "r" );
-
-    /* Perform a single read...this will lead to a zero length read if the command wasn't valid */
-    retBuffer = ( char * )malloc( BLOCKSIZE );
-    insize = fread( retBuffer, 1, BLOCKSIZE, fd );
-
+	/* Perform a single read...this will lead to a zero length read if the command wasn't valid */
+	insize = fread( retBuffer, 1, BLOCKSIZE, fd );
+      }
+    
     if ( !insize )
     {
-        pclose( fd );
+      if (fd)
+	{
+	  pclose( fd );
+	}
         isProcess = false;
+	prettyPrinterTested = true;
 
         if ( ( fd = fopen( path, "r" ) ) )
         {
