@@ -171,8 +171,6 @@ static bool _readProg( struct symbol *p )
             return false;
         }
 
-        //            fprintf(stderr, "%c ADDR=%08lx Type=%8x Flags=%04lx Size=%08lx Name=%s\n",((shdr.sh_flags & SHF_ALLOC) && (shdr.sh_type==SHT_PROGBITS))?'L':' ', shdr.sh_addr, shdr.sh_type, shdr.sh_flags, shdr.sh_size, name);
-
         if ( ( shdr.sh_flags & SHF_ALLOC ) && ( shdr.sh_type == SHT_PROGBITS ) )
         {
             Elf_Data *data = NULL;
@@ -367,16 +365,11 @@ static void _processFunctionDie( struct symbol *p, Dwarf_Debug dbg, Dwarf_Die di
     bool isinline = false;
     struct symbolFunctionStore *newFunc;
 
-    attr_tag = DW_AT_inline;
-    /*
-    if ( dwarf_attr( die, attr_tag, &attr_data, 0 ) == DW_DLV_OK )
-    {
-        return;
-    }
-    */
+    Dwarf_Off specification_offset;
+    Dwarf_Die specification_die;
+    
     /* See if this is an inline die usage */
     attr_tag = DW_AT_abstract_origin;
-
     if ( DW_DLV_OK == dwarf_attr( die, attr_tag, &attr_data, 0 ) )
     {
         /* It is, so track back to the real one */
@@ -386,7 +379,6 @@ static void _processFunctionDie( struct symbol *p, Dwarf_Debug dbg, Dwarf_Die di
         dwarf_attr( die, attr_tag, &attr_data, 0 );
         dwarf_global_formref( attr_data, &abstract_origin_offset, 0 );
         dwarf_offdie_b( dbg, abstract_origin_offset, IS_INFO, &abstract_origin_die, 0 );
-	//   fprintf( stderr, "Instance at %08x...%08x\n\n\n", ( uint32_t )l, ( uint32_t )h );
         isinline = true;
     }
     else
@@ -399,7 +391,8 @@ static void _processFunctionDie( struct symbol *p, Dwarf_Debug dbg, Dwarf_Die di
     {
         h += l;
     }
-
+    
+    specification_die = die;
     if ( DW_DLV_OK != dwarf_diename( die, &name, 0 ) )
       {
 	/* Name will be hidden in a specification reference */
@@ -407,8 +400,6 @@ static void _processFunctionDie( struct symbol *p, Dwarf_Debug dbg, Dwarf_Die di
 	
 	if ( dwarf_attr( die, attr_tag, &attr_data, 0 ) == DW_DLV_OK )
 	  {
-	    Dwarf_Off specification_offset;
-	    Dwarf_Die specification_die;
 	    dwarf_attr( die, attr_tag, &attr_data, 0 );
 	    
 	    if ( DW_DLV_OK == dwarf_global_formref( attr_data, &specification_offset, 0 ) )
@@ -435,7 +426,7 @@ static void _processFunctionDie( struct symbol *p, Dwarf_Debug dbg, Dwarf_Die di
         /* Collect start of function line and column */
         attr_tag = DW_AT_decl_line;
 
-        if ( dwarf_attr( die, attr_tag, &attr_data, 0 ) == DW_DLV_OK )
+        if ( dwarf_attr( specification_die, attr_tag, &attr_data, 0 ) == DW_DLV_OK )
         {
             Dwarf_Unsigned no;
             dwarf_formudata( attr_data, &no, 0 );
@@ -444,7 +435,7 @@ static void _processFunctionDie( struct symbol *p, Dwarf_Debug dbg, Dwarf_Die di
 
         attr_tag = DW_AT_decl_column;
 
-        if ( dwarf_attr( die, attr_tag, &attr_data, 0 ) == DW_DLV_OK )
+        if ( dwarf_attr( specification_die, attr_tag, &attr_data, 0 ) == DW_DLV_OK )
         {
             Dwarf_Unsigned no;
             dwarf_formudata( attr_data, &no, 0 );
@@ -623,6 +614,9 @@ static bool _readLines( struct symbol *p )
 		( ( p->line[i]->filename == p->line[i - 1]->filename ) ) &&
 		( ( p->line[i]->lowaddr == p->line[i - 1]->lowaddr ) ) )
 	    {
+	      if (!p->line[i]->startline)
+		p->line[i]->startline = p->line[i-1]->startline;
+
 	      /* This line needs to be freed in memory 'cos otherwise there is no reference to it anywhere */
 	      free( p->line[i - 1] );
 	      i++;
