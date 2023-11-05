@@ -13,10 +13,10 @@
 #include "generics.h"
 #include "readsource.h"
 
-#define MAX_LINE_LEN (4095)
+#define DP_MAX_LINE_LEN (4095)
 #define IS_INFO (true)
 
-static char _print_buffer[MAX_LINE_LEN];
+static char _print_buffer[DP_MAX_LINE_LEN];
 
 // ====================================================================================================
 // ====================================================================================================
@@ -282,7 +282,7 @@ static void _getSourceLines( struct symbol *p, Dwarf_Debug dbg, Dwarf_Die die )
     {
         dwarf_srclines_from_linecontext( linecontext, &linebuf, &linecount, 0 );
         tracked_addr = 0;
-        zero_start_dont_store = true;
+        zero_start_dont_store = false;
 
         /* If a line address starts at zero, or is a direct continuation of a line that started at zero, then we dispose of it */
         /* We consider any line that is within 16 bytes of the previous one to be a continuation, to allow for padding.        */
@@ -292,28 +292,17 @@ static void _getSourceLines( struct symbol *p, Dwarf_Debug dbg, Dwarf_Die die )
             dwarf_lineaddr( linebuf[i], &line_addr, 0 );
             dwarf_linebeginstatement( linebuf[i], &begin, 0 );
 
-            //dwarf_prologue_end_etc(linebuf[i], &ispend, &ispbegin, &isa, &disc, 0);
-            //if(isa)
-            //  fprintf(stderr,"\nDisc=%lld isa=%llx\n",disc,isa);
-
             if ( ( isset ) && ( line_addr == 0 ) )
             {
                 zero_start_dont_store = true;
             }
 
-            //if (begin)
-            //  fprintf(stderr,"\nBEGIN(%08x):",(uint32_t)line_addr);
-
             if ( ( zero_start_dont_store && ( ( !begin ) || ( !line_addr ) || ( ( line_addr - tracked_addr ) < 16 ) ) ) )
             {
                 zero_start_dont_store = true;
-                //  sprintf(stderr,"!");
             }
             else
             {
-                /* We are going to store this one */
-                //                if (zero_start_dont_store) fprintf(stderr,"\n%08x: ",(uint32_t)line_addr);
-                //else fprintf(stderr,"*");
                 zero_start_dont_store = false;
                 dwarf_lineno( linebuf[i], &line_num, 0 );
                 dwarf_linesrc( linebuf[i], &file_name, 0 );
@@ -367,9 +356,10 @@ static void _processFunctionDie( struct symbol *p, Dwarf_Debug dbg, Dwarf_Die di
 
     Dwarf_Off specification_offset;
     Dwarf_Die specification_die;
-    
+
     /* See if this is an inline die usage */
     attr_tag = DW_AT_abstract_origin;
+
     if ( DW_DLV_OK == dwarf_attr( die, attr_tag, &attr_data, 0 ) )
     {
         /* It is, so track back to the real one */
@@ -391,27 +381,28 @@ static void _processFunctionDie( struct symbol *p, Dwarf_Debug dbg, Dwarf_Die di
     {
         h += l;
     }
-    
+
     specification_die = die;
+
     if ( DW_DLV_OK != dwarf_diename( die, &name, 0 ) )
-      {
-	/* Name will be hidden in a specification reference */
-	attr_tag = DW_AT_specification;
-	
-	if ( dwarf_attr( die, attr_tag, &attr_data, 0 ) == DW_DLV_OK )
-	  {
-	    dwarf_attr( die, attr_tag, &attr_data, 0 );
-	    
-	    if ( DW_DLV_OK == dwarf_global_formref( attr_data, &specification_offset, 0 ) )
-	      {
-		dwarf_offdie_b( dbg, specification_offset, IS_INFO, &specification_die, 0 );
-		dwarf_diename( specification_die, &name, 0 );
-	      }
+    {
+        /* Name will be hidden in a specification reference */
+        attr_tag = DW_AT_specification;
+
+        if ( dwarf_attr( die, attr_tag, &attr_data, 0 ) == DW_DLV_OK )
+        {
+            dwarf_attr( die, attr_tag, &attr_data, 0 );
+
+            if ( DW_DLV_OK == dwarf_global_formref( attr_data, &specification_offset, 0 ) )
+            {
+                dwarf_offdie_b( dbg, specification_offset, IS_INFO, &specification_die, 0 );
+                dwarf_diename( specification_die, &name, 0 );
             }
         }
+    }
 
     if ( name && l && h )
-      {	
+    {
         p->func = ( struct symbolFunctionStore ** )realloc( p->func, sizeof( struct symbolFunctionStore * ) * ( p->nfunc + 1 ) );
         newFunc = p->func[p->nfunc] = ( struct symbolFunctionStore * )calloc( 1, sizeof( struct symbolFunctionStore ) );
         newFunc->isinline = isinline;
@@ -441,8 +432,6 @@ static void _processFunctionDie( struct symbol *p, Dwarf_Debug dbg, Dwarf_Die di
             dwarf_formudata( attr_data, &no, 0 );
             newFunc->startcol = no;
         }
-
-	//	fprintf(stderr,"%s %08x %08x %d,%d\n",name,l,h,newFunc->startline,newFunc->startcol);
     }
 }
 
@@ -544,7 +533,7 @@ static bool _readLines( struct symbol *p )
         .dp_user_pointer = p,
         .dp_fptr = &_dwarf_print,
         .dp_buffer = _print_buffer,
-        .dp_buffer_len = MAX_LINE_LEN,
+        .dp_buffer_len = DP_MAX_LINE_LEN,
         .dp_buffer_user_provided = true,
         .dp_reserved = NULL
 
@@ -594,88 +583,90 @@ static bool _readLines( struct symbol *p )
         _getSourceLines( p, dbg, cu_die );
     }
 
-    /* 2: We have the lines and functions. Clean them up and interlink them so they're useful to applications */
-    /* ------------------------------------------------------------------------------------------------------ */
-    /* Sort tables into address order, just in case they're not ... no gaurantees from the DWARF */
-    qsort( p->line, p->nlines, sizeof( struct symbolLineStore * ), _compareLineMem );
-    qsort( p->func, p->nfunc, sizeof( struct symbolFunctionStore * ), _compareFunc );
-
-    /* Combine addresses in the lines table which have the same memory location...those aren't too useful for us      */
-
-    int nlines = 0;
-    struct symbolLineStore **nls = NULL;
-
-    for ( int i = 1; i < p->nlines; i++ )
+    if ( p->nlines && p->nfunc )
     {
-	  nls = ( struct symbolLineStore ** )realloc( nls, sizeof( struct symbolLineStore * ) * ( nlines + 1 ) );
-	  struct symbolLineStore *nl = nls[nlines++] = ( struct symbolLineStore * )calloc( 1, sizeof( struct symbolLineStore ) );
+        /* 2: We have the lines and functions. Clean them up and interlink them so they're useful to applications */
+        /* ------------------------------------------------------------------------------------------------------ */
+        /* Sort tables into address order, just in case they're not ... no gaurantees from the DWARF */
+        qsort( p->line, p->nlines, sizeof( struct symbolLineStore * ), _compareLineMem );
+        qsort( p->func, p->nfunc, sizeof( struct symbolFunctionStore * ), _compareFunc );
 
-	  while ( ( i < p->nlines ) &&
-		( ( p->line[i]->filename == p->line[i - 1]->filename ) ) &&
-		( ( p->line[i]->lowaddr == p->line[i - 1]->lowaddr ) ) )
-	    {
-	      if (!p->line[i]->startline)
-		p->line[i]->startline = p->line[i-1]->startline;
+        /* Combine addresses in the lines table which have the same memory location...those aren't too useful for us      */
+        int nlines = 0;
+        struct symbolLineStore **nls = NULL;
 
-	      /* This line needs to be freed in memory 'cos otherwise there is no reference to it anywhere */
-	      free( p->line[i - 1] );
-	      i++;
-            }
-	    nl = p->line[i];
-    }
-    free(p->line);
-    p->line = nls;
-    p->nlines = nlines;
-
-    nlines = 0;
-    nls = NULL;
-	
-    /* Now do the same for lines with the same line number and file */
-    /* We can also set the high memory extent for each line here */
-    for ( int i = 1; i < p->nlines; i++ )
-    {
-      nls = ( struct symbolLineStore ** )realloc( nls, sizeof( struct symbolLineStore * ) * ( nlines + 1 ) );
-      struct symbolLineStore *nl = nls[nlines++] = ( struct symbolLineStore * )calloc( 1, sizeof( struct symbolLineStore ) );
-      nl = p->line[i];
-      
-      while ( ( i < p->nlines ) &&
-	      ( p->line[i]->startline == nl->startline ) &&
-	      ( p->line[i]->filename == nl->filename ) )
+        for ( int i = 0; i < p->nlines - 1; i++ )
         {
-	  free(p->line[i]);
-	  i++;
-	}
-    }
+            nls = ( struct symbolLineStore ** )realloc( nls, sizeof( struct symbolLineStore * ) * ( nlines + 1 ) );
+            nls[nlines] = p->line[i];
 
-    free(p->line);
-    p->line = nls;
-    p->nlines = nlines;
-
-    if ( !p->nlines )
-    {
-        fprintf( stderr, "No lines found in file\n" );
-    }
-    else
-    {
-        p->line[p->nlines - 1]->highaddr =     p->line[p->nlines - 1]->lowaddr + 2;
-        p->line[0]->lowaddr =     p->line[0]->highaddr - 2;
-
-        /* Allocate lines to functions ... these will be in address order 'cos the lines already are */
-        for ( int i = 0; i < p->nlines; i++ )
-        {
-            struct symbolFunctionStore *f = symbolFunctionAt( p, p->line[i]->lowaddr );
-            p->line[i]->function = f;
-            p->line[i]->isinline = false;
-
-            if ( f )
+            /* Roll forward through all lines which have the same start address */
+            while ( ( ++i < p->nlines - 1 ) &&
+                    ( ( nls[nlines]->filename == p->line[i]->filename ) ) &&
+                    ( ( nls[nlines]->lowaddr == p->line[i]->lowaddr ) ) )
             {
-                f->line = ( struct symbolLineStore ** )realloc( f->line, sizeof( struct symbolLineStore * ) * ( f->nlines + 1 ) );
-                f->line[f->nlines] = p->line[i];
-                f->nlines++;
+                /* This line needs to be freed in memory 'cos otherwise there is no reference to it anywhere */
+                free( p->line[i] );
             }
+
+            nlines++;
         }
 
-        retval = true;
+        free( p->line );
+        p->line = nls;
+        p->nlines = nlines;
+
+        nlines = 0;
+        nls = NULL;
+
+        /* Now do the same for lines with the same line number and file */
+        /* We can also set the high memory extent for each line here */
+        for ( int i = 0; i < p->nlines - 1; i++ )
+        {
+            nls = ( struct symbolLineStore ** )realloc( nls, sizeof( struct symbolLineStore * ) * ( nlines + 1 ) );
+            nls[nlines] = p->line[i];
+
+            while ( ( ++i < p->nlines - 1 ) &&
+                    ( nls[nlines]->startline == p->line[i]->startline ) &&
+                    ( nls[nlines]->filename == p->line[i]->filename ) )
+            {
+                free( p->line[i] );
+            }
+
+            nls[nlines]->highaddr = p->line[i]->lowaddr - 1;
+            nlines++;
+        }
+
+        free( p->line );
+        p->line = nls;
+        p->nlines = nlines;
+
+        if ( !p->nlines )
+        {
+            fprintf( stderr, "No lines found in file\n" );
+        }
+        else
+        {
+            p->line[p->nlines - 1]->highaddr = p->line[p->nlines - 1]->lowaddr + 2;
+            p->line[0]->lowaddr = p->line[0]->highaddr - 2;
+
+            /* Allocate lines to functions ... these will be in address order 'cos the lines already are */
+            for ( int i = 0; i < p->nlines; i++ )
+            {
+                struct symbolFunctionStore *f = symbolFunctionAt( p, p->line[i]->lowaddr );
+                p->line[i]->function = f;
+                p->line[i]->isinline = false;
+
+                if ( f )
+                {
+                    f->line = ( struct symbolLineStore ** )realloc( f->line, sizeof( struct symbolLineStore * ) * ( f->nlines + 1 ) );
+                    f->line[f->nlines] = p->line[i];
+                    f->nlines++;
+                }
+            }
+
+            retval = true;
+        }
     }
 
     dwarf_finish( dbg );
@@ -709,7 +700,12 @@ static bool _loadSource( struct symbol *p )
             store->linetext[store->nlines++] = r;
 
             /* Spin forwards for next newline or eof */
-            while ( ( l-- > 0 ) && ( *r++ != '\n' ) ) {};
+            while ( ( --l > 0 ) && ( *r++ != '\n' ) ) {};
+	    if (l)
+	      {
+		*r++ = 0;
+		l--;
+	      }
         }
     }
 
@@ -1105,7 +1101,7 @@ bool symbolSetValid( struct symbol *p )
 
 // ====================================================================================================
 
-struct symbol *symbolAquire( char *filename, bool loadlines, bool loadmem, bool loadsource )
+struct symbol *symbolAquire( char *filename, bool loadmem, bool loadsource )
 
 /* Collect symbol set with specified components */
 
@@ -1138,7 +1134,7 @@ struct symbol *symbolAquire( char *filename, bool loadlines, bool loadmem, bool 
     }
 
     /* ...finally, the source code if requested. This can only be done if mem or functions we requested */
-    if ( ( loadsource && ( loadmem || loadlines ) )  && !_loadSource( p ) )
+    if ( ( loadsource && loadmem )  && !_loadSource( p ) )
     {
         symbolDelete( p );
         return NULL;
@@ -1240,17 +1236,13 @@ void main( int argc, char *argv[] )
 
 {
     enum instructionClass ic;
-    struct symbol *p = symbolAquire( argv[1], true, true, true );
+    struct symbol *p = symbolAquire( argv[1], true, true );
 
     if ( !p )
     {
         fprintf( stderr, "Failed to aquire" EOL );
         exit( -1 );
     }
-
-    fprintf( stderr, "Got functions" EOL);
-    _listFunctions( p, false );
-    exit( -1 );
 
     struct symbolLineStore *s;
 

@@ -61,34 +61,35 @@ char *readsourcefile( char *path, size_t *l )
     char *retBuffer = ( char * )malloc( BLOCKSIZE );
     size_t insize = 0;
 
-    if (!prettyPrinterTested)
-      {
-	/* Try and grab the file via a prettyprinter. If that doesn't work, grab it via cat */
-	if ( getenv( "ORB_PRETTYPRINTER" ) )
-	  {
-	    /* We have an environment variable containing the prettyprinter...lets use that */
-	    snprintf( commandLine, MAX_LINE_LEN, "%s %s", getenv( "ORB_PRETTYPRINTER" ), path );
-	  }
-	else
-	  {
-	    /* No environment variable, use the default */
-	    snprintf( commandLine, MAX_LINE_LEN, "source-highlight -f esc -o STDOUT -i %s 2>/dev/null", path );
-	  }
+    if ( !prettyPrinterTested )
+    {
+        /* Try and grab the file via a prettyprinter. If that doesn't work, grab it via cat */
+        if ( getenv( "ORB_PRETTYPRINTER" ) )
+        {
+            /* We have an environment variable containing the prettyprinter...lets use that */
+            snprintf( commandLine, MAX_LINE_LEN, "%s %s", getenv( "ORB_PRETTYPRINTER" ), path );
+        }
+        else
+        {
+            /* No environment variable, use the default */
+            snprintf( commandLine, MAX_LINE_LEN, "source-highlight -f esc -o STDOUT -i %s 2>/dev/null", path );
+        }
 
-	fd = popen( commandLine, "r" );
+        fd = popen( commandLine, "r" );
 
-	/* Perform a single read...this will lead to a zero length read if the command wasn't valid */
-	insize = fread( retBuffer, 1, BLOCKSIZE, fd );
-      }
-    
+        /* Perform a single read...this will lead to a zero length read if the command wasn't valid */
+        insize = fread( retBuffer, 1, BLOCKSIZE, fd );
+    }
+
     if ( !insize )
     {
-      if (fd)
-	{
-	  pclose( fd );
-	}
+        if ( fd )
+        {
+            pclose( fd );
+        }
+
         isProcess = false;
-	prettyPrinterTested = true;
+        prettyPrinterTested = true;
 
         if ( ( fd = fopen( path, "r" ) ) )
         {
@@ -107,6 +108,9 @@ char *readsourcefile( char *path, size_t *l )
         insize = fread( &retBuffer[*l], 1, BLOCKSIZE, fd );
         *l += insize;
     }
+
+    /* Make sure we terminate with a 0 .. there will always be space for this */
+    retBuffer[( *l )++] = 0;
 
     /* Close the process or file, depending on what it was that actually got opened */
     if ( fd )
