@@ -1102,7 +1102,7 @@ bool symbolSetValid( struct symbol *p )
 
 // ====================================================================================================
 
-struct symbol *symbolAquire( char *filename, bool loadlines, bool loadmem, bool loadsource )
+struct symbol *symbolAcquire( char *filename, bool loadlines, bool loadmem, bool loadsource )
 
 /* Collect symbol set with specified components */
 
@@ -1128,7 +1128,7 @@ struct symbol *symbolAquire( char *filename, bool loadlines, bool loadmem, bool 
     }
 
     /* Load the functions and source code line mappings if requested */
-    if ( !_readLines( p ) )
+    if ( loadlines && !_readLines( p ) )
     {
         symbolDelete( p );
         return NULL;
@@ -1237,7 +1237,7 @@ void main( int argc, char *argv[] )
 
 {
     enum instructionClass ic;
-    struct symbol *p = symbolAquire( argv[1], true, true, true );
+    struct symbol *p = symbolAcquire( argv[1], true, true, true );
 
     if ( !p )
     {
