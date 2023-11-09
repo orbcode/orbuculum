@@ -265,8 +265,7 @@ You may need to change the paths to your libusb files, depending on how well you
 
 Permissions and Access
 ----------------------
-A udev rules files is included in ```Support/60-orbcode.rules```
-Install this to ```/etc/udev/rules.d``` to grant access to orbcode hardware, if required.
+A udev rules files is included in ```Support/60-orbcode.rules``` The default installations will have already installed this to either `/usr/local/lib/udev/rules.d` or `/usr/lib/udev/rules.d`, but you may prefer to install it to ```/etc/udev/rules.d``` by hand, if required.
 
 Building on OSX
 ===============
