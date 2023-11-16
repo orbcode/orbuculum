@@ -5,4 +5,4 @@ source_url = https://www.prevanders.net/libdwarf-0.7.0.tar.xz
 source_filename = libdwarf-0.7.0.tar.xz
 source_hash = 23b71829de875fa5842e49f232c8ee1a5043805749738bc61424d9abc1189f38
 
-diff_files = ./libdwarf/0001-fix-Use-project_source_root-for-subproject-compatibi.patch
+diff_files = ./libdwarf/0001-fix-Use-project_source_root-for-subproject-compatibi.patch, ./libdwarf/0002-fix-compilation-clang.patch
