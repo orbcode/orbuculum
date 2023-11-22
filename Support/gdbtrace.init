@@ -645,7 +645,7 @@ define enableIMXRT101XTRACE
     set $bits = $arg0
   end
     if (($bits<1) || ($bits==3) || ($bits>4))
-    help enableSTM32TRACE
+    help enableIMXRT101XTRACE
   end
 
   if $argc >= 2
@@ -720,7 +720,7 @@ define enableIMXRT101XTRACE
 end
 
 document enableIMXRT101XTRACE
-enableIMXRT102XTRACE <Width> <Drive>: Enable TRACE on IMXRT1010 pins
+enableIMXRT101XTRACE <Width> <Drive>: Enable TRACE on IMXRT1010 pins
   <Width>   : Number of bits wide (1,2 or 4 only)
   <Drive>   : Drive strength (0=lowest, 7=highest)
 end
@@ -1083,7 +1083,7 @@ define enableSTM32TRACE
   #set language auto
 end
 document enableSTM32TRACE
-enableSTM32TRACE <Width>: Enable TRACE on STM32 pins
+enableSTM32TRACE <Width> <Drive>: Enable TRACE on STM32 pins
   <Width>   : Number of bits wide (1,2 or 4 only)
   <Drive>   : Drive strength (0=lowest, 3=highest)
 end
@@ -1099,7 +1099,7 @@ define enableNRF52TRACE
     set $bits = $arg0
   end
     if (($bits<1) || ($bits==3) || ($bits>4))
-    help enableNRF53TRACE
+    help enableNRF52TRACE
   end
 
   if $argc >= 2
@@ -1151,7 +1151,7 @@ define enableNRF52TRACE
   #set language auto
 end
 document enableNRF52TRACE
-enableNRF52TRACE <Drive> <Speed> : Enable TRACE on NRF52 pins (not nrf52833 or nrf52840)
+enableNRF52TRACE <Width> <Drive> <Speed> : Enable TRACE on NRF52 pins (not nrf52833 or nrf52840)
   <Width>   : Number of bits wide (1,2 or 4 only)
   <Drive>   : Drive strength (0 (low), 3 (high))
   <Speed>   : Clock Speed (0..3, 0 fastest)
@@ -1239,7 +1239,7 @@ define enableNRF53TRACE
   #set language auto
 end
 document enableNRF53TRACE
-enableNRF53TRACE <Width> <drive> <speed> : Enable TRACE on NRF pins
+enableNRF53TRACE <Width> <Drive> <Speed> : Enable TRACE on NRF pins
   <Width>   : Number of bits wide (1,2 or 4 only)
   <Drive>   : Drive strength (0 (lowest), 1, 2, 3 or 11 (highest))
   <Speed>   : Clock Speed (0..3, 0 fastest)
@@ -1331,7 +1331,7 @@ define enableTM4C123TRACE
   #set language auto
 end
 document enableTM4C123TRACE
-enableTM4C123TRACE <Width>: Enable TRACE on STM32 pins
+enableTM4C123TRACE <Width> <Drive>: Enable TRACE on STM32 pins
   <Width>   : Number of bits wide (1,2 or 4 only (2 default))
   <Drive>   : Drive strength (0=lowest, 2=highest)
 end
@@ -1514,7 +1514,7 @@ define dwtDEVEVT
   #set language c
 
   if ($argc!=1)
-    help dwtCEVEVT
+    help dwtDEVEVT
   else
     set *($CDBBASE+0xC) |= 0x1000000
     if ($arg0==1)
@@ -1688,7 +1688,7 @@ define ITMId
   #set language c
 
   if (($argc!=1) || ($arg0<0) || ($arg0>127))
-    help ITMBusId
+    help ITMId
   else
     set *($ITMBASE+0xfb0) = 0xc5acce55
     set *($ITMBASE+0xe80) &= ~(0x7F<<16)
@@ -1724,7 +1724,7 @@ define ITMTSPrescale
   #set language c
 
   if (($argc!=1) || ($arg0<0) || ($arg0>3))
-    help ITMGTSFreq
+    help ITMTSPrescale
   else
     set *($ITMBASE+0xfb0) = 0xc5acce55
     set *($ITMBASE+0xe80) &= ~(0x3<<8)
