@@ -16,14 +16,14 @@
     #include <sys/ioctl.h>
     #include <libusb.h>
     #include <termios.h>
+#elif defined LINUX
+    #include <libusb-1.0/libusb.h>
+#elif defined FREEBSD
+    #include <libusb.h>
+#elif defined WIN32
+    #include <libusb.h>
 #else
-    #if defined LINUX
-        #include <libusb-1.0/libusb.h>
-    #elif defined WIN32
-        #include <libusb.h>
-    #else
-        #error "Unknown OS"
-    #endif
+    #error "Unknown OS"
 #endif
 
 #ifdef __cplusplus

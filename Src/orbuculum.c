@@ -30,23 +30,25 @@
     #include <sys/ioctl.h>
     #include <libusb.h>
     #include <termios.h>
-#else
-    #if defined LINUX
-        #include <libusb-1.0/libusb.h>
-        #include <asm/ioctls.h>
-        #if defined TCGETS2
-            #include <asm/termios.h>
-            /* Manual declaration to avoid conflict. */
-            extern int ioctl ( int __fd, unsigned long int __request, ... ) ;
-        #else
-            #include <sys/ioctl.h>
-            #include <termios.h>
-        #endif
-    #elif defined WIN32
-        #include <libusb.h>
+#elif defined LINUX
+    #include <libusb-1.0/libusb.h>
+    #include <asm/ioctls.h>
+    #if defined TCGETS2
+        #include <asm/termios.h>
+        /* Manual declaration to avoid conflict. */
+        extern int ioctl ( int __fd, unsigned long int __request, ... ) ;
     #else
-        #error "Unknown OS"
+        #include <sys/ioctl.h>
+        #include <termios.h>
     #endif
+#elif defined FREEBSD
+    #include <libusb.h>
+    #include <sys/ioctl.h>
+    #include <termios.h>
+#elif defined WIN32
+    #include <libusb.h>
+#else
+    #error "Unknown OS"
 #endif
 #include <signal.h>
 

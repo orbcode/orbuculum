@@ -26,6 +26,10 @@ incdirs = include_directories(['Inc', 'Inc/external'])
 if host_machine.system() == 'windows'
 elif host_machine.system() == 'darwin'
     add_project_arguments('-DOSX', language: 'c')
+elif host_machine.system() == 'freebsd'
+    add_project_arguments('-DFREEBSD', language: 'c')
+    add_project_arguments('-ggdb', language: 'c')
+    add_project_arguments('-D_GNU_SOURCE', language: 'c')
 else
     add_project_arguments('-DLINUX', language: 'c')
     add_project_arguments('-ggdb', language: 'c')

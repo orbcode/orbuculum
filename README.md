@@ -270,7 +270,7 @@ A udev rules files is included in ```Support/60-orbcode.rules``` The default ins
 Building on OSX
 ===============
 
-Recipie instructions courtesy of FrankTheTank;
+Recipe instructions courtesy of FrankTheTank;
 
 * `brew install libusb zmq sdl2`
 
@@ -285,6 +285,21 @@ You can also see notes under [Issue #63](https://github.com/orbcode/orbuculum/is
 mac. You need to watch out for Homebrew binutils...on a M1 Mac you must use the Apple binutils or you will get linker errors. All
 you need to do is move the homebrew binutils out of the way while you do the build....no big deal when you know about it.
 
+
+Building on FreeBSD
+===================
+Install dependencies:
+
+* `pkg install capstone libzmq3 ncurses libelf ninja meson`
+
+then build as normal:
+
+```
+>meson setup build
+>ninja -C build
+```
+
+Note that you will have to alter permissions of the device in `/dev/usb` (run `usbconfig` to find the numbers). This could be automated with a `devd` file.
 
 Building on Windows
 ===================
