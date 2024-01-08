@@ -20,6 +20,10 @@
     #include <string.h>
     #include <poll.h>
 #endif
+#ifdef FREEBSD
+    #include <sys/types.h>
+    #include <sys/socket.h>
+#endif
 #ifdef LINUX
     #include <linux/tcp.h>
 #endif
@@ -37,7 +41,7 @@
     #define MSG_DONTWAIT 0
 #endif
 
-#ifdef OSX
+#if defined OSX || defined FREEBSD
     #ifndef MSG_NOSIGNAL
         #define MSG_NOSIGNAL 0
     #endif
