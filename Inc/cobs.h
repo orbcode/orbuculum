@@ -51,11 +51,11 @@ extern const uint8_t cobs_eop[COBS_EOP_LEN];
 // ====================================================================================================
 
 const uint8_t *COBSgetFrameExtent( const uint8_t *inputEnc, int len );
-const uint8_t *COBSsimpleDecode( const uint8_t *inputEnc, int len, struct Frame *o );
+bool COBSSimpleDecode( const uint8_t *inputEnc, int len, struct Frame *o );
 bool COBSisEOFRAME( const uint8_t *inputEnc );
 
 void COBSEncode( const uint8_t *frontMsg, int lfront, const uint8_t *inputMsg, int len, struct Frame *o );
-  
+
 /* Context free functions */
 void COBSPump( struct COBS *t, uint8_t *incoming, int len,
                void ( *packetRxed )( struct Frame *p, void *param ),

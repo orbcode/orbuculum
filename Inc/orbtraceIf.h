@@ -70,11 +70,11 @@ struct OrbtraceIfDevice
     const struct OrbtraceInterfaceType *type;
 };
 
- struct __attribute__((packed)) dataBlock
+struct __attribute__( ( packed ) ) dataBlock
 {
-    ssize_t fillLevel;                                   /* How full this block is */
-    uint8_t buffer[USB_TRANSFER_SIZE];                   /* Block buffer */
-    struct libusb_transfer *usbtfr;                      /* USB Transfer handle */
+            ssize_t fillLevel;                                   /* How full this block is */
+            uint8_t buffer[USB_TRANSFER_SIZE];                   /* Block buffer */
+            struct libusb_transfer *usbtfr;                      /* USB Transfer handle */
 };
 
 struct OrbtraceIf
