@@ -54,19 +54,19 @@ void COBSEncode( const uint8_t *frontMsg, int lfront, const uint8_t *inputMsg, i
     uint8_t *wp = o->d;
     o->len = 0;
 
-    len+=lfront;
+    len += lfront;
 
-    assert(len<=COBS_OVERALL_MAX_PACKET_LEN);
+    assert( len <= COBS_OVERALL_MAX_PACKET_LEN );
 
     if ( len )
     {
         uint8_t *cp = wp++;
         int seglen = 1;
 
-	for ( int i = 0; len--; i++ )
+        for ( int i = 0; len--; i++ )
         {
-	  /* Take byte either from frontmatter or main message */
-	  const uint8_t* rp = (i<lfront)?&frontMsg[i]:&inputMsg[i-lfront];
+            /* Take byte either from frontmatter or main message */
+            const uint8_t *rp = ( i < lfront ) ? &frontMsg[i] : &inputMsg[i - lfront];
 
             if ( COBS_SYNC_CHAR != *rp )
             {
@@ -89,7 +89,8 @@ void COBSEncode( const uint8_t *frontMsg, int lfront, const uint8_t *inputMsg, i
 
         *cp = seglen;
     }
-    
+
+    /* Packet must end with a sync to define EOP */
     *wp++ = COBS_SYNC_CHAR;
 
     o->len = ( wp - o->d );
@@ -179,7 +180,7 @@ void COBSPump( struct COBS *t, uint8_t *incoming, int len,
 }
 
 // ====================================================================================================
-const uint8_t *COBSSimpleDecode( const uint8_t *inputEnc, int len, struct Frame *o )
+bool COBSSimpleDecode( const uint8_t *inputEnc, int len, struct Frame *o )
 
 /* Decode frame and write decoded frame into provided Frame buffer           */
 /* Returns pointer to first character after frame (should be COBS_SYNC_CHAR) */
@@ -191,7 +192,7 @@ const uint8_t *COBSSimpleDecode( const uint8_t *inputEnc, int len, struct Frame 
 
     uint8_t *op = o->d;
 
-    int interval;
+    uint8_t interval;
 
     /* Deal with possibility of sync chars on the front */
     while  ( ( COBS_SYNC_CHAR == *fp ) && ( fp < efp ) )
@@ -214,26 +215,22 @@ const uint8_t *COBSSimpleDecode( const uint8_t *inputEnc, int len, struct Frame 
             /* Deal with possibility of illegal sync chars in the flow */
             if ( *fp == COBS_SYNC_CHAR )
             {
-                break;
+	      /* return false...no good packet here */
+	      o->len = 0;
+	      return false;
             }
 
             *op++ = *fp++;
         }
 
-        if ( interval < 0xff )
+        if (( interval != 0xff ) && ( *op != COBS_SYNC_CHAR ))
         {
             *op++ = COBS_SYNC_CHAR;
         }
     }
 
-    //    if ( ( COBSisEOFRAME( fp ) ) && ( op - o->d ) )
-    if ( op - o->d )
-    {
-        o->len = op - o->d;
-        return fp;
-    }
-
-    return NULL;
+    o->len = op - o->d;
+    return op != o->d;
 }
 
 // ====================================================================================================
@@ -326,6 +323,31 @@ void _packetRxed ( struct Frame *p, void *param )
 }
 // ====================================================================================================
 
+/* These need to be global to support the callback */
+
+#define TEST_PACKET_LEN (COBS_MAX_PACKET_LEN-5)
+
+uint8_t ipPacket[TEST_PACKET_LEN];
+
+void _packetRxed2( struct Frame *p, void *param )
+{
+    if ( p->len != TEST_PACKET_LEN )
+    {
+      fprintf( stderr, "(%s) Received frame length doesn't match %d vs rxed %d\n",param, TEST_PACKET_LEN, p->len );
+    }
+
+    for ( int i = 0; i < TEST_PACKET_LEN; i++ )
+    {
+        if ( ipPacket[i] != p->d[i] )
+        {
+	  fprintf( stderr, "\n(%s) First inconsistency at displacement %d\n", param, i );
+	  break;
+        }
+    }
+}
+
+/////
+
 int main( int argc, void **argv )
 
 {
@@ -375,7 +397,7 @@ int main( int argc, void **argv )
             continue;
         }
 
-        fprintf( stderr, "OK\n" );
+        fprintf( stderr, "OK %d\n",o.len );
     }
 
 
@@ -423,6 +445,33 @@ int main( int argc, void **argv )
         {
             fprintf( stderr, "OK\n" );
         }
+    }
+
+    //    exit(-1);
+    fprintf( stderr, "Testing multiple full packets...\n" );
+    uint8_t opPacket[TEST_PACKET_LEN];
+    struct Frame opFrame;
+
+    for ( int iteration = 0; iteration < 10000; iteration++ )
+    {
+      fprintf(stderr,"%d ",iteration);
+        /* Build a random packet */
+        for ( int i = 0; i < TEST_PACKET_LEN; i++ )
+        {
+            ipPacket[i] = random() % 256;
+        }
+
+        COBSEncode( NULL, 0, ipPacket, TEST_PACKET_LEN, &opFrame );
+        if (COBSSimpleDecode( opFrame.d, opFrame.len, &d->f ))
+	  {
+	    _packetRxed2( &d->f, "COBSSimpleDecode" );
+	  }
+	else
+	  {
+	    fprintf(stderr,"Bad packet\n");
+	  }
+
+	//	COBSPump( d, ipPacket, COBS_MAX_PACKET_LEN, _packetRxed2, "COBSPump" );
     }
 }
 #endif
