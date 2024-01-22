@@ -595,10 +595,11 @@ static bool _readLines( struct symbol *p )
 
         dwarf_lowpc( cu_die, &cu_low_addr, 0 );
         _processDie( p, dbg, cu_die, 0, filenameN, producerN, cu_low_addr );
-        dwarf_dealloc( dbg, cu_die, DW_DLA_DIE );
 
         /* ...and the source lines */
         _getSourceLines( p, dbg, cu_die );
+
+        dwarf_dealloc( dbg, cu_die, DW_DLA_DIE );
     }
 
     /* 2: We have the lines and functions. Clean them up and interlink them so they're useful to applications */
