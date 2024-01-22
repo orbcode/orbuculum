@@ -347,7 +347,7 @@ static void _processFunctionDie( struct symbol *p, Dwarf_Debug dbg, Dwarf_Die di
     char *name = NULL;
     Dwarf_Addr h = 0;
     Dwarf_Addr l = 0;
-    enum Dwarf_Form_Class formclass;
+    enum Dwarf_Form_Class formclass = DW_FORM_CLASS_UNKNOWN;
 
     Dwarf_Attribute attr_data;
     Dwarf_Half attr_tag;
