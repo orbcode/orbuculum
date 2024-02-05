@@ -87,6 +87,7 @@ set $CPU_EFR32=4
 set $CPU_TM4C=5
 set $CPU_S32K344=6
 set $CPU_IMXRT117X=7
+set $CPU_KINETIS=8
 
 # ====================================================================
 set $CDBBASE=0xE000EDF0
@@ -114,6 +115,21 @@ define _setAddressesIMXRT117X
 
   # Indicate use of IMXRT117X as the target.
   set $CPU = $CPU_IMXRT117X
+end
+
+define _setAddressesKinetis
+  set $SIM_BASE = 0x40047000
+  # sim->sopt2 bit12 is trace clk sel  (reset is system clock)
+  set $SIM_SOPT2 = $SIM_BASE + 0x1004
+  # clkdiv4 has tracediv/tracefrac
+  set $SIM_CLKDIV4 = $SIM_BASE + 0x1068
+  # sim->mcr has traceclk disable
+  set $SIM_MCR = $SIM_BASE + 0x106c
+
+  set $MCM_BASE = 0xE0080000
+  set $MCM_ETBCC = $MCM_BASE + 0x14
+
+  set $CPU = $CPU_KINETIS
 end
 
 define _setAddressesNRF
@@ -841,6 +857,23 @@ define enableIMXRT117XSWO
 end
 
 # ====================================================================
+
+define enableKinetisSWO
+  _setAddressesKinetis
+  set language c
+  # itm->tpiu not disabled
+  set *($MCM_ETBCC) &= ~(1<<5)
+  # trace clk not disabled
+  set *($SIM_MCR) &= ~(1<<31)
+  
+  # SWO is on pin PTA2
+  # set PCRA2->mux = 7
+  set *0x40049008 |= (7<<8)
+  # set GPIOA->PDDR pta2 to be output
+  set *0x400FF014 |= (1<<2)
+
+  set language auto
+end
 
 define enableSTM32SWO
   #set language c
