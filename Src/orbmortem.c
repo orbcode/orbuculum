@@ -998,7 +998,7 @@ static bool _dumpBuffer( struct RunTime *r )
     {
         symbolDelete( r->s );
 
-        if ( !( r->s = symbolAquire( r->options->elffile, true, true ) ) )
+        if ( !( r->s = symbolAcquire( r->options->elffile, true, true ) ) )
         {
             genericsReport( V_ERROR, "Elf file or symbols in it not found" EOL );
             return false;
@@ -1270,7 +1270,7 @@ int main( int argc, char *argv[] )
     }
 
     /* Check we've got _some_ symbols to start from */
-    _r.s = symbolAquire( _r.options->elffile, true, true );
+    _r.s = symbolAcquire( _r.options->elffile, true, true );
 
     if ( !_r.s )
     {

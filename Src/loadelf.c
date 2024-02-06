@@ -1102,7 +1102,7 @@ bool symbolSetValid( struct symbol *p )
 
 // ====================================================================================================
 
-struct symbol *symbolAquire( char *filename, bool loadmem, bool loadsource )
+struct symbol *symbolAcquire( char *filename, bool loadmem, bool loadsource )
 
 /* Collect symbol set with specified components */
 
@@ -1237,11 +1237,7 @@ void main( int argc, char *argv[] )
 
 {
     enum instructionClass ic;
-<<<<<<< HEAD
-    struct symbol *p = symbolAcquire( argv[1], true, true, true );
-=======
-    struct symbol *p = symbolAquire( argv[1], true, true );
->>>>>>> loadelf_fixup
+    struct symbol *p = symbolAcquire( argv[1], true, true );
 
     if ( !p )
     {
