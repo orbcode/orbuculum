@@ -125,7 +125,7 @@ char *symbolDisassembleLine( struct symbol *p, enum instructionClass *ic, symbol
 void symbolDelete( struct symbol *p );
 
 /* Collect symbol set with specified components */
-struct symbol *symbolAquire( char *filename, bool loadmem, bool loadsource );
+struct symbol *symbolAcquire( char *filename, bool loadmem, bool loadsource );
 
 /* Check if current symbols are valid */
 bool symbolSetValid( struct symbol *p );

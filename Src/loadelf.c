@@ -347,7 +347,7 @@ static void _processFunctionDie( struct symbol *p, Dwarf_Debug dbg, Dwarf_Die di
     char *name = NULL;
     Dwarf_Addr h = 0;
     Dwarf_Addr l = 0;
-    enum Dwarf_Form_Class formclass;
+    enum Dwarf_Form_Class formclass = DW_FORM_CLASS_UNKNOWN;
 
     Dwarf_Attribute attr_data;
     Dwarf_Half attr_tag;
@@ -384,7 +384,12 @@ static void _processFunctionDie( struct symbol *p, Dwarf_Debug dbg, Dwarf_Die di
 
     specification_die = die;
 
-    if ( DW_DLV_OK != dwarf_diename( die, &name, 0 ) )
+    /* Get the possibly mangled linkage name if it exists */
+    if ( DW_DLV_OK == dwarf_attr( die, DW_AT_linkage_name, &attr_data, 0) )
+    {
+        dwarf_formstring( attr_data, &name, 0 );
+    }
+    else if ( DW_DLV_OK != dwarf_diename( die, &name, 0 ) )
     {
         /* Name will be hidden in a specification reference */
         attr_tag = DW_AT_specification;
@@ -1102,7 +1107,7 @@ bool symbolSetValid( struct symbol *p )
 
 // ====================================================================================================
 
-struct symbol *symbolAquire( char *filename, bool loadmem, bool loadsource )
+struct symbol *symbolAcquire( char *filename, bool loadmem, bool loadsource )
 
 /* Collect symbol set with specified components */
 
@@ -1237,11 +1242,7 @@ void main( int argc, char *argv[] )
 
 {
     enum instructionClass ic;
-<<<<<<< HEAD
-    struct symbol *p = symbolAcquire( argv[1], true, true, true );
-=======
-    struct symbol *p = symbolAquire( argv[1], true, true );
->>>>>>> loadelf_fixup
+    struct symbol *p = symbolAcquire( argv[1], true, true );
 
     if ( !p )
     {
