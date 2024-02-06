@@ -384,7 +384,12 @@ static void _processFunctionDie( struct symbol *p, Dwarf_Debug dbg, Dwarf_Die di
 
     specification_die = die;
 
-    if ( DW_DLV_OK != dwarf_diename( die, &name, 0 ) )
+    /* Get the possibly mangled linkage name if it exists */
+    if ( DW_DLV_OK == dwarf_attr( die, DW_AT_linkage_name, &attr_data, 0) )
+    {
+        dwarf_formstring( attr_data, &name, 0 );
+    }
+    else if ( DW_DLV_OK != dwarf_diename( die, &name, 0 ) )
     {
         /* Name will be hidden in a specification reference */
         attr_tag = DW_AT_specification;
