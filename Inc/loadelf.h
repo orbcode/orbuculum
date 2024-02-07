@@ -42,6 +42,7 @@ struct symbolLineStore
 struct symbolFunctionStore
 {
     char                      *funcname;   /* What is the name of the function */
+    char                      *manglename; /* What is the manged name, if any */
     unsigned int               producer;   /* What code/options produced it? */
     unsigned int               filename;   /* What filename + path off the source root? */
     unsigned int               startline;  /* Start line in source file of function */

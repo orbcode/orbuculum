@@ -345,6 +345,7 @@ static void _processFunctionDie( struct symbol *p, Dwarf_Debug dbg, Dwarf_Die di
 
 {
     char *name = NULL;
+    char *manglename = NULL;    
     Dwarf_Addr h = 0;
     Dwarf_Addr l = 0;
     enum Dwarf_Form_Class formclass = DW_FORM_CLASS_UNKNOWN;
@@ -387,9 +388,10 @@ static void _processFunctionDie( struct symbol *p, Dwarf_Debug dbg, Dwarf_Die di
     /* Get the possibly mangled linkage name if it exists */
     if ( DW_DLV_OK == dwarf_attr( die, DW_AT_linkage_name, &attr_data, 0) )
     {
-        dwarf_formstring( attr_data, &name, 0 );
+        dwarf_formstring( attr_data, &manglename, 0 );
     }
-    else if ( DW_DLV_OK != dwarf_diename( die, &name, 0 ) )
+    
+    if ( DW_DLV_OK != dwarf_diename( die, &name, 0 ) )
     {
         /* Name will be hidden in a specification reference */
         attr_tag = DW_AT_specification;
@@ -414,6 +416,7 @@ static void _processFunctionDie( struct symbol *p, Dwarf_Debug dbg, Dwarf_Die di
         p->nfunc++;
 
         newFunc->funcname  = strdup( name );
+	newFunc->manglename= strdup( manglename );
         newFunc->producer  = producerN;
         newFunc->filename  = filenameN;
         newFunc->lowaddr   = l;
@@ -915,6 +918,12 @@ void symbolDelete( struct symbol *p )
                 free( f->funcname );
             }
 
+            if ( f->manglename )
+            {
+                /* Remove the mangled name, assuming we have one */
+                free( f->manglename );
+            }
+
             if ( f->line )
             {
                 /* ...and any source code cross-references */
@@ -1185,7 +1194,7 @@ bool _listFunctions( struct symbol *p, bool includeLines )
 
     while ( f = symbolFunctionIndex( p, iter++ ) )
     {
-        fprintf( stderr, MEMADDRF "..." MEMADDRF " %s ( %s %d,%d )" EOL, f->lowaddr, f->highaddr, f->funcname, symbolGetFilename( p, f->filename ), f->startline, f->startcol );
+      fprintf( stderr, MEMADDRF "..." MEMADDRF " %s ( %s %d,%d ) %s" EOL, f->lowaddr, f->highaddr, f->funcname, symbolGetFilename( p, f->filename ), f->startline, f->startcol, f->manglename?f->manglename:"" );
 
         if ( includeLines )
         {
