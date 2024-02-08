@@ -345,7 +345,7 @@ static void _processFunctionDie( struct symbol *p, Dwarf_Debug dbg, Dwarf_Die di
 
 {
     char *name = NULL;
-    char *manglename = NULL;    
+    char *manglename = NULL;
     Dwarf_Addr h = 0;
     Dwarf_Addr l = 0;
     enum Dwarf_Form_Class formclass = DW_FORM_CLASS_UNKNOWN;
@@ -386,11 +386,11 @@ static void _processFunctionDie( struct symbol *p, Dwarf_Debug dbg, Dwarf_Die di
     specification_die = die;
 
     /* Get the possibly mangled linkage name if it exists */
-    if ( DW_DLV_OK == dwarf_attr( die, DW_AT_linkage_name, &attr_data, 0) )
+    if ( DW_DLV_OK == dwarf_attr( die, DW_AT_linkage_name, &attr_data, 0 ) )
     {
         dwarf_formstring( attr_data, &manglename, 0 );
     }
-    
+
     if ( DW_DLV_OK != dwarf_diename( die, &name, 0 ) )
     {
         /* Name will be hidden in a specification reference */
@@ -416,11 +416,15 @@ static void _processFunctionDie( struct symbol *p, Dwarf_Debug dbg, Dwarf_Die di
         p->nfunc++;
 
         newFunc->funcname  = strdup( name );
-	newFunc->manglename= strdup( manglename );
         newFunc->producer  = producerN;
         newFunc->filename  = filenameN;
         newFunc->lowaddr   = l;
         newFunc->highaddr  = h - 1;
+
+        if ( manglename )
+        {
+            newFunc->manglename = strdup( manglename );
+        }
 
         /* Collect start of function line and column */
         attr_tag = DW_AT_decl_line;
@@ -710,11 +714,12 @@ static bool _loadSource( struct symbol *p )
 
             /* Spin forwards for next newline or eof */
             while ( ( --l > 0 ) && ( *r++ != '\n' ) ) {};
-	    if (l)
-	      {
-		*r++ = 0;
-		l--;
-	      }
+
+            if ( l )
+            {
+                *r++ = 0;
+                l--;
+            }
         }
     }
 
@@ -1194,7 +1199,8 @@ bool _listFunctions( struct symbol *p, bool includeLines )
 
     while ( f = symbolFunctionIndex( p, iter++ ) )
     {
-      fprintf( stderr, MEMADDRF "..." MEMADDRF " %s ( %s %d,%d ) %s" EOL, f->lowaddr, f->highaddr, f->funcname, symbolGetFilename( p, f->filename ), f->startline, f->startcol, f->manglename?f->manglename:"" );
+        fprintf( stderr, MEMADDRF "..." MEMADDRF " %s ( %s %d,%d ) %s" EOL, f->lowaddr, f->highaddr, f->funcname, symbolGetFilename( p, f->filename ), f->startline, f->startcol,
+                 f->manglename ? f->manglename : "" );
 
         if ( includeLines )
         {

@@ -190,8 +190,6 @@ static void _printHelp( const char *const progName )
     genericsPrintf( "    -V, --version:      Print version and exit" EOL );
     genericsPrintf( EOL "(Will connect one port higher than that set in -s when TPIU is not used)" EOL );
     genericsPrintf(     "(this will automatically select the second output stream from orb TPIU.)" EOL );
-    genericsPrintf( EOL "Environment Variables;" EOL );
-    genericsPrintf( "  OBJDUMP: to use non-standard objdump binary" EOL );
 }
 // ====================================================================================================
 void _printVersion( void )
@@ -905,7 +903,7 @@ static void _traceCB( void *d )
                                            ( ( !linearRun ) && ( r->i.protocol == TRACE_PROT_ETM4 ) && ( ( !( ic & LE_IC_JUMP ) ) || ( disposition & 1 ) ) ) ||
 
                                            /* MTB case - a linear run to last address */
-                                           ( ( linearRun ) &&
+                                           ( ( linearRun ) && ( r->i.protocol == TRACE_PROT_MTB ) &&
                                              ( ( ( r->op.workingAddr != targetAddr ) && ( ! ( ic & LE_IC_JUMP ) ) )  ||
                                                ( r->op.workingAddr == targetAddr )
                                              ) ) );
@@ -944,6 +942,7 @@ static void _traceCB( void *d )
                     /* Update working address according to if jump was taken */
                     if ( ic & LE_IC_IMMEDIATE )
                     {
+                        _traceReport( V_DEBUG, "Immediate address %8x", newaddr );
                         /* We have a good address, so update with it */
                         r->op.workingAddr = newaddr;
                     }
@@ -978,7 +977,7 @@ static void _traceCB( void *d )
         }
         else
         {
-            _appendRefToOPBuffer( r, l, r->op.currentLine, LT_ASSEMBLY, "\t\tASSEMBLY NOT FOUND" EOL );
+            _appendToOPBuffer( r, l, r->op.currentLine, LT_ASSEMBLY, "%8x:\tASSEMBLY NOT FOUND" EOL, r->op.workingAddr );
             r->op.workingAddr += 2;
             disposition >>= 1;
             incAddr--;
