@@ -1175,9 +1175,10 @@ static void _doSave( struct RunTime *r, bool includeDebug )
     {
         p = r->opText[w].buffer;
 
-        /* Skip debug lines unless specifically told to include them */
-        if ( ( r->opText[w].lt == LT_DEBUG ) && ( !includeDebug ) )
+        /* Skip blank and debug lines unless specifically told to include them */
+        if ( !p || ( ( r->opText[w].lt == LT_DEBUG ) && ( !includeDebug ) ) )
         {
+            w++;
             continue;
         }
 
@@ -1483,7 +1484,7 @@ int main( int argc, char *argv[] )
                     break;
 
                 case SIO_EV_SAVE: // ------------------ Request for file save -------------------------------------------
-                    if ( _r.options->file )
+                    if ( !_r.options->file )
                     {
                         _doSave( &_r, false );
                     }
