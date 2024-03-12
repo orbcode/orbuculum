@@ -831,7 +831,7 @@ static void _processBlock( struct RunTime *r, ssize_t fillLevel, uint8_t *buffer
 
         if ( r->opFileHandle )
         {
-            if ( write( r->opFileHandle, buffer, fillLevel ) < 0 )
+            if ( write( r->opFileHandle, buffer, fillLevel ) <= 0 )
             {
                 genericsExit( -3, "Writing to file failed" EOL );
             }
@@ -1299,24 +1299,7 @@ static int _fileFeeder( struct RunTime *r )
         struct dataBlock *rxBlock = &r->rawBlock[r->wp];
         rxBlock->fillLevel = read( r->f, rxBlock->buffer, USB_TRANSFER_SIZE );
 
-        /* We can probably read from file faster than we can process.... */
-        _dataAvailable( r );
-        int nwp = ( r->wp + 1 ) % NUM_RAW_BLOCKS;
-
-        if ( r->options->paceDelay )
-        {
-            usleep( r->options->paceDelay );
-        }
-
-        /* Spin waiting for buffer space to become available */
-        while ( nwp == r->rp )
-        {
-            usleep( INTERVAL_1MS );
-        }
-
-        r->wp = nwp;
-
-        if ( !rxBlock->fillLevel )
+        if ( rxBlock->fillLevel <= 0 )
         {
             if ( r->options->fileTerminate )
             {
@@ -1328,6 +1311,23 @@ static int _fileFeeder( struct RunTime *r )
                 usleep( INTERVAL_100MS );
                 continue;
             }
+        }
+
+        int nwp = ( r->wp + 1 ) % NUM_RAW_BLOCKS;
+
+        /* Spin waiting for buffer space to become available */
+        while ( nwp == r->rp )
+        {
+            usleep( INTERVAL_1MS );
+        }
+
+        r->wp = nwp;
+
+        _dataAvailable( r );
+
+        if ( r->options->paceDelay )
+        {
+            usleep( r->options->paceDelay );
         }
     }
 
