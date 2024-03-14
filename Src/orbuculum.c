@@ -87,6 +87,7 @@ struct Options
     char *otcl;                                          /* Orbtrace command line options */
     uint32_t intervalReportTime;                         /* If we want interval reports about performance */
     bool mono;                                           /* Supress colour in output */
+    int paceDelay;                                       /* Delay between blocks of data transmission in file readout */
     char *channelList;                                   /* List of TPIU channels to be serviced */
     bool hiresTime;                                      /* Use hiresolution time (shorter timeouts...more accurate but higher load */
     char *sn;                                            /* Any part serial number for identifying a specific device */
@@ -111,6 +112,7 @@ struct RunTime
     struct Frame cobsOtg;                                /* Outgoing COBS frame for legacy use */
     struct OrbtraceIf  *o;                               /* For accessing ORBTrace devices + BMPs */
 
+    uint64_t  intervalBytes;                             /* Number of bytes transferred in current interval */
     uint64_t  intervalRawBytes;                          /* Number of bytes transferred in current interval */
     uint64_t cobsDataLenRxed;                            /* Number of bytes of decoded COBS data */
 
@@ -362,6 +364,7 @@ void _printHelp( const char *const progName )
     genericsPrintf( "    -o, --output-file:   <filename> to be used for dump file" EOL );
     genericsPrintf( "    -O, --orbtrace:      \"<options>\" run orbtrace with specified options on each new ORBTrace device connect" EOL );
     genericsPrintf( "    -p, --serial-port:   <serialPort> to use" EOL );
+    genericsPrintf( "    -P, --pace:          <microseconds> delay in block of data transmission to clients. Used when source is a file." EOL );
     genericsPrintf( "    -s, --server:        <Server>:<Port> to use" EOL );
     genericsPrintf( "    -T, --tpiu:          Decode TPIU channels (and strip TPIU framing from output flows)" EOL );
     genericsPrintf( "    -t, --tag:           <stream,stream....> List of streams to decode (and onward route) from COBS or TPIU frames" EOL );
@@ -391,6 +394,7 @@ static struct option _longOptions[] =
     {"output-file", required_argument, NULL, 'o'},
     {"orbtrace", required_argument, NULL, 'O'},
     {"serial-port", required_argument, NULL, 'p'},
+    {"pace", required_argument, NULL, 'P'},
     {"server", required_argument, NULL, 's'},
     {"tpiu", required_argument, NULL, 'T'},
     {"tag", required_argument, NULL, 't'},
@@ -405,7 +409,7 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
     int c, optionIndex = 0;
 #define DELIMITER ','
 
-    while ( ( c = getopt_long ( argc, argv, "a:Ef:hHVl:m:Mn:o:O:p:s:Tt:v:", _longOptions, &optionIndex ) ) != -1 )
+    while ( ( c = getopt_long ( argc, argv, "a:Ef:hHVl:m:Mn:o:O:p:P:s:Tt:v:", _longOptions, &optionIndex ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -481,6 +485,12 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
 
             case 'p':
                 r->options->port = optarg;
+                break;
+
+            // ------------------------------------
+
+            case 'P':
+                r->options->paceDelay = atoi( optarg );
                 break;
 
             // ------------------------------------
@@ -604,6 +614,7 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
 
     if ( r->options->file )
     {
+        genericsReport( V_INFO, "Pace Delay     : %dus" EOL, r->options->paceDelay );
         genericsReport( V_INFO, "Input File  : %s", r->options->file );
 
         if ( r->options->fileTerminate )
@@ -619,6 +630,12 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
     if ( ( r->options->file ) && ( ( r->options->port ) || ( r->options->nwserverPort ) ) )
     {
         genericsReport( V_ERROR, "Cannot specify file and port or NW Server at same time" EOL );
+        return false;
+    }
+
+    if ( (     r->options->paceDelay ) && ( !r->options->file ) )
+    {
+        genericsReport( V_ERROR, "Pace Delay only makes sense when input is from a file" EOL );
         return false;
     }
 
@@ -730,6 +747,7 @@ static void _purgeBlock( struct RunTime *r )
 
             /* The COBs encoded version goes out on the combined COBs channel, with a specific channel header */
             int j = h->strippedBlock->fillLevel;
+
             const uint8_t frontMatter[1] = { h->channel };
             const uint8_t *b = h->strippedBlock->buffer;
 
@@ -791,6 +809,10 @@ static void _TPIUpacketRxed( enum TPIUPumpEvent e, struct TPIUPacket *p, void *p
                 {
                     /* We must have found a match for this at some point, so add it to the queue */
                     h->strippedBlock->buffer[h->strippedBlock->fillLevel++] = p->packet[g].d;
+                }
+                else
+                {
+                    genericsReport( V_WARN, "No handler for %d" EOL, p->packet[g].s );
                 }
             }
 
@@ -901,7 +923,7 @@ static void _processBlock( struct RunTime *r, ssize_t fillLevel, uint8_t *buffer
 
         if ( r->opFileHandle )
         {
-            if ( write( r->opFileHandle, buffer, fillLevel ) < 0 )
+            if ( write( r->opFileHandle, buffer, fillLevel ) <= 0 )
             {
                 genericsExit( -3, "Writing to file failed" EOL );
             }
@@ -1421,17 +1443,21 @@ static int _fileFeeder( struct RunTime *r )
             }
         }
 
-        /* We can probably read from file faster than we can process.... */
-        _dataAvailable( r );
         int nwp = ( r->wp + 1 ) % NUM_RAW_BLOCKS;
 
         /* Spin waiting for buffer space to become available */
         while ( nwp == r->rp )
         {
-            usleep( INTERVAL_100MS );
+            usleep( INTERVAL_1MS );
         }
 
         r->wp = nwp;
+        _dataAvailable( r );
+
+        if ( r->options->paceDelay )
+        {
+            usleep( r->options->paceDelay );
+        }
     }
 
     r->conn = false;
@@ -1587,6 +1613,8 @@ int main( int argc, char *argv[] )
             return -2;
         }
     }
+
+    sleep( 3 );
 
     if ( ( _r.options->nwserverPort ) || ( _r.options->port ) || ( _r.options->file ) )
     {

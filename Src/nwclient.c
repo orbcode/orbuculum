@@ -41,9 +41,6 @@
     #endif
 #endif
 
-/* Shared ring buffer for data */
-#define SHARED_BUFFER_SIZE (8*TRANSFER_SIZE)
-
 /* Master structure for the set of nwclients */
 struct nwclientsHandle
 
@@ -51,12 +48,8 @@ struct nwclientsHandle
     volatile struct nwClient *firstClient;    /* Head of linked list of network clients */
     pthread_mutex_t           clientList;     /* Lock for list of network clients */
 
-    int                       wp;             /* Next write to shared buffer */
-    uint8_t sharedBuffer[SHARED_BUFFER_SIZE]; /* Data waiting to be sent to the clients */
-
     int                       sockfd;         /* The socket for the inferior */
     pthread_t                 ipThread;       /* The listening thread for n/w clients */
-    bool                      finish;         /* Its time to leave */
 };
 
 /* Descriptor for individual connected network clients */
@@ -64,17 +57,12 @@ struct nwClient
 
 {
     int                       handle;            /* Handle to client */
-    pthread_t                 thread;            /* Execution thread */
     struct nwclientsHandle   *parent;            /* Who owns this list */
     volatile struct nwClient *nextClient;
     volatile struct nwClient *prevClient;
-    bool                      finish;            /* Flag indicating it's time to cease operation */
-    pthread_cond_t            dataAvailable;     /* Semaphore counting data for clients */
-    pthread_mutex_t           dataAvailable_m;   /* Mutex for counting data for clients */
 
     /* Parameters used to run the client */
     int                       portNo;            /* Port of connection */
-    int                       rp;                /* Current read pointer in data stream */
 };
 
 // ====================================================================================================
@@ -107,19 +95,10 @@ static int _lock_with_timeout( pthread_mutex_t *mutex, const struct timespec *ts
 // ====================================================================================================
 // Network server implementation for raw SWO feed
 // ====================================================================================================
-static void _clientRemove( struct nwClient *c )
+static void _clientRemoveNoLock( volatile struct nwClient *c )
 
 {
-    const struct timespec ts = {.tv_sec = 1, .tv_nsec = 0};
-
     close( c->portNo );
-
-    /* First of all, make sure we can get access to the client list */
-
-    if ( _lock_with_timeout( &c->parent->clientList, &ts ) < 0 )
-    {
-        genericsExit( -1, "Failed to acquire mutex" EOL );
-    }
 
     if ( c->prevClient )
     {
@@ -135,58 +114,8 @@ static void _clientRemove( struct nwClient *c )
         c->nextClient->prevClient = c->prevClient;
     }
 
-    /* OK, we made our modifications */
-    pthread_mutex_unlock( &c->parent->clientList );
-
     /* Remove the memory that was allocated for this client */
-    free( c );
-}
-// ====================================================================================================
-static void *_client( void *args )
-
-/* Handle an individual network client account */
-
-{
-    struct nwClient *c = ( struct nwClient * )args;
-    ssize_t readDataLen;
-    uint8_t *p;
-    ssize_t sent = 0;
-
-    while ( !c->finish )
-    {
-        /* Spin until we're told there's something to send along */
-        pthread_cond_wait( &c->dataAvailable, &c->dataAvailable_m );
-
-        while ( c->rp != c->parent->wp )
-        {
-            /* Data to send is either to the end of the ring buffer or to the wp, whichever is first */
-            readDataLen = ( c->rp < c->parent->wp ) ? c->parent->wp - c->rp : SHARED_BUFFER_SIZE - c->rp;
-            p = &( c->parent->sharedBuffer[c->rp] );
-            c->rp = ( c->rp + readDataLen ) % SHARED_BUFFER_SIZE;
-
-            while ( ( readDataLen > 0 ) && ( sent >= 0 ) )
-            {
-                sent = send( c->portNo, ( const void * )p, readDataLen, MSG_NOSIGNAL );
-                p += sent;
-                readDataLen -= sent;
-            }
-
-            if ( c->finish || readDataLen )
-            {
-                /* This port went away, so remove it */
-                if ( !c->finish )
-                {
-                    genericsReport( V_INFO, "Connection dropped" EOL );
-                }
-
-                c->finish = true;
-                break;
-            }
-        }
-    }
-
-    _clientRemove( c );
-    return NULL;
+    free( ( void * )c );
 }
 // ====================================================================================================
 static void *_listenTask( void *arg )
@@ -207,11 +136,11 @@ static void *_listenTask( void *arg )
     clilen = sizeof( cli_addr );
     listen( h->sockfd, 5 );
 
-    while ( !h->finish )
+    while ( true )
     {
         newsockfd = accept( h->sockfd, ( struct sockaddr * ) &cli_addr, &clilen );
 
-        if ( h->finish )
+        if ( newsockfd < 0 )
         {
             close( newsockfd );
             break;
@@ -226,48 +155,32 @@ static void *_listenTask( void *arg )
 
         client->parent = h;
         client->portNo = newsockfd;
-        client->rp     = h->wp;
 
-        if ( pthread_mutex_init( &client->dataAvailable_m, NULL ) != 0 )
+        /* Hook into linked list */
+        if ( _lock_with_timeout( &h->clientList, &ts ) < 0 )
         {
-            genericsExit( -1, "Failed to establish mutex for condition variable" EOL );
+            genericsExit( -1, "Failed to acquire mutex" EOL );
         }
 
-        if ( pthread_cond_init( &client->dataAvailable, NULL ) != 0 )
+
+        client->nextClient = h->firstClient;
+        client->prevClient = NULL;
+
+        if ( client->nextClient )
         {
-            genericsExit( -1, "Failed to establish condition variable" EOL );
+            client->nextClient->prevClient = client;
         }
 
-        if ( pthread_create( &( client->thread ), NULL, &_client, client ) )
-        {
-            genericsExit( -1, "Failed to create thread" EOL );
-        }
-        else
-        {
-            /* Auto-cleanup for this thread */
-            pthread_detach( client->thread );
+        h->firstClient = client;
 
-            /* Hook into linked list */
-            if ( _lock_with_timeout( &h->clientList, &ts ) < 0 )
-            {
-                genericsExit( -1, "Failed to acquire mutex" EOL );
-            }
-
-            client->nextClient = h->firstClient;
-            client->prevClient = NULL;
-
-            if ( client->nextClient )
-            {
-                client->nextClient->prevClient = client;
-            }
-
-            h->firstClient = client;
-
-            pthread_mutex_unlock( &h->clientList );
-        }
+        pthread_mutex_unlock( &h->clientList );
     }
 
-    close( h->sockfd );
+    if ( h->sockfd )
+    {
+        close( h->sockfd );
+    }
+
     return NULL;
 }
 // ====================================================================================================
@@ -281,38 +194,41 @@ void nwclientSend( struct nwclientsHandle *h, uint32_t len, const uint8_t *ipbuf
 
 {
     const struct timespec ts = {.tv_sec = 1, .tv_nsec = 0};
-    int newWp = ( h->wp + len );
-    int toEnd = ( newWp > SHARED_BUFFER_SIZE ) ? SHARED_BUFFER_SIZE - h->wp : len;
-    int fromStart = len - toEnd;
 
-    /* Copy the received data into the shared buffer */
-    memcpy( &h->sharedBuffer[h->wp], ipbuffer, toEnd );
-
-    if ( fromStart )
+    if ( _lock_with_timeout( &h->clientList, &ts ) < 0 )
     {
-        memcpy( h->sharedBuffer, &ipbuffer[toEnd], fromStart );
+        genericsExit( -1, "Failed to acquire mutex" EOL );
     }
 
-    h->wp = newWp % SHARED_BUFFER_SIZE;
+    /* Now kick all the clients that new data arrived for them to distribute */
+    volatile struct nwClient *n = h->firstClient;
 
-    if ( !h->finish )
+    while ( n )
     {
-        if ( _lock_with_timeout( &h->clientList, &ts ) < 0 )
+        ssize_t t = len;
+        ssize_t sent = 0;
+        void *p = ( void * )ipbuffer;
+
+        while ( t && ( sent >= 0 ) )
         {
-            genericsExit( -1, "Failed to acquire mutex" EOL );
+            sent = send( n->portNo, p, t, MSG_NOSIGNAL );
+            p += sent;
+            t -= sent;
         }
 
-        /* Now kick all the clients that new data arrived for them to distribute */
-        volatile struct nwClient *n = h->firstClient;
-
-        while ( n )
+        if ( t )
         {
-            pthread_cond_signal( ( pthread_cond_t * )&n->dataAvailable );
+            volatile struct nwClient *newn = n->nextClient;
+            _clientRemoveNoLock( n );
+            n = newn;
+        }
+        else
+        {
             n = n->nextClient;
         }
-
-        pthread_mutex_unlock( &h->clientList );
     }
+
+    pthread_mutex_unlock( &h->clientList );
 }
 // ====================================================================================================
 struct nwclientsHandle *nwclientStart( int port )
@@ -378,8 +294,10 @@ void nwclientShutdown( struct nwclientsHandle *h )
         return;
     }
 
-    /* Flag that we're ending */
-    h->finish = true;
+    /* Flag that we're ending - this ensures the listening thread dies */
+    int tsockfd = h->sockfd;
+    h->sockfd = 0;
+    close( tsockfd );
 
     if ( _lock_with_timeout( &h->clientList, &ts ) < 0 )
     {
@@ -388,30 +306,15 @@ void nwclientShutdown( struct nwclientsHandle *h )
 
     volatile struct nwClient *c = h->firstClient;
 
-    /* Tell all the clients to terminate */
+    /* Terminate all the clients */
     while ( c )
     {
-        c->finish = true;
-
-        /* Closing the connection will kill the client */
-        close( c->handle );
-
-        /* This is safe because we are locked by the mutex */
-        c = c->nextClient;
+        volatile struct nwClient *newc = c->nextClient;
+        _clientRemoveNoLock( c );
+        c = newc;
     }
 
     pthread_mutex_unlock( &h->clientList );
-}
-// ====================================================================================================
-bool nwclientShutdownComplete( struct nwclientsHandle *h )
-
-{
-    if ( ! h->firstClient )
-    {
-        free( h );
-        return true;
-    }
-
-    return false;
+    free( h );
 }
 // ====================================================================================================

@@ -384,9 +384,13 @@ For `orbuculum`, the specific command line options of note are;
 
   `-p, --serial-port [serialPort]`: to use. If not specified then the program defaults to Blackmagic probe.
 
+  `-P, --pace [microseconds>]`: delay in block of data transmission to clients. Used when source is a file.
+
   `-s, --server [address]:[port]`: Set address for explicit TCP Source connection, (default none:2332).
 
-  `-t, --tpiu x,y,...`: Remove TPIU formatting and issue streams x, y etc over incrementing IP port numbers.
+  `-T, --tpiu`: Remove TPIU formatting from incoming data stream.
+
+  `-t, --tag x,y,...`: List of streams to decode (and onward route) from the probe (low stream numbers are TPIU channels).
 
 
 Orbfifo
