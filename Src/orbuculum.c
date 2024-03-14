@@ -118,6 +118,7 @@ struct RunTime
     struct Frame cobsOtg;                                /* Outgoing COBS frame for legacy use */
     struct OrbtraceIf  *o;                               /* For accessing ORBTrace devices + BMPs */
 
+    uint64_t  intervalBytes;                             /* Number of bytes transferred in current interval */
     uint64_t  intervalRawBytes;                          /* Number of bytes transferred in current interval */
     uint64_t cobsDataLenRxed;                            /* Number of bytes of decoded COBS data */
 
@@ -538,7 +539,6 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
                     genericsReport( V_ERROR, "paceDelay is out of range" EOL );
                     return false;
                 }
-
                 break;
 
             // ------------------------------------
@@ -672,8 +672,8 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
 
     if ( r->options->file )
     {
-        genericsReport( V_INFO, "Input File     : %s" EOL, r->options->file );
         genericsReport( V_INFO, "Pace Delay     : %dus" EOL, r->options->paceDelay );
+        genericsReport( V_INFO, "Input File  : %s", r->options->file );
 
         if ( r->options->fileTerminate )
         {
@@ -811,6 +811,7 @@ static void _purgeBlock( struct RunTime *r )
 
             /* The COBs encoded version goes out on the combined COBs channel, with a specific channel header */
             int j = h->strippedBlock->fillLevel;
+
             const uint8_t frontMatter[1] = { h->channel };
             const uint8_t *b = h->strippedBlock->buffer;
 
@@ -1518,7 +1519,6 @@ static int _fileFeeder( struct RunTime *r )
         }
 
         r->wp = nwp;
-
         _dataAvailable( r );
 
         if ( r->options->paceDelay )
@@ -1681,6 +1681,8 @@ int main( int argc, char *argv[] )
             return -2;
         }
     }
+
+    sleep( 3 );
 
     if ( ( _r.options->nwserverPort ) || ( _r.options->port ) || ( _r.options->file ) )
     {
