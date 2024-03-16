@@ -22,6 +22,8 @@ static const struct OrbtraceInterfaceType _validDevices[DEVICE_NUM_DEVICES] =
     { 0,      0      }
 };
 
+#define LAST_NONCOBS_ORBTRACE "v1.3.2-0"
+
 /* BMP Interface and endpoint are fixed, so we can return those on request */
 #define BMP_IFACE (5)
 #define BMP_EP    (0x85)
@@ -468,6 +470,7 @@ bool OrbtraceGetIfandEP( struct OrbtraceIf *o )
             o->iface = BMP_IFACE;
             o->ep = BMP_EP;
             o->isOrbtrace = false;
+            o->supportsCOBS = false;
             break;
 
         case DEVICE_ORBTRACE_MINI: // -------------------------------------------------------------------
@@ -519,6 +522,7 @@ bool OrbtraceGetIfandEP( struct OrbtraceIf *o )
             }
 
             o->isOrbtrace = true;
+            o->supportsCOBS = strncmp( LAST_NONCOBS_ORBTRACE, o->devices[o->activeDevice].version, strlen( LAST_NONCOBS_ORBTRACE ) ) > 0;
             break;
     }
 
