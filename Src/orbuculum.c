@@ -71,9 +71,6 @@
 #define ORBTRACE "orbtrace"
 #define ORBTRACEENVNAME "ORBTRACE"
 
-// Define this to use original clean ORBTRACE code
-#define LEGACY_ORBTRACE 1
-
 /* Record for options, either defaults or from command line */
 struct Options
 {
@@ -750,32 +747,31 @@ void *_checkInterval( void *params )
             h = r->handler;
             uint64_t totalDat = 0;
 
-            /* If we are decoding from TPIU then calculate per channel */
-            if ( ( r->intervalRawBytes ) && ( r->options->useTPIU ) )
+            if ( r->intervalRawBytes )
             {
-                for ( int chIndex = 0; chIndex < r->numHandlers; chIndex++ )
+                if ( r->options->useTPIU )
                 {
-                    genericsPrintf( " %d:%3d%% ",  h->channel, ( h->intervalBytes * 100 ) / r->intervalRawBytes );
-                    totalDat += h->intervalBytes;
-                    h->intervalBytes = 0;
-                    h++;
+                    /* If we are decoding from TPIU then calculate per channel */
+                    for ( int chIndex = 0; chIndex < r->numHandlers; chIndex++ )
+                    {
+                        genericsPrintf( " %d:%3d%% ",  h->channel, ( h->intervalBytes * 100 ) / r->intervalRawBytes );
+                        totalDat += h->intervalBytes;
+                        h->intervalBytes = 0;
+                        h++;
+                    }
+
+                    genericsPrintf( " Waste:%3d%% ",  100 - ( ( totalDat * 100 ) / r->intervalRawBytes ) );
                 }
-
-                genericsPrintf( " Waste:%3d%% ",  100 - ( ( totalDat * 100 ) / r->intervalRawBytes ) );
-            }
-
-#ifndef LEGACY_ORBTRACE
-            else
-            {
-                /* Either raw ITM or COBs frames */
-                if ( OrbtraceIsOrbtrace( _r.o ) && r->intervalRawBytes )
+                else
                 {
-                    int w = 1000 - ( ( r->cobsDataLenRxed * 1000 ) / r->intervalRawBytes );
-                    genericsPrintf( " Waste:%01d.%01d%%",  w / 10, w % 10 );
+                    /* Either raw ITM or COBs frames */
+                    if ( OrbtraceSupportsCOBS( _r.o ) )
+                    {
+                        int w = 1000 - ( ( r->cobsDataLenRxed * 1000 ) / r->intervalRawBytes );
+                        genericsPrintf( " Waste:%01d.%01d%%",  w / 10, w % 10 );
+                    }
                 }
             }
-
-#endif
 
             r->cobsDataLenRxed = 0;
             r->intervalRawBytes = 0;
@@ -1107,9 +1103,7 @@ static void _usb_callback( struct libusb_transfer *t )
             }
         }
 
-#ifndef LEGACY_ORBTRACE
-
-        if ( OrbtraceIsOrbtrace( _r.o ) )
+        if ( OrbtraceSupportsCOBS( _r.o ) )
         {
             _cobsIncoming( &_r, t->buffer, t->actual_length );
             /* We need to decode this so it can go through the 'normal' output channels too */
@@ -1118,7 +1112,6 @@ static void _usb_callback( struct libusb_transfer *t )
             _purgeBlock( &_r );
         }
         else
-#endif
         {
             _processBlock( &_r, t->actual_length, t->buffer );
             _r.intervalRawBytes += t->actual_length;
@@ -1601,12 +1594,7 @@ int main( int argc, char *argv[] )
 
 #endif
 
-#ifndef LEGACY_ORBTRACE
-
-    if ( _r.options->channelList )
-#else
-    if ( ( _r.options->channelList ) && ( _r.options->useTPIU ) )
-#endif
+    if ( _r.options->channelList && _r.options->useTPIU )
     {
         /* Channel list is only needed for legacy ports that we are re-exporting (i.e. clean unencapsulated flows) */
         char *c = _r.options->channelList;
@@ -1681,8 +1669,6 @@ int main( int argc, char *argv[] )
             return -2;
         }
     }
-
-    sleep( 3 );
 
     if ( ( _r.options->nwserverPort ) || ( _r.options->port ) || ( _r.options->file ) )
     {

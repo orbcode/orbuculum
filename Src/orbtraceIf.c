@@ -24,6 +24,7 @@ static const struct OrbtraceInterfaceType _validDevices[DEVICE_NUM_DEVICES] =
 
 /* BMP iInterface string */
 #define BMP_IFACE "Black Magic Trace Capture"
+#define LAST_NONCOBS_ORBTRACE "v1.3.2-0"
 
 #define SCRATCH_STRINGLEN (255)
 #define MAX_DESC_FIELDLEN (50)
@@ -520,7 +521,6 @@ bool OrbtraceGetIfandEP( struct OrbtraceIf *o )
                 genericsReport( V_DEBUG, "No supported interfaces found" EOL );
                 return false;
             }
-
             break;
 
         case DEVICE_ORBTRACE_MINI: // -------------------------------------------------------------------
@@ -570,6 +570,7 @@ bool OrbtraceGetIfandEP( struct OrbtraceIf *o )
             }
 
             o->isOrbtrace = true;
+            o->supportsCOBS = strncmp( LAST_NONCOBS_ORBTRACE, o->devices[o->activeDevice].version, strlen( LAST_NONCOBS_ORBTRACE ) ) > 0;
             break;
     }
 
