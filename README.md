@@ -66,7 +66,7 @@ is a very powerful code performance analysis tool.
 
 * orblcd: LCD emulator on the host computer.
 
-There is also Python support in the `Python` directory.
+There is also Python support in the [pyorb](https://github.com/orbcode/pyorb) repository.
 
 A few simple use cases are documented in the last section of this
 document, as are example outputs of using orbtop to report on the
