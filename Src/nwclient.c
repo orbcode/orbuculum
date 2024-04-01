@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <pthread.h>
+#include <fcntl.h>
 #ifdef WIN32
     #include <winsock2.h>
     #include <ws2tcpip.h>
@@ -156,12 +157,28 @@ static void *_listenTask( void *arg )
         inet_ntop( AF_INET, &cli_addr.sin_addr, s, 99 );
         genericsReport( V_INFO, "New connection from %s" EOL, s );
 
-        /* We got a new connection - create a record for it */
+        /* We got a new connection - spawn a record to handle it */
         client = ( struct nwClient * )calloc( 1, sizeof( struct nwClient ) );
         MEMCHECK( client, NULL );
 
         client->parent = h;
         client->portNo = newsockfd;
+
+        /* Make port non-blocking */
+#ifdef WIN32
+        unsigned long mode = 0;
+        ioctlsocket( newsockfd, FIONBIO, &mode ) == 0 );
+#else
+        int flags = fcntl( newsockfd, F_GETFL, 0 );
+
+        if ( flags == -1 )
+        {
+            return false;
+        }
+
+        flags |= O_NONBLOCK;
+        fcntl( newsockfd, F_SETFL, flags );
+#endif
 
         /* Hook into linked list */
         if ( _lock_with_timeout( &h->clientList, &ts ) < 0 )
@@ -173,15 +190,16 @@ static void *_listenTask( void *arg )
         client->prevClient = NULL;
 
         if ( client->nextClient )
-        {
-            client->nextClient->prevClient = client;
-        }
+    {
+        client->nextClient->prevClient = client;
+    }
 
-        h->firstClient = client;
+    h->firstClient = client;
 
-        pthread_mutex_unlock( &h->clientList );
+    pthread_mutex_unlock( &h->clientList );
+}
 
-    if ( h->sockfd )
+if ( h->sockfd )
     {
         close( h->sockfd );
     }
