@@ -325,8 +325,6 @@ static void _doExit( void )
     _r.ending = true;
 
     nwclientShutdown( _r.n );
-    /* Give them a bit of time, then we're leaving anyway */
-    usleep( INTERVAL_100MS );
 
     if ( _r.opFileHandle )
     {
