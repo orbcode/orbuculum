@@ -1014,35 +1014,6 @@ static void _processBlock( struct RunTime *r, ssize_t fillLevel, uint8_t *buffer
         }
     }
 }
-
-// ====================================================================================================
-static void *_processBlocksQueue( void *params )
-
-/* Generic block processor task for received data */
-
-{
-    struct RunTime *r = ( struct RunTime * )params;
-
-    while ( !r->ending )
-    {
-        pthread_cond_wait( &r->dataForClients, &r->dataForClients_m );
-
-        while ( r->rp != r->wp )
-        {
-            _processBlock( r, r->rawBlock[r->rp].fillLevel, r->rawBlock[r->rp].buffer );
-            r->rp = ( r->rp + 1 ) % NUM_RAW_BLOCKS;
-        }
-    }
-
-    return NULL;
-}
-
-// ====================================================================================================
-static void _dataAvailable( struct RunTime *r )
-
-{
-    pthread_cond_signal( &r->dataForClients );
-}
 // ====================================================================================================
 
 static void _COBSpacketRxed( struct Frame *p, void *param )
@@ -1084,6 +1055,58 @@ static void _COBSpacketRxed( struct Frame *p, void *param )
     }
 }
 // ====================================================================================================
+static void _handleBlock( struct RunTime *r, ssize_t fillLevel, uint8_t *buffer, bool isOTag )
+
+/* Handle an incoming block in either 'conventional' or OTag format */
+
+{
+
+    if ( isOTag )
+    {
+        _cobsIncoming( r, buffer, fillLevel );
+
+        /* We need to decode this so it can go through the 'normal' output channels too */
+        COBSPump( &r->c, buffer, fillLevel, _COBSpacketRxed, r );
+        r->intervalRawBytes += fillLevel;
+        _purgeBlock( r );
+    }
+    else
+    {
+        _processBlock( r, fillLevel, buffer );
+    }
+
+    r->intervalRawBytes += fillLevel;
+}
+// ====================================================================================================
+static void *_processBlocksQueue( void *params )
+
+/* Generic block processor task for received data */
+
+{
+    struct RunTime *r = ( struct RunTime * )params;
+
+    while ( !r->ending )
+    {
+        pthread_cond_wait( &r->dataForClients, &r->dataForClients_m );
+
+        if ( r->rp != r->wp )
+        {
+            _processBlock( r, r->rawBlock[r->rp].fillLevel, r->rawBlock[r->rp].buffer );
+            r->rp = ( r->rp + 1 ) % NUM_RAW_BLOCKS;
+        }
+    }
+
+    return NULL;
+}
+
+// ====================================================================================================
+static void _dataAvailable( struct RunTime *r )
+
+{
+    pthread_cond_signal( &r->dataForClients );
+}
+// ====================================================================================================
+
 
 static void _usb_callback( struct libusb_transfer *t )
 
@@ -1101,19 +1124,7 @@ static void _usb_callback( struct libusb_transfer *t )
             }
         }
 
-        if ( OrbtraceSupportsCOBS( _r.o ) )
-        {
-            _cobsIncoming( &_r, t->buffer, t->actual_length );
-            /* We need to decode this so it can go through the 'normal' output channels too */
-            COBSPump( &_r.c, t->buffer, t->actual_length, _COBSpacketRxed, &_r );
-            _r.intervalRawBytes += t->actual_length;
-            _purgeBlock( &_r );
-        }
-        else
-        {
-            _processBlock( &_r, t->actual_length, t->buffer );
-            _r.intervalRawBytes += t->actual_length;
-        }
+        _handleBlock( &_r, t->actual_length, t->buffer, OrbtraceSupportsCOBS( _r.o ) );
 
         if ( ( t->status != LIBUSB_TRANSFER_COMPLETED ) &&
                 ( t->status != LIBUSB_TRANSFER_TIMED_OUT ) &&
@@ -1288,6 +1299,8 @@ static int _nwserverFeeder( struct RunTime *r )
 
             rxBlock->fillLevel = receivedSize;
             r->wp = ( r->wp + 1 ) % NUM_RAW_BLOCKS;
+
+
             _dataAvailable( r );
         }
 
@@ -1510,6 +1523,7 @@ static int _fileFeeder( struct RunTime *r )
         }
 
         r->wp = nwp;
+
         _dataAvailable( r );
 
         if ( r->options->paceDelay )
