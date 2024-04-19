@@ -15,7 +15,6 @@ dependencies = [
     dependency('libzmq'),
     dependency('SDL2'),
     dependency('ncurses', 'ncursesw'),
-    dependency('capstone'),
     dependency('libelf'),
     uicolours_default,
     sockets,
@@ -46,6 +45,11 @@ add_project_arguments(['-include', 'uicolours_default.h'], language: 'c')
 
 libdwarf = subproject('libdwarf').get_variable('libdwarf')
 dependencies += libdwarf
+
+libcapstone = dependency('capstone', version: '>=4', required: false)
+if not libcapstone.found()
+    libcapstone = disabler()
+endif
 
 if host_machine.system() == 'windows'
     stream_src = [
@@ -173,7 +177,9 @@ executable('orbmortem',
         git_version_info_h,
     ],
     include_directories: incdirs,
-    dependencies: dependencies,
+    dependencies: dependencies + [
+        libcapstone,
+    ],
     link_with: liborb,
     install: true,
 )
