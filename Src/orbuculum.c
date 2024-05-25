@@ -552,6 +552,12 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
     /* ... and dump the config if we're being verbose */
     genericsReport( V_INFO, "orbuculum version " GIT_DESCRIBE EOL );
 
+    if ( r->options->port )
+    {
+        /* For the base of a UART only 8 of 10 bits contain useful data */
+        r->options->dataSpeed = ( r->options->dataSpeed * 8 ) / 10;
+    }
+
     if ( r->options->intervalReportTime )
     {
         genericsReport( V_INFO, "Report Intv    : %d mS" EOL, r->options->intervalReportTime );
