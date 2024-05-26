@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /*
- * Orbuculum main receiver and TPIU/COBS demux
+ * Orbuculum main receiver and TPIU/OTAG demux
  * ===========================================
  *
  */
@@ -65,6 +65,10 @@
 #define ORBTRACE "orbtrace"
 #define ORBTRACEENVNAME "ORBTRACE"
 
+#define OTAG_MAX_PACKET_LEN (COBS_MAX_PACKET_LEN)
+#define OTAG_MAX_ENC_PACKET_LEN (COBS_MAX_ENC_PACKET_LEN)
+#define OTAG_EOP_LEN (COBS_EOP_LEN)
+
 /* Record for options, either defaults or from command line */
 struct Options
 {
@@ -103,15 +107,15 @@ struct handlers
 struct RunTime
 {
     struct TPIUDecoder t;                                /* TPIU decoder instance, in case we need it */
-    struct COBS c;                                       /* COBS instance, in case we need it */
+    struct COBS c;                                       /* COBS instance for OTAG, in case we need it */
 
-    struct Frame cobsPart;                               /* COBS part frame for maintaining continuity across packets */
-    struct Frame cobsOtg;                                /* Outgoing COBS frame for legacy use */
+    struct Frame otagPart;                               /* OTAG part frame for maintaining continuity across packets */
+    struct Frame otagOtg;                                /* Outgoing OTAG frame for legacy use */
     struct OrbtraceIf  *o;                               /* For accessing ORBTrace devices + BMPs */
 
     uint64_t  intervalBytes;                             /* Number of bytes transferred in current interval */
     uint64_t  intervalRawBytes;                          /* Number of bytes transferred in current interval */
-    uint64_t cobsDataLenRxed;                            /* Number of bytes of decoded COBS data */
+    uint64_t otagDataLenRxed;                            /* Number of bytes of decoded OTAG data */
 
     pthread_t intervalThread;                            /* Thread reporting on intervals */
     pthread_t processThread;                             /* Thread for processing prior to distributing to clients */
@@ -131,11 +135,11 @@ struct RunTime
     int rp;
     struct dataBlock rawBlock[NUM_RAW_BLOCKS];           /* Transfer buffers from the receiver */
 
-    struct nwclientsHandle *cobsHandler;                 /* Handle to COBS output handler */
+    struct nwclientsHandle *otagHandler;                 /* Handle to OTAG output handler */
 
     int numHandlers;                                     /* Number of TPIU channel handlers in use */
     struct handlers *handler;
-    struct nwclientsHandle *n;                           /* Link to the network client subsystem (used for non-TPIU/COBS case) */
+    struct nwclientsHandle *n;                           /* Link to the network client subsystem (used for non-TPIU/OTAG case) */
     char *sn;                                            /* Serial number for any device we've established contact with */
 };
 
@@ -147,7 +151,7 @@ struct RunTime
 #define NWSERVER_HOST "localhost"                        /* Address to connect to NW Server */
 #define NWSERVER_PORT (2332)
 
-#define NUM_COBS_CHANNELS 0x7F
+#define NUM_OTAG_CHANNELS 0x7F
 
 #define INTERVAL_100US (100U)
 #define INTERVAL_1MS   (10*INTERVAL_100US)
@@ -362,7 +366,7 @@ void _printHelp( const char *const progName )
     genericsPrintf( "    -P, --pace:          <microseconds> delay in block of data transmission to clients. Used when source is a file." EOL );
     genericsPrintf( "    -s, --server:        <Server>:<Port> to use" EOL );
     genericsPrintf( "    -T, --tpiu:          Decode TPIU channels (and strip TPIU framing from output flows)" EOL );
-    genericsPrintf( "    -t, --tag:           <stream,stream....> List of streams to decode (and onward route) from COBS or TPIU frames" EOL );
+    genericsPrintf( "    -t, --tag:           <stream,stream....> List of streams to decode (and onward route) from OTag or TPIU frames" EOL );
     genericsPrintf( "    -v, --verbose:       <level> Verbose mode 0(errors)..3(debug)" EOL );
     genericsPrintf( "    -V, --version:       Print version and exit" EOL );
 }
@@ -559,6 +563,12 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
     /* ... and dump the config if we're being verbose */
     genericsReport( V_INFO, "orbuculum version " GIT_DESCRIBE EOL );
 
+    if ( r->options->port )
+    {
+        /* For the base of a UART only 8 of 10 bits contain useful data */
+        r->options->dataSpeed = ( r->options->dataSpeed * 8 ) / 10;
+    }
+
     if ( r->options->intervalReportTime )
     {
         genericsReport( V_INFO, "Report Intv    : %d mS" EOL, r->options->intervalReportTime );
@@ -663,7 +673,7 @@ void *_checkInterval( void *params )
 
         if ( r->conn )
         {
-            genericsPrintf( C_PREV_LN C_CLR_LN C_DATA );
+            genericsPrintf( C_CLR_LN C_DATA );
 
             if ( snapInterval / 1000000 )
             {
@@ -698,16 +708,16 @@ void *_checkInterval( void *params )
                 }
                 else
                 {
-                    /* Either raw ITM or COBs frames */
-                    if ( OrbtraceSupportsCOBS( _r.o ) )
+                    /* Either raw ITM or OTag frames */
+                    if ( OrbtraceSupportsOTAG( _r.o ) )
                     {
-                        int w = 1000 - ( ( r->cobsDataLenRxed * 1000 ) / r->intervalRawBytes );
+                        int w = 1000 - ( ( r->otagDataLenRxed * 1000 ) / r->intervalRawBytes );
                         genericsPrintf( " Waste:%01d.%01d%%",  w / 10, w % 10 );
                     }
                 }
             }
 
-            r->cobsDataLenRxed = 0;
+            r->otagDataLenRxed = 0;
             r->intervalRawBytes = 0;
 
             if ( r->options->dataSpeed > 100 )
@@ -717,7 +727,7 @@ void *_checkInterval( void *params )
                 genericsPrintf( "(" C_DATA " %3d%% " C_RESET "full)", ( fullPercent > 100 ) ? 100 : fullPercent );
             }
 
-            genericsPrintf( C_RESET EOL );
+            genericsPrintf( C_RESET EOL C_PREV_LN );
         }
     }
 
@@ -739,7 +749,7 @@ static void _purgeBlock( struct RunTime *r )
             nwclientSend( h->n, h->strippedBlock->fillLevel, h->strippedBlock->buffer );
             h->intervalBytes += h->strippedBlock->fillLevel;
 
-            /* The COBs encoded version goes out on the combined COBs channel, with a specific channel header */
+            /* The OTAG encoded version goes out on the combined OTAG channel, with a specific channel header */
             int j = h->strippedBlock->fillLevel;
 
             const uint8_t frontMatter[1] = { h->channel };
@@ -748,11 +758,11 @@ static void _purgeBlock( struct RunTime *r )
             while ( j )
             {
                 COBSEncode( frontMatter, 1,
-                            b, ( j < COBS_MAX_PACKET_LEN ) ? j : COBS_MAX_PACKET_LEN,
-                            &r->cobsOtg );
-                nwclientSend( _r.cobsHandler, r->cobsOtg.len, r->cobsOtg.d );
-                b += ( j < COBS_MAX_PACKET_LEN ) ? j : COBS_MAX_PACKET_LEN;
-                j -= ( j < COBS_MAX_PACKET_LEN ) ? j : COBS_MAX_PACKET_LEN;
+                            b, ( j < OTAG_MAX_PACKET_LEN ) ? j : OTAG_MAX_PACKET_LEN,
+                            &r->otagOtg );
+                nwclientSend( _r.otagHandler, r->otagOtg.len, r->otagOtg.d );
+                b += ( j < OTAG_MAX_PACKET_LEN ) ? j : OTAG_MAX_PACKET_LEN;
+                j -= ( j < OTAG_MAX_PACKET_LEN ) ? j : OTAG_MAX_PACKET_LEN;
             }
 
             h->strippedBlock->fillLevel = 0;
@@ -827,13 +837,13 @@ static void _TPIUpacketRxed( enum TPIUPumpEvent e, struct TPIUPacket *p, void *p
 }
 // ====================================================================================================
 
-static void _cobsIncoming( struct RunTime *r, const uint8_t *buffer, int length )
+static void _otagIncoming( struct RunTime *r, const uint8_t *buffer, int length )
 
 {
     const uint8_t *flen;
     const uint8_t *b = buffer;
 
-    if ( r->cobsPart.len )
+    if ( r->otagPart.len )
     {
         /* We already have a part cobs frame...complete it using whatever we've just received */
         flen = COBSgetFrameExtent( b, length );
@@ -841,31 +851,31 @@ static void _cobsIncoming( struct RunTime *r, const uint8_t *buffer, int length 
         if ( COBSisEOFRAME( flen ) )
         {
             /* There is an end of packet here...we can complete the send */
-            if ( ( flen - b + r->cobsPart.len ) <= COBS_MAX_ENC_PACKET_LEN )
+            if ( ( flen - b + r->otagPart.len ) <= OTAG_MAX_ENC_PACKET_LEN )
             {
-                /* This is the rest of a part COBS frame, complete it and send it */
-                memcpy( &r->cobsPart.d[r->cobsPart.len], b, flen - b );
-                r->cobsPart.len += flen - b;
+                /* This is the rest of a part OTAG frame, complete it and send it */
+                memcpy( &r->otagPart.d[r->otagPart.len], b, flen - b );
+                r->otagPart.len += flen - b;
 
-                nwclientSend( r->cobsHandler, r->cobsPart.len, r->cobsPart.d );
-                nwclientSend( r->cobsHandler, COBS_EOP_LEN, cobs_eop );
+                nwclientSend( r->otagHandler, r->otagPart.len, r->otagPart.d );
+                nwclientSend( r->otagHandler, OTAG_EOP_LEN, cobs_eop );
             }
 
-            r->cobsPart.len = 0;
+            r->otagPart.len = 0;
             length -= flen - b;
             b = flen;
         }
         else
         {
             /* This is _another_ part packet ... add it to the one we are building */
-            if ( ( length + r->cobsPart.len ) <= COBS_MAX_ENC_PACKET_LEN )
+            if ( ( length + r->otagPart.len ) <= OTAG_MAX_ENC_PACKET_LEN )
             {
-                memcpy( &r->cobsPart.d[r->cobsPart.len], b, length );
-                r->cobsPart.len += length;
+                memcpy( &r->otagPart.d[r->otagPart.len], b, length );
+                r->otagPart.len += length;
             }
             else
             {
-                r->cobsPart.len = 0;
+                r->otagPart.len = 0;
             }
 
             length = 0;
@@ -889,18 +899,18 @@ static void _cobsIncoming( struct RunTime *r, const uint8_t *buffer, int length 
             break;
         }
 
-        /* This is a complete COBS frame to send */
-        nwclientSend( r->cobsHandler, flen - b, b );
+        /* This is a complete OTAG frame to send */
+        nwclientSend( r->otagHandler, flen - b, b );
         /* We need an end of packet on the end of every packet */
-        nwclientSend( r->cobsHandler, COBS_EOP_LEN, cobs_eop );
+        nwclientSend( r->otagHandler, OTAG_EOP_LEN, cobs_eop );
 
         length -= flen - b;
         b = flen;
     }
 
     /* Whatever we have left we keep for next time */
-    memcpy( r->cobsPart.d, b, length );
-    r->cobsPart.len = length;
+    memcpy( r->otagPart.d, b, length );
+    r->otagPart.len = length;
 }
 
 // ====================================================================================================
@@ -934,25 +944,25 @@ static void _processBlock( struct RunTime *r, ssize_t fillLevel, uint8_t *buffer
             /* Do it the old fashioned way and send out the unfettered block */
             nwclientSend( _r.n, fillLevel, buffer );
 
-            /* The COBs encoded version goes out on the default COBs channel */
+            /* The OTAG encoded version goes out on the default OTAG channel */
             uint8_t *b = buffer;
 
             while ( fillLevel )
             {
                 COBSEncode( frontMatter, 1,
                             b,
-                            ( fillLevel < COBS_MAX_PACKET_LEN ) ? fillLevel : COBS_MAX_PACKET_LEN,
-                            &r->cobsOtg );
-                nwclientSend( _r.cobsHandler, r->cobsOtg.len, r->cobsOtg.d );
-                b += ( fillLevel < COBS_MAX_PACKET_LEN ) ? fillLevel : COBS_MAX_PACKET_LEN;
-                fillLevel -= ( fillLevel < COBS_MAX_PACKET_LEN ) ? fillLevel : COBS_MAX_PACKET_LEN;
+                            ( fillLevel < OTAG_MAX_PACKET_LEN ) ? fillLevel : OTAG_MAX_PACKET_LEN,
+                            &r->otagOtg );
+                nwclientSend( _r.otagHandler, r->otagOtg.len, r->otagOtg.d );
+                b += ( fillLevel < OTAG_MAX_PACKET_LEN ) ? fillLevel : OTAG_MAX_PACKET_LEN;
+                fillLevel -= ( fillLevel < OTAG_MAX_PACKET_LEN ) ? fillLevel : OTAG_MAX_PACKET_LEN;
             }
         }
     }
 }
 // ====================================================================================================
 
-static void _COBSpacketRxed( struct Frame *p, void *param )
+static void _OTAGpacketRxed( struct Frame *p, void *param )
 
 /* Put the packet into the correct output buffer */
 
@@ -961,7 +971,7 @@ static void _COBSpacketRxed( struct Frame *p, void *param )
     struct handlers *h = _r.handler;
 
     /* Record the length we received...first byte is channel number */
-    _r.cobsDataLenRxed += p->len - 1;
+    _r.otagDataLenRxed += p->len - 1;
 
     /* Search for channel */
     for ( chIndex = 0; chIndex < _r.numHandlers; chIndex++ )
@@ -999,10 +1009,10 @@ static void _handleBlock( struct RunTime *r, ssize_t fillLevel, uint8_t *buffer,
 
     if ( isOTag )
     {
-        _cobsIncoming( r, buffer, fillLevel );
+        _otagIncoming( r, buffer, fillLevel );
 
         /* We need to decode this so it can go through the 'normal' output channels too */
-        COBSPump( &r->c, buffer, fillLevel, _COBSpacketRxed, r );
+        COBSPump( &r->c, buffer, fillLevel, _OTAGpacketRxed, r );
         r->intervalRawBytes += fillLevel;
         _purgeBlock( r );
     }
@@ -1060,7 +1070,7 @@ static void _usb_callback( struct libusb_transfer *t )
             }
         }
 
-        _handleBlock( &_r, t->actual_length, t->buffer, OrbtraceSupportsCOBS( _r.o ) );
+        _handleBlock( &_r, t->actual_length, t->buffer, OrbtraceSupportsOTAG( _r.o ) );
 
         if ( ( t->status != LIBUSB_TRANSFER_COMPLETED ) &&
                 ( t->status != LIBUSB_TRANSFER_TIMED_OUT ) &&
@@ -1170,6 +1180,16 @@ static int _usbFeeder( struct RunTime *r )
         {
             genericsReport( V_INFO, "Couldn't get IF and EP" EOL );
             break;
+        }
+
+        if ( OrbtraceSupportsOTAG( r->o ) )
+        {
+            genericsReport( V_INFO, "Orbtrace supports OTAG protocol" EOL );
+
+            if ( r->options->useTPIU )
+            {
+                genericsReport( V_WARN, "TPIU decoding specified, but ORBTrace supports OTAG, are you sure?" EOL );
+            }
         }
 
         genericsReport( V_DEBUG, "USB Interface claimed, ready for data" EOL );
@@ -1564,7 +1584,7 @@ int main( int argc, char *argv[] )
             if ( x )
             {
                 /* This is a good number, so open */
-                if ( ( x < 0 ) || ( x >= NUM_COBS_CHANNELS ) )
+                if ( ( x < 0 ) || ( x >= NUM_OTAG_CHANNELS ) )
                 {
                     genericsExit( -1, "Channel number out of range" EOL );
                 }
@@ -1594,9 +1614,9 @@ int main( int argc, char *argv[] )
         }
     }
 
-    /* The COBS handler doesn't need a channel list ... it works on all channels */
-    _r.cobsHandler = nwclientStart( _r.options->listenPort );
-    genericsReport( V_WARN, "Started Network interface for COBS on port %d" EOL, _r.options->listenPort );
+    /* The OTAG handler doesn't need a channel list ... it works on all channels */
+    _r.otagHandler = nwclientStart( _r.options->listenPort );
+    genericsReport( V_WARN, "Started Network interface for OTAG on port %d" EOL, _r.options->listenPort );
 
     if ( _r.options->intervalReportTime )
     {

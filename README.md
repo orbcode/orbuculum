@@ -37,12 +37,10 @@ these data gives you a huge amount of insight into what is really going on insid
 your CPU. The tools are all mix-and-match according to what you are trying to do. The current set is;
 
 * orbuculum: The main program which interfaces to the trace probe and then issues a network
-interface to which an arbitary number of clients can connect, by default on TCP/3443. This is
+interface to which an arbitary number of clients can connect. This is
 used by a base interface to the target by other programmes in the suite. Generally you configure
 this for the TRACE tool you're using and then you can just leave it running and it'll grab
-data from the target and make it available to clients whenever it can. Note that some
-debug probes can now create an orbuculum-compatible interface on TCP/3443, and then you can
-connect the rest of the suite to that directly, without needing to use the orbuculum mux itself.
+data from the target and make it available to clients whenever it can.
 
 * orbfifo: The fifo pump: Turns a trace feed into a set of fifos (or permanent files).
 
@@ -325,6 +323,40 @@ In order to get single folder with Orbuculum and MinGW dependencies run:
 
 Orbuculum executables along with MinGW-w64 dependencies will be installed into `build/install` and can be transfered to different machine or used outside of MSys2 shell.
 
+Communications
+==============
+
+Originally orbuculum provided a TCP/3443 port to which an arbitary number of clients could connect
+and each one would receive a clean copy of the data from the probe. Optionally, the TPIU framing could
+be stripped off by orbuculum so that individual clients didn't have to do it and each TPIU port would then
+appear on consecutive ports; Generally, that means that ITM message appeared on TCP/3443 and ETM on TCP/3444.
+
+Some debug drivers (e.g. openocd, pyocd) can now create an orbuculum-compatible interface on TCP/3443, which
+allows you to connect the rest of the suite to that directly, without needing to use the orbuculum mux itself. 
+
+However, times have moved on. Passing all those data through transparently was wasteful as a fair bit of it
+was 'nothing to see here', so Orbuculum now supports a new protocol, OTAG. OTAG is always carried on TCP/3402 and
+is a bit more intelligent than simply passing through the messages from the probe. It turns the stream of data into
+COBS encoded sequenced messages with defined message boundries and it also removes the redundant data. When used
+in conjunction with an ORBTrace probe the OTAG messages are created in the probe itself, providing a further
+performance improvement.
+
+Basically, all of this is mostly transparent to the regular end user. OTAG is automatically used for communication
+between orbuculum and its clients if it's available, and Orbuculum still provides the TCP/3443 port it always did,
+which you can connect to in the same way as you used to if you've got custom clients. OTAG will give you a performance
+improvement, but it's otherwise mostly transparent.
+
+There are come slight changes to the command line options though. Historically, when using TPIU decoding,
+you had to specify the channels to be decoded with an option like `-T 1,2`. You now simply need to tell orbuculum
+which tags to process with `-t 1,2` and, if your probe doesn't remove TPIU framing automatically, specify the `-T`
+option on its own....if you try to specify the `-T` option and you've got an ORBTrace that supports OTAG protocol
+then you'll get a warning, because TPIU framing removal is done automatically in the probe in that case, so you
+don't generally need it.
+
+Why have we made this change? Well, decoding TPIU on the probe saves a huge amount of bandwidth, and moving to the
+tag based approach lets us convey other information from the probe too such as timestamps, voltages and currents.
+
+
 Using
 =====
 
@@ -390,7 +422,7 @@ For `orbuculum`, the specific command line options of note are;
 
   `-T, --tpiu`: Remove TPIU formatting from incoming data stream.
 
-  `-t, --tag x,y,...`: List of streams to decode (and onward route) from the probe (low stream numbers are TPIU channels).
+  `-t, --tag x,y,...`: List of streams to decode (and onward route) from the probe (low stream numbers are TPIU channels). *By default only stream 1 (ITM) is routed.*
 
 
 Orbfifo
