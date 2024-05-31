@@ -15,8 +15,6 @@
 #include <assert.h>
 #include "cobs.h"
 
-#define COBS_SYNC_CHAR (0)
-
 const uint8_t cobs_eop[COBS_EOP_LEN] = { COBS_SYNC_CHAR };
 
 // ====================================================================================================
