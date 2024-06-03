@@ -1,0 +1,157 @@
+From b92a03a9ebc35b1b26eda285cc34672384fe723c Mon Sep 17 00:00:00 2001
+From: Maciej Nowak <mnowak@kplabs.pl>
+Date: Mon, 3 Jun 2024 20:08:06 +0200
+Subject: [PATCH] Fixed calloc arguments order
+
+---
+ src/bin/dwarfdump/dd_tsearchbal.c     |  2 +-
+ src/bin/dwarfdump/print_debug_names.c |  4 ++--
+ src/lib/libdwarf/dwarf_frame.c        |  2 +-
+ src/lib/libdwarf/dwarf_harmless.c     |  3 +--
+ src/lib/libdwarf/dwarf_machoread.c    | 13 +++++++------
+ src/lib/libdwarf/dwarf_ranges.c       |  2 +-
+ src/lib/libdwarf/dwarf_tsearchhash.c  |  8 ++++----
+ 7 files changed, 17 insertions(+), 17 deletions(-)
+
+diff --git a/src/bin/dwarfdump/dd_tsearchbal.c b/src/bin/dwarfdump/dd_tsearchbal.c
+index f8bce3d..23a3e82 100644
+--- a/src/bin/dwarfdump/dd_tsearchbal.c
++++ b/src/bin/dwarfdump/dd_tsearchbal.c
+@@ -726,7 +726,7 @@ tdelete_inner(const void *key,
+     /*  Allocate extra, head is on the stack we create
+         here and the depth might increase.  */
+     depth = depth + 4;
+-    pkarray = calloc(sizeof(struct pkrecord),depth);
++    pkarray = calloc(depth,sizeof(struct pkrecord));
+     if (!pkarray) {
+         /* Malloc fails, we could abort... */
+         return NULL;
+diff --git a/src/bin/dwarfdump/print_debug_names.c b/src/bin/dwarfdump/print_debug_names.c
+index a2fba1b..c16d2dc 100644
+--- a/src/bin/dwarfdump/print_debug_names.c
++++ b/src/bin/dwarfdump/print_debug_names.c
+@@ -433,8 +433,8 @@ print_dnames_abbrevtable(unsigned int indent,Dwarf_Dnames_Head dn,
+     res = DW_DLV_OK;
+     abblist_count = i;
+     if (abblist_count) {
+-        abblist = calloc(sizeof(struct Dnames_Abb_Check_s),
+-            abblist_count);
++        abblist = calloc(abblist_count,
++            sizeof(struct Dnames_Abb_Check_s));
+         if (!abblist) {
+             printf("ERROR: Unable to allocate %" DW_PR_DUu
+                 "entries of a struct to check "
+diff --git a/src/lib/libdwarf/dwarf_frame.c b/src/lib/libdwarf/dwarf_frame.c
+index 18f9513..56a069a 100644
+--- a/src/lib/libdwarf/dwarf_frame.c
++++ b/src/lib/libdwarf/dwarf_frame.c
+@@ -2955,7 +2955,7 @@ init_reg_rules_alloc(Dwarf_Debug dbg,struct Dwarf_Frame_s *f,
+ {
+     f->fr_reg_count = count;
+     f->fr_reg = (struct Dwarf_Reg_Rule_s *)
+-        calloc(sizeof(struct Dwarf_Reg_Rule_s), count);
++        calloc(count, sizeof(struct Dwarf_Reg_Rule_s));
+     if (f->fr_reg == 0) {
+         if (error) {
+             _dwarf_error(dbg, error, DW_DLE_DF_ALLOC_FAIL);
+diff --git a/src/lib/libdwarf/dwarf_harmless.c b/src/lib/libdwarf/dwarf_harmless.c
+index 803e9a8..972ebd9 100644
+--- a/src/lib/libdwarf/dwarf_harmless.c
++++ b/src/lib/libdwarf/dwarf_harmless.c
+@@ -195,8 +195,7 @@ _dwarf_harmless_init(struct Dwarf_Harmless_s *dhp,unsigned size)
+     unsigned i = 0;
+     memset(dhp,0,sizeof(*dhp));
+     dhp->dh_maxcount = size +1;
+-    dhp->dh_errors = (char **)calloc(sizeof(char *),
+-        dhp->dh_maxcount);
++    dhp->dh_errors = (char **)calloc(dhp->dh_maxcount, sizeof(char *));
+     if (!dhp->dh_errors) {
+         dhp->dh_maxcount = 0;
+         return;
+diff --git a/src/lib/libdwarf/dwarf_machoread.c b/src/lib/libdwarf/dwarf_machoread.c
+index 8fff3f1..1a5924d 100644
+--- a/src/lib/libdwarf/dwarf_machoread.c
++++ b/src/lib/libdwarf/dwarf_machoread.c
+@@ -511,8 +511,8 @@ _dwarf_macho_load_segment_commands(
+     }
+     mfp->mo_segment_commands =
+         (struct generic_macho_segment_command *)
+-        calloc(sizeof(struct generic_macho_segment_command),
+-        (size_t)mfp->mo_segment_count);
++        calloc((size_t)mfp->mo_segment_count,
++        sizeof(struct generic_macho_segment_command));
+     if (!mfp->mo_segment_commands) {
+         *errcode = DW_DLE_ALLOC_FAIL;
+         return DW_DLV_ERROR;
+@@ -555,8 +555,9 @@ _dwarf_macho_load_dwarf_section_details32(
+     struct generic_macho_section *secs = 0;
+ 
+     secs = (struct generic_macho_section *)calloc(
+-        sizeof(struct generic_macho_section),
+-        (size_t)secalloc);
++        (size_t)secalloc,
++        sizeof(struct generic_macho_section)
++        );
+     if (!secs) {
+         *errcode = DW_DLE_ALLOC_FAIL;
+         return DW_DLV_OK;
+@@ -643,8 +644,8 @@ _dwarf_macho_load_dwarf_section_details64(
+     struct generic_macho_section *secs = 0;
+ 
+     secs = (struct generic_macho_section *)calloc(
+-        sizeof(struct generic_macho_section),
+-        (size_t)secalloc);
++        (size_t)secalloc,
++        sizeof(struct generic_macho_section));
+     if (!secs) {
+         *errcode = DW_DLE_ALLOC_FAIL;
+         return DW_DLV_ERROR;
+diff --git a/src/lib/libdwarf/dwarf_ranges.c b/src/lib/libdwarf/dwarf_ranges.c
+index 4c65f73..0d8fbd4 100644
+--- a/src/lib/libdwarf/dwarf_ranges.c
++++ b/src/lib/libdwarf/dwarf_ranges.c
+@@ -267,7 +267,7 @@ int dwarf_get_ranges_b(Dwarf_Debug dbg,
+             dwarfstring_destructor(&m);
+             return DW_DLV_ERROR;
+         }
+-        re = calloc(sizeof(struct ranges_entry),1);
++        re = calloc(1,sizeof(struct ranges_entry));
+         if (!re) {
+             free_allocated_ranges(base);
+             _dwarf_error(dbg, error, DW_DLE_DEBUG_RANGES_OUT_OF_MEM);
+diff --git a/src/lib/libdwarf/dwarf_tsearchhash.c b/src/lib/libdwarf/dwarf_tsearchhash.c
+index 89476ae..a768f5f 100644
+--- a/src/lib/libdwarf/dwarf_tsearchhash.c
++++ b/src/lib/libdwarf/dwarf_tsearchhash.c
+@@ -190,7 +190,7 @@ dwarf_initialize_search_hash( void **treeptr,
+         /* initialized already. */
+         return base ;
+     }
+-    base = calloc(sizeof(struct hs_base),1);
++    base = calloc(1,sizeof(struct hs_base));
+     if (!base) {
+         /* Out of memory. */
+         return NULL ;
+@@ -223,7 +223,7 @@ printf("debugging: initial alloc prime to use %lu\n",prime_to_use);
+     /*  hashtab_ is an array of hs_entry,
+         indexes 0 through tablesize_ -1. */
+     base->hashfunc_ = hashfunc;
+-    base->hashtab_ = calloc(sizeof(struct ts_entry),base->tablesize_);
++    base->hashtab_ = calloc(base->tablesize_,sizeof(struct ts_entry));
+     if (!base->hashtab_) {
+         free(base);
+         return NULL;
+@@ -368,8 +368,8 @@ resize_table(struct hs_base *head,
+         return;
+     }
+     newhead.tablesize_entry_index_ = new_entry_index;
+-    newhead.hashtab_ = calloc(sizeof(struct ts_entry),
+-        newhead.tablesize_);
++    newhead.hashtab_ = calloc(newhead.tablesize_,
++        sizeof(struct ts_entry));
+     if (!newhead.hashtab_) {
+         /*  Oops, too large. Leave table size as is, though
+             things will get slow as it overfills. */
+-- 
+2.43.0.windows.1
+
