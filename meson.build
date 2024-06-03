@@ -13,7 +13,6 @@ dependencies = [
     dependency('threads'),
     dependency('libusb-1.0'),
     dependency('libzmq'),
-    dependency('SDL2'),
     dependency('ncurses', 'ncursesw'),
     dependency('libelf'),
     uicolours_default,
@@ -49,6 +48,11 @@ dependencies += libdwarf
 libcapstone = dependency('capstone', version: '>=4', required: false)
 if not libcapstone.found()
     libcapstone = disabler()
+endif
+
+libSDL2 = dependency('SDL2', required: false)
+if not libSDL2.found()
+    libSDL2 = disabler()
 endif
 
 if host_machine.system() == 'windows'
@@ -227,7 +231,9 @@ executable('orblcd',
         git_version_info_h,
     ],
     include_directories: incdirs,
-    dependencies: dependencies,
+    dependencies: dependencies + [
+        libSDL2,
+    ],
     link_with: liborb,
     install: true,
 )
