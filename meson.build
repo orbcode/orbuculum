@@ -1,4 +1,3 @@
-
 project('orbuculum', 'c', version:'2.1.0', meson_version: '>=0.63')
 
 uicolours_default = declare_dependency(compile_args: ['-include', 'uicolours_default.h'])
@@ -41,14 +40,8 @@ add_project_arguments('-DSCREEN_HANDLING', language: 'c')
 add_project_arguments('-Wno-error=deprecated-declarations', language: 'c')
 add_project_arguments(['-include', 'uicolours_default.h'], language: 'c')
 
-
 libdwarf = subproject('libdwarf').get_variable('libdwarf')
 dependencies += libdwarf
-
-libcapstone = dependency('capstone', version: '>=4', required: false)
-if not libcapstone.found()
-    libcapstone = disabler()
-endif
 
 libSDL2 = dependency('SDL2', required: false)
 if not libSDL2.found()
