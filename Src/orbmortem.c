@@ -15,6 +15,7 @@
 #include <assert.h>
 #include <signal.h>
 #include <getopt.h>
+#include <unistd.h>
 
 #include "git_version_info.h"
 #include "generics.h"

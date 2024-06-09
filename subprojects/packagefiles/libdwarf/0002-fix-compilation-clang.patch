@@ -1,0 +1,15 @@
+diff --git a/meson.build b/meson.build
+index 83ecd99..4d3fb4e 100644
+--- a/meson.build
++++ b/meson.build
+@@ -84,6 +84,10 @@ libdwarf_args = [ '-D__USE_MINGW_ANSI_STDIO=0' ]
+ if cc.get_id() == 'msvc'
+   libdwarf_args += [ '-D_CRT_NONSTDC_NO_WARNINGS', '-D_CRT_SECURE_NO_WARNINGS' ]
+ endif
++if cc.get_id() == 'clang'
++  add_project_arguments('-Wno-error=unused-but-set-variable', language: 'c')
++  add_project_arguments('-Wno-error=strict-prototypes', language: 'c')
++endif
+ 
+ config_dir = [include_directories('.')]
+ 

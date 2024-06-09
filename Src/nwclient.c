@@ -160,7 +160,7 @@ static void *_listenTask( void *arg )
         /* Make port non-blocking */
 #ifdef WIN32
         unsigned long mode = 0;
-        ioctlsocket( newsockfd, FIONBIO, &mode ) == 0 );
+        ioctlsocket( newsockfd, FIONBIO, &mode );
 #else
         int flags = fcntl( newsockfd, F_GETFL, 0 );
 

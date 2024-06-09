@@ -1,11 +1,21 @@
-project('orbuculum', 'c')
+project('orbuculum', 'c', version:'2.1.0', meson_version: '>=0.63')
+
+uicolours_default = declare_dependency(compile_args: ['-include', 'uicolours_default.h'])
+
+cc = meson.get_compiler('c')
+
+sockets = declare_dependency(
+    dependencies: host_machine.system() == 'windows' ? [cc.find_library('ws2_32')] : []
+)
 
 dependencies = [
     dependency('threads'),
     dependency('libusb-1.0'),
     dependency('libzmq'),
-    dependency('SDL2'),
-    dependency('ncurses', 'ncursesw')
+    dependency('ncurses', 'ncursesw'),
+    dependency('libelf'),
+    uicolours_default,
+    sockets,
 ]
 
 incdirs = include_directories(['Inc', 'Inc/external'])
@@ -18,16 +28,30 @@ if host_machine.system() == 'windows'
     ]
 elif host_machine.system() == 'darwin'
     add_project_arguments('-DOSX', language: 'c')
+elif host_machine.system() == 'freebsd'
+    add_project_arguments('-DFREEBSD', language: 'c')
+    add_project_arguments('-ggdb', language: 'c')
+    add_project_arguments('-D_GNU_SOURCE', language: 'c')
 else
     add_project_arguments('-DLINUX', language: 'c')
+    add_project_arguments('-ggdb', language: 'c')
     add_project_arguments('-D_GNU_SOURCE', language: 'c')
-    install_data('Support/60-orbcode.rules', install_dir : '/etc/udev/rules.d')
+
+    install_data('Support/60-orbcode.rules', install_dir : 'lib/udev/rules.d')
     install_data('Support/gdbtrace.init', install_dir : 'share/orbcode')
 endif
 
 add_project_arguments('-DSCREEN_HANDLING', language: 'c')
 add_project_arguments('-Wno-error=deprecated-declarations', language: 'c')
 add_project_arguments(['-include', 'uicolours_default.h'], language: 'c')
+
+libdwarf = subproject('libdwarf').get_variable('libdwarf')
+dependencies += libdwarf
+
+libSDL2 = dependency('SDL2', required: false)
+if not libSDL2.found()
+    libSDL2 = disabler()
+endif
 
 if host_machine.system() == 'windows'
     stream_src = [
@@ -64,8 +88,8 @@ liborb = library('orb',
         'Src/generics.c',
     ] + stream_src,
     include_directories: incdirs,
-    dependencies: dependencies,
-    soversion: 0,
+    dependencies: sockets,
+    soversion: meson.project_version(),
     install: true,
 )
 
@@ -201,7 +225,10 @@ executable('orblcd',
         git_version_info_h,
     ],
     include_directories: incdirs,
-    dependencies: dependencies,
+    dependencies: dependencies + [
+        libSDL2,
+    ],
+
     link_with: liborb,
     install: true,
 )
