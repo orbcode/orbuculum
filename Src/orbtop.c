@@ -745,10 +745,10 @@ static void _outputTop( uint32_t total, uint32_t reportLines, struct reportLine 
 
     if ( ( _r.lastReportTicks ) && ( lastTime != _r.lastReportus ) )
         genericsPrintf( "Interval = " C_DATA "%" PRIu64 "ms " C_RESET "/ "C_DATA "%" PRIu64 C_RESET " (~" C_DATA "%" PRIu64 C_RESET " Ticks/ms)" EOL,
-                        ( ( lastTime - _r.lastReportus ) + 500 ) / 1000, _r.timeStamp - _r.lastReportTicks, ( ( _r.timeStamp - _r.lastReportTicks ) * 1000 ) / ( lastTime - _r.lastReportus ) );
+                        ( ( lastTime - _r.lastReportus ) ) / 1000, _r.timeStamp - _r.lastReportTicks, ( ( _r.timeStamp - _r.lastReportTicks ) * 1000 ) / ( lastTime - _r.lastReportus ) );
     else
     {
-        genericsPrintf( C_RESET "Interval = " C_DATA "%" PRIu64 C_RESET "ms" EOL, ( ( lastTime - _r.lastReportus ) + 500 ) / 1000 );
+        genericsPrintf( C_RESET "Interval = " C_DATA "%" PRIu64 C_RESET "ms" EOL, ( ( lastTime - _r.lastReportus ) ) / 1000 );
     }
 
     genericsReport( V_INFO, "         Ovf=%3d  ITMSync=%3d TPIUSync=%3d ITMErrors=%3d" EOL,
@@ -1382,12 +1382,11 @@ int main( int argc, char *argv[] )
         /* ...just in case we have any readings from a previous incantation */
         _flushHash( );
 
-        _r.lastReportus = _timestamp();
+        thisTime = _r.lastReportus = _timestamp();
 
         while ( 1 )
         {
-            thisTime = _timestamp();
-            remainTime = ( ( _r.lastReportus + options.displayInterval - thisTime ) ) + 500;
+            remainTime = ( ( _r.lastReportus + options.displayInterval - thisTime ) );
 
             if ( remainTime > 0 )
             {
@@ -1400,6 +1399,8 @@ int main( int argc, char *argv[] )
                 receiveResult = RECEIVE_RESULT_OK;
                 receivedSize = 0;
             }
+
+            thisTime = _timestamp();
 
             if ( receiveResult == RECEIVE_RESULT_ERROR )
             {
