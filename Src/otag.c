@@ -75,7 +75,7 @@ static void _pumpcb( struct Frame *p, void *param )
     struct OTAG *t = ( struct OTAG * )param;
 
     t->f.len = p->len - 1; /* OTAG frames have the first element representing the tag */
-    clock_gettime(CLOCK_REALTIME,&ts);
+    clock_gettime( CLOCK_REALTIME, &ts );
     t->f.tstamp = ts.tv_sec * OTAG_TS_RESOLUTION + ts.tv_nsec; /* For now, fake the timestamp */
     t->f.d = &p->d[1];
 
