@@ -367,10 +367,25 @@ void _printHelp( const char *const progName )
 }
 
 // ====================================================================================================
-void _printVersion( void )
+void _printVersion( struct RunTime *r )
 
 {
-    genericsPrintf( "orbuculum version " GIT_DESCRIBE );
+    genericsPrintf( "orbuculum version " GIT_DESCRIBE EOL );
+    r->o = OrbtraceIfCreateContext();
+    int ndevices = OrbtraceIfGetDeviceList( r->o, NULL, DEVTYPE( DEVICE_ORBTRACE_MINI ) | DEVTYPE( DEVICE_BMP ) );
+
+    if ( !ndevices )
+    {
+        genericsPrintf( "No devices found" EOL );
+    }
+    else
+    {
+        genericsPrintf( "Device%s Found;" EOL, ( ndevices > 1 ) ? "s" : "" );
+        OrbtraceIfListDevices( r->o );
+    }
+
+    OrbtraceIfDestroyContext( r->o );
+    r->o = NULL;
 }
 // ====================================================================================================
 static struct option _longOptions[] =
@@ -434,7 +449,7 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
 
             // ------------------------------------
             case 'V':
-                _printVersion();
+                _printVersion( r );
                 return false;
 
             // ------------------------------------

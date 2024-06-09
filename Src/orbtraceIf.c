@@ -27,6 +27,7 @@ static const struct OrbtraceInterfaceType _validDevices[DEVICE_NUM_DEVICES] =
 #define BMP_EP    (0x85)
 
 #define SCRATCH_STRINGLEN (255)
+#define MAX_DESC_FIELDLEN (50)
 
 #define MIN_GENERIC_VOLTAGE_MV (900)
 #define MAX_GENERIC_VOLTAGE_MV (5000)
@@ -124,6 +125,11 @@ static int _compareFunc( const void *vd1, const void *vd2 )
     const struct OrbtraceIfDevice *d1 = ( const struct OrbtraceIfDevice * )vd1;
     const struct OrbtraceIfDevice *d2 = ( const struct OrbtraceIfDevice * )vd2;
     int r = 0;
+
+    if ( d1->devtype != d2->devtype )
+    {
+        return ( d1->devtype - d2->devtype );
+    }
 
     if ( ( r = _strcmpint( d1->manufacturer, d2->manufacturer ) ) )
     {
@@ -262,6 +268,7 @@ void OrbtraceIfDestroyContext( struct OrbtraceIf *o )
     }
 }
 // ====================================================================================================
+
 int OrbtraceIfGetDeviceList( struct OrbtraceIf *o, char *sn, uint32_t devmask )
 
 /* Get list of devices that match (partial) serial number & devmask */
@@ -392,13 +399,13 @@ void OrbtraceIfListDevices( struct OrbtraceIf *o )
     char printConstruct[SCRATCH_STRINGLEN];
 
     /* Get longest line */
-    genericsPrintf( C_RESET " Id |               Description                |      Serial      |           Version" EOL );
-    genericsPrintf( " ---+------------------------------------------+------------------+----------------------------" EOL );
+    genericsPrintf( C_RESET " Id |                    Description                    |      Serial      |           Version" EOL );
+    genericsPrintf( " ---+---------------------------------------------------+------------------+----------------------------" EOL );
 
     for ( int i = 0; i < o->numDevices; i++ )
     {
-        snprintf( printConstruct, SCRATCH_STRINGLEN, "%s %s", OrbtraceIfGetManufacturer( o, i ), OrbtraceIfGetProduct( o, i ) ) ;
-        genericsPrintf( C_SEL " %2d " C_RESET "|"C_ELEMENT" %-40s "C_RESET"|"C_ELEMENT" %16s "C_RESET"|"C_ELEMENT" %s" C_RESET EOL,
+        snprintf( printConstruct, MAX_DESC_FIELDLEN, "%s %s", OrbtraceIfGetManufacturer( o, i ), OrbtraceIfGetProduct( o, i ) ) ;
+        genericsPrintf( C_SEL " %2d " C_RESET "|"C_ELEMENT" %-49s "C_RESET"|"C_ELEMENT" %16s "C_RESET"|"C_ELEMENT" %s" C_RESET EOL,
                         i + 1, printConstruct, OrbtraceIfGetSN( o, i ), OrbtraceIfGetVersion( o, i ) );
     }
 }
@@ -559,7 +566,7 @@ bool OrbtraceIfSetupTransfers( struct OrbtraceIf *o, bool hiresTime, struct data
                                     USB_TRANSFER_SIZE,
                                     callback,
                                     &o->d[t].usbtfr,
-                                    hiresTime ? 1 : 0 /* Use timeout if hires mode */
+                                    hiresTime ? 1 : 100 /* Use 1ms timeout if hires mode, otherwise 100ms */
                                   );
 
         if ( libusb_submit_transfer( o->d[t].usbtfr ) )
