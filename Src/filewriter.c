@@ -55,6 +55,7 @@ void _processCompleteName( uint32_t n )
     if ( _f.basedir )
     {
         strncpy( workingName, _f.basedir, MAX_CONCAT_FILENAMELEN - 1 );
+        strcat( workingName, "/" );
         strncat( workingName, _f.file[n].name, MAX_CONCAT_FILENAMELEN - 1 );
     }
     else

@@ -23,12 +23,24 @@ enum TRACEprotocol
     TRACE_PROT_LIST_START = 0,
     TRACE_PROT_ETM35      = TRACE_PROT_LIST_START,
     TRACE_PROT_MTB,
+    TRACE_PROT_ETM4,
     TRACE_PROT_LIST_END,
+    TRACE_PROT_NUM        = TRACE_PROT_LIST_END,
     TRACE_PROT_NONE       = TRACE_PROT_LIST_END
 };
 
-#define TRACEProtocolStringDEF "ETM3.5", "MTB", NULL
-extern const char *TRACEprotocolString[];
+#define TRACEprotocolStrings "ETM3.5", "MTB", "ETM4"
+
+
+/* Events from the process of pumping bytes through the TRACE decoder */
+enum TRACEDecoderPumpEvent
+{
+    TRACE_EV_NONE,
+    TRACE_EV_UNSYNCED,
+    TRACE_EV_SYNCED,
+    TRACE_EV_ERROR,
+    TRACE_EV_MSG_RXED
+};
 
 enum TRACEchanges
 {
@@ -38,7 +50,6 @@ enum TRACEchanges
     EV_CH_ENATOMS,
     EV_CH_WATOMS,
     EV_CH_ADDRESS,
-    EV_CH_EXCEPTION,
     EV_CH_CANCELLED,
     EV_CH_VMID,
     EV_CH_TSTAMP,
@@ -56,8 +67,23 @@ enum TRACEchanges
     EV_CH_LINEAR,
     EV_CH_TRACESTART,
     EV_CH_TRACESTOP,
+
+    EV_CH_DISCARD,
+    EV_CH_OVERFLOW,
+    EV_CH_FNRETURN,
+    EV_CH_EXRETURN,
+    EV_CH_DATASYNC,
+    EV_CH_UDATASYNC,
+    EV_CH_EVENT0,
+    EV_CH_EVENT1,
+    EV_CH_EVENT2,
+    EV_CH_EVENT3,
     EV_CH_NUM_CHANGES
 };
+
+/* Flag for unknown/illegal cycle count */
+#define COUNT_UNKNOWN 0xffffffffffffffffL
+#define ADDRESS_UNKNOWN 0xffffffffffffffffL
 
 // ============================================================================
 // Messages out of the decoder
@@ -68,7 +94,6 @@ enum Reason { TRACE_REASON_PERIODIC, TRACE_REASON_TRACEON, TRACE_REASON_TRACEOVF
 
 /* TRACE Decoder statistics */
 struct TRACEDecoderStats
-
 {
     uint32_t lostSyncCount;              /* Number of times sync has been lost */
     uint32_t syncCount;                  /* Number of times a sync event has been received */
@@ -80,16 +105,20 @@ struct TRACECPUState
 
     // Gross processor state...
     uint64_t ts;                         /* Latest timestamp */
-    uint32_t addr;                       /* Latest fully computed address */
-    uint32_t toAddr;                     /* Address to run to in linear mode (MTB) */
-    uint32_t nextAddr;                   /* Next address to run from in linear mode (MTB) */
+    uint64_t addr;                       /* Latest fully computed address */
+    uint64_t toAddr;                     /* Address to run to in linear mode (MTB) */
+    uint64_t nextAddr;                   /* Next address to run from in linear mode (MTB) */
     enum Mode addrMode;                  /* What kind of addressing are we using at the moment? */
     uint32_t contextID;                  /* Currently executing context */
     uint8_t vmid;                        /* Current virtual machine ID */
-    uint32_t cycleCount;                 /* Cycle Count for exact mode */
+    uint64_t cycleCount;                 /* Cycle Count for exact mode */
     uint16_t exception;                  /* Exception type being executed */
     uint16_t resume;                     /* Interrupt resume code */
+    bool serious;                        /* True if there is a serious fault pending */
     uint64_t instCount;                  /* Number of instructions executed */
+    uint8_t exceptionLevel;              /* Current exception level */
+    bool am64bit;                        /* Running in 64 bit mode */
+    bool amSecure;                       /* Running in secure mode */
 
     // I-Sync related
     enum Reason reason;                  /* Why this i-sync was generated */
@@ -100,6 +129,10 @@ struct TRACECPUState
     uint8_t natoms;                      /* Number of N (non-executed) atoms in this step */
     uint32_t disposition;                /* What happened to condition codes for each instruction? */
 
+    // D-Sync related
+    uint8_t dsync_mark;                  /* Co-ordination mark in data flow */
+    uint8_t udsync_mark;                 /* Co-ordination mark for unnumbered sync in data flow */
+
     // State flags
     bool jazelle;                        /* Executing jazelle mode instructions */
     bool nonSecure;                      /* CPU is operating in non-secure mode */
@@ -107,83 +140,62 @@ struct TRACECPUState
     bool hyp;                            /* CPU is in hypervisor mode */
     bool thumb;                          /* CPU is in thumb mode */
     bool clockSpeedChanged;              /* CPU Clockspeed changed since last timestamp */
+
+    // Convinience, for debug reporting
+    genericsReportCB report;
 };
 
-/* Internal states of the protocol machine */
-enum TRACEprotoState
-{
-    TRACE_UNSYNCED,
-    TRACE_WAIT_ISYNC,
-    TRACE_IDLE,
-    TRACE_COLLECT_BA_STD_FORMAT,
-    TRACE_COLLECT_BA_ALT_FORMAT,
-    TRACE_COLLECT_EXCEPTION,
-    TRACE_GET_CONTEXTBYTE,
-    TRACE_GET_INFOBYTE,
-    TRACE_GET_IADDRESS,
-    TRACE_GET_ICYCLECOUNT,
-    TRACE_GET_CYCLECOUNT,
-    TRACE_GET_VMID,
-    TRACE_GET_TSTAMP,
-    TRACE_GET_CONTEXTID
-};
-
-/* Textual form of the above, for debugging */
-#define TRACEprotoStateNamesDEF  "UNSYNCED",       "WAIT_ISYNC",        "IDLE",             "COLLECT_BA_STD",  \
-    "COLLECT_BA_ALT", "COLLECT_EXCEPTION", "WAIT_CONTEXTBYTE", "WAIT_INFOBYTE",   \
-    "WAIT_IADDRESS",  "WAIT_ICYCLECOUNT",  "WAIT_CYCLECOUNT",  "GET_VMID",        \
-    "GET_TSTAMP",     "GET_CONTEXTID"
-
-extern const char *protoStateName[];
 // ============================================================================
 // The TRACE decoder state
 // ============================================================================
+
+typedef void ( *traceDecodeCB )( void *d );
+
+struct TRACEDecoder;
+
+struct TRACEDecoderEngine
+{
+    bool ( *action )        ( struct TRACEDecoderEngine *e, struct TRACECPUState *cpu, uint8_t c  );
+    bool ( *actionPair )    ( struct TRACEDecoderEngine *e, struct TRACECPUState *cpu, uint32_t source, uint32_t dest );
+    void ( *destroy )       ( struct TRACEDecoderEngine *e );
+    bool ( *synced )        ( struct TRACEDecoderEngine *e );
+    void ( *forceSync )     ( struct TRACEDecoderEngine *e, bool isSynced );
+    const char ( *name )    ( void );
+
+    /* Config specific to ETM3.5 */
+    void ( *altAddrEncode ) ( struct TRACEDecoderEngine *e, bool using );
+};
+
 struct TRACEDecoder
 
 {
-    struct TRACEDecoderStats stats;      /* Record of the statistics */
-    enum TRACEprotoState p;              /* Current state of the receiver */
-    bool rxedISYNC;                      /* Indicator that we're fully synced */
+    struct TRACEDecoderStats stats;    /* Record of the statistics */
+    struct TRACECPUState cpu;          /* Current state of the CPU */
 
-    /* Trace configuration */
-    /* ------------------- */
-    bool usingAltAddrEncode;             /* Set if the new (TRACE 3.4 onwards) addr formatting is used */
-    enum TRACEprotocol protocol;         /* What trace protocol are we using? */
-    uint8_t contextBytes;                /* How many context bytes we're using */
-    bool cycleAccurate;                  /* Using cycle accurate mode */
-    bool dataOnlyMode;                   /* If we're only tracing data, not instructions */
+    enum TRACEprotocol protocol;       /* What trace protocol are we using? */
 
-    /* Purely internal matters.... */
-    /* --------------------------- */
-    uint32_t asyncCount;                 /* Count of 0's in preparation for ASYNC recognition */
-    uint32_t addrConstruct;              /* Address under construction */
-    uint64_t tsConstruct;                /* Timestamp under construction */
-    uint32_t contextConstruct;           /* Context under construction */
-    uint32_t cycleConstruct;             /* Cycle count under construction */
-    uint32_t byteCount;                  /* How many bytes of this packet do we have? */
+    struct TRACEDecoderEngine *engine; /* The actual engine for the decode, including internal state */
 
-
-    /* External resulutions of current CPU state */
-    /* ----------------------------------------- */
-    struct TRACECPUState cpu;              /* Current state of the CPU */
 };
 
 // ====================================================================================================
-typedef void ( *traceDecodeCB )( void *d );
 
 void TRACEDecoderForceSync( struct TRACEDecoder *i, bool isSynced );
-void TRACEDecoderZeroStats( struct TRACEDecoder *i );
 bool TRACEDecoderIsSynced( struct TRACEDecoder *i );
+
+void TRACEDecoderZeroStats( struct TRACEDecoder *i );
+struct TRACEDecoderStats *TRACEDecoderGetStats( struct TRACEDecoder *i );
+
 struct TRACECPUState *TRACECPUState( struct TRACEDecoder *i );
 bool TRACEStateChanged( struct TRACEDecoder *i, enum TRACEchanges c );
-struct TRACEDecoderStats *TRACEDecoderGetStats( struct TRACEDecoder *i );
-void TRACEDecodeUsingAltAddrEncode( struct TRACEDecoder *i, bool usingAltAddrEncodeSet );
 
-void TRACEDecodeProtocol( struct TRACEDecoder *i, enum TRACEprotocol protocol );
+const char *TRACEExceptionName( int exceptionNumber );
 
-void TRACEDecoderPump( struct TRACEDecoder *i, uint8_t *buf, int len, traceDecodeCB cb, genericsReportCB report, void *d );
+const char *TRACEDecodeGetProtocolName( enum TRACEprotocol protocol );
 
-void TRACEDecoderInit( struct TRACEDecoder *i, enum TRACEprotocol protocol, bool usingAltAddrEncodeSet );
+void TRACEDecoderPump( struct TRACEDecoder *i, uint8_t *buf, int len, traceDecodeCB cb, void *d );
+
+void TRACEDecoderInit( struct TRACEDecoder *i, enum TRACEprotocol protocol, bool usingAltAddrEncodeSet, genericsReportCB report );
 // ====================================================================================================
 #ifdef __cplusplus
 }

@@ -414,7 +414,7 @@ static void _traceCB( void *d )
                 {
                     if ( TRACEStateChanged( &r->i, EV_CH_ADDRESS ) )
                     {
-                        DBG_OUT( "New addr %08x" EOL, cpu->addr );
+                        DBG_OUT( "New addr %08lx" EOL, cpu->addr );
                         r->op.workingAddr = cpu->addr;
                     }
 
@@ -432,7 +432,7 @@ static void _traceCB( void *d )
             }
 
             r->op.workingAddr = cpu->addr;
-            DBG_OUT( "A:%08x" EOL, cpu->addr );
+            DBG_OUT( "A:%08lx" EOL, cpu->addr );
         }
 
         /* ================================================ */
@@ -585,7 +585,7 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
 
                 /* Index through protocol strings looking for match or end of list */
                 for ( r->options->tProtocol = TRACE_PROT_LIST_START;
-                        ( ( r->options->tProtocol != TRACE_PROT_LIST_END ) && strcasecmp( optarg, TRACEprotocolString[r->options->tProtocol] ) );
+                        ( ( r->options->tProtocol != TRACE_PROT_LIST_END ) && strcasecmp( optarg, TRACEDecodeGetProtocolName( r->options->tProtocol ) ) );
                         r->options->tProtocol++ )
                 {}
 
@@ -718,7 +718,7 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
     genericsReport( V_INFO, "Delete Material : %s" EOL, r->options->deleteMaterial ? r->options->deleteMaterial : "None" );
     genericsReport( V_INFO, "Elf File        : %s (%s Names)" EOL, r->options->elffile, r->options->truncateDeleteMaterial ? "Truncate" : "Don't Truncate" );
     genericsReport( V_INFO, "Objdump options : %s" EOL, r->options->odoptions ? r->options->odoptions : "None" );
-    genericsReport( V_INFO, "Protocol        : %s" EOL, TRACEprotocolString[r->options->tProtocol] );
+    genericsReport( V_INFO, "Protocol        : %s" EOL, TRACEDecodeGetProtocolName( r->options->tProtocol ) );
     genericsReport( V_INFO, "Tag (TPIU/COBS) : %d" EOL, r->options->tag );
     genericsReport( V_INFO, "DOT file        : %s" EOL, r->options->dotfile ? r->options->dotfile : "None" );
     genericsReport( V_INFO, "Sample Duration : %d mS" EOL, r->options->sampleDuration );
@@ -771,7 +771,7 @@ static void _COBSpacketRxed ( struct Frame *p, void *param )
 {
     if ( p->d[0] == _r.options->tag )
     {
-        TRACEDecoderPump( &_r.i, &( p->d[1] ), p->len - 1, _traceCB, genericsReport, &_r );
+        TRACEDecoderPump( &_r.i, &( p->d[1] ), p->len - 1, _traceCB, &_r );
     }
 }
 // ====================================================================================================
@@ -822,7 +822,7 @@ static void *_processBlocks( void *params )
             else
             {
                 /* Pump all of the data through the protocol handler */
-                TRACEDecoderPump( &r->i, r->rawBlock[r->rp].buffer, r->rawBlock[r->rp].fillLevel, _traceCB, genericsReport, &_r );
+                TRACEDecoderPump( &r->i, r->rawBlock[r->rp].buffer, r->rawBlock[r->rp].fillLevel, _traceCB, &_r );
             }
 
             r->rp = ( r->rp + 1 ) % NUM_RAW_BLOCKS;
@@ -882,7 +882,7 @@ int main( int argc, char *argv[] )
 
 #endif
 
-    TRACEDecoderInit( &_r.i, _r.options->tProtocol, !_r.options->noaltAddr );
+    TRACEDecoderInit( &_r.i, _r.options->tProtocol, !_r.options->noaltAddr, genericsReport );
     COBSInit( &_r.c );
 
     while ( !_r.ending )

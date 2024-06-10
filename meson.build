@@ -48,6 +48,11 @@ add_project_arguments(['-include', 'uicolours_default.h'], language: 'c')
 libdwarf = subproject('libdwarf').get_variable('libdwarf')
 dependencies += libdwarf
 
+libcapstone = dependency('capstone', version: '>=4', required: false)
+if not libcapstone.found()
+    libcapstone = disabler()
+endif
+
 libSDL2 = dependency('SDL2', required: false)
 if not libSDL2.found()
     libSDL2 = disabler()
@@ -84,8 +89,12 @@ liborb = library('orb',
         'Src/cobs.c',
         'Src/otag.c',
         'Src/msgSeq.c',
+        'Src/traceDecoder_etm35.c',
+        'Src/traceDecoder_etm4.c',
+        'Src/traceDecoder_mtb.c',
         'Src/traceDecoder.c',
         'Src/generics.c',
+	'Src/readsource.c'
     ] + stream_src,
     include_directories: incdirs,
     dependencies: sockets,
@@ -172,12 +181,14 @@ executable('orbstat',
 executable('orbmortem',
     sources: [
         'Src/orbmortem.c',
-        'Src/symbols.c',
+        'Src/loadelf.c',
         'Src/sio.c',
         git_version_info_h,
     ],
     include_directories: incdirs,
-    dependencies: dependencies,
+    dependencies: dependencies + [
+        libcapstone,
+    ],
     link_with: liborb,
     install: true,
 )
@@ -228,7 +239,6 @@ executable('orblcd',
     dependencies: dependencies + [
         libSDL2,
     ],
-
     link_with: liborb,
     install: true,
 )

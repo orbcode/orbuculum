@@ -116,7 +116,9 @@ static uint32_t _getFunctionEntryIdx( struct SymbolSet *s, char *function )
 // ====================================================================================================
 // Strdup leak is deliberately ignored. That is the central purpose of this code!
 #pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wanalyzer-malloc-leak"
+#if !defined(__clang__)
+    #pragma GCC diagnostic ignored "-Wanalyzer-malloc-leak"
+#endif
 static uint32_t _getOrAddFunctionEntryIdx( struct SymbolSet *s, char *function )
 
 /* Return index to file entry in the functions table, or create an entry and return that */
@@ -709,6 +711,28 @@ static enum symbolErr _getTargetProgramInfo( struct SymbolSet *s )
 
 #define MASKED_COMPARE(mask,compare) (((sourceEntry->assy[sourceEntry->assyLines].codes)&(mask))==(compare))
 
+                            /* For ETM4 we need to know direct and indirect branches, cos they are the only instructions                */
+                            /* that will get traced. So let's label those...Per definition in ARM IHI0064H.a ID20820 Appendix F         */
+                            if (
+                                        MASKED_COMPARE( 0xffffff03, 0x00004700 ) || /* BL, BLX rx */
+                                        MASKED_COMPARE( 0xfffff500, 0x0000b100 ) || /* CBNZ/CBZ   */
+                                        MASKED_COMPARE( 0xfffff000, 0x0000d000 ) || /* B          */
+                                        MASKED_COMPARE( 0xffffffef, 0x0000bf20 ) || /* WFE/WFI    */
+
+                                        /* 32 bit matches */
+                                        MASKED_COMPARE( 0xffd08000, 0xe8908000 ) || /* LDM */
+                                        MASKED_COMPARE( 0xffd08000, 0xe9908000 ) || /* LDMDB */
+                                        MASKED_COMPARE( 0xfe10f000, 0xf810f000 ) || /* LDR to PC */
+                                        MASKED_COMPARE( 0xf8008000, 0xf0008000 )  /* Branches and misc control */
+                            )
+                            {
+                                sourceEntry->assy[sourceEntry->assyLines].etm4branch = true;
+                            }
+                            else
+                            {
+                                sourceEntry->assy[sourceEntry->assyLines].etm4branch = false;
+                            }
+
                             /* The only way a subroutine will be called from gcc (See gcc source code file gcc/config/arm/thumb2.md) is */
                             /* via blx reg, blxns reg. In theory it could also be done via direct manipulation of R15, but fortunately  */
                             /* gcc doesn't pull tricks like that. It _will_ tail chain (with BX) though.                                */
@@ -1035,7 +1059,9 @@ bool SymbolSetValid( struct SymbolSet **s, char *filename )
 // ====================================================================================================
 // Malloc leak is deliberately ignored. That is the central purpose of this code!
 #pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wanalyzer-malloc-leak"
+#if !defined(__clang__)
+    #pragma GCC diagnostic ignored "-Wanalyzer-malloc-leak"
+#endif
 enum symbolErr SymbolSetCreate( struct SymbolSet **ss, const char *filename, const char *deleteMaterial,
                                 bool demanglecpp, bool recordSource, bool recordAssy, const char *objdumpOptions )
 

@@ -71,18 +71,16 @@ static void _pumpcb( struct Frame *p, void *param )
 
 {
     /* Callback function when a COBS packet is complete */
-    struct timespec ts;
     struct OTAG *t = ( struct OTAG * )param;
 
     t->f.len = p->len - 1; /* OTAG frames have the first element representing the tag */
-    clock_gettime( CLOCK_REALTIME, &ts );
-    t->f.tstamp = ts.tv_sec * OTAG_TS_RESOLUTION + ts.tv_nsec; /* For now, fake the timestamp */
-    t->f.d = &p->d[1];
+    t->f.d = &p->d[1];     /* This is the rest of the data */
+    /* Timestamp was already set for this cluster */
 
     ( t->cb )( &t->f, t->param );
 }
 
-void OTAGPump( struct OTAG *t, uint8_t *incoming, int len,
+void OTAGPump( struct OTAG *t, const uint8_t *incoming, int len,
                void ( *packetRxed )( struct OTAGFrame *p, void *param ),
                void *param )
 
@@ -90,7 +88,10 @@ void OTAGPump( struct OTAG *t, uint8_t *incoming, int len,
 /* Assemble this packet into a complete frame and call back */
 
 {
+    struct timespec ts;
     t->cb = packetRxed;
+    clock_gettime( CLOCK_REALTIME, &ts );
+    t->f.tstamp = ts.tv_sec * OTAG_TS_RESOLUTION + ts.tv_nsec; /* For now, fake the timestamp */
     t->param = param;
     COBSPump( &t->c, incoming, len, _pumpcb, t );
 }
