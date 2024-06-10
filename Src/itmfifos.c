@@ -126,6 +126,7 @@ static void *_runFifo( void *arg )
     {
         /* Keep on opening the file (in case the fifo is opened/closed multiple times) */
         /* We use RDWR to allow the open to proceed without a remote end */
+
         if ( !params->permafile )
         {
             opfile = open( c->fifoName, O_RDWR | O_BINARY | O_NONBLOCK );

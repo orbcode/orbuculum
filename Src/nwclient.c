@@ -190,16 +190,16 @@ static void *_listenTask( void *arg )
         client->prevClient = NULL;
 
         if ( client->nextClient )
-    {
-        client->nextClient->prevClient = client;
+        {
+            client->nextClient->prevClient = client;
+        }
+
+        h->firstClient = client;
+
+        pthread_mutex_unlock( &h->clientList );
     }
 
-    h->firstClient = client;
-
-    pthread_mutex_unlock( &h->clientList );
-}
-
-if ( h->sockfd )
+    if ( h->sockfd )
     {
         close( h->sockfd );
     }

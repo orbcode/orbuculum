@@ -13,8 +13,10 @@ STM32;
   enableSTM32TRACE: Start TRACE on STM32 pins
 
 IMXRT;
+  enableIMXRT102XSWO : Enable SWO on IMXRT102X series pins (AD_B0_04)
+  enableIMXRT106XSWO : Enable SWO on IMXRT106X series pins (AD_B0_10)
   enableIMXRT102XSWO  : Enable SWO on IMXRT102X series pins (AD_B0_04)
-  enableIMXRT102XTRACE: Start TRACE on IMXRT102X series pins  
+  enableIMXRT102XTRACE: Start TRACE on IMXRT102X series pins
   enableIMXRT106XSWO  : Enable SWO on IMXRT106X series pins (AD_B0_10)
   enableIMXRT117XSWO  : Enable SWO on IMXRT117X series pin (LPSR_11)
 
@@ -676,8 +678,7 @@ define enableIMXRT101XTRACE
   end
 
   set $bits = $bits-1
-  
-  set $CPU=$CPU_IMXRT101X  
+  set $CPU=$CPU_IMXRT101X
   _setAddressesIMXRT
 
   # Ensure IOMUX clocks are on
@@ -707,7 +708,7 @@ define enableIMXRT101XTRACE
     set *0x401f808c = 7
     set *0x401f813c = $padval
     # TRACEDATA3 on GPIO_11
-    set *0x401f8090 = 7  
+    set *0x401f8090 = 7
     set *0x401f8140 = $padval
   end
   # =========== END IF SORTING OUT PINS FOR TRACE ==================
@@ -733,7 +734,6 @@ define enableIMXRT101XTRACE
 
   # Set TPIU_SPPR to parallel trace port mode
   set *($TPIUBASE+0xf0) = 0
-  
   set *($TPIUBASE+0x304) = 0x102
   set language auto
 end
@@ -749,8 +749,7 @@ define enableIMXRT102XTRACE
 
   set $drive=1
   set $bits=1
-  
-  set $CPU=$CPU_IMXRT102X  
+  set $CPU=$CPU_IMXRT102X
   _setAddressesIMXRT
 
   set *0x400FC078 |= 3<<2
@@ -759,18 +758,17 @@ define enableIMXRT102XTRACE
 
   # TRACECLK ALT6 on GPIO_AD_B0_10
   # TRACEDATA0 ALT6 on GPIO_AD_B0_12
-  set *0x401f80ec = 6 
-  set *0x401f80e4 = 6 
+  set *0x401f80ec = 6
+  set *0x401f80e4 = 6
 
   # Do not set drive strength to 2 or 3 here...it causes crashes. No idea why
 # Mostly works  set $padval = ( 0<<0 ) | (1<<12) | (0<<14) | (1<<13) | (2<<6) | (4<<3)
-  set $padval =               ( 0<<0 ) | (0<<12) | (0<<14) | (1<<13) | (3<<6) | (2<<3)  
+  set $padval =               ( 0<<0 ) | (0<<12) | (0<<14) | (1<<13) | (3<<6) | (2<<3)
 #set $padval = 0x10b0
   set *0x401f8258 = $padval
   set *0x401f8260 = $padval
   # =========== END IF SORTING OUT PINS FOR TRACE ==================
 
-  
   # =========== SORT OUT CLOCK FOR TRACE =================
   # Turn off clock while setting up PODF (CCGR0 CG11)
   set *0x400fc068 = ((*0x400fc068) & ~(3<<22))
@@ -792,7 +790,6 @@ define enableIMXRT102XTRACE
 
   # Set TPIU_SPPR to parallel trace port mode
   set *($TPIUBASE+0xf0) = 0
-  
   set *($TPIUBASE+0x304) = 0x102
   set language auto
 end
@@ -868,7 +865,6 @@ define enableKinetisSWO
   set *($MCM_ETBCC) &= ~(1<<5)
   # trace clk not disabled
   set *($SIM_MCR) &= ~(1<<31)
-  
   # SWO is on pin PTA2
   # set PCRA2->mux = 7
   set *0x40049008 |= (7<<8)
@@ -1490,6 +1486,7 @@ document enableLPC176xTRACE
 enableLPC176xTRACE Enable TRACE on LPC176x pins.
   <Width>   : Number of bits wide (1,2 or 4 only)
 end
+
 # ====================================================================
 define enableSAMD5XTRACE
   #set language c
@@ -1572,6 +1569,7 @@ enableSAMD5XTRACE <Width> <Drive>: Enable TRACE on SAM5x pins
   <Width>   : Number of bits wide (1,2 or 4 only)
   <Drive>   : Drive strength (0=normal, 1=strong)
 end
+
 # ====================================================================
 define dwtPOSTCNT
   #set language c

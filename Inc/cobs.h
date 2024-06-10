@@ -58,7 +58,7 @@ bool COBSisEOFRAME( const uint8_t *inputEnc );
 void COBSEncode( const uint8_t *frontMsg, int lfront, const uint8_t *inputMsg, int len, struct Frame *o );
 
 /* Context free functions */
-void COBSPump( struct COBS *t, uint8_t *incoming, int len,
+void COBSPump( struct COBS *t, const uint8_t *incoming, int len,
                void ( *packetRxed )( struct Frame *p, void *param ),
                void *param );
 void COBSDelete( struct COBS *t );

@@ -787,10 +787,12 @@ void *_checkInterval( void *params )
     return NULL;
 }
 // ====================================================================================================
+// Block decoders and handlers for the various line formats
+// ====================================================================================================
 static void _purgeBlock( struct RunTime *r )
 
 {
-    /* Now send any packets to clients who want it */
+    /* Send any packets to clients who want it, no matter where they originate from */
 
     struct handlers *h = r->handler;
     int i = r->numHandlers;
@@ -865,7 +867,7 @@ static void _TPIUpacketRxed( enum TPIUPumpEvent e, struct TPIUPacket *p, void *p
                 }
                 else
                 {
-                    genericsReport( V_WARN, "No handler for %d" EOL, p->packet[g].s );
+                    genericsReport( V_INFO, "No handler for %d" EOL, p->packet[g].s );
                 }
             }
 
@@ -886,15 +888,60 @@ static void _TPIUpacketRxed( enum TPIUPumpEvent e, struct TPIUPacket *p, void *p
 }
 // ====================================================================================================
 
-static void _otagIncoming( struct RunTime *r, const uint8_t *buffer, int length )
+static void _OTAGpacketRxed( struct OTAGFrame *p, void *param )
+
+/* Put the packet into the correct output buffer */
+
+{
+    int chIndex;
+    struct RunTime* r = (struct RunTime*)param;
+    struct handlers* h = _r.handler;
+
+    /* Record the length we received */
+    r->otagDataLenRxed += p->len;
+
+    /* Search for channel */
+    for ( chIndex = 0; chIndex < r->numHandlers; chIndex++ )
+    {
+        if ( h->channel == p->tag )
+        {
+            break;
+        }
+
+        h++;
+    }
+
+    if ( ( chIndex != r->numHandlers ) && ( h ) )
+    {
+        /* We must have found a match for this at some point, so add it to the queue */
+        for ( int i = 0; i < p->len; i++ )
+        {
+            h->strippedBlock->buffer[h->strippedBlock->fillLevel++] = p->d[i];
+
+            if ( h->strippedBlock->fillLevel == sizeof( h->strippedBlock->buffer ) )
+            {
+                /* We filled this block...better send it right now */
+                nwclientSend( h->n, h->strippedBlock->fillLevel, h->strippedBlock->buffer );
+                h->strippedBlock->fillLevel = 0;
+            }
+        }
+    }
+}
+
+// ====================================================================================================
+
+static void _processOTAGBlock( struct RunTime *r, const uint8_t *buffer, int length )
 
 {
     const uint8_t *flen;
     const uint8_t *b = buffer;
 
+    /* We need to decode this so it can go through the 'normal' output channels too */
+    OTAGPump( &r->otag, buffer, length, _OTAGpacketRxed, r );
+
     if ( r->otagPart.len )
     {
-        /* We already have a part cobs frame...complete it using whatever we've just received */
+        /* We already have a part OTAG frame...complete it using whatever we've just received */
         flen = OTAGgetFrameExtent( b, length );
 
         if ( OTAGisEOFRAME( flen ) )
@@ -960,10 +1007,11 @@ static void _otagIncoming( struct RunTime *r, const uint8_t *buffer, int length 
     /* Whatever we have left we keep for next time */
     memcpy( r->otagPart.d, b, length );
     r->otagPart.len = length;
-}
 
+    _purgeBlock( r );
+}
 // ====================================================================================================
-static void _processBlock( struct RunTime *r, ssize_t fillLevel, uint8_t *buffer )
+static void _processNonOTAGBlock( struct RunTime *r, ssize_t fillLevel, uint8_t *buffer )
 
 {
     genericsReport( V_DEBUG, "RXED Packet of %d bytes%s" EOL, fillLevel, ( r->options->intervalReportTime ) ? EOL : "" );
@@ -990,7 +1038,7 @@ static void _processBlock( struct RunTime *r, ssize_t fillLevel, uint8_t *buffer
         else
         {
             /* Do it the old fashioned way and send out the unfettered block */
-            nwclientSend( _r.n, fillLevel, buffer );
+            nwclientSend( r->n, fillLevel, buffer );
 
             /* The OTAG encoded version goes out on the default OTAG channel */
             uint8_t *b = buffer;
@@ -1000,49 +1048,9 @@ static void _processBlock( struct RunTime *r, ssize_t fillLevel, uint8_t *buffer
                 OTAGEncode( DEFAULT_ITM_STREAM, 0, b,
                             ( fillLevel < OTAG_MAX_PACKET_LEN ) ? fillLevel : OTAG_MAX_PACKET_LEN,
                             &r->otagOtg );
-                nwclientSend( _r.otagHandler, r->otagOtg.len, r->otagOtg.d );
+                nwclientSend( r->otagHandler, r->otagOtg.len, r->otagOtg.d );
                 b += ( fillLevel < OTAG_MAX_PACKET_LEN ) ? fillLevel : OTAG_MAX_PACKET_LEN;
                 fillLevel -= ( fillLevel < OTAG_MAX_PACKET_LEN ) ? fillLevel : OTAG_MAX_PACKET_LEN;
-            }
-        }
-    }
-}
-// ====================================================================================================
-
-static void _OTAGpacketRxed( struct OTAGFrame *p, void *param )
-
-/* Put the packet into the correct output buffer */
-
-{
-    int chIndex;
-    struct handlers *h = _r.handler;
-
-    /* Record the length we received */
-    _r.otagDataLenRxed += p->len;
-
-    /* Search for channel */
-    for ( chIndex = 0; chIndex < _r.numHandlers; chIndex++ )
-    {
-        if ( h->channel == p->tag )
-        {
-            break;
-        }
-
-        h++;
-    }
-
-    if ( ( chIndex != _r.numHandlers ) && ( h ) )
-    {
-        /* We must have found a match for this at some point, so add it to the queue */
-        for ( int i = 0; i < p->len; i++ )
-        {
-            h->strippedBlock->buffer[h->strippedBlock->fillLevel++] = p->d[i];
-
-            if ( h->strippedBlock->fillLevel == sizeof( h->strippedBlock->buffer ) )
-            {
-                /* We filled this block...better send it right now */
-                nwclientSend( h->n, h->strippedBlock->fillLevel, h->strippedBlock->buffer );
-                h->strippedBlock->fillLevel = 0;
             }
         }
     }
@@ -1053,25 +1061,20 @@ static void _handleBlock( struct RunTime *r, ssize_t fillLevel, uint8_t *buffer 
 /* Handle an incoming block in either 'conventional' or OTag format */
 
 {
-
     if ( r->usingOTAG )
     {
-        _otagIncoming( r, buffer, fillLevel );
-
-        /* We need to decode this so it can go through the 'normal' output channels too */
-        OTAGPump( &r->otag, buffer, fillLevel, _OTAGpacketRxed, r );
-        r->intervalRawBytes += fillLevel;
-        _purgeBlock( r );
+        _processOTAGBlock( r, buffer, fillLevel );
     }
     else
     {
-        _processBlock( r, fillLevel, buffer );
+        _processNonOTAGBlock( r, fillLevel, buffer );
     }
 
     r->intervalRawBytes += fillLevel;
 }
 // ====================================================================================================
-
+// Generic handlers for each of the source types. These all call _handleBlock above to process.
+// ====================================================================================================
 static void _usb_callback( struct libusb_transfer *t )
 
 /* For the USB case the ringbuffer isn't used .. packets are sent directly from this callback */
@@ -1089,25 +1092,25 @@ static void _usb_callback( struct libusb_transfer *t )
         }
 
         _handleBlock( &_r, t->actual_length, t->buffer );
+    }
 
-        if ( ( t->status != LIBUSB_TRANSFER_COMPLETED ) &&
-                ( t->status != LIBUSB_TRANSFER_TIMED_OUT ) &&
-                ( t->status != LIBUSB_TRANSFER_CANCELLED )
-           )
+    if ( ( t->status != LIBUSB_TRANSFER_COMPLETED ) &&
+            ( t->status != LIBUSB_TRANSFER_TIMED_OUT ) &&
+            ( t->status != LIBUSB_TRANSFER_CANCELLED )
+       )
+    {
+        if ( !_r.errored )
         {
-            if ( !_r.errored )
-            {
-                genericsReport( V_WARN, "Errored out with status %d (%s)" EOL, t->status, libusb_error_name( t->status ) );
-            }
-
-            _r.errored = true;
+            genericsReport( V_WARN, "Errored out with status %d (%s)" EOL, t->status, libusb_error_name( t->status ) );
         }
-        else
+
+        _r.errored = true;
+    }
+    else
+    {
+        if ( t->status != LIBUSB_TRANSFER_CANCELLED )
         {
-            if ( t->status != LIBUSB_TRANSFER_CANCELLED )
-            {
-                libusb_submit_transfer( t );
-            }
+            libusb_submit_transfer( t );
         }
     }
 }

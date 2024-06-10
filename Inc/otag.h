@@ -55,7 +55,7 @@ bool OTAGisEOFRAME( const uint8_t *inputEnc );
 void OTAGEncode( const uint8_t channel, const uint64_t tstamp, const uint8_t *inputMsg, int len, struct Frame *o );
 
 /* Context free functions */
-void OTAGPump( struct OTAG *t, uint8_t *incoming, int len,
+void OTAGPump( struct OTAG *t, const uint8_t *incoming, int len,
                void ( *packetRxed )( struct OTAGFrame *p, void *param ),
                void *param );
 

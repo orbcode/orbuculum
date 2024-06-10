@@ -106,7 +106,7 @@ bool COBSisEOFRAME( const uint8_t *inputEnc )
 
 // ====================================================================================================
 
-void COBSPump( struct COBS *t, uint8_t *incoming, int len,
+void COBSPump( struct COBS *t, const uint8_t *incoming, int len,
                void ( *packetRxed )( struct Frame *p, void *param ),
                void *param )
 
@@ -114,7 +114,7 @@ void COBSPump( struct COBS *t, uint8_t *incoming, int len,
 /* Assemble this packet into a complete frame and call back */
 
 {
-    uint8_t *fp = incoming;
+    const uint8_t *fp = incoming;
 
     for ( unsigned int rlen = 0; rlen < len; rlen++, fp++ )
     {

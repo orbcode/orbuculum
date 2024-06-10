@@ -43,6 +43,11 @@ add_project_arguments(['-include', 'uicolours_default.h'], language: 'c')
 libdwarf = subproject('libdwarf').get_variable('libdwarf')
 dependencies += libdwarf
 
+libcapstone = dependency('capstone', version: '>=4', required: false)
+if not libcapstone.found()
+    libcapstone = disabler()
+endif
+
 libSDL2 = dependency('SDL2', required: false)
 if not libSDL2.found()
     libSDL2 = disabler()
@@ -79,9 +84,9 @@ liborb = library('orb',
         'Src/cobs.c',
         'Src/otag.c',
         'Src/msgSeq.c',
-	'Src/traceDecoder_etm35.c',
-	'Src/traceDecoder_etm4.c',	
-	'Src/traceDecoder_mtb.c',
+        'Src/traceDecoder_etm35.c',
+        'Src/traceDecoder_etm4.c',
+        'Src/traceDecoder_mtb.c',
         'Src/traceDecoder.c',
         'Src/generics.c',
 	'Src/readsource.c'
