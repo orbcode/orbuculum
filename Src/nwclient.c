@@ -212,40 +212,43 @@ void nwclientSend( struct nwclientsHandle *h, uint32_t len, const uint8_t *ipbuf
 {
     const struct timespec ts = {.tv_sec = 1, .tv_nsec = 0};
 
-    if ( _lock_with_timeout( &h->clientList, &ts ) < 0 )
+    if ( h && h->firstClient )
     {
-        genericsExit( -1, "Failed to acquire mutex" EOL );
+        if ( _lock_with_timeout( &h->clientList, &ts ) < 0 )
+        {
+            genericsExit( -1, "Failed to acquire mutex" EOL );
+        }
+
+        /* Now kick all the clients that new data arrived for them to distribute */
+        volatile struct nwClient *n = h->firstClient;
+
+        while ( n )
+        {
+            ssize_t t = len;
+            ssize_t sent = 0;
+            void *p = ( void * )ipbuffer;
+
+            while ( t && ( sent >= 0 ) )
+            {
+                sent = send( n->portNo, p, t, MSG_NOSIGNAL );
+                p += sent;
+                t -= sent;
+            }
+
+            if ( t )
+            {
+                volatile struct nwClient *newn = n->nextClient;
+                _clientRemoveNoLock( n );
+                n = newn;
+            }
+            else
+            {
+                n = n->nextClient;
+            }
+        }
+
+        pthread_mutex_unlock( &h->clientList );
     }
-
-    /* Now kick all the clients that new data arrived for them to distribute */
-    volatile struct nwClient *n = h->firstClient;
-
-    while ( n )
-    {
-        ssize_t t = len;
-        ssize_t sent = 0;
-        void *p = ( void * )ipbuffer;
-
-        while ( t && ( sent >= 0 ) )
-        {
-            sent = send( n->portNo, p, t, MSG_NOSIGNAL );
-            p += sent;
-            t -= sent;
-        }
-
-        if ( t )
-        {
-            volatile struct nwClient *newn = n->nextClient;
-            _clientRemoveNoLock( n );
-            n = newn;
-        }
-        else
-        {
-            n = n->nextClient;
-        }
-    }
-
-    pthread_mutex_unlock( &h->clientList );
 }
 // ====================================================================================================
 struct nwclientsHandle *nwclientStart( int port )

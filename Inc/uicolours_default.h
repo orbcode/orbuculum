@@ -19,6 +19,7 @@
 #define C_VERB_INFO  C_LCYAN       /* Verbal level info */
 #define C_VERB_DEBUG C_LGREEN      /* Verbal level debug */
 #define C_DATA       C_YELLOW      /* Output data value */
+#define C_NOCHAN     C_LRED        /* No consumer set for channel */
 #define C_DEFAULT    C_WHITE
 
 #define C_SEL        C_LCYAN       /* Element selection */

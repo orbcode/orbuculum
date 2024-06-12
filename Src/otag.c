@@ -74,6 +74,7 @@ static void _pumpcb( struct Frame *p, void *param )
     struct OTAG *t = ( struct OTAG * )param;
 
     t->f.len = p->len - 1; /* OTAG frames have the first element representing the tag */
+    t->f.tag = p->d[0];    /* First byte of an OTAG frame is the tag */
     t->f.d = &p->d[1];     /* This is the rest of the data */
     /* Timestamp was already set for this cluster */
 
