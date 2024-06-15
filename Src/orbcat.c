@@ -73,6 +73,8 @@ struct
     char *file;                              /* File host connection */
     bool endTerminate;                       /* Terminate when file/socket "ends" */
 
+    bool ex;                             /* Support exception reporting */
+    bool fex;                            /* Make them highspeed */
 } options =
 {
     .forceITMSync = true,
@@ -90,12 +92,14 @@ struct
     struct ITMPacket h;
     struct TPIUDecoder t;
     struct TPIUPacket p;
+    uint64_t lastHWExceptionTS;
     enum timeDelay timeStatus;           /* Indicator of if this time is exact */
     uint64_t timeStamp;                  /* Latest received time */
     uint64_t lastTimeStamp;              /* Last received time */
     uint64_t te;                         /* Time on host side for line stamping */
     bool gotte;                          /* Flag that we have the initial time */
     bool inLine;                         /* We are in progress with a line that has been timestamped already */
+    char dwtText[MAX_STRING_LENGTH];     /* DWT text that arrived while a line was in progress */
     uint64_t oldte;                      /* Old time for interval calculation */
 } _r;
 
@@ -114,7 +118,7 @@ uint64_t _timestamp( void )
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
-static void _outputTimestamp( void )
+static void _printTimestamp( char *strstore )
 
 {
     /* Lets output a timestamp */
@@ -122,6 +126,8 @@ static void _outputTimestamp( void )
     uint64_t res;
     struct tm tm;
     time_t td;
+
+    *strstore = 0;
 
     switch ( options.tsType )
     {
@@ -134,13 +140,13 @@ static void _outputTimestamp( void )
                 /* Get the starting time */
                 _r.oldte = _timestamp();
                 _r.gotte = true;
-                fprintf( stdout, REL_FORMAT_INIT );
+                sprintf( strstore, REL_FORMAT_INIT );
             }
             else
             {
                 uint64_t now = _timestamp();
                 res = now - _r.oldte;
-                fprintf( stdout, REL_FORMAT, res / ONE_SEC_IN_USEC, ( res / ( ONE_SEC_IN_USEC / 1000 ) ) % 1000 );
+                sprintf( strstore, REL_FORMAT, res / ONE_SEC_IN_USEC, ( res / ( ONE_SEC_IN_USEC / 1000 ) ) % 1000 );
             }
 
             break;
@@ -150,7 +156,7 @@ static void _outputTimestamp( void )
             td = ( time_t )res / ONE_SEC_IN_USEC;
             tm = *localtime( &td );
             strftime( opConstruct, MAX_STRING_LENGTH, ABS_FORMAT_TM, &tm );
-            fprintf( stdout, ABS_FORMAT, opConstruct, ( res / ( ONE_SEC_IN_USEC / 1000 ) ) % 1000 );
+            sprintf( strstore, ABS_FORMAT, opConstruct, ( res / ( ONE_SEC_IN_USEC / 1000 ) ) % 1000 );
             break;
 
         case TSDelta: // ----------------------------------------------------------------------
@@ -159,7 +165,7 @@ static void _outputTimestamp( void )
                 /* Get the starting time */
                 _r.oldte = _timestamp();
                 _r.gotte = true;
-                fprintf( stdout, DEL_FORMAT_INIT );
+                sprintf( strstore, DEL_FORMAT_INIT );
             }
             else
             {
@@ -169,11 +175,11 @@ static void _outputTimestamp( void )
 
                 if ( res / 1000 )
                 {
-                    fprintf( stdout, DEL_FORMAT, res / ONE_SEC_IN_USEC, ( res / 1000 ) % 1000 );
+                    sprintf( strstore, DEL_FORMAT, res / ONE_SEC_IN_USEC, ( res / 1000 ) % 1000 );
                 }
                 else
                 {
-                    fprintf( stdout, DEL_FORMAT_CTD );
+                    sprintf( strstore, DEL_FORMAT_CTD );
                 }
             }
 
@@ -183,11 +189,11 @@ static void _outputTimestamp( void )
             if ( options.cps )
             {
                 uint64_t tms = ( _r.timeStamp * 1000000 ) / options.cps;
-                fprintf( stdout, STAMP_FORMAT_MS, tms / 1000000, ( tms / 1000 ) % 1000, tms % 1000 );
+                sprintf( strstore, STAMP_FORMAT_MS, tms / 1000000, ( tms / 1000 ) % 1000, tms % 1000 );
             }
             else
             {
-                fprintf( stdout, STAMP_FORMAT, _r.timeStamp );
+                sprintf( strstore, STAMP_FORMAT, _r.timeStamp );
             }
 
             break;
@@ -205,11 +211,11 @@ static void _outputTimestamp( void )
             if ( options.cps )
             {
                 uint64_t tms = ( delta * 1000000 ) / options.cps;
-                fprintf( stdout, STAMP_FORMAT_MS_DELTA, tms / 1000000, ( tms / 1000 ) % 1000, tms % 1000 );
+                sprintf( strstore, STAMP_FORMAT_MS_DELTA, tms / 1000000, ( tms / 1000 ) % 1000, tms % 1000 );
             }
             else
             {
-                fprintf( stdout, STAMP_FORMAT, delta );
+                sprintf( strstore, STAMP_FORMAT, delta );
             }
 
             break;
@@ -222,6 +228,8 @@ static void _outputTimestamp( void )
 static void _outputText( char *p )
 
 {
+    char opConstruct[MAX_STRING_LENGTH];
+
     /* Process the buffer and make sure it gets timestamped correctly as it's output */
 
     char *q;
@@ -231,7 +239,8 @@ static void _outputText( char *p )
         /* If this is the first character in a new line, then we need to generate a timestamp */
         if ( !_r.inLine )
         {
-            _outputTimestamp();
+            _printTimestamp( opConstruct );
+            fputs( opConstruct, stdout );
             _r.inLine = true;
         }
 
@@ -244,6 +253,13 @@ static void _outputText( char *p )
             fprintf( stdout, "%s" EOL, p );
             /* Once we've output these data then we're not in a line any more */
             _r.inLine = false;
+
+            /* ...and if there were any DWT messages to print we'd better output those */
+            if ( _r.dwtText[0] )
+            {
+                fprintf( stdout, "%s" EOL, _r.dwtText );
+                _r.dwtText[0] = 0;
+            }
         }
         else
         {
@@ -257,6 +273,167 @@ static void _outputText( char *p )
     }
 }
 // ====================================================================================================
+// Decoders for each message
+// ====================================================================================================
+void _handleException( struct excMsg *m, struct ITMDecoder *i )
+
+{
+    if ( options.ex )
+    {
+        uint64_t eventdifftS = m->ts - _r.lastHWExceptionTS;
+
+        const char *exNames[] = {"Thread", "Reset", "NMI", "HardFault", "MemManage", "BusFault", "UsageFault", "UNKNOWN_7",
+                                 "UNKNOWN_8", "UNKNOWN_9", "UNKNOWN_10", "SVCall", "Debug Monitor", "UNKNOWN_13", "PendSV", "SysTick"
+                                };
+        const char *exEvent[] = {"Unknown", "Enter", "Exit", "Resume"};
+
+        _r.lastHWExceptionTS = m->ts;
+
+        _printTimestamp( &_r.dwtText[strlen( _r.dwtText )] );
+
+        if ( m->exceptionNumber < 16 )
+        {
+            /* This is a system based exception */
+            sprintf( &_r.dwtText[strlen( _r.dwtText )], "HWEVENT_SYSTEM_EXCEPTION,%" PRIu64 ",%s,%s" EOL, eventdifftS, exEvent[m->eventType & 0x03], exNames[m->exceptionNumber & 0x0F] );
+        }
+        else
+        {
+            /* This is a CPU defined exception */
+            sprintf(  &_r.dwtText[strlen( _r.dwtText )], "HWEVENT_INTERRUPT_EXCEPTION,%" PRIu64 ",%s,External,%d" EOL, eventdifftS, exEvent[m->eventType & 0x03], m->exceptionNumber - 16 );
+        }
+
+        if ( ( !_r.inLine ) || options.fex )
+        {
+            fputs( _r.dwtText, stdout );
+            _r.dwtText[0] = 0;
+        }
+    }
+}
+// ====================================================================================================
+void _handleDWTEvent( struct dwtMsg *m, struct ITMDecoder *i )
+
+{
+#define NUM_EVENTS 6
+
+    if ( options.ex )
+    {
+        const char *evName[NUM_EVENTS] = {"CPI", "Exc", "Sleep", "LSU", "Fold", "Cyc"};
+        uint64_t eventdifftS = m->ts - _r.lastHWExceptionTS;
+
+        _r.lastHWExceptionTS = m->ts;
+        _printTimestamp( &_r.dwtText[strlen( _r.dwtText )] );
+
+        sprintf( &_r.dwtText[strlen( _r.dwtText )], "HWEVENT_DWT,%" PRIu64, eventdifftS );
+
+        uint32_t opLen = strlen( _r.dwtText );
+
+        for ( uint32_t i = 0; i < NUM_EVENTS; i++ )
+        {
+            if ( m->event & ( 1 << i ) )
+            {
+                // Copy this event into the output string
+                _r.dwtText[opLen++] = ',';
+                const char *u = evName[i];
+
+                do
+                {
+                    _r.dwtText[opLen++] = *u++;
+                }
+                while ( *u );
+            }
+        }
+
+        if ( ( !_r.inLine ) || options.fex )
+        {
+            fputs( _r.dwtText, stdout );
+            _r.dwtText[0] = 0;
+        }
+    }
+}
+// ====================================================================================================
+void _handleDataRWWP( struct watchMsg *m, struct ITMDecoder *i )
+
+/* We got an alert due to a watch pointer */
+
+{
+    if ( options.ex )
+    {
+        uint64_t eventdifftS = m->ts - _r.lastHWExceptionTS;
+        _r.lastHWExceptionTS = m->ts;
+
+        _printTimestamp( &_r.dwtText[strlen( _r.dwtText )] );
+
+        sprintf( &_r.dwtText[strlen( _r.dwtText )], "HWEVENT_RWWT,%" PRIu64 ",%d,%s,0x%x" EOL, eventdifftS, m->comp, m->isWrite ? "Write" : "Read", m->data );
+
+        if ( ( !_r.inLine ) || options.fex )
+        {
+            fputs( _r.dwtText, stdout );
+            _r.dwtText[0] = 0;
+        }
+    }
+}
+// ====================================================================================================
+void _handleDataAccessWP( struct wptMsg *m, struct ITMDecoder *i )
+
+/* We got an alert due to a watchpoint */
+
+{
+    if ( options.ex )
+    {
+        uint64_t eventdifftS = m->ts - _r.lastHWExceptionTS;
+        _r.lastHWExceptionTS = m->ts;
+        _printTimestamp( &_r.dwtText[strlen( _r.dwtText )] );
+
+        sprintf( &_r.dwtText[strlen( _r.dwtText )], "HWEVENT_AWP,%" PRIu64 ",%d,0x%08x" EOL, eventdifftS, m->comp, m->data );
+
+        if ( ( !_r.inLine ) || options.fex )
+        {
+            fputs( _r.dwtText, stdout );
+            _r.dwtText[0] = 0;
+        }
+    }
+}
+// ====================================================================================================
+void _handleDataOffsetWP( struct oswMsg *m, struct ITMDecoder *i )
+
+/* We got an alert due to an offset write event */
+
+{
+    if ( options.ex )
+    {
+        uint64_t eventdifftS = m->ts - _r.lastHWExceptionTS;
+        _r.lastHWExceptionTS = m->ts;
+        _printTimestamp( &_r.dwtText[strlen( _r.dwtText )] );
+
+        sprintf( &_r.dwtText[strlen( _r.dwtText )], "HWEVENT_OFS,%" PRIu64 ",%d,0x%04x" EOL, eventdifftS, m->comp, m->offset );
+
+        if ( ( !_r.inLine ) || options.fex )
+        {
+            fputs( _r.dwtText, stdout );
+            _r.dwtText[0] = 0;
+        }
+    }
+}
+// ====================================================================================================
+void _handleNISYNC( struct nisyncMsg *m, struct ITMDecoder *i )
+
+{
+    if ( options.ex )
+    {
+        _printTimestamp( &_r.dwtText[strlen( _r.dwtText )] );
+
+        sprintf( &_r.dwtText[strlen( _r.dwtText )], "HWEVENT_NISYNC,%02x,0x%08x" EOL, m->type, m->addr );
+
+        if ( ( !_r.inLine ) || options.fex )
+        {
+            fputs( _r.dwtText, stdout );
+            _r.dwtText[0] = 0;
+        }
+    }
+}
+
+// ====================================================================================================
+
 static void _handleSW( struct swMsg *m, struct ITMDecoder *i )
 
 {
@@ -324,13 +501,13 @@ static void _itmPumpProcess( char c )
         /* MSG_ERROR */           NULL,
         /* MSG_NONE */            NULL,
         /* MSG_SOFTWARE */        ( handlers )_handleSW,
-        /* MSG_NISYNC */          NULL,
-        /* MSG_OSW */             NULL,
-        /* MSG_DATA_ACCESS_WP */  NULL,
-        /* MSG_DATA_RWWP */       NULL,
+        /* MSG_NISYNC */          ( handlers )_handleNISYNC,
+        /* MSG_OSW */             ( handlers )_handleDataOffsetWP,
+        /* MSG_DATA_ACCESS_WP */  ( handlers )_handleDataAccessWP,
+        /* MSG_DATA_RWWP */       ( handlers )_handleDataRWWP,
         /* MSG_PC_SAMPLE */       NULL,
-        /* MSG_DWT_EVENT */       NULL,
-        /* MSG_EXCEPTION */       NULL,
+        /* MSG_DWT_EVENT */       ( handlers )_handleDWTEvent,
+        /* MSG_EXCEPTION */       ( handlers )_handleException,
         /* MSG_TS */              ( handlers )_handleTS
     };
 
@@ -454,6 +631,8 @@ static void _printHelp( const char *const progName )
              "                        a,r & d are host dependent and you may need to run orbuculum with -H." EOL );
     fprintf( stdout, "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
     fprintf( stdout, "    -V, --version:      Print version and exit" EOL );
+    fprintf( stdout, "    -x, --exceptions:   Include exception information in output, in time order" EOL );
+    fprintf( stdout, "    -X, --fexceptions:  Include exception information in output, unbuffered" EOL );
 }
 // ====================================================================================================
 static void _printVersion( void )
@@ -476,6 +655,8 @@ static struct option _longOptions[] =
     {"timestamp", required_argument, NULL, 'T'},
     {"verbose", required_argument, NULL, 'v'},
     {"version", no_argument, NULL, 'V'},
+    {"exceptions", no_argument, NULL, 'x'},
+    {"fexceptions", no_argument, NULL, 'X'},
     {NULL, no_argument, NULL, 0}
 };
 // ====================================================================================================
@@ -487,7 +668,7 @@ bool _processOptions( int argc, char *argv[] )
     char *chanIndex;
 #define DELIMITER ','
 
-    while ( ( c = getopt_long ( argc, argv, "c:C:Ef:g:hVns:t:T:v:", _longOptions, &optionIndex ) ) != -1 )
+    while ( ( c = getopt_long ( argc, argv, "c:C:Ef:g:hVns:t:T:v:xX", _longOptions, &optionIndex ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -651,6 +832,16 @@ bool _processOptions( int argc, char *argv[] )
                 return false;
 
             // ------------------------------------
+            case 'x':
+                options.ex = true;
+                break;
+
+            // ------------------------------------
+            case 'X':
+                options.fex = true;
+                break;
+
+            // ------------------------------------
             default:
                 return false;
                 // ------------------------------------
@@ -666,6 +857,7 @@ bool _processOptions( int argc, char *argv[] )
     genericsReport( V_INFO, "Server     : %s:%d" EOL, options.server, options.port );
     genericsReport( V_INFO, "ForceSync  : %s" EOL, options.forceITMSync ? "true" : "false" );
     genericsReport( V_INFO, "Timestamp  : %s" EOL, tsTypeString[options.tsType] );
+    genericsReport( V_INFO, "Exceptions : %s" EOL, options.fex ? "Fast" : options.ex ? "On" : "Off" );
 
     if ( options.cps )
     {
