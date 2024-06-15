@@ -109,9 +109,7 @@ struct Options
     int paceDelay;                                       /* Delay between blocks of data transmission in file readout */
     char *channelList;                                   /* List of channels to be exported over legacy connection */
     bool hiresTime;                                      /* Use hiresolution time (shorter timeouts...more accurate but higher load */
-    bool legacy;                                         /* Enable legacy ports (clean ITM etc flows on individual ports */
     char *sn;                                            /* Any part serial number for identifying a specific device */
-    /* Network link */
     int listenPort;                                      /* Listening port for network */
 };
 
@@ -127,8 +125,6 @@ struct RunTime
     struct TPIUDecoder t;                                /* TPIU decoder instance, in case we need it */
     struct OTAG otag;                                    /* OTAG instance, in case we need it */
 
-    struct Frame otagPart;                               /* OTAG part frame for maintaining continuity across packets */
-    struct Frame otagOtg;                                /* Outgoing OTAG frame for legacy use */
     struct OrbtraceIf  *o;                               /* For accessing ORBTrace devices + BMPs */
 
     uint64_t  intervalRawBytes;                          /* Number of bytes transferred in current interval */
@@ -146,7 +142,7 @@ struct RunTime
     struct dataBlock rawBlock[NUM_RAW_BLOCKS];           /* Transfer buffers from the receiver */
 
     struct nwclientsHandle *otagHandler;                 /* Handle to OTAG output handler */
-    bool usingOTAG;                                      /* Flag that OTAG protocol is in use */
+    bool usingOTAG;                                      /* Flag that OTAG protocol is in use from the source */
 
     struct TagDataCount tagCount[NUM_TAGS];              /* Data carried per tag/TPIU channel */
     int numHandlers;                                     /* Number of TPIU channel handlers in use */
@@ -366,7 +362,6 @@ void _printHelp( const char *const progName, struct RunTime *r )
     genericsPrintf( "    -h, --help:          This help" EOL );
     genericsPrintf( "    -H, --hires:         High resolution time (much higher CPU load though!)" EOL );
     genericsPrintf( "    -l, --listen-port:   <port> Listen port for incoming OTAG connections (defaults to %d)" EOL, r->options->listenPort );
-    genericsPrintf( "    -L, --legacy:        Enable legacy channels (First on %d)" EOL, r->options->listenPort + LEGACY_SERVER_PORT_OFS );
     genericsPrintf( "    -m, --monitor:       <interval> Output monitor information about the link at <interval>ms, min 500ms" EOL );
     genericsPrintf( "    -M, --no-colour:     Supress colour in output" EOL );
     genericsPrintf( "    -n, --serial-number: <Serial> any part of serial number to differentiate specific device" EOL );
@@ -411,7 +406,6 @@ static struct option _longOptions[] =
     {"help", no_argument, NULL, 'h'},
     {"hires", no_argument, NULL, 'H'},
     {"listen-port", required_argument, NULL, 'l'},
-    {"legacy", required_argument, NULL, 'L'},
     {"monitor", required_argument, NULL, 'm'},
     {"no-colour", no_argument, NULL, 'M'},
     {"no-color", no_argument, NULL, 'M'},
@@ -434,7 +428,7 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
     int c, optionIndex = 0;
 #define DELIMITER ','
 
-    while ( ( c = getopt_long ( argc, argv, "a:Ef:hHVLl:m:Mn:o:O:p:P:s:Tt:v:", _longOptions, &optionIndex ) ) != -1 )
+    while ( ( c = getopt_long ( argc, argv, "a:Ef:hHVl:m:Mn:o:O:p:P:s:Tt:v:", _longOptions, &optionIndex ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -476,12 +470,6 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
             case 'V':
                 _printVersion( r );
                 return false;
-
-            // ------------------------------------
-
-            case 'L':
-                r->options->legacy = !r->options->legacy;
-                break;
 
             // ------------------------------------
 
@@ -668,7 +656,6 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
     }
 
     genericsReport( V_INFO, "Use/Strip TPIU : %s" EOL, r->options->useTPIU ? "True" : "False" );
-    genericsReport( V_INFO, "Support Legacy : %s" EOL, ( r->options->legacy ) ? "On" : "Off" );
     genericsReport( V_INFO, "Decode/Forward : %s" EOL, r->options->channelList ? r->options->channelList : "None" );
 
     if ( r->options->otcl )
@@ -824,7 +811,7 @@ static void _purgeBlock( struct RunTime *r, bool createOTAG )
 /* Send any packets to clients who want it, no matter where they originate from */
 
 {
-
+    struct Frame otagOtg;
     struct handlers *h = r->handler;
     int i = r->numHandlers;
 
@@ -842,8 +829,8 @@ static void _purgeBlock( struct RunTime *r, bool createOTAG )
 
                 while ( j )
                 {
-                    OTAGEncode( h->channel, 0, b, ( j < OTAG_MAX_PACKET_LEN ) ? j : OTAG_MAX_PACKET_LEN, &r->otagOtg );
-                    nwclientSend( _r.otagHandler, r->otagOtg.len, r->otagOtg.d );
+                    OTAGEncode( h->channel, 0, b, ( j < OTAG_MAX_PACKET_LEN ) ? j : OTAG_MAX_PACKET_LEN, &otagOtg );
+                    nwclientSend( _r.otagHandler, otagOtg.len, otagOtg.d );
                     b += ( j < OTAG_MAX_PACKET_LEN ) ? j : OTAG_MAX_PACKET_LEN;
                     j -= ( j < OTAG_MAX_PACKET_LEN ) ? j : OTAG_MAX_PACKET_LEN;
                 }
@@ -974,6 +961,8 @@ static void _processNonOTAGBlock( struct RunTime *r, ssize_t fillLevel, uint8_t 
 /* Not an OTAG block, so might be TPIU or clean ITM...deal with both */
 
 {
+    struct Frame otagOtg;
+
     if ( fillLevel )
     {
         if ( r-> options->useTPIU )
@@ -999,8 +988,8 @@ static void _processNonOTAGBlock( struct RunTime *r, ssize_t fillLevel, uint8_t 
             {
                 OTAGEncode( DEFAULT_ITM_STREAM, 0, b,
                             ( fillLevel < OTAG_MAX_PACKET_LEN ) ? fillLevel : OTAG_MAX_PACKET_LEN,
-                            &r->otagOtg );
-                nwclientSend( r->otagHandler, r->otagOtg.len, r->otagOtg.d );
+                            &otagOtg );
+                nwclientSend( r->otagHandler, otagOtg.len, otagOtg.d );
                 b += ( fillLevel < OTAG_MAX_PACKET_LEN ) ? fillLevel : OTAG_MAX_PACKET_LEN;
                 fillLevel -= ( fillLevel < OTAG_MAX_PACKET_LEN ) ? fillLevel : OTAG_MAX_PACKET_LEN;
             }
@@ -1044,6 +1033,7 @@ static void _handleBlock( struct RunTime *r, ssize_t fillLevel, uint8_t *buffer 
 
     r->intervalRawBytes += fillLevel;
 }
+
 // ====================================================================================================
 // Generic handlers for each of the source types. These all call _handleBlock above to process.
 // ====================================================================================================
@@ -1083,6 +1073,8 @@ static void _usb_callback( struct libusb_transfer *t )
 
 void _actionOrbtraceCommand( struct RunTime *r, char *sn, enum ORBTraceDevice d )
 
+/* There is an orbtrace command line to be executed as part of the probe connect process */
+
 {
     char commandLine[MAX_LINE_LEN];
 
@@ -1117,6 +1109,8 @@ void _actionOrbtraceCommand( struct RunTime *r, char *sn, enum ORBTraceDevice d 
 
 // ====================================================================================================
 static int _usbFeeder( struct RunTime *r )
+
+/* Setup USB transfers from an ORBTrace or BMP */
 
 {
     bool firstRunThrough = true;
@@ -1226,7 +1220,10 @@ static int _usbFeeder( struct RunTime *r )
     return 0;
 }
 // ====================================================================================================
+
 static int _nwserverFeeder( struct RunTime *r )
+
+/* Setup network based transfers (typically used for things like J-Link but can also be a legacy orbuculum session */
 
 {
     struct dataBlock *rxBlock = &r->rawBlock[0];
@@ -1361,6 +1358,9 @@ static int _serialFeeder( struct RunTime *r )
 // =========================================================================================================
 
 static int _serialFeeder( struct RunTime *r )
+
+/* Setup incoming feed from a serial port */
+
 {
     int ret;
     struct dataBlock *rxBlock = &r->rawBlock[0];
@@ -1431,6 +1431,8 @@ static int _serialFeeder( struct RunTime *r )
 
 // ====================================================================================================
 static int _fileFeeder( struct RunTime *r )
+
+/* Setup incoming data stream from a file in either legacy or OTAG format */
 
 {
     struct dataBlock *rxBlock = &r->rawBlock[0];
@@ -1582,13 +1584,8 @@ int main( int argc, char *argv[] )
                 _r.handler[_r.numHandlers].channel = x;
                 _r.handler[_r.numHandlers].strippedBlock = ( struct dataBlock * )calloc( 1, sizeof( struct dataBlock ) );
                 _r.tagCount[x].hasHandler = true;
-                genericsReport( V_INFO, "Will decode tag %d" EOL, x );
-
-                if ( _r.options->legacy )
-                {
-                    _r.handler[_r.numHandlers].n = nwclientStart(  _r.options->listenPort + LEGACY_SERVER_PORT_OFS + _r.numHandlers );
-                    genericsReport( V_INFO, "Exported Legacy Network interface for channel %d on port %d" EOL, x, _r.options->listenPort + LEGACY_SERVER_PORT_OFS + _r.numHandlers );
-                }
+                _r.handler[_r.numHandlers].n = nwclientStart(  _r.options->listenPort + LEGACY_SERVER_PORT_OFS + _r.numHandlers );
+                genericsReport( V_INFO, "Will decode tag %d, exported Legacy interface on port %d" EOL, x, _r.options->listenPort + LEGACY_SERVER_PORT_OFS + _r.numHandlers );
 
                 _r.numHandlers++;
                 x = 0;
@@ -1633,7 +1630,7 @@ int main( int argc, char *argv[] )
         }
     }
 
-    /* ...nothing else left, it must be usb! */
+    /* ...nothing else left, it must be usb (either ORBTrace or BMP) */
     exit( _usbFeeder( &_r ) );
 }
 // ====================================================================================================
