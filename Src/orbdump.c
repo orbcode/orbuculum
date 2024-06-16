@@ -10,13 +10,14 @@
 #include <ctype.h>
 #include <stdio.h>
 #include <getopt.h>
+#include <signal.h>
 
 #include "generics.h"
 #include "uthash.h"
 #include "git_version_info.h"
 #include "generics.h"
 #include "tpiuDecoder.h"
-#include "cobs.h"
+#include "otag.h"
 #include "itmDecoder.h"
 #include "stream.h"
 
@@ -27,8 +28,8 @@
 #define DEFAULT_OUTFILE "/dev/stdout"
 #define DEFAULT_TIMELEN 10000
 
-enum Prot { PROT_COBS, PROT_ITM, PROT_TPIU, PROT_UNKNOWN };
-const char *protString[] = {"COBS", "ITM", "TPIU", NULL};
+enum Prot { PROT_OTAG, PROT_ITM, PROT_TPIU, PROT_UNKNOWN };
+const char *protString[] = {"OTAG", "ITM", "TPIU", NULL};
 
 /* ---------- CONFIGURATION ----------------- */
 
@@ -71,7 +72,8 @@ struct
     struct ITMPacket h;
     struct TPIUDecoder t;
     struct TPIUPacket p;
-    struct COBS c;
+    struct OTAG c;
+    bool   ending;
 } _r;
 
 // ====================================================================================================
@@ -167,10 +169,10 @@ void _printHelp( const char *const progName )
     genericsPrintf( "    -M, --no-colour:    Supress colour in output" EOL );
     genericsPrintf( "    -n, --itm-sync:     Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
     genericsPrintf( "    -o, --output-file:  <filename> to be used for dump file (defaults to %s)" EOL, options.outfile );
-    genericsPrintf( "    -p, --protocol:     Protocol to communicate. Defaults to COBS if -s is not set, otherwise ITM unless" EOL \
+    genericsPrintf( "    -p, --protocol:     Protocol to communicate. Defaults to OTAG if -s is not set, otherwise ITM unless" EOL \
                     "                        explicitly set to TPIU to decode TPIU frames on channel set by -t" EOL );
     genericsPrintf( "    -s, --server:       <Server>:<Port> to use" EOL );
-    genericsPrintf( "    -t, --tag:          <stream> Which TPIU stream or COBS tag to use (normally 1)" EOL );
+    genericsPrintf( "    -t, --tag:          <stream> Which TPIU stream or OTAG tag to use (normally 1)" EOL );
     genericsPrintf( "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
     genericsPrintf( "    -V, --version:      Print version and exit" EOL );
     genericsPrintf( "    -w, --sync-write:   Write synchronously to the output file after every packet" EOL );
@@ -205,6 +207,7 @@ bool _processOptions( int argc, char *argv[] )
     int c, optionIndex = 0;
     bool protExplicit = false;
     bool serverExplicit = false;
+    bool portExplicit = false;
 
     while ( ( c = getopt_long ( argc, argv, "hVl:Mno:p:s:t:v:w", _longOptions, &optionIndex ) ) != -1 )
         switch ( c )
@@ -289,6 +292,10 @@ bool _processOptions( int argc, char *argv[] )
                 {
                     options.port = NWCLIENT_SERVER_PORT;
                 }
+                else
+                {
+                    portExplicit = true;
+                }
 
                 break;
 
@@ -319,10 +326,15 @@ bool _processOptions( int argc, char *argv[] )
                 return false;
         }
 
-    /* If we set an explicit server and port and didn't set a protocol chances are we want ITM, not COBS */
+    /* If we set an explicit server and port and didn't set a protocol chances are we want ITM, not OTAG */
     if ( serverExplicit && !protExplicit )
     {
         options.protocol = PROT_ITM;
+    }
+
+    if ( ( options.protocol == PROT_TPIU ) && !portExplicit )
+    {
+        options.port = NWCLIENT_SERVER_PORT;
     }
 
     genericsReport( V_INFO, "orbdump version " GIT_DESCRIBE EOL );
@@ -343,8 +355,8 @@ bool _processOptions( int argc, char *argv[] )
 
     switch ( options.protocol )
     {
-        case PROT_COBS:
-            genericsReport( V_INFO, "Decoding COBS (Orbuculum) with ITM in stream %d" EOL, options.tag );
+        case PROT_OTAG:
+            genericsReport( V_INFO, "Decoding OTAG (Orbuculum) with ITM in stream %d" EOL, options.tag );
             break;
 
         case PROT_ITM:
@@ -365,12 +377,12 @@ bool _processOptions( int argc, char *argv[] )
 
 // ====================================================================================================
 
-static void _COBSpacketRxed ( struct Frame *p, void *param )
+static void _OTAGpacketRxed ( struct OTAGFrame *p, void *param )
 
 {
-    if ( p->d[0] == options.tag )
+    if ( p->tag == options.tag )
     {
-        for ( int i = 1; i < p->len; i++ )
+        for ( int i = 0; i < p->len; i++ )
         {
             ITMPump( &_r.i, p->d[i] );
         }
@@ -383,7 +395,13 @@ static struct Stream *_tryOpenStream( void )
 {
     return streamCreateSocket( options.server, options.port );
 }
+// ====================================================================================================
+static void _intHandler( int sig )
 
+{
+    /* CTRL-C exit is not an error... */
+    _r.ending = true;
+}
 // ====================================================================================================
 int main( int argc, char *argv[] )
 {
@@ -407,8 +425,14 @@ int main( int argc, char *argv[] )
     /* Reset the TPIU handler before we start */
     TPIUDecoderInit( &_r.t );
     ITMDecoderInit( &_r.i, options.forceITMSync );
-    COBSInit( &_r.c );
+    OTAGInit( &_r.c );
     struct Stream *stream = _tryOpenStream();
+
+    /* This ensures the signal handler gets called */
+    if ( SIG_ERR == signal( SIGINT, _intHandler ) )
+    {
+        genericsExit( -1, "Failed to establish Int handler" EOL );
+    }
 
     if ( stream == NULL )
     {
@@ -428,7 +452,7 @@ int main( int argc, char *argv[] )
     genericsReport( V_INFO, "Waiting for sync" EOL );
 
     /* Start the process of collecting the data */
-    while ( true )
+    while ( !_r.ending )
     {
         enum ReceiveResult result = stream->receive( stream, cbw, TRANSFER_SIZE, NULL, &receivedSize );
 
@@ -453,9 +477,9 @@ int main( int argc, char *argv[] )
         }
 
 
-        if ( PROT_COBS == options.protocol )
+        if ( PROT_OTAG == options.protocol )
         {
-            COBSPump( &_r.c, cbw, receivedSize, _COBSpacketRxed, &_r );
+            OTAGPump( &_r.c, cbw, receivedSize, _OTAGpacketRxed, &_r );
         }
         else
         {

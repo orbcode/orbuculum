@@ -9,6 +9,7 @@
 #include <string.h>
 #include <zmq.h>
 #include <inttypes.h>
+#include <signal.h>
 
 #include "generics.h"
 #include "git_version_info.h"
@@ -17,7 +18,7 @@
 #include "tpiuDecoder.h"
 #include "itmDecoder.h"
 #include "msgDecoder.h"
-#include "cobs.h"
+#include "otag.h"
 
 #define NUM_CHANNELS  32
 #define HWFIFO_NAME "hwevent"
@@ -25,8 +26,8 @@
 
 #define DEFAULT_ZMQ_BIND_URL "tcp://*:3442"  /* by default bind to all source interfaces */
 
-enum Prot { PROT_COBS, PROT_ITM, PROT_TPIU, PROT_UNKNOWN };
-const char *protString[] = {"COBS", "ITM", "TPIU", NULL};
+enum Prot { PROT_OTAG, PROT_ITM, PROT_TPIU, PROT_UNKNOWN };
+const char *protString[] = {"OTAG", "ITM", "TPIU", NULL};
 
 // Record for options, either defaults or from command line
 
@@ -50,7 +51,7 @@ struct
     /* Source information */
     int port;
     char *server;
-    enum Prot protocol;                                 /* What protocol to communicate (default to COBS (== orbuculum)) */
+    enum Prot protocol;                                 /* What protocol to communicate (default to OTAG (== orbuculum)) */
     bool mono;                                          /* Supress colour in output */
 
     char *file;                                         /* File host connection */
@@ -72,7 +73,7 @@ struct
     struct ITMPacket h;
     struct TPIUDecoder t;
     struct TPIUPacket p;
-    struct COBS c;
+    struct OTAG c;
 
     /* Timestamp info */
     uint64_t lastHWExceptionTS;
@@ -81,6 +82,8 @@ struct
 
     void *zmqContext;
     void *zmqSocket;
+    bool ending;
+
 } _r;
 
 // ====================================================================================================
@@ -474,10 +477,10 @@ void _printHelp( const char *const progName )
     genericsPrintf( "    -h, --help:       This help" EOL );
     genericsPrintf( "    -M, --no-colour:    Supress colour in output" EOL );
     genericsPrintf( "    -n, --itm-sync:   Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
-    genericsPrintf( "    -p, --protocol:     Protocol to communicate. Defaults to COBS if -s is not set, otherwise ITM unless" EOL \
+    genericsPrintf( "    -p, --protocol:     Protocol to communicate. Defaults to OTAG if -s is not set, otherwise ITM unless" EOL \
                     "                        explicitly set to TPIU to decode TPIU frames on channel set by -t" EOL );
     genericsPrintf( "    -s, --server:     <Server>:<Port> to use, default %s:%d" EOL, options.server, options.port );
-    genericsPrintf( "    -t, --tag:          <stream>: Which TPIU stream or COBS tag to use (normally 1)" EOL );
+    genericsPrintf( "    -t, --tag:          <stream>: Which TPIU stream or OTAG tag to use (normally 1)" EOL );
     genericsPrintf( "    -v, --verbose:    <level> Verbose mode 0(errors)..3(debug)" EOL );
     genericsPrintf( "    -V, --version:    Print version and exit" EOL );
     genericsPrintf( "    -z, --zbind:      <url>: ZeroMQ bind URL, default %s" EOL, options.bindUrl );
@@ -580,6 +583,7 @@ bool _processOptions( int argc, char *argv[] )
     int32_t hwOutputs;
     bool protExplicit = false;
     bool serverExplicit = false;
+    bool portExplicit = false;
 
     for ( int g = 0; g < NUM_CHANNELS; g++ )
     {
@@ -665,6 +669,10 @@ bool _processOptions( int argc, char *argv[] )
                 if ( !options.port )
                 {
                     options.port = NWCLIENT_SERVER_PORT;
+                }
+                else
+                {
+                    portExplicit = true;
                 }
 
                 break;
@@ -778,10 +786,15 @@ bool _processOptions( int argc, char *argv[] )
         }
     }
 
-    /* If we set an explicit server and port and didn't set a protocol chances are we want ITM, not COBS */
+    /* If we set an explicit server and port and didn't set a protocol chances are we want ITM, not OTAG */
     if ( serverExplicit && !protExplicit )
     {
         options.protocol = PROT_ITM;
+    }
+
+    if ( ( options.protocol == PROT_TPIU ) && !portExplicit )
+    {
+        options.port = NWCLIENT_SERVER_PORT;
     }
 
     genericsReport( V_INFO, "orbzmq version " GIT_DESCRIBE EOL );
@@ -834,8 +847,8 @@ bool _processOptions( int argc, char *argv[] )
 
     switch ( options.protocol )
     {
-        case PROT_COBS:
-            genericsReport( V_INFO, "Decoding COBS (Orbuculum) with ITM in stream %d" EOL, options.tag );
+        case PROT_OTAG:
+            genericsReport( V_INFO, "Decoding OTAG (Orbuculum) with ITM in stream %d" EOL, options.tag );
             break;
 
         case PROT_ITM:
@@ -869,13 +882,13 @@ static struct Stream *_tryOpenStream()
 }
 // ====================================================================================================
 
-static void _COBSpacketRxed ( struct Frame *p, void *param )
+static void _OTAGpacketRxed ( struct OTAGFrame *p, void *param )
 
 {
 
-    if ( p->d[0] == options.tag )
+    if ( p->tag == options.tag )
     {
-        for ( int i = 1; i < p->len; i++ )
+        for ( int i = 0; i < p->len; i++ )
         {
             _itmPumpProcess( p->d[i] );
         }
@@ -887,7 +900,7 @@ static void _feedStream( struct Stream *stream )
 {
     unsigned char cbw[TRANSFER_SIZE];
 
-    while ( true )
+    while ( !_r.ending )
     {
         size_t receivedSize;
         enum ReceiveResult result = stream->receive( stream, cbw, TRANSFER_SIZE, NULL, &receivedSize );
@@ -908,9 +921,9 @@ static void _feedStream( struct Stream *stream )
             }
         }
 
-        if ( PROT_COBS == options.protocol )
+        if ( PROT_OTAG == options.protocol )
         {
-            COBSPump( &_r.c, cbw, receivedSize, _COBSpacketRxed, &_r );
+            OTAGPump( &_r.c, cbw, receivedSize, _OTAGpacketRxed, &_r );
         }
         else
         {
@@ -926,6 +939,16 @@ static void _feedStream( struct Stream *stream )
     }
 }
 
+// ====================================================================================================
+static void _intHandler( int sig )
+
+{
+    /* CTRL-C exit is not an error... */
+    _r.ending = true;
+}
+// ====================================================================================================
+// ====================================================================================================
+// ====================================================================================================
 
 int main( int argc, char *argv[] )
 {
@@ -945,13 +968,19 @@ int main( int argc, char *argv[] )
     /* Reset the TPIU handler before we start */
     TPIUDecoderInit( &_r.t );
     ITMDecoderInit( &_r.i, options.forceITMSync );
-    COBSInit( &_r.c );
+    OTAGInit( &_r.c );
 
-    while ( true )
+    /* This ensures the signal handler gets called */
+    if ( SIG_ERR == signal( SIGINT, _intHandler ) )
+    {
+        genericsExit( -1, "Failed to establish Int handler" EOL );
+    }
+
+    while ( !_r.ending )
     {
         struct Stream *stream = NULL;
 
-        while ( true )
+        while ( !_r.ending )
         {
             stream = _tryOpenStream();
 
@@ -984,10 +1013,10 @@ int main( int argc, char *argv[] )
         if ( stream != NULL )
         {
             _feedStream( stream );
-        }
 
-        stream->close( stream );
-        free( stream );
+            stream->close( stream );
+            free( stream );
+        }
 
         if ( options.endTerminate )
         {

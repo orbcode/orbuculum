@@ -24,7 +24,7 @@
 #include "nw.h"
 #include "traceDecoder.h"
 #include "tpiuDecoder.h"
-#include "cobs.h"
+#include "otag.h"
 #include "loadelf.h"
 #include "sio.h"
 #include "stream.h"
@@ -59,12 +59,12 @@ struct Options
 
     int buflen;                         /* Length of post-mortem buffer, in bytes */
     int channel;                        /* When TPIU is in use, which channel to decode? */
-    int tag;                            /* ch TPIU or OTAG stream are we decoding? */
+    int tag;                            /* which TPIU or OTAG stream are we decoding? */
     int port;                           /* Source information */
     char *server;
-    enum Prot protocol;
+    enum Prot commProt;
     bool mono;                          /* Supress colour in output */
-    enum TRACEprotocol tProtocol;       /* Encoding protocol to use */
+    enum TRACEprotocol traceProt;       /* Encoding protocol to use */
     bool noAltAddr;                     /* Flag to *not* use alternate addressing */
     char *openFileCL;                   /* Command line for opening refernced file */
 
@@ -74,7 +74,7 @@ struct Options
     .port      = OTCLIENT_SERVER_PORT,
     .server    = REMOTE_SERVER,
     .demangle  = true,
-    .tProtocol = TRACE_PROT_ETM35,
+    .traceProt = TRACE_PROT_ETM35,
     .tag       = 2,
     .buflen    = DEFAULT_PM_BUFLEN_K * 1024
 };
@@ -102,7 +102,7 @@ struct RunTime
 {
     struct TRACEDecoder i;
     struct TPIUDecoder t;
-    struct COBS c;
+    struct OTAG c;
     const char *progName;               /* Name by which this program was called */
 
     struct symbol *s;                   /* Symbols read from elf */
@@ -310,9 +310,9 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
             case 'P':
 
                 /* Index through protocol strings looking for match or end of list */
-                for ( r->options->tProtocol = TRACE_PROT_LIST_START;
-                        ( ( r->options->tProtocol != TRACE_PROT_NUM ) && strcasecmp( optarg, TRACEDecodeGetProtocolName( r->options->tProtocol ) ) );
-                        r->options->tProtocol++ )
+                for ( r->options->traceProt = TRACE_PROT_LIST_START;
+                        ( ( r->options->traceProt != TRACE_PROT_NUM ) && strcasecmp( optarg, TRACEDecodeGetProtocolName( r->options->traceProt ) ) );
+                        r->options->traceProt++ )
                 {}
 
                 break;
@@ -320,19 +320,19 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
             // ------------------------------------
 
             case 'p':
-                r->options->protocol = PROT_UNKNOWN;
+                r->options->commProt = PROT_UNKNOWN;
                 protExplicit = true;
 
                 for ( int i = 0; protString[i]; i++ )
                 {
                     if ( !strcmp( protString[i], optarg ) )
                     {
-                        r->options->protocol = i;
+                        r->options->commProt = i;
                         break;
                     }
                 }
 
-                if ( r->options->protocol == PROT_UNKNOWN )
+                if ( r->options->commProt == PROT_UNKNOWN )
                 {
                     genericsReport( V_ERROR, "Unrecognised protocol type" EOL );
                     return false;
@@ -415,7 +415,7 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
     /* If we set an explicit server and port and didn't set a protocol chances are we want TPIU, not OTAG */
     if ( serverExplicit && !protExplicit && r->options->port != OTCLIENT_SERVER_PORT )
     {
-        r->options->protocol = PROT_TPIU;
+        r->options->commProt = PROT_TPIU;
         genericsReport( V_INFO, "(Auto-set ETM over TPIU for TCP::%s:%d, override by setting protocol explicitly)" EOL, r->options->server, r->options->port );
     }
 
@@ -438,16 +438,16 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
 
     genericsReport( V_INFO, "Elf File         : %s" EOL, r->options->elffile );
 
-    if ( r->options->tProtocol >= TRACE_PROT_NONE )
+    if ( r->options->traceProt >= TRACE_PROT_NONE )
     {
         genericsExit( V_ERROR, "Unrecognised decode protocol" EOL );
     }
     else
     {
-        genericsReport( V_INFO, "Protocol         : %s" EOL, TRACEDecodeGetProtocolName( r->options->tProtocol ) );
+        genericsReport( V_INFO, "Protocol         : %s" EOL, TRACEDecodeGetProtocolName( r->options->traceProt ) );
     }
 
-    if ( ( r->options->tProtocol == TRACE_PROT_MTB ) && ( !r->options->file ) )
+    if ( ( r->options->traceProt == TRACE_PROT_MTB ) && ( !r->options->file ) )
     {
         genericsExit( V_ERROR, "MTB only makes sense when input is from a file" EOL );
     }
@@ -462,7 +462,7 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
         genericsExit( -1, "Illegal value for Post Mortem Buffer length" EOL );
     }
 
-    switch ( r->options->tProtocol )
+    switch ( r->options->commProt )
     {
         case PROT_OTAG:
             genericsReport( V_INFO, "Decoding OTAG with ETM in stream %d" EOL, r->options->tag );
@@ -513,7 +513,7 @@ static void _processBlock( struct RunTime *r )
         y = r->rawBlock.fillLevel;
 #endif
 
-        if ( PROT_TPIU == r->options->protocol )
+        if ( PROT_TPIU == r->options->commProt )
         {
             struct TPIUPacket p;
 
@@ -612,14 +612,14 @@ static bool _rxAdd( struct RunTime *r, uint8_t c )
 
 // ====================================================================================================
 
-static void _COBSpacketRxed ( struct Frame *p, void *param )
+static void _OTAGpacketRxed ( struct OTAGFrame *p, void *param )
 
 {
     struct RunTime *r = ( struct RunTime * )param;
 
-    if ( p->d[0] == r->options->tag )
+    if ( p->tag == r->options->tag )
     {
-        for ( int i = 1; i < p->len; i++ )
+        for ( int i = 0; i < p->len; i++ )
         {
             if ( _rxAdd( r, p->d[i] ) )
             {
@@ -869,7 +869,7 @@ static void _traceCB( void *d )
     /* ============================ */
     if ( TRACEStateChanged( &r->i, EV_CH_EX_ENTRY ) )
     {
-        switch ( r->options->protocol )
+        switch ( r->options->traceProt )
         {
             case TRACE_PROT_ETM35:
                 _appendToOPBuffer( r, NULL, r->op.currentLine, LT_EVENT, "========== Exception Entry%s (%d (%s) at 0x%08x) ==========",
@@ -914,7 +914,7 @@ static void _traceCB( void *d )
         /* address reporting is switched on. It will give 'false positives' for uncalculable instructions (e.g. bx lr) but */
         /* it's a decent safety net to be sure the jump decoder is working correctly.                                      */
 
-        if ( r->options->tProtocol != TRACE_PROT_MTB )
+        if ( r->options->traceProt != TRACE_PROT_MTB )
         {
             _traceReport( V_DEBUG, "%sCommanded CPU Address change (Was:0x%08x Commanded:0x%08x)" EOL,
                           ( r->op.workingAddr == cpu->addr ) ? "" : "***INCONSISTENT*** ", r->op.workingAddr, cpu->addr );
@@ -1423,18 +1423,20 @@ int main( int argc, char *argv[] )
     /* Create the buffer memory */
     _r.pmBuffer = ( uint8_t * )calloc( 1, _r.options->buflen );
 
-    TRACEDecoderInit( &_r.i, _r.options->tProtocol, !( _r.options->noAltAddr ), _traceReport );
+    TRACEDecoderInit( &_r.i, _r.options->traceProt, !( _r.options->noAltAddr ), _traceReport );
 
-    if ( PROT_TPIU == _r.options->protocol )
+    if ( PROT_TPIU == _r.options->commProt )
     {
         TPIUDecoderInit( &_r.t );
     }
+
+    OTAGInit( &_r.c );
 
     /* Create a screen and interaction handler */
     _r.sio = SIOsetup( _r.progName, _r.options->elffile, ( _r.options->file != NULL ) );
 
     /* Put a record of the protocol in use on screen */
-    SIOtagText( _r.sio, TRACEDecodeGetProtocolName( _r.options->tProtocol ) );
+    SIOtagText( _r.sio, TRACEDecodeGetProtocolName( _r.options->traceProt ) );
 
     while ( !_r.ending )
     {
@@ -1443,7 +1445,7 @@ int main( int argc, char *argv[] )
             /* Keep trying to open a network connection at half second intervals */
             while ( 1 )
             {
-                stream = streamCreateSocket( _r.options->server, _r.options->port + ( ( PROT_TPIU == _r.options->protocol ) ? 1 : 0 ) );
+                stream = streamCreateSocket( _r.options->server, _r.options->port + ( ( PROT_TPIU == _r.options->commProt ) ? 1 : 0 ) );
 
                 if ( stream )
                 {
@@ -1501,9 +1503,9 @@ int main( int argc, char *argv[] )
             {
                 /* Pump all of the data through the protocol handler */
 
-                if ( PROT_OTAG == _r.options->protocol )
+                if ( PROT_OTAG == _r.options->commProt )
                 {
-                    COBSPump( &_r.c, _r.rawBlock.buffer, _r.rawBlock.fillLevel, _COBSpacketRxed, &_r );
+                    OTAGPump( &_r.c, _r.rawBlock.buffer, _r.rawBlock.fillLevel, _OTAGpacketRxed, &_r );
                 }
                 else
                 {

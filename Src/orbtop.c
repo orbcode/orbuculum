@@ -24,7 +24,7 @@
 #include "generics.h"
 #include "tpiuDecoder.h"
 #include "itmDecoder.h"
-#include "cobs.h"
+#include "otag.h"
 #include "symbols.h"
 #include "msgSeq.h"
 #include "nw.h"
@@ -53,8 +53,8 @@ struct reportLine
     struct nameEntry *n;
 };
 
-enum Prot { PROT_COBS, PROT_ITM, PROT_TPIU, PROT_UNKNOWN };
-const char *protString[] = {"COBS", "ITM", "TPIU", NULL};
+enum Prot { PROT_OTAG, PROT_ITM, PROT_TPIU, PROT_UNKNOWN };
+const char *protString[] = {"OTAG", "ITM", "TPIU", NULL};
 
 struct exceptionRecord                       /* Record of exception activity */
 
@@ -77,7 +77,7 @@ struct exceptionRecord                       /* Record of exception activity */
 /* ---------- CONFIGURATION ----------------- */
 struct                                       /* Record for options, either defaults or from command line */
 {
-    uint32_t tag;                            /* Which TPIU or COBS stream are we decoding? */
+    uint32_t tag;                            /* Which TPIU or OTAG stream are we decoding? */
     bool reportFilenames;                    /* Report filenames for each routine? */
     bool outputExceptions;                   /* Set to include exceptions in output flow */
     bool forceITMSync;                       /* Must ITM start synced? */
@@ -102,8 +102,7 @@ struct                                       /* Record for options, either defau
 
     int port;                                /* Source information */
     char *server;
-    enum Prot protocol;                      /* What protocol to communicate (default to COBS (== orbuculum)) */
-
+    enum Prot protocol;                      /* What protocol to communicate (default to OTAG (== orbuculum)) */
 
 } options =
 {
@@ -127,7 +126,7 @@ struct
     struct ITMPacket h;
     struct TPIUDecoder t;
     struct TPIUPacket p;
-    struct COBS c;
+    struct OTAG c;
     enum timeDelay timeStatus;                         /* Indicator of if this time is exact */
     uint64_t timeStamp;                                /* Latest received time */
     struct Frame cobsPart;                             /* Any part frame that has been received */
@@ -153,6 +152,8 @@ struct
     uint32_t interrupts;
     uint32_t sleeps;
     uint32_t notFound;
+    bool ending;                                       /* Flag to exit */
+
 } _r;
 
 // ====================================================================================================
@@ -849,7 +850,7 @@ void _itmPumpProcess( uint8_t c )
     }
 
     /* We are synced timewise, so empty anything that has been waiting */
-    while ( 1 )
+    while ( true )
     {
         p = MSGSeqGetPacket( &_r.d );
 
@@ -958,12 +959,12 @@ void _printHelp( const char *const progName )
     genericsPrintf( "    -n, --itm-sync:     Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
     genericsPrintf( "    -o, --output-file:  <filename> to be used for output live file" EOL );
     genericsPrintf( "    -O, --objdump-opts: <options> Options to pass directly to objdump" EOL );
-    genericsPrintf( "    -p, --protocol:     Protocol to communicate. Defaults to COBS if -s is not set, otherwise ITM unless" EOL \
+    genericsPrintf( "    -p, --protocol:     Protocol to communicate. Defaults to OTAG if -s is not set, otherwise ITM unless" EOL \
                     "                        explicitly set to TPIU to decode TPIU frames on channel set by -t" EOL );
     genericsPrintf( "    -r, --routines:     <routines> to record in live file (default %d routines)" EOL, options.maxRoutines );
     genericsPrintf( "    -R, --report-files: Report filenames as part of function discriminator" EOL );
     genericsPrintf( "    -s, --server:       <Server>:<Port> to use" EOL );
-    genericsPrintf( "    -t, --tag:          <stream> Which TPIU stream or COBS tag to use (normally 1)" EOL );
+    genericsPrintf( "    -t, --tag:          <stream> Which TPIU stream or OTAG tag to use (normally 1)" EOL );
     genericsPrintf( "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
     genericsPrintf( "    -V, --version:      Print version and exit" EOL );
     genericsPrintf( EOL "Environment Variables;" EOL );
@@ -1192,7 +1193,7 @@ bool _processOptions( int argc, char *argv[] )
                 // ------------------------------------
         }
 
-    /* If we set an explicit server and port and didn't set a protocol chances are we want ITM, not COBS */
+    /* If we set an explicit server and port and didn't set a protocol chances are we want ITM, not OTAG */
     if ( serverExplicit && !protExplicit )
     {
         options.protocol = PROT_ITM;
@@ -1225,8 +1226,8 @@ bool _processOptions( int argc, char *argv[] )
 
     switch ( options.protocol )
     {
-        case PROT_COBS:
-            genericsReport( V_INFO, "Decoding COBS (Orbuculum) with ITM in stream %d" EOL, options.tag );
+        case PROT_OTAG:
+            genericsReport( V_INFO, "Decoding OTAG (Orbuculum) with ITM in stream %d" EOL, options.tag );
             break;
 
         case PROT_ITM:
@@ -1246,12 +1247,12 @@ bool _processOptions( int argc, char *argv[] )
 }
 // ====================================================================================================
 
-static void _COBSpacketRxed ( struct Frame *p, void *param )
+static void _OTAGpacketRxed ( struct OTAGFrame *p, void *param )
 
 {
-    if ( p->d[0] == options.tag )
+    if ( p->tag == options.tag )
     {
-        for ( int i = 1; i < p->len; i++ )
+        for ( int i = 0; i < p->len; i++ )
         {
             _itmPumpProcess( p->d[i] );
         }
@@ -1272,6 +1273,13 @@ static struct Stream *_openStream( void )
     }
 }
 
+// ====================================================================================================
+static void _intHandler( int sig )
+
+{
+    /* CTRL-C exit is not an error... */
+    _r.ending = true;
+}
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
@@ -1330,8 +1338,14 @@ int main( int argc, char *argv[] )
     /* Reset the TPIU handler before we start */
     TPIUDecoderInit( &_r.t );
     ITMDecoderInit( &_r.i, options.forceITMSync );
-    COBSInit( &_r.c );
+    OTAGInit( &_r.c );
     MSGSeqInit( &_r.d, &_r.i, MSG_REORDER_BUFLEN );
+
+    /* This ensures the signal handler gets called */
+    if ( SIG_ERR == signal( SIGINT, _intHandler ) )
+    {
+        genericsExit( -1, "Failed to establish Int handler" EOL );
+    }
 
     /* First interval will be from startup to first packet arriving */
     _r.lastReportus = _timestamp();
@@ -1356,7 +1370,7 @@ int main( int argc, char *argv[] )
         }
     }
 
-    while ( 1 )
+    while ( !_r.ending )
     {
         struct Stream *stream = _openStream();
 
@@ -1384,7 +1398,7 @@ int main( int argc, char *argv[] )
 
         thisTime = _r.lastReportus = _timestamp();
 
-        while ( 1 )
+        while ( !_r.ending )
         {
             remainTime = ( ( _r.lastReportus + options.displayInterval - thisTime ) );
 
@@ -1452,9 +1466,9 @@ int main( int argc, char *argv[] )
 
             if ( receivedSize )
             {
-                if ( PROT_COBS == options.protocol )
+                if ( PROT_OTAG == options.protocol )
                 {
-                    COBSPump( &_r.c, cbw, receivedSize, _COBSpacketRxed, &_r );
+                    OTAGPump( &_r.c, cbw, receivedSize, _OTAGpacketRxed, &_r );
                 }
                 else
                 {
@@ -1524,7 +1538,7 @@ int main( int argc, char *argv[] )
         free( stream );
     }
 
-    if ( ( !ITMDecoderGetStats( &_r.i )->tpiuSyncCount ) )
+    if ( !_r.ending && ( !ITMDecoderGetStats( &_r.i )->tpiuSyncCount ) )
     {
         genericsReport( V_ERROR, "Read failed" EOL );
     }

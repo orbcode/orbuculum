@@ -21,7 +21,7 @@
 #include "generics.h"
 #include "tpiuDecoder.h"
 #include "itmDecoder.h"
-#include "cobs.h"
+#include "otag.h"
 #include "fileWriter.h"
 #include "itmfifos.h"
 #include "msgDecoder.h"
@@ -61,7 +61,7 @@ struct itmfifosHandle
     struct ITMPacket h;
     struct TPIUDecoder t;
     struct TPIUPacket p;
-    struct COBS cobs;
+    struct OTAG ot;
     enum timeDelay timeStatus;                    /* Indicator of if this time is exact */
     uint64_t timeStamp;                           /* Latest received time */
 
@@ -73,11 +73,10 @@ struct itmfifosHandle
     bool filewriter;                              /* Is the filewriter in use? */
     bool forceITMSync;                            /* Is ITM to be forced into sync? */
     bool permafile;                               /* Use permanent files rather than fifos */
-    int tag;                                      /* Which COBS or TPIU stream are we decoding? */
-    struct Frame cobsPart;                        /* Any part frame that has been received */
+    int tag;                                      /* Which OTAG or TPIU stream are we decoding? */
     bool amEnding;                                /* Flag indicating end is in progress */
 
-    enum Prot protocol;                           /* What protocol to communicate (default to COBS (== orbuculum)) */
+    enum Prot protocol;                           /* What protocol to communicate (default to OTAG (== orbuculum)) */
 
     struct Channel c[NUM_CHANNELS + 1];           /* Output for each channel */
 };
@@ -554,14 +553,14 @@ static void _tpiuProtocolPump( struct itmfifosHandle *f, uint8_t c )
 
 // ====================================================================================================
 
-static void _COBSpacketRxed ( struct Frame *p, void *param )
+static void _OTAGpacketRxed ( struct OTAGFrame *p, void *param )
 
 {
     struct itmfifosHandle *f = ( struct itmfifosHandle * )param;
 
-    if ( p->d[0] == f->tag )
+    if ( p->tag == f->tag )
     {
-        for ( int i = 1; i < p->len; i++ )
+        for ( int i = 0; i < p->len; i++ )
         {
             _itmPumpProcess( f, p->d[i] );
         }
@@ -699,9 +698,9 @@ void itmfifoProtocolPump( struct itmfifosHandle *f, uint8_t *c, int len )
 
 {
 
-    if ( PROT_COBS == f->protocol )
+    if ( PROT_OTAG == f->protocol )
     {
-        COBSPump( &f->cobs, c, len, _COBSpacketRxed, f );
+        OTAGPump( &f->ot, c, len, _OTAGpacketRxed, f );
     }
     else
         while ( len-- )
@@ -739,7 +738,7 @@ bool itmfifoCreate( struct itmfifosHandle *f )
 
     /* Reset the TPIU handler before we start */
     TPIUDecoderInit( &f->t );
-    COBSInit( &f->cobs );
+    OTAGInit( &f->ot );
     ITMDecoderInit( &f->i, f->forceITMSync );
 
     /* Cycle through channels and create a fifo for each one that is enabled */

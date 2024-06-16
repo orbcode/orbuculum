@@ -21,7 +21,7 @@
 #include "itmDecoder.h"
 #include "tpiuDecoder.h"
 #include "msgDecoder.h"
-#include "cobs.h"
+#include "otag.h"
 #include "symbols.h"
 #include "nw.h"
 #include "ext_fileformats.h"
@@ -38,8 +38,8 @@
 #define IN_EVENT   (0x40000000)
 #define OUT_EVENT  (0x50000000)
 
-enum Prot { PROT_COBS, PROT_ITM, PROT_TPIU, PROT_UNKNOWN };
-const char *protString[] = {"COBS", "ITM", "TPIU", NULL};
+enum Prot { PROT_OTAG, PROT_ITM, PROT_TPIU, PROT_UNKNOWN };
+const char *protString[] = {"OTAG", "ITM", "TPIU", NULL};
 
 /* States for sample reception state machine */
 enum CDState { CD_waitinout, CD_waitsrc, CD_waitdst };
@@ -66,11 +66,11 @@ struct Options                           /* Record for options, either defaults 
     bool forceITMSync;                   /* Do we assume ITM starts synced? */
     bool mono;                           /* Supress colour in output */
 
-    uint32_t tag;                        /* Which TPIU or COBS stream are we decoding? */
+    uint32_t tag;                        /* Which TPIU or OTAG stream are we decoding? */
 
     int port;                            /* Source information for where to connect to */
     char *server;
-    enum Prot protocol;                  /* What protocol to communicate (default to COBS (== orbuculum)) */
+    enum Prot protocol;                  /* What protocol to communicate (default to OTAG (== orbuculum)) */
 
 } _options =
 {
@@ -98,7 +98,7 @@ struct RunTime
     struct ITMPacket h;
     struct TPIUDecoder t;
     struct TPIUPacket p;
-    struct COBS c;
+    struct OTAG c;
     struct msg m;                       /* Decoded message out of ITM layer */
 
     const char *progName;               /* Name by which this program was called */
@@ -484,10 +484,10 @@ static void _printHelp( struct RunTime *r )
     genericsPrintf( "    -n, --itm-sync:     Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
     genericsPrintf( "    -M, --no-colour:    Supress colour in output" EOL );
     genericsPrintf( "    -O, --objdump-opts: <options> Options to pass directly to objdump" EOL );
-    genericsPrintf( "    -p, --protocol:     Protocol to communicate. Defaults to COBS if -s is not set, otherwise ITM unless" EOL \
+    genericsPrintf( "    -p, --protocol:     Protocol to communicate. Defaults to OTAG if -s is not set, otherwise ITM unless" EOL \
                     "                        explicitly set to TPIU to decode TPIU frames on channel set by -t" EOL );
     genericsPrintf( "    -s, --server:       <Server>:<Port> to use" EOL );
-    genericsPrintf( "    -t, --tag:          <stream>: Which TPIU stream or COBS tag to use (normally 1)" EOL );
+    genericsPrintf( "    -t, --tag:          <stream>: Which TPIU stream or OTAG tag to use (normally 1)" EOL );
     genericsPrintf( "    -T, --all-truncate: truncate -d material off all references (i.e. make output relative)" EOL );
     genericsPrintf( "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
     genericsPrintf( "    -V, --version:      Print version and exit" EOL );
@@ -534,6 +534,7 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
     int c, optionIndex = 0;
     bool protExplicit = false;
     bool serverExplicit = false;
+    bool portExplicit = false;
 
     while ( ( c = getopt_long ( argc, argv, "Dd:e:Ef:g:hI:nO:p:s:t:Tv:Vy:z:", _longOptions, &optionIndex ) ) != -1 )
         switch ( c )
@@ -645,6 +646,10 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
                 {
                     r->options->port = NWCLIENT_SERVER_PORT;
                 }
+                else
+                {
+                    portExplicit = true;
+                }
 
                 break;
 
@@ -699,10 +704,15 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
                 // ------------------------------------
         }
 
-    /* If we set an explicit server and port and didn't set a protocol chances are we want ITM, not COBS */
+    /* If we set an explicit server and port and didn't set a protocol chances are we want ITM, not OTAG */
     if ( serverExplicit && !protExplicit )
     {
         r->options->protocol = PROT_ITM;
+    }
+
+    if ( ( r->options->protocol == PROT_TPIU ) && !portExplicit )
+    {
+        r->options->port = NWCLIENT_SERVER_PORT;
     }
 
     if ( !r->options->elffile )
@@ -728,8 +738,8 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
 
     switch ( r->options->protocol )
     {
-        case PROT_COBS:
-            genericsReport( V_INFO, "Decoding COBS (Orbuculum) with ITM in stream %d" EOL, r->options->tag );
+        case PROT_OTAG:
+            genericsReport( V_INFO, "Decoding OTAG (Orbuculum) with ITM in stream %d" EOL, r->options->tag );
             break;
 
         case PROT_ITM:
@@ -748,34 +758,23 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
     return true;
 }
 // ====================================================================================================
-// ====================================================================================================
-static void _doExit( void )
-
-/* Perform any explicit exit functions */
-
-{
-    _r.ending = true;
-    /* Give them a bit of time, then we're leaving anyway */
-    usleep( 200 );
-}
-// ====================================================================================================
 static void _intHandler( int sig )
 
 /* Catch CTRL-C so things can be cleaned up properly via atexit functions */
 {
     /* CTRL-C exit is not an error... */
-    _doExit();
+    _r.ending = true;
 }
 // ====================================================================================================
 
-static void _COBSpacketRxed ( struct Frame *p, void *param )
+static void _OTAGpacketRxed ( struct OTAGFrame *p, void *param )
 
 {
     struct RunTime *r = ( struct RunTime * )param;
 
-    if ( p->d[0] == r->options->tag )
+    if ( p->tag == r->options->tag )
     {
-        for ( int i = 1; i < p->len; i++ )
+        for ( int i = 0; i < p->len; i++ )
         {
             _itmPumpProcess( r, p->d[i] );
         }
@@ -804,9 +803,6 @@ int main( int argc, char *argv[] )
 
     genericsScreenHandling( !_r.options->mono );
 
-    /* Make sure the fifos get removed at the end */
-    atexit( _doExit );
-
     /* This ensures the atexit gets called */
     if ( SIG_ERR == signal( SIGINT, _intHandler ) )
     {
@@ -826,7 +822,7 @@ int main( int argc, char *argv[] )
     /* Reset the TPIU handler before we start */
     TPIUDecoderInit( &_r.t );
     ITMDecoderInit( &_r.i, _r.options->forceITMSync );
-    COBSInit( &_r.c );
+    OTAGInit( &_r.c );
 
     while ( !_r.ending )
     {
@@ -907,9 +903,9 @@ int main( int argc, char *argv[] )
             /* ...and record the fact that we received some data */
             _r.intervalBytes += _r.rawBlock.fillLevel;
 
-            if ( PROT_COBS == _r.options->protocol )
+            if ( PROT_OTAG == _r.options->protocol )
             {
-                COBSPump( &_r.c, _r.rawBlock.buffer, _r.rawBlock.fillLevel, _COBSpacketRxed, &_r );
+                OTAGPump( &_r.c, _r.rawBlock.buffer, _r.rawBlock.fillLevel, _OTAGpacketRxed, &_r );
             }
             else
             {

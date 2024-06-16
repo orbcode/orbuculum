@@ -16,6 +16,7 @@
 #include <inttypes.h>
 #include <getopt.h>
 #include <time.h>
+#include <signal.h>
 
 #include "nw.h"
 #include "git_version_info.h"
@@ -108,7 +109,7 @@ struct
     uint64_t dwtte;                      /* Timestamp for dwt print age */
     uint64_t oldte;                      /* Old time for interval calculation */
     char dwtText[MAX_STRING_LENGTH];     /* DWT text that arrived while a line was in progress */
-
+    bool ending;                         /* Time to shut up shop */
 } _r;
 
 #define DWT_TO_US (100000L)
@@ -964,7 +965,7 @@ static void _feedStream( struct Stream *stream )
     struct timeval t;
     unsigned char cbw[TRANSFER_SIZE];
 
-    while ( true )
+    while ( !_r.ending )
     {
         size_t receivedSize;
 
@@ -1017,6 +1018,13 @@ static void _feedStream( struct Stream *stream )
 }
 
 // ====================================================================================================
+static void _intHandler( int sig )
+
+{
+    /* CTRL-C exit is not an error... */
+    _r.ending = true;
+}
+// ====================================================================================================
 int main( int argc, char *argv[] )
 
 {
@@ -1033,11 +1041,17 @@ int main( int argc, char *argv[] )
     OTAGInit( &_r.c );
     MSGSeqInit( &_r.d, &_r.i, MSG_REORDER_BUFLEN );
 
-    while ( true )
+    /* This ensures the signal handler gets called */
+    if ( SIG_ERR == signal( SIGINT, _intHandler ) )
+    {
+        genericsExit( -1, "Failed to establish Int handler" EOL );
+    }
+
+    while ( !_r.ending )
     {
         struct Stream *stream = NULL;
 
-        while ( true )
+        while ( !_r.ending )
         {
             stream = _tryOpenStream();
 
@@ -1070,10 +1084,10 @@ int main( int argc, char *argv[] )
         if ( stream != NULL )
         {
             _feedStream( stream );
-        }
 
-        stream->close( stream );
-        free( stream );
+            stream->close( stream );
+            free( stream );
+        }
 
         if ( options.endTerminate )
         {
