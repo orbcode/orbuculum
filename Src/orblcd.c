@@ -19,13 +19,14 @@
 #include <unistd.h>
 #include <SDL.h>
 #include <SDL_thread.h>
+#include <signal.h>
 
 #include "git_version_info.h"
 #include "generics.h"
 #include "tpiuDecoder.h"
 #include "itmDecoder.h"
 #include "msgDecoder.h"
-#include "cobs.h"
+#include "otag.h"
 #include "stream.h"
 #include "nw.h"
 #include "orblcd_protocol.h"
@@ -65,8 +66,8 @@ struct TApp
 };
 /************** APPLICATION SPECIFIC ENDS ***************************************************************/
 
-enum Prot { PROT_COBS, PROT_ITM, PROT_TPIU, PROT_UNKNOWN };
-const char *protString[] = {"COBS", "ITM", "TPIU", NULL};
+enum Prot { PROT_OTAG, PROT_ITM, PROT_TPIU, PROT_UNKNOWN };
+const char *protString[] = {"OTAG", "ITM", "TPIU", NULL};
 
 /* Record for options, either defaults or from command line */
 struct Options
@@ -74,12 +75,12 @@ struct Options
     /* Source information */
     int  port;                                           /* Source port, or zero if no port set */
     char *server;                                        /* Source server */
-    enum Prot protocol;                                  /* What protocol to communicate (default to COBS (== orbuculum)) */
+    enum Prot protocol;                                  /* What protocol to communicate (default to OTAG (== orbuculum)) */
     char *file;                                          /* File host connection */
     bool fileTerminate;                                  /* Terminate when file read isn't successful */
 
     /* Demux information */
-    uint32_t tag;                                        /* Which TPIU or COBS stream are we decoding? */
+    uint32_t tag;                                        /* Which TPIU or OTAG stream are we decoding? */
     bool forceITMSync;                                   /* Do we need ITM syncs? */
 
 } _options = {.forceITMSync = true, .tag = 1, .port = OTCLIENT_SERVER_PORT, .server = "localhost"};
@@ -91,7 +92,7 @@ struct RunTime
     struct ITMPacket   h;
     struct TPIUDecoder t;
     struct TPIUPacket  p;
-    struct COBS        c;
+    struct OTAG        c;
 
     bool      ending;                                    /* Flag indicating app is terminating */
     bool      errored;                                   /* Flag indicating problem in reception process */
@@ -372,14 +373,14 @@ static struct Stream *_tryOpenStream( struct RunTime *r )
 }
 // ====================================================================================================
 
-static void _COBSpacketRxed ( struct Frame *p, void *param )
+static void _OTAGpacketRxed ( struct OTAGFrame *p, void *param )
 
 {
     struct RunTime *r = ( struct RunTime * )param;
 
-    if ( p->d[0] == r->options->tag )
+    if ( p->tag == r->options->tag )
     {
-        for ( int i = 1; i < p->len; i++ )
+        for ( int i = 0; i < p->len; i++ )
         {
             _itmPumpProcess( p->d[i], r );
         }
@@ -398,7 +399,7 @@ static bool _feedStream( struct Stream *stream, struct RunTime *r )
     };
     SDL_Event e;
 
-    while ( true )
+    while ( !_r.ending )
     {
         size_t receivedSize;
         enum ReceiveResult result = stream->receive( stream, cbw, TRANSFER_SIZE, &t, &receivedSize );
@@ -428,9 +429,9 @@ static bool _feedStream( struct Stream *stream, struct RunTime *r )
             }
         }
 
-        if ( PROT_COBS == r->options->protocol )
+        if ( PROT_OTAG == r->options->protocol )
         {
-            COBSPump( &_r.c, cbw, receivedSize, _COBSpacketRxed, &_r );
+            OTAGPump( &_r.c, cbw, receivedSize, _OTAGpacketRxed, &_r );
         }
         else
         {
@@ -464,11 +465,11 @@ void _printHelp( const char *const progName )
     genericsPrintf( "    -f, --input-file:   <filename> Take input from specified file" EOL );
     genericsPrintf( "    -h, --help:         This help" EOL );
     genericsPrintf( "    -n, --itm-sync:     Enforce sync requirement for ITM (i.e. ITM needsd to issue syncs)" EOL );
-    genericsPrintf( "    -p, --protocol:     Protocol to communicate. Defaults to COBS if -s is not set, otherwise ITM unless" EOL \
+    genericsPrintf( "    -p, --protocol:     Protocol to communicate. Defaults to OTAG if -s is not set, otherwise ITM unless" EOL \
                     "                        explicitly set to TPIU to decode TPIU frames on channel set by -t" EOL );
     genericsPrintf( "    -s, --server:       <Server>:<Port> to use" EOL );
     genericsPrintf( "    -S, --sbcolour:     <Colour> to be used for single bit renders, ignored for other bit depths" EOL );
-    genericsPrintf( "    -t, --tag:          <stream>: Which TPIU stream or COBS tag to use (normally 1)" EOL );
+    genericsPrintf( "    -t, --tag:          <stream>: Which TPIU stream or OTAG tag to use (normally 1)" EOL );
     genericsPrintf( "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
     genericsPrintf( "    -V, --version:      Print version and exit" EOL );
     genericsPrintf( "    -w, --window:       <string> Set title for output window" EOL );
@@ -507,6 +508,7 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
     int c, optionIndex = 0;
     bool protExplicit = false;
     bool serverExplicit = false;
+    bool portExplicit = false;
 
     while ( ( c = getopt_long ( argc, argv, "c:Ef:hnp:s:S:t:v:Vw:z:", _longOptions, &optionIndex ) ) != -1 )
         switch ( c )
@@ -588,6 +590,10 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
                 {
                     r->options->port = NWCLIENT_SERVER_PORT;
                 }
+                else
+                {
+                    portExplicit = true;
+                }
 
                 break;
 
@@ -645,10 +651,15 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
     /* ... and dump the config if we're being verbose */
     _printVersion();
 
-    /* If we set an explicit server and port and didn't set a protocol chances are we want ITM, not COBS */
+    /* If we set an explicit server and port and didn't set a protocol chances are we want ITM, not OTAG */
     if ( serverExplicit && !protExplicit )
     {
         r->options->protocol = PROT_ITM;
+    }
+
+    if ( ( r->options->protocol == PROT_TPIU ) && !portExplicit )
+    {
+        r->options->port = NWCLIENT_SERVER_PORT;
     }
 
     genericsReport( V_INFO, "App Channel    : Data=%d, Control=%d" EOL, r->app->chan, r->app->chan + 1 );
@@ -683,8 +694,8 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
 
     switch ( r->options->protocol )
     {
-        case PROT_COBS:
-            genericsReport( V_INFO, "Decoding COBS (Orbuculum) with ITM in stream %d" EOL, r->options->tag );
+        case PROT_OTAG:
+            genericsReport( V_INFO, "Decoding OTAG (Orbuculum) with ITM in stream %d" EOL, r->options->tag );
             break;
 
         case PROT_ITM:
@@ -701,6 +712,14 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
     }
 
     return true;
+}
+
+// ====================================================================================================
+static void _intHandler( int sig )
+
+{
+    /* CTRL-C exit is not an error... */
+    _r.ending = true;
 }
 // ====================================================================================================
 // ====================================================================================================
@@ -722,11 +741,17 @@ int main( int argc, char *argv[] )
     /* Reset the TPIU handler before we start */
     TPIUDecoderInit( &_r.t );
     ITMDecoderInit( &_r.i, _r.options->forceITMSync );
-    COBSInit( &_r.c );
+    OTAGInit( &_r.c );
 
     if ( SDL_Init( SDL_INIT_VIDEO ) < 0 )
     {
         genericsExit( -1, "Could not initailise SDL" );
+    }
+
+    /* This ensures the signal handler gets called */
+    if ( SIG_ERR == signal( SIGINT, _intHandler ) )
+    {
+        genericsExit( -1, "Failed to establish Int handler" EOL );
     }
 
     /* Load up default colour index map R3G3B2 */
@@ -735,11 +760,11 @@ int main( int argc, char *argv[] )
         _r.app->map8to24bit[i] = ( ( i & 0xE0 ) << 21 ) | ( ( i & 0x1c ) << 13 ) | ( i << 6 );
     }
 
-    while ( true )
+    while ( !_r.ending )
     {
         struct Stream *stream = NULL;
 
-        while ( true )
+        while ( !_r.ending )
         {
             stream = _tryOpenStream( &_r );
 
@@ -766,7 +791,7 @@ int main( int argc, char *argv[] )
             }
 
             /* Checking every 100ms for a connection is quite often enough */
-            usleep( 10000 );
+            usleep( 100000 );
         }
 
         if ( stream != NULL )
@@ -775,10 +800,10 @@ int main( int argc, char *argv[] )
             {
                 break;
             }
-        }
 
-        stream->close( stream );
-        free( stream );
+            stream->close( stream );
+            free( stream );
+        }
 
         if ( _r.options->fileTerminate )
         {

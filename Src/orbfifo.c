@@ -29,7 +29,7 @@
 
 #include "itmfifos.h"
 
-const char *protString[] = {"COBS", "ITM", "TPIU", NULL};
+const char *protString[] = {"OTAG", "ITM", "TPIU", NULL};
 
 //#define DUMP_BLOCK
 
@@ -79,10 +79,10 @@ static void _printHelp( const char *const progName )
     genericsPrintf( "    -h, --help:         This help" EOL );
     genericsPrintf( "    -M, --no-colour:    Supress colour in output" EOL );
     genericsPrintf( "    -P, --permanent:    Create permanent files rather than fifos" EOL );
-    genericsPrintf( "    -p, --protocol:     Protocol to communicate. Defaults to COBS if -s is not set, otherwise ITM unless" EOL \
+    genericsPrintf( "    -p, --protocol:     Protocol to communicate. Defaults to OTAG if -s is not set, otherwise ITM unless" EOL \
                     "                        explicitly set to TPIU to decode TPIU frames on stream set by -t" EOL );
     genericsPrintf( "    -s, --server:       <Server>:<Port> to use" EOL );
-    genericsPrintf( "    -t, --tag:          <stream> Which TPIU stream or COBS tag to use (normally 1)" EOL );
+    genericsPrintf( "    -t, --tag:          <stream> Which TPIU stream or OTAG tag to use (normally 1)" EOL );
     genericsPrintf( "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
     genericsPrintf( "    -V, --version:      Print version and exit" EOL );
     genericsPrintf( "    -W, --writer-path:  <path> Enable filewriter functionality using specified base path" EOL );
@@ -125,6 +125,7 @@ static bool _processOptions( int argc, char *argv[] )
     char *chanIndex;
     bool protExplicit = false;
     bool serverExplicit = false;
+    bool portExplicit = false;
 
     while ( ( c = getopt_long ( argc, argv, "b:c:Ef:hVn:Pp:s:t:v:w:", _longOptions, &optionIndex ) ) != -1 )
         switch ( c )
@@ -245,6 +246,10 @@ static bool _processOptions( int argc, char *argv[] )
                 {
                     options.port = NWCLIENT_SERVER_PORT;
                 }
+                else
+                {
+                    portExplicit = true;
+                }
 
                 break;
 
@@ -347,10 +352,15 @@ static bool _processOptions( int argc, char *argv[] )
                 // ------------------------------------
         }
 
-    /* If we set an explicit server and port and didn't set a protocol chances are we want ITM, not COBS */
+    /* If we set an explicit server and port and didn't set a protocol chances are we want ITM, not OTAG */
     if ( serverExplicit && !protExplicit )
     {
         itmfifoSetProtocol( _r.f, PROT_ITM );
+    }
+
+    if ( ( itmfifoGetProtocol( _r.f ) == PROT_TPIU ) && !portExplicit )
+    {
+        options.port = NWCLIENT_SERVER_PORT;
     }
 
 
@@ -375,8 +385,8 @@ static bool _processOptions( int argc, char *argv[] )
 
     switch ( itmfifoGetProtocol( _r.f ) )
     {
-        case PROT_COBS:
-            genericsReport( V_INFO, "Decoding COBS (Orbuculum) with ITM in stream %d" EOL, itmfifoGettag( _r.f ) );
+        case PROT_OTAG:
+            genericsReport( V_INFO, "Decoding OTAG (Orbuculum) with ITM in stream %d" EOL, itmfifoGettag( _r.f ) );
             break;
 
         case PROT_ITM:
