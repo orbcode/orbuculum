@@ -10,6 +10,7 @@
 #include <unistd.h>
 #include <ctype.h>
 #include <stdio.h>
+#include <stdarg.h>
 #include <string.h>
 #include <assert.h>
 #include <inttypes.h>
@@ -25,12 +26,12 @@
 #include "msgDecoder.h"
 #include "msgSeq.h"
 #include "stream.h"
-#include "cobs.h"
+#include "otag.h"
 
 #define NUM_CHANNELS  32
 #define HW_CHANNEL    (NUM_CHANNELS)      /* Make the hardware fifo on the end of the software ones */
 
-#define MAX_STRING_LENGTH (100)           /* Maximum length that will be output from a fifo for a single event */
+#define MAX_STRING_LENGTH (4096)          /* Maximum length that will be output */
 #define DEFAULT_TS_TRIGGER '\n'           /* Default trigger character for timestamp output */
 
 #define MSG_REORDER_BUFLEN  (10)          /* Maximum number of samples to re-order for timekeeping */
@@ -50,8 +51,8 @@
 
 enum TSType { TSNone, TSAbsolute, TSRelative, TSDelta, TSStamp, TSStampDelta, TSNumTypes };
 
-enum Prot { PROT_COBS, PROT_ITM, PROT_TPIU, PROT_UNKNOWN };
-const char *protString[] = {"COBS", "ITM", "TPIU", NULL};
+enum Prot { PROT_OTAG, PROT_ITM, PROT_TPIU, PROT_UNKNOWN };
+const char *protString[] = {"OTAG", "ITM", "TPIU", NULL};
 
 const char *tsTypeString[TSNumTypes] = { "None", "Absolute", "Relative", "Delta", "System Timestamp", "System Timestamp Delta" };
 
@@ -59,7 +60,7 @@ const char *tsTypeString[TSNumTypes] = { "None", "Absolute", "Relative", "Delta"
 struct
 {
     /* Config information */
-    uint32_t tag;                            /* Which TPIU or COBS stream are we decoding? */
+    uint32_t tag;                            /* Which TPIU or OTAG stream are we decoding? */
     bool forceITMSync;
     uint64_t cps;                            /* Cycles per second for target CPU */
 
@@ -74,11 +75,11 @@ struct
     /* Source information */
     int port;                                /* What port to connect to on the server (default to orbuculum) */
     char *server;                            /* Which server to connect to (default to localhost) */
-    enum Prot protocol;                      /* What protocol to communicate (default to COBS (== orbuculum)) */
+    enum Prot protocol;                      /* What protocol to communicate (default to OTAG (== orbuculum)) */
 
     char *file;                              /* File host connection */
     bool endTerminate;                       /* Terminate when file/socket "ends" */
-
+    bool ex;                             /* Support exception reporting */
 } options =
 {
     .forceITMSync = true,
@@ -95,7 +96,7 @@ struct
     struct MSGSeq    d;
     struct ITMPacket h;
     struct TPIUDecoder t;
-    struct COBS c;
+    struct OTAG c;
 
     struct Frame cobsPart;               /* Any part frame that has been received */
     struct TPIUPacket p;                 /* Any TPIU packet that has been recevied */
@@ -105,8 +106,13 @@ struct
     uint64_t te;                         /* Time on host side for line stamping */
     bool gotte;                          /* Flag that we have the initial time */
     bool inLine;                         /* We are in progress with a line that has been timestamped already */
+    uint64_t dwtte;                      /* Timestamp for dwt print age */
     uint64_t oldte;                      /* Old time for interval calculation */
+    char dwtText[MAX_STRING_LENGTH];     /* DWT text that arrived while a line was in progress */
+
 } _r;
+
+#define DWT_TO_US (100000L)
 
 // ====================================================================================================
 uint64_t _timestamp( void )
@@ -123,7 +129,7 @@ uint64_t _timestamp( void )
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
-static void _outputTimestamp( void )
+static void _printTimestamp( char *strstore )
 
 {
     /* Lets output a timestamp */
@@ -131,6 +137,8 @@ static void _outputTimestamp( void )
     uint64_t res;
     struct tm tm;
     time_t td;
+
+    *strstore = 0;
 
     switch ( options.tsType )
     {
@@ -143,13 +151,12 @@ static void _outputTimestamp( void )
                 /* Get the starting time */
                 _r.oldte = _timestamp();
                 _r.gotte = true;
-                fprintf( stdout, REL_FORMAT_INIT );
+                sprintf( strstore, REL_FORMAT_INIT );
             }
             else
             {
-                uint64_t now = _timestamp();
-                res = now - _r.oldte;
-                fprintf( stdout, REL_FORMAT, res / ONE_SEC_IN_USEC, ( res / ( ONE_SEC_IN_USEC / 1000 ) ) % 1000 );
+                res = _r.oldte - _timestamp();
+                sprintf( strstore, REL_FORMAT, res / ONE_SEC_IN_USEC, ( res / ( ONE_SEC_IN_USEC / 1000 ) ) % 1000 );
             }
 
             break;
@@ -159,7 +166,7 @@ static void _outputTimestamp( void )
             td = ( time_t )res / ONE_SEC_IN_USEC;
             tm = *localtime( &td );
             strftime( opConstruct, MAX_STRING_LENGTH, ABS_FORMAT_TM, &tm );
-            fprintf( stdout, ABS_FORMAT, opConstruct, ( res / ( ONE_SEC_IN_USEC / 1000 ) ) % 1000 );
+            sprintf( strstore, ABS_FORMAT, opConstruct, ( res / ( ONE_SEC_IN_USEC / 1000 ) ) % 1000 );
             break;
 
         case TSDelta: // ----------------------------------------------------------------------
@@ -168,7 +175,7 @@ static void _outputTimestamp( void )
                 /* Get the starting time */
                 _r.oldte = _timestamp();
                 _r.gotte = true;
-                fprintf( stdout, DEL_FORMAT_INIT );
+                sprintf( strstore, DEL_FORMAT_INIT );
             }
             else
             {
@@ -178,11 +185,11 @@ static void _outputTimestamp( void )
 
                 if ( res / 1000 )
                 {
-                    fprintf( stdout, DEL_FORMAT, res / ONE_SEC_IN_USEC, ( res / 1000 ) % 1000 );
+                    sprintf( strstore, DEL_FORMAT, res / ONE_SEC_IN_USEC, ( res / 1000 ) % 1000 );
                 }
                 else
                 {
-                    fprintf( stdout, DEL_FORMAT_CTD );
+                    sprintf( strstore, DEL_FORMAT_CTD );
                 }
             }
 
@@ -192,11 +199,11 @@ static void _outputTimestamp( void )
             if ( options.cps )
             {
                 uint64_t tms = ( _r.timeStamp * 1000000 ) / options.cps;
-                fprintf( stdout, STAMP_FORMAT_MS, tms / 1000000, ( tms / 1000 ) % 1000, tms % 1000 );
+                sprintf( strstore, STAMP_FORMAT_MS, tms / 1000000, ( tms / 1000 ) % 1000, tms % 1000 );
             }
             else
             {
-                fprintf( stdout, STAMP_FORMAT, _r.timeStamp );
+                sprintf( strstore, STAMP_FORMAT, _r.timeStamp );
             }
 
             break;
@@ -214,11 +221,11 @@ static void _outputTimestamp( void )
             if ( options.cps )
             {
                 uint64_t tms = ( delta * 1000000 ) / options.cps;
-                fprintf( stdout, STAMP_FORMAT_MS_DELTA, tms / 1000000, ( tms / 1000 ) % 1000, tms % 1000 );
+                sprintf( strstore, STAMP_FORMAT_MS_DELTA, tms / 1000000, ( tms / 1000 ) % 1000, tms % 1000 );
             }
             else
             {
-                fprintf( stdout, STAMP_FORMAT, delta );
+                sprintf( strstore, STAMP_FORMAT, delta );
             }
 
             break;
@@ -231,6 +238,7 @@ static void _outputTimestamp( void )
 static void _outputText( char *p )
 
 {
+    char opConstruct[MAX_STRING_LENGTH];
     /* Process the buffer and make sure it gets timestamped correctly as it's output */
 
     char *q;
@@ -240,7 +248,8 @@ static void _outputText( char *p )
         /* If this is the first character in a new line, then we need to generate a timestamp */
         if ( !_r.inLine )
         {
-            _outputTimestamp();
+            _printTimestamp( opConstruct );
+            fputs( opConstruct, stdout );
             _r.inLine = true;
         }
 
@@ -253,6 +262,13 @@ static void _outputText( char *p )
             fprintf( stdout, "%s" EOL, p );
             /* Once we've output these data then we're not in a line any more */
             _r.inLine = false;
+
+            /* ...and if there were any DWT messages to print we'd better output those */
+            if ( _r.dwtText[0] )
+            {
+                fprintf( stdout, "%s" EOL, _r.dwtText );
+                _r.dwtText[0] = 0;
+            }
         }
         else
         {
@@ -266,6 +282,140 @@ static void _outputText( char *p )
     }
 }
 // ====================================================================================================
+// Decoders for each message
+// ====================================================================================================
+
+void _expex( const char *fmt, ... )
+
+/* Print to exception buffer and output if appropriate */
+
+{
+    if ( ( _r.inLine ) && ( !_r.dwtText[0] ) )
+    {
+        /* Timestamp this so it gets output at an interval later, worst case */
+        _r.dwtte = _timestamp();
+    }
+
+    /* Construct the output */
+    _printTimestamp( &_r.dwtText[strlen( _r.dwtText )] );
+    int maxLen = MAX_STRING_LENGTH - strlen( _r.dwtText );
+    va_list va;
+    va_start( va, fmt );
+    vsnprintf( &_r.dwtText[strlen( _r.dwtText )], maxLen, fmt, va );
+    va_end( va );
+
+    if ( !_r.inLine )
+    {
+        fputs( _r.dwtText, stdout );
+        _r.dwtText[0] = 0;
+    }
+}
+
+// ====================================================================================================
+
+void _handleException( struct excMsg *m, struct ITMDecoder *i )
+
+{
+    if ( options.ex )
+    {
+        const char *exNames[] = {"Thread", "Reset", "NMI", "HardFault", "MemManage", "BusFault", "UsageFault", "UNKNOWN_7",
+                                 "UNKNOWN_8", "UNKNOWN_9", "UNKNOWN_10", "SVCall", "Debug Monitor", "UNKNOWN_13", "PendSV", "SysTick"
+                                };
+        const char *exEvent[] = {"Unknown", "Enter", "Exit", "Resume"};
+
+
+        if ( m->exceptionNumber < 16 )
+        {
+            /* This is a system based exception */
+            _expex( "HWEVENT_SYSTEM_EXCEPTION event %s type %s" EOL, exEvent[m->eventType & 0x03], exNames[m->exceptionNumber & 0x0F] );
+        }
+        else
+        {
+            /* This is a CPU defined exception */
+            _expex( "HWEVENT_INTERRUPT_EXCEPTION event %s external interrupt %d" EOL, exEvent[m->eventType & 0x03], m->exceptionNumber - 16 );
+        }
+    }
+}
+// ====================================================================================================
+void _handleDWTEvent( struct dwtMsg *m, struct ITMDecoder *i )
+
+{
+#define NUM_EVENTS 6
+
+    char op[MAX_STRING_LENGTH];
+
+    if ( options.ex )
+    {
+        const char *evName[NUM_EVENTS] = {"CPI", "Exc", "Sleep", "LSU", "Fold", "Cyc"};
+
+        sprintf( op, "HWEVENT_DWT type " );
+
+        uint32_t opLen = strlen( op );
+
+        for ( uint32_t i = 0; i < NUM_EVENTS; i++ )
+        {
+            if ( m->event & ( 1 << i ) )
+            {
+                // Copy this event into the output string
+                op[opLen++] = ',';
+                const char *u = evName[i];
+
+                do
+                {
+                    op[opLen++] = *u++;
+                }
+                while ( *u );
+            }
+        }
+
+        _expex( "%s", op );
+    }
+}
+
+// ====================================================================================================
+void _handleDataRWWP( struct watchMsg *m, struct ITMDecoder *i )
+
+/* We got an alert due to a watch pointer */
+
+{
+    if ( options.ex )
+    {
+        _expex( "HWEVENT_RWWT type %d for %s data 0x%x" EOL, m->comp, m->isWrite ? "Write" : "Read", m->data );
+    }
+}
+// ====================================================================================================
+void _handleDataAccessWP( struct wptMsg *m, struct ITMDecoder *i )
+
+/* We got an alert due to a watchpoint */
+
+{
+    if ( options.ex )
+    {
+        _expex( "HWEVENT_AWP type %d at address 0x%08x" EOL, m->comp, m->data );
+    }
+}
+// ====================================================================================================
+void _handleDataOffsetWP( struct oswMsg *m, struct ITMDecoder *i )
+
+/* We got an alert due to an offset write event */
+
+{
+    if ( options.ex )
+    {
+        _expex( "HWEVENT_OFS comparison %d at offset 0x%04x" EOL, m->comp, m->offset );
+    }
+}
+// ====================================================================================================
+void _handleNISYNC( struct nisyncMsg *m, struct ITMDecoder *i )
+
+{
+    if ( options.ex )
+    {
+        _expex( "HWEVENT_NISYNC type %02x at address 0x%08x" EOL, m->type, m->addr );
+    }
+}
+// ====================================================================================================
+
 static void _handleSW( struct swMsg *m, struct ITMDecoder *i )
 
 {
@@ -333,13 +483,13 @@ static void _itmPumpProcess( char c )
         /* MSG_ERROR */           NULL,
         /* MSG_NONE */            NULL,
         /* MSG_SOFTWARE */        ( handlers )_handleSW,
-        /* MSG_NISYNC */          NULL,
-        /* MSG_OSW */             NULL,
-        /* MSG_DATA_ACCESS_WP */  NULL,
-        /* MSG_DATA_RWWP */       NULL,
+        /* MSG_NISYNC */          ( handlers )_handleNISYNC,
+        /* MSG_OSW */             ( handlers )_handleDataOffsetWP,
+        /* MSG_DATA_ACCESS_WP */  ( handlers )_handleDataAccessWP,
+        /* MSG_DATA_RWWP */       ( handlers )_handleDataRWWP,
         /* MSG_PC_SAMPLE */       NULL,
-        /* MSG_DWT_EVENT */       NULL,
-        /* MSG_EXCEPTION */       NULL,
+        /* MSG_DWT_EVENT */       ( handlers )_handleDWTEvent,
+        /* MSG_EXCEPTION */       ( handlers )_handleException,
         /* MSG_TS */              ( handlers )_handleTS
     };
 
@@ -457,15 +607,16 @@ static void _printHelp( const char *const progName )
     fprintf( stdout, "    -g, --trigger:      <char> to use to trigger timestamp (default is newline)" EOL );
     fprintf( stdout, "    -h, --help:         This help" EOL );
     fprintf( stdout, "    -n, --itm-sync:     Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
-    fprintf( stdout, "    -p, --protocol:     Protocol to communicate. Defaults to COBS if -s is not set, otherwise ITM unless" EOL \
+    fprintf( stdout, "    -p, --protocol:     Protocol to communicate. Defaults to OTAG if -s is not set, otherwise ITM unless" EOL \
              "                        explicitly set to TPIU to decode TPIU frames on channel set by -t" EOL );
     fprintf( stdout, "    -s, --server:       <Server>:<Port> to use" EOL );
-    fprintf( stdout, "    -t, --tag:          <stream>: Which TPIU stream or COBS tag to use (normally 1)" EOL );
+    fprintf( stdout, "    -t, --tag:          <stream>: Which TPIU stream or OTAG tag to use (normally 1)" EOL );
     fprintf( stdout, "    -T, --timestamp:    <a|r|d|s|t>: Add absolute, relative (to session start)," EOL
              "                        delta, system timestamp or system timestamp delta to output. Note" EOL
              "                        a,r & d are host dependent and you may need to run orbuculum with -H." EOL );
     fprintf( stdout, "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
     fprintf( stdout, "    -V, --version:      Print version and exit" EOL );
+    fprintf( stdout, "    -x, --exceptions:   Include exception information in output, in time order" EOL );
 }
 // ====================================================================================================
 static void _printVersion( void )
@@ -489,6 +640,7 @@ static struct option _longOptions[] =
     {"timestamp", required_argument, NULL, 'T'},
     {"verbose", required_argument, NULL, 'v'},
     {"version", no_argument, NULL, 'V'},
+    {"exceptions", no_argument, NULL, 'x'},
     {NULL, no_argument, NULL, 0}
 };
 // ====================================================================================================
@@ -500,10 +652,11 @@ bool _processOptions( int argc, char *argv[] )
     char *chanIndex;
     bool protExplicit = false;
     bool serverExplicit = false;
+    bool portExplicit = false;
 
 #define DELIMITER ','
 
-    while ( ( c = getopt_long ( argc, argv, "c:C:Ef:g:hVnp:s:t:T:v:", _longOptions, &optionIndex ) ) != -1 )
+    while ( ( c = getopt_long ( argc, argv, "c:C:Ef:g:hVnp:s:t:T:v:x", _longOptions, &optionIndex ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -593,6 +746,10 @@ bool _processOptions( int argc, char *argv[] )
                 if ( !options.port )
                 {
                     options.port = NWCLIENT_SERVER_PORT;
+                }
+                else
+                {
+                    portExplicit = true;
                 }
 
                 break;
@@ -706,21 +863,32 @@ bool _processOptions( int argc, char *argv[] )
                 return false;
 
             // ------------------------------------
+            case 'x':
+                options.ex = true;
+                break;
+
+            // ------------------------------------
             default:
                 return false;
                 // ------------------------------------
         }
 
-    /* If we set an explicit server and port and didn't set a protocol chances are we want ITM, not COBS */
+    /* If we set an explicit server and port and didn't set a protocol chances are we want ITM, not OTAG */
     if ( serverExplicit && !protExplicit )
     {
         options.protocol = PROT_ITM;
+    }
+
+    if ( ( options.protocol == PROT_TPIU ) && !portExplicit )
+    {
+        options.port = NWCLIENT_SERVER_PORT;
     }
 
     genericsReport( V_INFO, "orbcat version " GIT_DESCRIBE EOL );
     genericsReport( V_INFO, "Server     : %s:%d" EOL, options.server, options.port );
     genericsReport( V_INFO, "ForceSync  : %s" EOL, options.forceITMSync ? "true" : "false" );
     genericsReport( V_INFO, "Timestamp  : %s" EOL, tsTypeString[options.tsType] );
+    genericsReport( V_INFO, "Exceptions : %s" EOL, options.ex ? "On" : "Off" );
 
     if ( options.cps )
     {
@@ -750,8 +918,8 @@ bool _processOptions( int argc, char *argv[] )
 
     switch ( options.protocol )
     {
-        case PROT_COBS:
-            genericsReport( V_INFO, "Decoding COBS (Orbuculum) with ITM in stream %d" EOL, options.tag );
+        case PROT_OTAG:
+            genericsReport( V_INFO, "Decoding OTAG (Orbuculum) with ITM in stream %d" EOL, options.tag );
             break;
 
         case PROT_ITM:
@@ -794,12 +962,12 @@ static struct Stream *_tryOpenStream( void )
 }
 // ====================================================================================================
 
-static void _COBSpacketRxed ( struct Frame *p, void *param )
+static void _OTAGpacketRxed ( struct OTAGFrame *p, void *param )
 
 {
-    if ( p->d[0] == options.tag )
+    if ( p->tag == options.tag )
     {
-        for ( int i = 1; i < p->len; i++ )
+        for ( int i = 0; i < p->len; i++ )
         {
             _itmPumpProcess( p->d[i] );
         }
@@ -836,9 +1004,9 @@ static void _feedStream( struct Stream *stream )
 
         if ( receivedSize )
         {
-            if ( PROT_COBS == options.protocol )
+            if ( PROT_OTAG == options.protocol )
             {
-                COBSPump( &_r.c, cbw, receivedSize, _COBSpacketRxed, &_r );
+                OTAGPump( &_r.c, cbw, receivedSize, _OTAGpacketRxed, &_r );
             }
             else
             {
@@ -849,6 +1017,15 @@ static void _feedStream( struct Stream *stream )
                 {
                     _protocolPump( *c++ );
                 }
+            }
+
+            /* Check if an exception report timed out */
+            if ( ( _r.inLine ) && _r.dwtText[0] && ( _timestamp() - _r.dwtte > DWT_TO_US ) )
+            {
+                fputs( EOL, stdout );
+                fputs( _r.dwtText, stdout );
+                _r.dwtText[0] = 0;
+                _r.inLine = false;
             }
 
             fflush( stdout );
@@ -870,7 +1047,7 @@ int main( int argc, char *argv[] )
     /* Reset the TPIU handler before we start */
     TPIUDecoderInit( &_r.t );
     ITMDecoderInit( &_r.i, options.forceITMSync );
-    COBSInit( &_r.c );
+    OTAGInit( &_r.c );
     MSGSeqInit( &_r.d, &_r.i, MSG_REORDER_BUFLEN );
 
     while ( true )
