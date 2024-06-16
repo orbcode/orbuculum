@@ -10,6 +10,7 @@
 #include <unistd.h>
 #include <ctype.h>
 #include <stdio.h>
+#include <stdarg.h>
 #include <string.h>
 #include <assert.h>
 #include <inttypes.h>
@@ -29,7 +30,7 @@
 #define NUM_CHANNELS  32
 #define HW_CHANNEL    (NUM_CHANNELS)      /* Make the hardware fifo on the end of the software ones */
 
-#define MAX_STRING_LENGTH (100)           /* Maximum length that will be output from a fifo for a single event */
+#define MAX_STRING_LENGTH (4096)          /* Maximum length that will be output */
 #define DEFAULT_TS_TRIGGER '\n'           /* Default trigger character for timestamp output */
 
 #define MSG_REORDER_BUFLEN  (10)          /* Maximum number of samples to re-order for timekeeping */
@@ -74,7 +75,6 @@ struct
     bool endTerminate;                       /* Terminate when file/socket "ends" */
 
     bool ex;                             /* Support exception reporting */
-    bool fex;                            /* Make them highspeed */
 } options =
 {
     .forceITMSync = true,
@@ -92,7 +92,6 @@ struct
     struct ITMPacket h;
     struct TPIUDecoder t;
     struct TPIUPacket p;
-    uint64_t lastHWExceptionTS;
     enum timeDelay timeStatus;           /* Indicator of if this time is exact */
     uint64_t timeStamp;                  /* Latest received time */
     uint64_t lastTimeStamp;              /* Last received time */
@@ -100,8 +99,11 @@ struct
     bool gotte;                          /* Flag that we have the initial time */
     bool inLine;                         /* We are in progress with a line that has been timestamped already */
     char dwtText[MAX_STRING_LENGTH];     /* DWT text that arrived while a line was in progress */
+    uint64_t dwtte;                      /* Timestamp for dwt print age */
     uint64_t oldte;                      /* Old time for interval calculation */
 } _r;
+
+#define DWT_TO_US (100000L)
 
 // ====================================================================================================
 uint64_t _timestamp( void )
@@ -275,37 +277,55 @@ static void _outputText( char *p )
 // ====================================================================================================
 // Decoders for each message
 // ====================================================================================================
+
+void _expex( const char *fmt, ... )
+
+/* Print to exception buffer and output if appropriate */
+
+{
+    if ( ( _r.inLine ) && ( !_r.dwtText[0] ) )
+    {
+        /* Timestamp this so it gets output at an interval later, worst case */
+        _r.dwtte = _timestamp();
+    }
+
+    /* Construct the output */
+    _printTimestamp( &_r.dwtText[strlen( _r.dwtText )] );
+    int maxLen = MAX_STRING_LENGTH - strlen( _r.dwtText );
+    va_list va;
+    va_start( va, fmt );
+    vsnprintf( &_r.dwtText[strlen( _r.dwtText )], maxLen, fmt, va );
+    va_end( va );
+
+    if ( !_r.inLine )
+    {
+        fputs( _r.dwtText, stdout );
+        _r.dwtText[0] = 0;
+    }
+}
+
+// ====================================================================================================
+
 void _handleException( struct excMsg *m, struct ITMDecoder *i )
 
 {
     if ( options.ex )
     {
-        uint64_t eventdifftS = m->ts - _r.lastHWExceptionTS;
-
         const char *exNames[] = {"Thread", "Reset", "NMI", "HardFault", "MemManage", "BusFault", "UsageFault", "UNKNOWN_7",
                                  "UNKNOWN_8", "UNKNOWN_9", "UNKNOWN_10", "SVCall", "Debug Monitor", "UNKNOWN_13", "PendSV", "SysTick"
                                 };
         const char *exEvent[] = {"Unknown", "Enter", "Exit", "Resume"};
 
-        _r.lastHWExceptionTS = m->ts;
-
-        _printTimestamp( &_r.dwtText[strlen( _r.dwtText )] );
 
         if ( m->exceptionNumber < 16 )
         {
             /* This is a system based exception */
-            sprintf( &_r.dwtText[strlen( _r.dwtText )], "HWEVENT_SYSTEM_EXCEPTION,%" PRIu64 ",%s,%s" EOL, eventdifftS, exEvent[m->eventType & 0x03], exNames[m->exceptionNumber & 0x0F] );
+            _expex( "HWEVENT_SYSTEM_EXCEPTION event %s type %s" EOL, exEvent[m->eventType & 0x03], exNames[m->exceptionNumber & 0x0F] );
         }
         else
         {
             /* This is a CPU defined exception */
-            sprintf(  &_r.dwtText[strlen( _r.dwtText )], "HWEVENT_INTERRUPT_EXCEPTION,%" PRIu64 ",%s,External,%d" EOL, eventdifftS, exEvent[m->eventType & 0x03], m->exceptionNumber - 16 );
-        }
-
-        if ( ( !_r.inLine ) || options.fex )
-        {
-            fputs( _r.dwtText, stdout );
-            _r.dwtText[0] = 0;
+            _expex( "HWEVENT_INTERRUPT_EXCEPTION event %s external interrupt %d" EOL, exEvent[m->eventType & 0x03], m->exceptionNumber - 16 );
         }
     }
 }
@@ -315,39 +335,33 @@ void _handleDWTEvent( struct dwtMsg *m, struct ITMDecoder *i )
 {
 #define NUM_EVENTS 6
 
+    char op[MAX_STRING_LENGTH];
+
     if ( options.ex )
     {
         const char *evName[NUM_EVENTS] = {"CPI", "Exc", "Sleep", "LSU", "Fold", "Cyc"};
-        uint64_t eventdifftS = m->ts - _r.lastHWExceptionTS;
 
-        _r.lastHWExceptionTS = m->ts;
-        _printTimestamp( &_r.dwtText[strlen( _r.dwtText )] );
+        sprintf( op, "HWEVENT_DWT type " );
 
-        sprintf( &_r.dwtText[strlen( _r.dwtText )], "HWEVENT_DWT,%" PRIu64, eventdifftS );
-
-        uint32_t opLen = strlen( _r.dwtText );
+        uint32_t opLen = strlen( op );
 
         for ( uint32_t i = 0; i < NUM_EVENTS; i++ )
         {
             if ( m->event & ( 1 << i ) )
             {
                 // Copy this event into the output string
-                _r.dwtText[opLen++] = ',';
+                op[opLen++] = ',';
                 const char *u = evName[i];
 
                 do
                 {
-                    _r.dwtText[opLen++] = *u++;
+                    op[opLen++] = *u++;
                 }
                 while ( *u );
             }
         }
 
-        if ( ( !_r.inLine ) || options.fex )
-        {
-            fputs( _r.dwtText, stdout );
-            _r.dwtText[0] = 0;
-        }
+        _expex( "%s", op );
     }
 }
 // ====================================================================================================
@@ -358,18 +372,7 @@ void _handleDataRWWP( struct watchMsg *m, struct ITMDecoder *i )
 {
     if ( options.ex )
     {
-        uint64_t eventdifftS = m->ts - _r.lastHWExceptionTS;
-        _r.lastHWExceptionTS = m->ts;
-
-        _printTimestamp( &_r.dwtText[strlen( _r.dwtText )] );
-
-        sprintf( &_r.dwtText[strlen( _r.dwtText )], "HWEVENT_RWWT,%" PRIu64 ",%d,%s,0x%x" EOL, eventdifftS, m->comp, m->isWrite ? "Write" : "Read", m->data );
-
-        if ( ( !_r.inLine ) || options.fex )
-        {
-            fputs( _r.dwtText, stdout );
-            _r.dwtText[0] = 0;
-        }
+        _expex( "HWEVENT_RWWT type %d for %s data 0x%x" EOL, m->comp, m->isWrite ? "Write" : "Read", m->data );
     }
 }
 // ====================================================================================================
@@ -380,17 +383,7 @@ void _handleDataAccessWP( struct wptMsg *m, struct ITMDecoder *i )
 {
     if ( options.ex )
     {
-        uint64_t eventdifftS = m->ts - _r.lastHWExceptionTS;
-        _r.lastHWExceptionTS = m->ts;
-        _printTimestamp( &_r.dwtText[strlen( _r.dwtText )] );
-
-        sprintf( &_r.dwtText[strlen( _r.dwtText )], "HWEVENT_AWP,%" PRIu64 ",%d,0x%08x" EOL, eventdifftS, m->comp, m->data );
-
-        if ( ( !_r.inLine ) || options.fex )
-        {
-            fputs( _r.dwtText, stdout );
-            _r.dwtText[0] = 0;
-        }
+        _expex( "HWEVENT_AWP type %d at address 0x%08x" EOL, m->comp, m->data );
     }
 }
 // ====================================================================================================
@@ -401,17 +394,7 @@ void _handleDataOffsetWP( struct oswMsg *m, struct ITMDecoder *i )
 {
     if ( options.ex )
     {
-        uint64_t eventdifftS = m->ts - _r.lastHWExceptionTS;
-        _r.lastHWExceptionTS = m->ts;
-        _printTimestamp( &_r.dwtText[strlen( _r.dwtText )] );
-
-        sprintf( &_r.dwtText[strlen( _r.dwtText )], "HWEVENT_OFS,%" PRIu64 ",%d,0x%04x" EOL, eventdifftS, m->comp, m->offset );
-
-        if ( ( !_r.inLine ) || options.fex )
-        {
-            fputs( _r.dwtText, stdout );
-            _r.dwtText[0] = 0;
-        }
+        _expex( "HWEVENT_OFS comparison %d at offset 0x%04x" EOL, m->comp, m->offset );
     }
 }
 // ====================================================================================================
@@ -420,15 +403,7 @@ void _handleNISYNC( struct nisyncMsg *m, struct ITMDecoder *i )
 {
     if ( options.ex )
     {
-        _printTimestamp( &_r.dwtText[strlen( _r.dwtText )] );
-
-        sprintf( &_r.dwtText[strlen( _r.dwtText )], "HWEVENT_NISYNC,%02x,0x%08x" EOL, m->type, m->addr );
-
-        if ( ( !_r.inLine ) || options.fex )
-        {
-            fputs( _r.dwtText, stdout );
-            _r.dwtText[0] = 0;
-        }
+        _expex( "HWEVENT_NISYNC type %02x at address 0x%08x" EOL, m->type, m->addr );
     }
 }
 
@@ -632,7 +607,6 @@ static void _printHelp( const char *const progName )
     fprintf( stdout, "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
     fprintf( stdout, "    -V, --version:      Print version and exit" EOL );
     fprintf( stdout, "    -x, --exceptions:   Include exception information in output, in time order" EOL );
-    fprintf( stdout, "    -X, --fexceptions:  Include exception information in output, unbuffered" EOL );
 }
 // ====================================================================================================
 static void _printVersion( void )
@@ -656,7 +630,6 @@ static struct option _longOptions[] =
     {"verbose", required_argument, NULL, 'v'},
     {"version", no_argument, NULL, 'V'},
     {"exceptions", no_argument, NULL, 'x'},
-    {"fexceptions", no_argument, NULL, 'X'},
     {NULL, no_argument, NULL, 0}
 };
 // ====================================================================================================
@@ -668,7 +641,7 @@ bool _processOptions( int argc, char *argv[] )
     char *chanIndex;
 #define DELIMITER ','
 
-    while ( ( c = getopt_long ( argc, argv, "c:C:Ef:g:hVns:t:T:v:xX", _longOptions, &optionIndex ) ) != -1 )
+    while ( ( c = getopt_long ( argc, argv, "c:C:Ef:g:hVns:t:T:v:x", _longOptions, &optionIndex ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -837,11 +810,6 @@ bool _processOptions( int argc, char *argv[] )
                 break;
 
             // ------------------------------------
-            case 'X':
-                options.fex = true;
-                break;
-
-            // ------------------------------------
             default:
                 return false;
                 // ------------------------------------
@@ -857,7 +825,7 @@ bool _processOptions( int argc, char *argv[] )
     genericsReport( V_INFO, "Server     : %s:%d" EOL, options.server, options.port );
     genericsReport( V_INFO, "ForceSync  : %s" EOL, options.forceITMSync ? "true" : "false" );
     genericsReport( V_INFO, "Timestamp  : %s" EOL, tsTypeString[options.tsType] );
-    genericsReport( V_INFO, "Exceptions : %s" EOL, options.fex ? "Fast" : options.ex ? "On" : "Off" );
+    genericsReport( V_INFO, "Exceptions : %s" EOL, options.ex ? "On" : "Off" );
 
     if ( options.cps )
     {
@@ -950,6 +918,16 @@ static void _feedStream( struct Stream *stream )
         {
             _protocolPump( *c++ );
         }
+
+        /* Check if an exception report timed out */
+        if ( ( _r.inLine ) && _r.dwtText[0] && ( _timestamp() - _r.dwtte > DWT_TO_US ) )
+        {
+            fputs( EOL, stdout );
+            fputs( _r.dwtText, stdout );
+            _r.dwtText[0] = 0;
+            _r.inLine = false;
+        }
+
 
         fflush( stdout );
     }
