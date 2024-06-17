@@ -296,6 +296,13 @@ void _expex( const char *fmt, ... )
         _r.dwtte = _timestamp();
     }
 
+    /* See if we exceeded max length...if so then output what we have and start a fresh buffer */
+    if ( MAX_STRING_LENGTH - strlen( _r.dwtText ) < 100 )
+    {
+        fputs( _r.dwtText, stdout );
+        _r.dwtText[0] = 0;
+    }
+
     /* Construct the output */
     _printTimestamp( &_r.dwtText[strlen( _r.dwtText )] );
     int maxLen = MAX_STRING_LENGTH - strlen( _r.dwtText );
