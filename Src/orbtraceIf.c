@@ -24,7 +24,7 @@ static const struct OrbtraceInterfaceType _validDevices[DEVICE_NUM_DEVICES] =
 
 /* BMP Interface and endpoint are fixed, so we can return those on request */
 #define BMP_IFACE (5)
-#define BMP_EP    (0x85)
+#define BMP_EP    (0x83)
 
 #define SCRATCH_STRINGLEN (255)
 #define MAX_DESC_FIELDLEN (50)
