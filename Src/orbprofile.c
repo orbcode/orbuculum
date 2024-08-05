@@ -786,9 +786,16 @@ static void _intHandler( int sig )
 static void _OTAGpacketRxed ( struct OTAGFrame *p, void *param )
 
 {
-    if ( p->tag == _r.options->tag )
+    if ( !p->good )
     {
-        TRACEDecoderPump( &_r.i, p->d, p->len, _traceCB, &_r );
+        genericsReport( V_WARN, "Bad packet received" EOL );
+    }
+    else
+    {
+        if ( p->tag == _r.options->tag )
+        {
+            TRACEDecoderPump( &_r.i, p->d, p->len, _traceCB, &_r );
+        }
     }
 }
 // ====================================================================================================

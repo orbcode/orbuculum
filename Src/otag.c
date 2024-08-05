@@ -55,13 +55,16 @@ void OTAGEncode( const uint8_t channel, const uint64_t tstamp, const uint8_t *in
 
 {
     const uint8_t frontMatter[1] = { channel };
-    uint8_t backMatter[1] = { channel };
+    uint8_t sum = channel;
 
     /* Calculate packet sum for last byte */
     for ( int i = 0; i < len; i++ )
     {
-        backMatter[0] += inputMsg[i];
+        sum += inputMsg[i];
     }
+
+    /* Ensure total sums to 0 */
+    uint8_t backMatter[1] = { 256 - sum };
 
     COBSEncode( frontMatter, 1, backMatter, 1, inputMsg, len, o );
 }
@@ -81,20 +84,21 @@ static void _pumpcb( struct Frame *p, void *param )
     /* Callback function when a COBS packet is complete */
     struct OTAG *t = ( struct OTAG * )param;
 
-    t->f.len  = p->len - 2;     /* OTAG frames have the first element representing the tag and last element the checksum */
-    t->f.tag  = p->d[0];        /* First byte of an OTAG frame is the tag */
+    t->f.len  = p->len - 2;       /* OTAG frames have the first element representing the tag and last element the checksum */
+    t->f.tag  = p->d[0];          /* First byte of an OTAG frame is the tag */
     t->f.sum  = p->d[p->len - 1]; /* Last byte of an OTAG frame is the sum */
-    t->f.d    = &p->d[1];       /* This is the rest of the data */
+    t->f.d    = &p->d[1];         /* This is the rest of the data */
 
     /* Calculate received packet sum and insert good status into packet */
     uint8_t sum  = t->f.tag;
 
     for ( int i = 0; i < t->f.len; i++ )
     {
-        sum += p->d[i];
+        sum += t->f.d[i];
     }
 
-    t->f.good = ( sum == t->f.sum );
+    sum += t->f.sum;
+    t->f.good = ( sum == 0 );
 
     /* Timestamp was already set for this cluster */
     ( t->cb )( &t->f, t->param );

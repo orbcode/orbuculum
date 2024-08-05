@@ -67,7 +67,7 @@ void COBSEncode( const uint8_t *frontMsg, int lfront, const uint8_t *backMsg, in
         for ( int i = 0; len--; i++ )
         {
             /* Take byte from frontMatter, main message or backMatter depending on where we are in transmission */
-            const uint8_t *rp = ( i < lfront ) ? &frontMsg[i] : ( i < ( lfront + lmsg ) ) ? &inputMsg[i - lfront] : &backMsg[i - lfront - lmsg];
+            const uint8_t *rp = ( i < lfront ) ? &frontMsg[i] : ( i < ( lfront + lmsg ) ) ? &inputMsg[i - lfront] : &backMsg[i - ( lfront + lmsg )];
 
             if ( COBS_SYNC_CHAR != *rp )
             {
@@ -89,10 +89,10 @@ void COBSEncode( const uint8_t *frontMsg, int lfront, const uint8_t *backMsg, in
         }
 
         *cp = seglen;
-    }
 
-    /* Packet must end with a sync to define EOP */
-    *wp++ = COBS_SYNC_CHAR;
+        /* Packet must end with a sync to define EOP */
+        *wp++ = COBS_SYNC_CHAR;
+    }
 
     o->len = ( wp - o->d );
 }

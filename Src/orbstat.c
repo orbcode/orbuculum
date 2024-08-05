@@ -772,11 +772,18 @@ static void _OTAGpacketRxed ( struct OTAGFrame *p, void *param )
 {
     struct RunTime *r = ( struct RunTime * )param;
 
-    if ( p->tag == r->options->tag )
+    if ( !p->good )
     {
-        for ( int i = 0; i < p->len; i++ )
+        genericsReport( V_WARN, "Bad packet received" EOL );
+    }
+    else
+    {
+        if ( p->tag == r->options->tag )
         {
-            _itmPumpProcess( r, p->d[i] );
+            for ( int i = 0; i < p->len; i++ )
+            {
+                _itmPumpProcess( r, p->d[i] );
+            }
         }
     }
 }
