@@ -40,7 +40,7 @@ struct OTAG
     void *param;
 };
 
-#define OTAG_MAX_PACKET_LEN     (COBS_MAX_PACKET_LEN)
+#define OTAG_MAX_PACKET_LEN     (COBS_MAX_PACKET_LEN-2)
 #define OTAG_MAX_ENC_PACKET_LEN (COBS_MAX_ENC_PACKET_LEN)
 #define OTAG_EOP_LEN            (COBS_EOP_LEN)
 #define OTAG_TS_RESOLUTION      (1000000000L)

@@ -885,12 +885,18 @@ static struct Stream *_tryOpenStream()
 static void _OTAGpacketRxed ( struct OTAGFrame *p, void *param )
 
 {
-
-    if ( p->tag == options.tag )
+    if ( !p->good )
     {
-        for ( int i = 0; i < p->len; i++ )
+        genericsReport( V_WARN, "Bad packet received" EOL );
+    }
+    else
+    {
+        if ( p->tag == options.tag )
         {
-            _itmPumpProcess( p->d[i] );
+            for ( int i = 0; i < p->len; i++ )
+            {
+                _itmPumpProcess( p->d[i] );
+            }
         }
     }
 }

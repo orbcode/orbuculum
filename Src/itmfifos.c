@@ -558,11 +558,18 @@ static void _OTAGpacketRxed ( struct OTAGFrame *p, void *param )
 {
     struct itmfifosHandle *f = ( struct itmfifosHandle * )param;
 
-    if ( p->tag == f->tag )
+    if ( !p->good )
     {
-        for ( int i = 0; i < p->len; i++ )
+        genericsReport( V_WARN, "Bad packet received" EOL );
+    }
+    else
+    {
+        if ( p->tag == f->tag )
         {
-            _itmPumpProcess( f, p->d[i] );
+            for ( int i = 0; i < p->len; i++ )
+            {
+                _itmPumpProcess( f, p->d[i] );
+            }
         }
     }
 }

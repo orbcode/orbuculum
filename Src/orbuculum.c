@@ -879,33 +879,40 @@ static void _OTAGpacketRxed( struct OTAGFrame *p, void *param )
     struct RunTime *r = ( struct RunTime * )param;
     struct handlers *h = _r.handler;
 
-    /* Account for this reception */
-    r->tagCount[p->tag].totalData += p->len;
-    r->tagCount[p->tag].intervalData += p->len;
-
-    /* Search for channel */
-    for ( chIndex = 0; chIndex < r->numHandlers; chIndex++ )
+    if ( !p->good )
     {
-        if ( h->channel == p->tag )
+        genericsReport( V_WARN, "Bad packet received" EOL );
+    }
+    else
+    {
+        /* Account for this reception */
+        r->tagCount[p->tag].totalData += p->len;
+        r->tagCount[p->tag].intervalData += p->len;
+
+        /* Search for channel */
+        for ( chIndex = 0; chIndex < r->numHandlers; chIndex++ )
         {
-            break;
+            if ( h->channel == p->tag )
+            {
+                break;
+            }
+
+            h++;
         }
 
-        h++;
-    }
-
-    if ( ( chIndex != r->numHandlers ) && ( h ) )
-    {
-        /* We must have found a match for this at some point, so add it to the queue */
-        for ( int i = 0; i < p->len; i++ )
+        if ( ( chIndex != r->numHandlers ) && ( h ) )
         {
-            h->strippedBlock->buffer[h->strippedBlock->fillLevel++] = p->d[i];
-
-            if ( h->strippedBlock->fillLevel == sizeof( h->strippedBlock->buffer ) )
+            /* We must have found a match for this at some point, so add it to the queue */
+            for ( int i = 0; i < p->len; i++ )
             {
-                /* We filled this block...better send it right now */
-                nwclientSend( h->n, h->strippedBlock->fillLevel, h->strippedBlock->buffer );
-                h->strippedBlock->fillLevel = 0;
+                h->strippedBlock->buffer[h->strippedBlock->fillLevel++] = p->d[i];
+
+                if ( h->strippedBlock->fillLevel == sizeof( h->strippedBlock->buffer ) )
+                {
+                    /* We filled this block...better send it right now */
+                    nwclientSend( h->n, h->strippedBlock->fillLevel, h->strippedBlock->buffer );
+                    h->strippedBlock->fillLevel = 0;
+                }
             }
         }
     }
@@ -1140,6 +1147,10 @@ static int _usbFeeder( struct RunTime *r )
 
             /* We only attempt to write the file header on the first run through */
             firstRunThrough = false;
+        }
+        else
+        {
+            genericsReport( V_INFO, "Orbtrace supports legacy protocol" EOL );
         }
 
         genericsReport( V_DEBUG, "USB Interface claimed, ready for data" EOL );
