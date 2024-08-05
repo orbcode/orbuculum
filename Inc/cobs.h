@@ -55,7 +55,7 @@ const uint8_t *COBSgetFrameExtent( const uint8_t *inputEnc, int len );
 bool COBSSimpleDecode( const uint8_t *inputEnc, int len, struct Frame *o );
 bool COBSisEOFRAME( const uint8_t *inputEnc );
 
-void COBSEncode( const uint8_t *frontMsg, int lfront, const uint8_t *inputMsg, int len, struct Frame *o );
+void COBSEncode( const uint8_t *frontMsg, int lfront, const uint8_t *backMsg, int lback, const uint8_t *inputMsg, int lmsg, struct Frame *o );
 
 /* Context free functions */
 void COBSPump( struct COBS *t, const uint8_t *incoming, int len,

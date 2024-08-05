@@ -55,7 +55,15 @@ void OTAGEncode( const uint8_t channel, const uint64_t tstamp, const uint8_t *in
 
 {
     const uint8_t frontMatter[1] = { channel };
-    COBSEncode( frontMatter, 1, inputMsg, len, o );
+    uint8_t backMatter[1] = { channel };
+
+    /* Calculate packet sum for last byte */
+    for ( int i = 0; i < len; i++ )
+    {
+        backMatter[0] += inputMsg[i];
+    }
+
+    COBSEncode( frontMatter, 1, backMatter, 1, inputMsg, len, o );
 }
 
 // ====================================================================================================
@@ -73,11 +81,22 @@ static void _pumpcb( struct Frame *p, void *param )
     /* Callback function when a COBS packet is complete */
     struct OTAG *t = ( struct OTAG * )param;
 
-    t->f.len = p->len - 1; /* OTAG frames have the first element representing the tag */
-    t->f.tag = p->d[0];    /* First byte of an OTAG frame is the tag */
-    t->f.d = &p->d[1];     /* This is the rest of the data */
-    /* Timestamp was already set for this cluster */
+    t->f.len  = p->len - 2;     /* OTAG frames have the first element representing the tag and last element the checksum */
+    t->f.tag  = p->d[0];        /* First byte of an OTAG frame is the tag */
+    t->f.sum  = p->d[p->len - 1]; /* Last byte of an OTAG frame is the sum */
+    t->f.d    = &p->d[1];       /* This is the rest of the data */
 
+    /* Calculate received packet sum and insert good status into packet */
+    uint8_t sum  = t->f.tag;
+
+    for ( int i = 0; i < t->f.len; i++ )
+    {
+        sum += p->d[i];
+    }
+
+    t->f.good = ( sum == t->f.sum );
+
+    /* Timestamp was already set for this cluster */
     ( t->cb )( &t->f, t->param );
 }
 
@@ -95,17 +114,6 @@ void OTAGPump( struct OTAG *t, const uint8_t *incoming, int len,
     t->f.tstamp = ts.tv_sec * OTAG_TS_RESOLUTION + ts.tv_nsec; /* For now, fake the timestamp */
     t->param = param;
     COBSPump( &t->c, incoming, len, _pumpcb, t );
-}
-
-// ====================================================================================================
-
-bool OTAGSimpleDecode( const uint8_t *inputEnc, int len, struct Frame *o )
-
-/* Decode frame and write decoded frame into provided Frame buffer           */
-/* Returns FALSE if packet did not decode...and store the fragment.          */
-
-{
-    return COBSSimpleDecode( inputEnc, len, o );
 }
 
 // ====================================================================================================
