@@ -21,8 +21,11 @@ extern "C" {
 struct OTAGFrame
 {
     unsigned int len;                       /* Received length (after pre-processing) */
-    uint8_t tag;                            /* Tag (packet type) */
-    uint64_t tstamp;                        /* Timestamp for the packet */
+    uint8_t      tag;                       /* Tag (packet type) */
+    uint8_t      sum;                       /* Checksum byte */
+    bool         good;                      /* Is the checksum valid? */
+    uint64_t     tstamp;                    /* Timestamp for the packet */
+
     uint8_t *d;                             /* ...pointer to the data itself */
 };
 

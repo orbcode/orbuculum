@@ -46,7 +46,7 @@ void COBSDelete( struct COBS *t )
 
 // ====================================================================================================
 
-void COBSEncode( const uint8_t *frontMsg, int lfront, const uint8_t *inputMsg, int len, struct Frame *o )
+void COBSEncode( const uint8_t *frontMsg, int lfront, const uint8_t *backMsg, int lback, const uint8_t *inputMsg, int lmsg, struct Frame *o )
 
 /* Encode frame and write into provided output Frame buffer */
 
@@ -54,7 +54,8 @@ void COBSEncode( const uint8_t *frontMsg, int lfront, const uint8_t *inputMsg, i
     uint8_t *wp = o->d;
     o->len = 0;
 
-    len += lfront;
+    /* Get overall message length */
+    int len = lfront + lmsg + lback;
 
     assert( len <= COBS_OVERALL_MAX_PACKET_LEN );
 
@@ -65,8 +66,8 @@ void COBSEncode( const uint8_t *frontMsg, int lfront, const uint8_t *inputMsg, i
 
         for ( int i = 0; len--; i++ )
         {
-            /* Take byte either from frontmatter or main message */
-            const uint8_t *rp = ( i < lfront ) ? &frontMsg[i] : &inputMsg[i - lfront];
+            /* Take byte from frontMatter, main message or backMatter depending on where we are in transmission */
+            const uint8_t *rp = ( i < lfront ) ? &frontMsg[i] : ( i < ( lfront + lmsg ) ) ? &inputMsg[i - lfront] : &backMsg[i - lfront - lmsg];
 
             if ( COBS_SYNC_CHAR != *rp )
             {
