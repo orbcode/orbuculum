@@ -487,7 +487,7 @@ bool OrbtraceGetIfandEP( struct OrbtraceIf *o )
                 for ( int alt_num = 0; alt_num < config->interface[if_num].num_altsetting && !interface_found; alt_num++ )
                 {
                     char tfrString[MAX_USB_DESC_LEN];
-                    const struct libusb_interface_descriptor *i = &config->interface[if_num].altsetting[0];
+                    const struct libusb_interface_descriptor *i = &config->interface[if_num].altsetting[alt_num];
 
                     int ret = libusb_get_string_descriptor_ascii( o->handle, i->iInterface, ( unsigned char * )tfrString, MAX_USB_DESC_LEN );
                     if ( ret < 0 )
