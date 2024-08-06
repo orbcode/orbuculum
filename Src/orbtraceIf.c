@@ -22,8 +22,8 @@ static const struct OrbtraceInterfaceType _validDevices[DEVICE_NUM_DEVICES] =
     { 0,      0      }
 };
 
-/* BMP Interface is fixed */
-#define BMP_IFACE (5)
+/* BMP iInterface string */
+#define BMP_IFACE "Black Magic Trace Capture"
 
 #define SCRATCH_STRINGLEN (255)
 #define MAX_DESC_FIELDLEN (50)
@@ -484,22 +484,33 @@ bool OrbtraceGetIfandEP( struct OrbtraceIf *o )
             /* Loop through the interfaces looking for ours */
             for ( int if_num = 0; if_num < config->bNumInterfaces && !interface_found; if_num++ )
             {
-                const struct libusb_interface_descriptor *i = &config->interface[if_num].altsetting[0];
-
-                if (i->bInterfaceNumber != BMP_IFACE)
+                for ( int alt_num = 0; alt_num < config->interface[if_num].num_altsetting && !interface_found; alt_num++ )
                 {
-                    /* Not the interface we're looking for */
-                    continue;
+                    char tfrString[MAX_USB_DESC_LEN];
+                    const struct libusb_interface_descriptor *i = &config->interface[if_num].altsetting[0];
+
+                    int ret = libusb_get_string_descriptor_ascii( o->handle, i->iInterface, ( unsigned char * )tfrString, MAX_USB_DESC_LEN );
+                    if ( ret < 0 )
+                    {
+                        /* No string means not correct interface */
+                        continue;
+                    }
+
+                    if ( strcmp( tfrString, BMP_IFACE ) != 0 )
+                    {
+                        /* Not the interface we're looking for */
+                        continue;
+                    }
+
+                    o->iface = i->bInterfaceNumber;
+                    o->ep = i->endpoint[0].bEndpointAddress;
+
+                    altsetting = i->bAlternateSetting;
+                    num_altsetting = config->interface[if_num].num_altsetting;
+
+                    genericsReport( V_DEBUG, "Found interface %#x with altsetting %#x and ep %#x" EOL, o->iface, altsetting, o->ep );
+                    interface_found = true;
                 }
-
-                o->iface = i->bInterfaceNumber;
-                o->ep = i->endpoint[0].bEndpointAddress;
-
-                altsetting = i->bAlternateSetting;
-                num_altsetting = config->interface[if_num].num_altsetting;
-
-                genericsReport( V_DEBUG, "Found interface %#x with ep %#x" EOL, o->iface, o->ep );
-                interface_found = true;
             }
 
             libusb_free_config_descriptor( config );
