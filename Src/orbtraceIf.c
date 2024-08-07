@@ -22,9 +22,8 @@ static const struct OrbtraceInterfaceType _validDevices[DEVICE_NUM_DEVICES] =
     { 0,      0      }
 };
 
-/* BMP Interface and endpoint are fixed, so we can return those on request */
-#define BMP_IFACE (5)
-#define BMP_EP    (0x85)
+/* BMP iInterface string */
+#define BMP_IFACE "Black Magic Trace Capture"
 
 #define SCRATCH_STRINGLEN (255)
 #define MAX_DESC_FIELDLEN (50)
@@ -456,6 +455,8 @@ bool OrbtraceIfOpenDevice( struct OrbtraceIf *o, int entry )
 bool OrbtraceGetIfandEP( struct OrbtraceIf *o )
 
 {
+    struct libusb_config_descriptor *config;
+    bool interface_found = false;
     uint8_t altsetting = 0;
     uint8_t num_altsetting = 0;
     int32_t err;
@@ -472,8 +473,54 @@ bool OrbtraceGetIfandEP( struct OrbtraceIf *o )
             return false;
 
         case DEVICE_BMP: // -----------------------------------------------------------------------------
-            o->iface = BMP_IFACE;
-            o->ep = BMP_EP;
+            genericsReport( V_DEBUG, "Searching for BMP trace interface" EOL );
+
+            if ( ( err = libusb_get_active_config_descriptor( o->dev, &config ) ) < 0 )
+            {
+                genericsReport( V_WARN, "Failed to get config descriptor (%d)" EOL, err );
+                return false;
+            }
+
+            /* Loop through the interfaces looking for ours */
+            for ( int if_num = 0; if_num < config->bNumInterfaces && !interface_found; if_num++ )
+            {
+                for ( int alt_num = 0; alt_num < config->interface[if_num].num_altsetting && !interface_found; alt_num++ )
+                {
+                    char tfrString[MAX_USB_DESC_LEN];
+                    const struct libusb_interface_descriptor *i = &config->interface[if_num].altsetting[alt_num];
+
+                    int ret = libusb_get_string_descriptor_ascii( o->handle, i->iInterface, ( unsigned char * )tfrString, MAX_USB_DESC_LEN );
+                    if ( ret < 0 )
+                    {
+                        /* No string means not correct interface */
+                        continue;
+                    }
+
+                    if ( strcmp( tfrString, BMP_IFACE ) != 0 )
+                    {
+                        /* Not the interface we're looking for */
+                        continue;
+                    }
+
+                    o->iface = i->bInterfaceNumber;
+                    o->ep = i->endpoint[0].bEndpointAddress;
+
+                    altsetting = i->bAlternateSetting;
+                    num_altsetting = config->interface[if_num].num_altsetting;
+
+                    genericsReport( V_DEBUG, "Found interface %#x with altsetting %#x and ep %#x" EOL, o->iface, altsetting, o->ep );
+                    interface_found = true;
+                }
+            }
+
+            libusb_free_config_descriptor( config );
+
+            if ( !interface_found )
+            {
+                genericsReport( V_DEBUG, "No supported interfaces found" EOL );
+                return false;
+            }
+
             break;
 
         case DEVICE_ORBTRACE_MINI: // -------------------------------------------------------------------
@@ -487,8 +534,6 @@ bool OrbtraceGetIfandEP( struct OrbtraceIf *o )
             }
 
             /* Loop through the interfaces looking for ours */
-            bool interface_found = false;
-
             for ( int if_num = 0; if_num < config->bNumInterfaces && !interface_found; if_num++ )
             {
                 for ( int alt_num = 0; alt_num < config->interface[if_num].num_altsetting && !interface_found; alt_num++ )
