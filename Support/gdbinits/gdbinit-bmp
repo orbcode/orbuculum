@@ -11,8 +11,8 @@ set print pretty
 load
 start
 
-# Configure STM32 SWD pin
-enableSTM32SWD
+# Configure STM32 SWO pin
+enableSTM32SWO
 
 # ==== This Section for Bluepill =======
 # 2.25Mbps, don't use TPIU, don't use Manchester encoding
@@ -22,19 +22,19 @@ enableSTM32SWD
 # (e.g. by using SystemCoreClock or similar) unless you've got the
 # clock running at full speed at the time when this routine is called.
 monitor traceswo 2250000
-prepareSWD 72000000 2250000 0 0
+prepareSWO 72000000 2250000 0 0
 # ======================================
 
 # ==== This Section for genuine BMP =======
 # 200Kbps, don't use TPIU and Manchester encoding
 # Typically used for 'real' BMP
 # monitor traceswo
-# prepareSWD 72000000 200000 0 1
+# prepareSWO 72000000 200000 0 1
 # =========================================
 
 dwtSamplePC 1
-dwtSyncTAP 3
-dwtPostTAP 1
+dwtSyncTap 3
+dwtPostTap 1
 dwtPostInit 1
 dwtPostReset 15
 dwtCycEna 1
