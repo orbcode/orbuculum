@@ -32,7 +32,7 @@ extern "C" {
 
 #define USB_TRANSFER_SIZE (65536)
 
-#define NO_INTERFACE (-1)
+#define NO_INTERFACE ((uint8_t)(-1))
 #define NO_DEVICE    (-1)
 
 enum ORBTraceDevice { DEVICE_NULL, DEVICE_ORBTRACE_MINI, DEVICE_BMP, DEVICE_NUM_DEVICES };
