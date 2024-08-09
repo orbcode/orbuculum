@@ -1536,20 +1536,20 @@ define enableSAMD5XTRACE
 
   if ($bits>0)
     # Setup PC26 - pmux 7
-		set *(unsigned char *)(0x41008000+0x80*2+0x30+26/2) &= ~0x0f
-		set *(unsigned char *)(0x41008000+0x80*2+0x30+26/2) |= 0x07
+    set *(unsigned char *)(0x41008000+0x80*2+0x30+26/2) &= ~0x0f
+    set *(unsigned char *)(0x41008000+0x80*2+0x30+26/2) |= 0x07
     set *(unsigned char *)(0x41008000+0x80*2+0x40+26) = (($drive) << 6) | 1
   end
 
   if ($bits>1)
     # Setup PC25 - pmux 7
-		set *(unsigned char *)(0x41008000+0x80*2+0x30+25/2) &= ~0xf0
-		set *(unsigned char *)(0x41008000+0x80*2+0x30+25/2) |= 0x70
+    set *(unsigned char *)(0x41008000+0x80*2+0x30+25/2) &= ~0xf0
+    set *(unsigned char *)(0x41008000+0x80*2+0x30+25/2) |= 0x70
     set *(unsigned char *)(0x41008000+0x80*2+0x40+25) = (($drive) << 6) | 1
-		#
+
     # Setup PC24 - pmux 7
-		set *(unsigned char *)(0x41008000+0x80*2+0x30+24/2) &= ~0x0f
-		set *(unsigned char *)(0x41008000+0x80*2+0x30+24/2) |= 0x07
+    set *(unsigned char *)(0x41008000+0x80*2+0x30+24/2) &= ~0x0f
+    set *(unsigned char *)(0x41008000+0x80*2+0x30+24/2) |= 0x07
     set *(unsigned char *)(0x41008000+0x80*2+0x40+24) = (($drive) << 6) | 1
   end
 
