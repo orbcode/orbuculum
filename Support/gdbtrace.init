@@ -1512,7 +1512,7 @@ define enableSAMD5XTRACE
   end
 
   set $bits = $bits-1
-  set $CPU=$CPU_STM32
+  set $CPU=$CPU_SAMD5x
 
   # Enable peripheral channel clock on GCLK#0
   # GCLK->PHCTRL[47] = GCLK_PCHCTRL_GEN(0)
