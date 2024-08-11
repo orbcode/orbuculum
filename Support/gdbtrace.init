@@ -1520,10 +1520,6 @@ define enableSAMD5XTRACE
   # GCLK->PHCTRL[47] |= GCLK_PCHCTRL_CHEN
   set *(unsigned char *)0x40001D3C |= 0x40
 
-  # Configure PINMUX for GPIOB.30. '7' is SWO.
-  set *(unsigned char *)0x410080BF |= 0x07
-  set *(unsigned char *)0x410080DE = 0x01
-
   # Setup PC28 - pmux 7
   set *(unsigned char *)(0x41008000+0x80*2+0x30+28/2) &= ~0x0f
   set *(unsigned char *)(0x41008000+0x80*2+0x30+28/2) |= 0x07
