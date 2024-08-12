@@ -550,8 +550,8 @@ bool OrbtraceGetIfandEP( struct OrbtraceIf *o )
                                 i->bInterfaceClass != 0xff ||
                                 i->bInterfaceSubClass != 0x54 ||
                                 ( i->bInterfaceProtocol != PROT_UNKNOWN &&
-				  i->bInterfaceProtocol != PROT_TPIU &&
-				  i->bInterfaceProtocol != PROT_OTAGV1_0 ) ||
+                                  i->bInterfaceProtocol != PROT_TPIU &&
+                                  i->bInterfaceProtocol != PROT_OTAGV1_0 ) ||
                                 i->bNumEndpoints != 0x01 )
                     {
                         /* Not the interface we're looking for */
@@ -563,7 +563,7 @@ bool OrbtraceGetIfandEP( struct OrbtraceIf *o )
 
                     altsetting = i->bAlternateSetting;
                     num_altsetting = config->interface[if_num].num_altsetting;
-		    o->supportsOTAG = ( i->bInterfaceProtocol == PROT_OTAGV1_0 );
+                    o->supportsOTAG = ( i->bInterfaceProtocol == PROT_OTAGV1_0 );
 
                     genericsReport( V_DEBUG, "Found interface %#x with altsetting %#x and ep %#x" EOL, o->iface, altsetting, o->ep );
                     interface_found = true;
@@ -694,14 +694,14 @@ bool OrbtraceIfSetTraceWidth( struct OrbtraceIf *o, int width )
            );
 }
 // ====================================================================================================
-bool OrbtraceIfSetTraceSWO( struct OrbtraceIf *o, bool isMANCH )
+bool OrbtraceIfSetTraceSWO( struct OrbtraceIf *o, bool isMANCH, bool useTPIU )
 
 {
     return _doInterfaceControlTransfer(
                        o,
                        OrbtraceIfGetTraceIF( o, OrbtraceIfGetActiveDevnum( o ) ),
                        RQ_SET_TWIDTH,
-                       isMANCH ? 0x10 : 0x12,
+                       ( isMANCH ? 0x10 : 0x12 ) | ( useTPIU ? 0x01 : 0x00 ),
                        0,
                        0,
                        NULL
