@@ -35,6 +35,8 @@ struct Options
     int traceWidth;           /* Width to be used for communication */
     bool swoMANCH;            /* SWO Manchester output */
     bool swoUART;             /* SWO UART output */
+    bool useTPIU;             /* Decode TPIU on SWO */
+
     bool opJSON;              /* Set output to JSON */
     bool mono;                /* Supress colour in output */
     uint32_t serial_speed;    /* Speed of serial communication via SWO */
@@ -141,7 +143,8 @@ static void _printHelp( const char *const progName )
     genericsPrintf( "       -h, --help::         This help" EOL );
     genericsPrintf( "       -l, --list:          Show all OrbTrace devices attached to system" EOL );
     genericsPrintf( "       -M, --no-colour:    Supress colour in output" EOL );
-    genericsPrintf( "       -T, --trace-format:  <x> Trace format; 1,2 or 4 bit parallel, m for Manchester SWO, u=UART SWO" EOL );
+    genericsPrintf( "       -T, --trace-format:  <x> Trace format; 1,2 or 4 bit parallel, m for Manchester SWO, u=UART SWO," EOL );
+    genericsPrintf( "                                              M for Manchester SWO with TPIU decode, U=UART SWO with TPIU decode" EOL );
     genericsPrintf( "       -n, --serial-number: <Serial> any part of serial number to differentiate specific OrbTrace device" EOL );
     genericsPrintf( "       -p, --voltage:       <Ch>,<Voltage> Set voltage in V, Ch is vtref or vtpwr" EOL );
     genericsPrintf( "       -v, --verbose:       <level> Verbose mode 0(errors)..3(debug)" EOL );
@@ -312,17 +315,41 @@ static int _processOptions( struct RunTime *r, int argc, char *argv[]  )
             case 'T': /* Set tracewidth */
                 r->options->traceWidth = 0;
 
-                if ( ( *optarg == 'u' ) && ( !*( optarg + 1 ) ) )
+                if ( strlen( optarg ) != 1 )
                 {
-                    r->options->swoUART = true;
+                    *optarg = 0;
                 }
-                else if ( ( *optarg == 'm' ) && ( !*( optarg + 1 ) ) )
+
+                switch ( *optarg )
                 {
-                    r->options->swoMANCH = true;
-                }
-                else
-                {
-                    r->options->traceWidth = atoi( optarg );
+                    case 'u':
+                        r->options->swoUART = true;
+                        break;
+
+                    case 'm':
+                        r->options->swoMANCH = true;
+			break;
+
+                    case 'U':
+                        r->options->swoUART = true;
+                        r->options->useTPIU = true;
+                        break;
+
+                    case 'M':
+                        r->options->swoMANCH = true;
+                        r->options->useTPIU = true;
+                        break;
+
+                    case '1':
+                    case '2':
+                    case '3':
+                    case '4':
+                        r->options->traceWidth = atoi( optarg );
+                        break;
+
+                    default:
+                        genericsReport( V_ERROR, "Badly formatted tracewidth" EOL );
+                        return false;
                 }
 
                 _set_action( r, ACTION_SET_TRACE );
@@ -632,9 +659,9 @@ static int _performActions( struct RunTime *r )
         }
         else if ( ( r->options->swoMANCH ) ||  ( r->options->swoUART ) )
         {
-            genericsReport( V_INFO, "Setting SWO with %s encoding" EOL, r->options->swoMANCH ? "Manchester" : "UART" );
+            genericsReport( V_INFO, "Setting SWO with %s encoding%s" EOL, r->options->swoMANCH ? "Manchester" : "UART", r->options->useTPIU ? " and TPIU decode" : "" );
 
-            if ( OrbtraceIfSetTraceSWO( r->dev, r->options->swoMANCH ) )
+            if ( OrbtraceIfSetTraceSWO( r->dev, r->options->swoMANCH, r->options->useTPIU ) )
             {
                 genericsReport( V_INFO, "OK" EOL );
             }
