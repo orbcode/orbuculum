@@ -78,6 +78,11 @@ extern "C" {
         return y;                         \
     }
 
+#define MEMCHECKV(x) if ( NULL == (x))  \
+    {                                   \
+        genericsExit( ENOMEM,"Out of memory at %s::%d" EOL, __FILE__,__LINE__); \
+    }
+
 // ====================================================================================================
 enum verbLevel {V_ERROR, V_WARN, V_INFO, V_DEBUG, V_MAX_VERBLEVEL};
 

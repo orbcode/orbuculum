@@ -328,7 +328,7 @@ static int _processOptions( struct RunTime *r, int argc, char *argv[]  )
 
                     case 'm':
                         r->options->swoMANCH = true;
-			break;
+                        break;
 
                     case 'U':
                         r->options->swoUART = true;

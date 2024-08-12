@@ -350,7 +350,7 @@ void _itmPumpProcess( char c )
 {
     struct msg decoded;
 
-    typedef void ( *handlers )( void *decoded, struct ITMDecoder * i );
+    typedef void ( *handlers )( void *, struct ITMDecoder * i );
 
     /* Handlers for each complete message received */
     static const handlers h[MSG_NUM_MSGS] =

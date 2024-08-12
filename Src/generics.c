@@ -268,7 +268,14 @@ char *genericsGetBaseDirectory( void )
         }
 
         currentSize *= 2;
+        char *oexePath = exePath;
         exePath = realloc( exePath, currentSize );
+
+        if ( !exePath )
+        {
+            free( oexePath );
+            return NULL;
+        }
     }
 
     char *dirPath = malloc( currentSize );
@@ -311,7 +318,14 @@ char *genericsGetBaseDirectory( void )
         }
 
         currentSize *= 2;
+        char *oexePath = exePath;
         exePath = realloc( exePath, currentSize );
+
+        if ( !exePath )
+        {
+            free( oexePath );
+            return NULL;
+        }
     }
 
     const char *dirPath = dirname( exePath );
