@@ -188,7 +188,7 @@ static void _callEvent( struct RunTime *r, uint32_t retAddr, uint32_t to )
     {
         /* This call entry doesn't exist (i.e. it's the first time this from/to pair have been seen...let's create it */
         s = ( struct subcall * )calloc( 1, sizeof( struct subcall ) );
-        MEMCHECK( s, );
+        MEMCHECKV( s );
         memcpy( &s->sig, &r->substack[r->substacklen].sig, sizeof( struct subcallSig ) );
         HASH_ADD( hh, r->subhead, sig, sizeof( struct subcallSig ), s );
     }
@@ -274,7 +274,7 @@ static void _hashFindOrCreate( struct RunTime *r, uint32_t addr, struct execEntr
             }
 
             *h = calloc( 1, sizeof( struct execEntryHash ) );
-            MEMCHECK( *h, );
+            MEMCHECKV( *h );
 
             ( *h )->addr          = r->op.workingAddr;
             ( *h )->fileindex     = n.fileindex;
@@ -382,7 +382,7 @@ static void _traceCB( void *d )
         /* Create false entry for an interrupt source */
         r->op.inth = calloc( 1, sizeof( struct execEntryHash ) );
 
-        MEMCHECK( r->op.inth, );
+        MEMCHECKV( r->op.inth );
         r->op.inth->addr          = INTERRUPT;
         r->op.inth->fileindex     = INTERRUPT;
         r->op.inth->line          = NO_LINE;

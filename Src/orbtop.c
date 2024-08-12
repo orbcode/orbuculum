@@ -21,7 +21,6 @@
 #include "generics.h"
 #include "uthash.h"
 #include "git_version_info.h"
-#include "generics.h"
 #include "tpiuDecoder.h"
 #include "itmDecoder.h"
 #include "otag.h"
@@ -393,6 +392,12 @@ uint32_t _consolodateReport( struct reportLine **returnReport, uint32_t *returnR
             /* Make room for a report line */
             reportLines++;
             report = ( struct reportLine * )realloc( report, sizeof( struct reportLine ) * ( reportLines ) );
+
+            if ( !report )
+            {
+                genericsExit( -1, "Out of memory" EOL );
+            }
+
             report[reportLines - 1].n = a->n;
             report[reportLines - 1].count = 0;
         }
@@ -405,6 +410,11 @@ uint32_t _consolodateReport( struct reportLine **returnReport, uint32_t *returnR
 
     /* Now fold in any sleeping entries */
     report = ( struct reportLine * )realloc( report, sizeof( struct reportLine ) * ( reportLines + 1 ) );
+
+    if ( !report )
+    {
+        genericsExit( -1, "Out of memory" EOL );
+    }
 
     uint32_t addr = FN_SLEEPING;
     HASH_FIND_INT( _r.addresses, &addr, a );
@@ -791,11 +801,11 @@ void _handlePCSample( struct pcSampleMsg *m, struct ITMDecoder *i )
             /* This is a new entry - record it */
 
             a = ( struct visitedAddr * )calloc( 1, sizeof( struct visitedAddr ) );
-            MEMCHECK( a, );
+            MEMCHECKV( a );
             a->visits = 1;
 
             a->n = ( struct nameEntry * )malloc( sizeof( struct nameEntry ) );
-            MEMCHECK( a->n, )
+            MEMCHECKV( a->n );
             memcpy( a->n, &n, sizeof( struct nameEntry ) );
             HASH_ADD_INT( _r.addresses, n->addr, a );
         }

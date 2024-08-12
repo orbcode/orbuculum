@@ -32,6 +32,7 @@ enum MSGType
     MSG_NUM_MSGS
 };
 
+
 /* Generic message with no content */
 struct genericMsg
 {

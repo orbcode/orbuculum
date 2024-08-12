@@ -484,7 +484,7 @@ static bool _isAbsPath( const char *p )
     /* Path is absolute if it starts with / or x: where x is in the range A..Z. */
     return (
                        ( p[0] == '/' ) ||
-                       ( ( toupper( p[0] ) >= 'A' ) && ( toupper( p[0] <= 'Z' ) && ( p[1] == ':' ) ) )
+                       ( ( toupper( p[0] ) >= 'A' ) && ( toupper( p[0] ) <= 'Z' ) && ( p[1] == ':' ) )
            );
 }
 
@@ -611,6 +611,12 @@ static bool _readLines( struct symbol *p )
         for ( int i = 0; i < p->nlines - 1; i++ )
         {
             nls = ( struct symbolLineStore ** )realloc( nls, sizeof( struct symbolLineStore * ) * ( nlines + 1 ) );
+
+            if ( !nls )
+            {
+                genericsExit( -1, "Memory allocation failure" EOL );
+            }
+
             nls[nlines] = p->line[i];
 
             /* Roll forward through all lines which have the same start address */
@@ -1136,6 +1142,7 @@ struct symbol *symbolAcquire( char *filename, bool loadmem, bool loadsource )
     if ( ( p->fd = open( filename, O_RDONLY | O_BINARY, 0 ) ) < 0 )
 #endif
     {
+        free( p );
         return NULL;
     }
 

@@ -430,7 +430,7 @@ void _itmPumpProcess( struct itmfifosHandle *f, char c )
 {
     struct msg decoded;
 
-    typedef void ( *handlers )( void *decoded, struct itmfifosHandle * f );
+    typedef void ( *handlers )( void *, struct itmfifosHandle * f );
 
     /* Handlers for each complete message received */
     static const handlers h[MSG_NUM_MSGS] =
@@ -622,10 +622,10 @@ void itmfifoSetChannel( struct itmfifosHandle *f, int chan, char *n, char *s )
 
     f->c[chan].chanName = strdup( n );
 
-    MEMCHECK( f->c[chan].chanName, );
+    MEMCHECKV( f->c[chan].chanName );
     f->c[chan].presFormat = s ? strdup( s ) : NULL;
 
-    MEMCHECK( f->c[chan].presFormat, );
+    MEMCHECKV( f->c[chan].presFormat );
 }
 #pragma GCC diagnostic pop
 // ====================================================================================================

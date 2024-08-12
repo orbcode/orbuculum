@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include "generics.h"
 
 #define BLOCKSIZE    (65536)
 #define MAX_LINE_LEN (4095)
@@ -34,6 +35,12 @@ char *readsourcefile( char *path, size_t *l )
     while ( !feof( f ) )
     {
         retBuffer = ( char * )realloc( retBuffer, *l + BLOCKSIZE );
+
+        if ( !retBuffer )
+        {
+            genericsExit( -1, "Out of memory" EOL );
+        }
+
         insize = fread( &retBuffer[*l], 1, BLOCKSIZE, f );
         *l += insize;
     }
@@ -41,6 +48,12 @@ char *readsourcefile( char *path, size_t *l )
     fclose( f );
 
     retBuffer = ( char * )realloc( retBuffer, *l + 1 );
+
+    if ( !retBuffer )
+    {
+        genericsExit( -1, "Out of memory" EOL );
+    }
+
     retBuffer[*l] = '\0';
 
     return retBuffer;
@@ -105,6 +118,12 @@ char *readsourcefile( char *path, size_t *l )
     {
         /* Make another block available */
         retBuffer = ( char * )realloc( retBuffer, *l + BLOCKSIZE );
+
+        if ( !retBuffer )
+        {
+            genericsExit( -1, "Out of memory" EOL );
+        }
+
         insize = fread( &retBuffer[*l], 1, BLOCKSIZE, fd );
         *l += insize;
     }
@@ -122,6 +141,11 @@ char *readsourcefile( char *path, size_t *l )
     if ( *l )
     {
         retBuffer = ( char * )realloc( retBuffer, *l );
+
+        if ( !retBuffer )
+        {
+            genericsExit( -1, "Out of memory" EOL );
+        }
     }
     else
     {
