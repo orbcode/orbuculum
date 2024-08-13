@@ -1,7 +1,7 @@
 # Copy this to /etc/udev/rules.d
 # use "udevadm control --reload" if needed
 
-ACTION!="add|change", GOTO="orb_rules_end"
+ACTION!="add|change|bind", GOTO="orb_rules_end"
 SUBSYSTEM!="usb|tty|hidraw", GOTO="orb_rules_end"
 
 # Orbrace mini in bootloader mode
