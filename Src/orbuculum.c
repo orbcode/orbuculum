@@ -70,7 +70,7 @@
 
 /* Number of potential tags */
 #define NUM_TAGS (256)
-#define LAST_TAG_SEEN_TIME_NS (5L*1000*1000*1000)
+#define LAST_TAG_SEEN_TIME_NS (2L*1000*1000*1000)
 
 /* Record of transferred data per tag */
 struct TagDataCount
@@ -689,14 +689,12 @@ void _checkInterval( void *params )
         {
             r->lastInterval = tnow;
 
-            /* Grab the interval and scale to 1 second */
-            snapInterval = r->intervalRawBytes * 1000 / r->options->intervalReportTime;
-
-            snapInterval *= 8;
+            /* Grab the interval and scale to bits per 1 second */
+            snapInterval = r->intervalRawBytes * 8000L / r->options->intervalReportTime;
 
             if ( r->conn )
             {
-                genericsPrintf( C_CLR_LN C_DATA );
+                genericsPrintf( C_PREV_LN C_DATA );
 
                 if ( snapInterval / 1000000 )
                 {
@@ -730,18 +728,17 @@ void _checkInterval( void *params )
                         {
                             if ( !r->tagCount[i].hasHandler )
                             {
-                                genericsPrintf( C_NOCHAN" (%d:" "%2d%%) " C_RESET,  i, w / 10 );
+                                genericsPrintf( C_NOCHAN" [%d:" "%3d%%] " C_RESET,  i, w / 10 );
                             }
                             else
                             {
-                                genericsPrintf( " %d:" C_DATA"%2d%% " C_RESET,  i, w / 10 );
+                                genericsPrintf( " %d:" C_DATA"%3d%% " C_RESET,  i, w / 10 );
                             }
                         }
 
                         r->tagCount[i].intervalData = 0;
                     }
 
-                    /* Because we are still rxing data there can be some error here, we should really fix this with a mutex */
                     w = ( totalPct < 1000 ) ? 1000 - totalPct : 0;
                     genericsPrintf( " Waste:" C_DATA "%2d.%01d%% " C_RESET,  w / 10, w % 10 );
                 }
@@ -753,7 +750,7 @@ void _checkInterval( void *params )
                     genericsPrintf( "(" C_DATA " %3d%% " C_RESET "full)", ( fullPercent > 100 ) ? 100 : fullPercent );
                 }
 
-                genericsPrintf( "   " C_RESET C_CLR_LN EOL C_PREV_LN );
+                genericsPrintf( "   " C_RESET C_CLR_LN EOL );
             }
 
             r->intervalRawBytes = 0;
@@ -992,10 +989,10 @@ static void _handleBlock( struct RunTime *r, ssize_t fillLevel, uint8_t *buffer 
         _processNonOTAGBlock( r, fillLevel, buffer );
     }
 
+    r->intervalRawBytes += fillLevel;
+
     /* Send the block to clients, but only send OTAG if it wasn't OTAG already */
     _purgeBlock( r, !r->usingOTAG );
-
-    r->intervalRawBytes += fillLevel;
 }
 
 // ====================================================================================================
@@ -1578,6 +1575,9 @@ int main( int argc, char *argv[] )
             return -2;
         }
     }
+
+    /* Blank line for tidyness' sake */
+    genericsPrintf( EOL );
 
     if ( ( _r.options->nwserverPort ) || ( _r.options->port ) || ( _r.options->file ) )
     {
