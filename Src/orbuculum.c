@@ -424,6 +424,13 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
             case 'a':
                 r->options->speed = atoi( optarg );
                 r->options->dataSpeed = r->options->speed;
+
+                if ( r->options->speed <= 0 )
+                {
+                    genericsReport( V_ERROR, "Speed out of range" EOL );
+                    return false;
+                }
+
                 break;
 
             // ------------------------------------
@@ -456,12 +463,26 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
 
             case 'l':
                 r->options->listenPort = atoi( optarg );
+
+                if ( ( r->options->listenPort <= 0 ) || ( r->options->listenPort > 0xffff ) )
+                {
+                    genericsReport( V_ERROR, "Port to listen on is out of range" EOL );
+                    return false;
+                }
+
                 break;
 
             // ------------------------------------
 
             case 'm':
                 r->options->intervalReportTime = atoi( optarg );
+
+                if ( r->options->intervalReportTime )
+                {
+                    genericsReport( V_ERROR, "intervalReportTime is out of range" EOL );
+                    return false;
+                }
+
                 break;
 
             // ------------------------------------
@@ -498,6 +519,13 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
 
             case 'P':
                 r->options->paceDelay = atoi( optarg );
+
+                if ( r->options->paceDelay <= 0 )
+                {
+                    genericsReport( V_ERROR, "paceDelay is out of range" EOL );
+                    return false;
+                }
+
                 break;
 
             // ------------------------------------
@@ -515,7 +543,6 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
 
                 if ( *a == ':' )
                 {
-                    *a = 0;
                     r->options->nwserverPort = atoi( ++a );
                 }
 
@@ -540,7 +567,12 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
                     return false;
                 }
 
-                genericsSetReportLevel( atoi( optarg ) );
+                if ( !genericsSetReportLevel( atoi( optarg ) ) )
+                {
+                    genericsReport( V_ERROR, "Verbosity out of range" EOL );
+                    return false;
+                }
+
                 break;
 
             // ------------------------------------

@@ -87,7 +87,7 @@ char *genericsEscape( char *str );
 char *genericsUnescape( char *str );
 uint64_t genericsTimestampuS( void );
 uint32_t genericsTimestampmS( void );
-void genericsSetReportLevel( enum verbLevel lset );
+bool genericsSetReportLevel( enum verbLevel lset );
 void genericsPrintf( const char *fmt, ... );
 char *genericsGetBaseDirectory( void );
 const char *genericsBasename( const char *n );

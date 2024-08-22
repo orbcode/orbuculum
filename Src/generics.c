@@ -165,10 +165,18 @@ char *genericsUnescape( char *str )
 // ====================================================================================================
 static enum verbLevel lstore = V_WARN;
 
-void genericsSetReportLevel( enum verbLevel lset )
+bool genericsSetReportLevel( enum verbLevel lset )
 
 {
+    /* Set is respected to maintain historic behaviour, even if out of range */
     lstore = lset;
+
+    if ( ( lset < V_ERROR ) || ( lset > V_MAX_VERBLEVEL ) )
+    {
+        return false;
+    }
+
+    return true;
 }
 // ====================================================================================================
 enum verbLevel genericsGetReportLevel( void )

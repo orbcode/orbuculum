@@ -493,6 +493,13 @@ bool _processOptions( int argc, char *argv[] )
             // ------------------------------------
             case 'C':
                 options.cps = atoi( optarg ) * 1000;
+
+                if ( options.cps <= 0 )
+                {
+                    genericsReport( V_ERROR, "cps out of range" EOL );
+                    return false;
+                }
+
                 break;
 
             // ------------------------------------
@@ -517,7 +524,6 @@ bool _processOptions( int argc, char *argv[] )
 
             // ------------------------------------
             case 'g':
-                printf( "%s" EOL, optarg );
                 options.tsTrigger = genericsUnescape( optarg )[0];
                 break;
 
@@ -555,6 +561,13 @@ bool _processOptions( int argc, char *argv[] )
             case 't':
                 options.useTPIU = true;
                 options.tpiuChannel = atoi( optarg );
+
+                if ( options.tpiuChannel <= 0 )
+                {
+                    genericsReport( V_ERROR, "tpiuChannel out of range" EOL );
+                    return false;
+                }
+
                 break;
 
             // ------------------------------------
@@ -596,7 +609,12 @@ bool _processOptions( int argc, char *argv[] )
                     return false;
                 }
 
-                genericsSetReportLevel( atoi( optarg ) );
+                if ( !genericsSetReportLevel( atoi( optarg ) ) )
+                {
+                    genericsReport( V_ERROR, "Report level out of range" EOL );
+                    return false;
+                }
+
                 break;
 
             // ------------------------------------
@@ -606,7 +624,7 @@ bool _processOptions( int argc, char *argv[] )
 
                 chan = atoi( optarg );
 
-                if ( chan >= NUM_CHANNELS )
+                if ( !chan || ( chan >= NUM_CHANNELS ) )
                 {
                     genericsReport( V_ERROR, "Channel index out of range" EOL );
                     return false;
@@ -616,6 +634,12 @@ bool _processOptions( int argc, char *argv[] )
                 while ( ( *chanIndex ) && ( *chanIndex != DELIMITER ) )
                 {
                     chanIndex++;
+                }
+
+                if ( !*chanIndex )
+                {
+                    genericsReport( V_ERROR, "Channel output spec missing" EOL );
+                    return false;
                 }
 
                 /* Step over delimiter */
@@ -633,7 +657,6 @@ bool _processOptions( int argc, char *argv[] )
                     return false;
                 }
 
-                //*chanIndex++ = 0;
                 options.presFormat[chan] = strdup( genericsUnescape( chanIndex ) );
                 break;
 
