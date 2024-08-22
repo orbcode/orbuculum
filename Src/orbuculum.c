@@ -633,7 +633,7 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
 
     if ( r->options->sn )
     {
-        genericsReport( V_INFO, "Serial Nummber : %s" EOL, r->options->sn );
+        genericsReport( V_INFO, "Serial Number  : %s" EOL, r->options->sn );
     }
 
     if ( r->options->dataSpeed )
