@@ -764,6 +764,13 @@ bool _processOptions( int argc, char *argv[] )
             // ------------------------------------
             case 't':
                 options.tag = atoi( optarg );
+
+                if ( !options.tag || ( options.tag > 255 ) )
+                {
+                    genericsReport( V_ERROR, "tag out of range" EOL );
+                    return false;
+                }
+
                 break;
 
             // ------------------------------------
@@ -820,7 +827,7 @@ bool _processOptions( int argc, char *argv[] )
 
                 chan = atoi( optarg );
 
-                if ( chan >= NUM_CHANNELS )
+                if ( !chan || ( chan >= NUM_CHANNELS ) )
                 {
                     genericsReport( V_ERROR, "Channel index out of range" EOL );
                     return false;

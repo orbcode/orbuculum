@@ -489,7 +489,7 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
             case 'm':
                 r->options->intervalReportTime = atoi( optarg );
 
-                if ( r->options->intervalReportTime<100 )
+                if ( r->options->intervalReportTime<500 )
                 {
                     genericsReport( V_ERROR, "intervalReportTime is out of range" EOL );
                     return false;
@@ -537,6 +537,7 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
                     genericsReport( V_ERROR, "paceDelay is out of range" EOL );
                     return false;
                 }
+
                 break;
 
             // ------------------------------------
