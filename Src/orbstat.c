@@ -21,7 +21,7 @@
 #include "itmDecoder.h"
 #include "tpiuDecoder.h"
 #include "msgDecoder.h"
-#include "otag.h"
+#include "oflow.h"
 #include "symbols.h"
 #include "nw.h"
 #include "ext_fileformats.h"
@@ -38,8 +38,8 @@
 #define IN_EVENT   (0x40000000)
 #define OUT_EVENT  (0x50000000)
 
-enum Prot { PROT_OTAG, PROT_ITM, PROT_TPIU, PROT_UNKNOWN };
-const char *protString[] = {"OTAG", "ITM", "TPIU", NULL};
+enum Prot { PROT_OFLOW, PROT_ITM, PROT_TPIU, PROT_UNKNOWN };
+const char *protString[] = {"OFLOW", "ITM", "TPIU", NULL};
 
 /* States for sample reception state machine */
 enum CDState { CD_waitinout, CD_waitsrc, CD_waitdst };
@@ -66,11 +66,11 @@ struct Options                           /* Record for options, either defaults 
     bool forceITMSync;                   /* Do we assume ITM starts synced? */
     bool mono;                           /* Supress colour in output */
 
-    uint32_t tag;                        /* Which TPIU or OTAG stream are we decoding? */
+    uint32_t tag;                        /* Which TPIU or OFLOW stream are we decoding? */
 
     int port;                            /* Source information for where to connect to */
     char *server;
-    enum Prot protocol;                  /* What protocol to communicate (default to OTAG (== orbuculum)) */
+    enum Prot protocol;                  /* What protocol to communicate (default to OFLOW (== orbuculum)) */
 
 } _options =
 {
@@ -98,7 +98,7 @@ struct RunTime
     struct ITMPacket h;
     struct TPIUDecoder t;
     struct TPIUPacket p;
-    struct OTAG c;
+    struct OFLOW c;
     struct msg m;                       /* Decoded message out of ITM layer */
 
     const char *progName;               /* Name by which this program was called */
@@ -484,10 +484,10 @@ static void _printHelp( struct RunTime *r )
     genericsPrintf( "    -n, --itm-sync:     Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
     genericsPrintf( "    -M, --no-colour:    Supress colour in output" EOL );
     genericsPrintf( "    -O, --objdump-opts: <options> Options to pass directly to objdump" EOL );
-    genericsPrintf( "    -p, --protocol:     Protocol to communicate. Defaults to OTAG if -s is not set, otherwise ITM unless" EOL \
+    genericsPrintf( "    -p, --protocol:     Protocol to communicate. Defaults to OFLOW if -s is not set, otherwise ITM unless" EOL \
                     "                        explicitly set to TPIU to decode TPIU frames on channel set by -t" EOL );
     genericsPrintf( "    -s, --server:       <Server>:<Port> to use" EOL );
-    genericsPrintf( "    -t, --tag:          <stream>: Which TPIU stream or OTAG tag to use (normally 1)" EOL );
+    genericsPrintf( "    -t, --tag:          <stream>: Which TPIU stream or OFLOW tag to use (normally 1)" EOL );
     genericsPrintf( "    -T, --all-truncate: truncate -d material off all references (i.e. make output relative)" EOL );
     genericsPrintf( "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
     genericsPrintf( "    -V, --version:      Print version and exit" EOL );
@@ -704,7 +704,7 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
                 // ------------------------------------
         }
 
-    /* If we set an explicit server and port and didn't set a protocol chances are we want ITM, not OTAG */
+    /* If we set an explicit server and port and didn't set a protocol chances are we want ITM, not OFLOW */
     if ( serverExplicit && !protExplicit )
     {
         r->options->protocol = PROT_ITM;
@@ -738,8 +738,8 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
 
     switch ( r->options->protocol )
     {
-        case PROT_OTAG:
-            genericsReport( V_INFO, "Decoding OTAG (Orbuculum) with ITM in stream %d" EOL, r->options->tag );
+        case PROT_OFLOW:
+            genericsReport( V_INFO, "Decoding OFLOW (Orbuculum) with ITM in stream %d" EOL, r->options->tag );
             break;
 
         case PROT_ITM:
@@ -767,7 +767,7 @@ static void _intHandler( int sig )
 }
 // ====================================================================================================
 
-static void _OTAGpacketRxed ( struct OTAGFrame *p, void *param )
+static void _OFLOWpacketRxed ( struct OFLOWFrame *p, void *param )
 
 {
     struct RunTime *r = ( struct RunTime * )param;
@@ -829,7 +829,7 @@ int main( int argc, char *argv[] )
     /* Reset the TPIU handler before we start */
     TPIUDecoderInit( &_r.t );
     ITMDecoderInit( &_r.i, _r.options->forceITMSync );
-    OTAGInit( &_r.c );
+    OFLOWInit( &_r.c );
 
     while ( !_r.ending )
     {
@@ -910,9 +910,9 @@ int main( int argc, char *argv[] )
             /* ...and record the fact that we received some data */
             _r.intervalBytes += _r.rawBlock.fillLevel;
 
-            if ( PROT_OTAG == _r.options->protocol )
+            if ( PROT_OFLOW == _r.options->protocol )
             {
-                OTAGPump( &_r.c, _r.rawBlock.buffer, _r.rawBlock.fillLevel, _OTAGpacketRxed, &_r );
+                OFLOWPump( &_r.c, _r.rawBlock.buffer, _r.rawBlock.fillLevel, _OFLOWpacketRxed, &_r );
             }
             else
             {

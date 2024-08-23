@@ -11,7 +11,7 @@
 
 #include "tpiuDecoder.h"
 #include "itmDecoder.h"
-#include "otag.h"
+#include "oflow.h"
 
 #include "generics.h"
 
@@ -27,7 +27,7 @@ extern "C" {
 struct Channel;
 struct itmfifosHandle;
 
-enum Prot { PROT_OTAG,  PROT_ITM, PROT_TPIU, PROT_UNKNOWN };
+enum Prot { PROT_OFLOW,  PROT_ITM, PROT_TPIU, PROT_UNKNOWN };
 
 /* Fifos running */
 void itmfifoForceSync( struct itmfifosHandle *f, bool synced );                  /* Force sync status */

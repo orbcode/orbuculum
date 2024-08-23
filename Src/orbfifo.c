@@ -29,7 +29,7 @@
 
 #include "itmfifos.h"
 
-const char *protString[] = {"OTAG", "ITM", "TPIU", NULL};
+const char *protString[] = {"OFLOW", "ITM", "TPIU", NULL};
 
 //#define DUMP_BLOCK
 
@@ -79,10 +79,10 @@ static void _printHelp( const char *const progName )
     genericsPrintf( "    -h, --help:         This help" EOL );
     genericsPrintf( "    -M, --no-colour:    Supress colour in output" EOL );
     genericsPrintf( "    -P, --permanent:    Create permanent files rather than fifos" EOL );
-    genericsPrintf( "    -p, --protocol:     Protocol to communicate. Defaults to OTAG if -s is not set, otherwise ITM unless" EOL \
+    genericsPrintf( "    -p, --protocol:     Protocol to communicate. Defaults to OFLOW if -s is not set, otherwise ITM unless" EOL \
                     "                        explicitly set to TPIU to decode TPIU frames on stream set by -t" EOL );
     genericsPrintf( "    -s, --server:       <Server>:<Port> to use" EOL );
-    genericsPrintf( "    -t, --tag:          <stream> Which TPIU stream or OTAG tag to use (normally 1)" EOL );
+    genericsPrintf( "    -t, --tag:          <stream> Which TPIU stream or OFLOW tag to use (normally 1)" EOL );
     genericsPrintf( "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
     genericsPrintf( "    -V, --version:      Print version and exit" EOL );
     genericsPrintf( "    -W, --writer-path:  <path> Enable filewriter functionality using specified base path" EOL );
@@ -352,7 +352,7 @@ static bool _processOptions( int argc, char *argv[] )
                 // ------------------------------------
         }
 
-    /* If we set an explicit server and port and didn't set a protocol chances are we want ITM, not OTAG */
+    /* If we set an explicit server and port and didn't set a protocol chances are we want ITM, not OFLOW */
     if ( serverExplicit && !protExplicit )
     {
         itmfifoSetProtocol( _r.f, PROT_ITM );
@@ -385,8 +385,8 @@ static bool _processOptions( int argc, char *argv[] )
 
     switch ( itmfifoGetProtocol( _r.f ) )
     {
-        case PROT_OTAG:
-            genericsReport( V_INFO, "Decoding OTAG (Orbuculum) with ITM in stream %d" EOL, itmfifoGettag( _r.f ) );
+        case PROT_OFLOW:
+            genericsReport( V_INFO, "Decoding OFLOW (Orbuculum) with ITM in stream %d" EOL, itmfifoGettag( _r.f ) );
             break;
 
         case PROT_ITM:

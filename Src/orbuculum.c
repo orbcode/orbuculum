@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /*
- * Orbuculum main receiver and TPIU/OTAG demux
- * ===========================================
+ * Orbuculum main receiver and TPIU/OFLOW demux
+ * ============================================
  *
  */
 
@@ -54,7 +54,7 @@
 #include "git_version_info.h"
 #include "generics.h"
 #include "tpiuDecoder.h"
-#include "otag.h"
+#include "oflow.h"
 #include "nwclient.h"
 #include "orbtraceIf.h"
 #include "stream.h"
@@ -70,9 +70,9 @@
 /* Multiple blocks are used for USB, otherwise just the one */
 #define NUM_RAW_BLOCKS (32)
 
-/* File header for OTAG formatted file */
-#define OTAG_SIG (const char*)"%%OTAG1.0.0%%"
-#define OTAG_SIG_LEN (strlen(OTAG_SIG))
+/* File header for OFLOW formatted file */
+#define OFLOW_SIG (const char*)"%%OFLOW1.0.0%%"
+#define OFLOW_SIG_LEN (strlen(OFLOW_SIG))
 
 /* Number of potential tags */
 #define NUM_TAGS (256)
@@ -123,7 +123,7 @@ struct handlers
 struct RunTime
 {
     struct TPIUDecoder t;                                /* TPIU decoder instance, in case we need it */
-    struct OTAG otag;                                    /* OTAG instance, in case we need it */
+    struct OFLOW oflow;                                  /* OFLOW instance, in case we need it */
 
     struct OrbtraceIf  *o;                               /* For accessing ORBTrace devices + BMPs */
 
@@ -141,8 +141,8 @@ struct RunTime
 
     struct dataBlock rawBlock[NUM_RAW_BLOCKS];           /* Transfer buffers from the receiver */
 
-    struct nwclientsHandle *otagHandler;                 /* Handle to OTAG output handler */
-    bool usingOTAG;                                      /* Flag that OTAG protocol is in use from the source */
+    struct nwclientsHandle *oflowHandler;                /* Handle to OFLOW output handler */
+    bool usingOFLOW;                                     /* Flag that OFLOW protocol is in use from the source */
 
     struct TagDataCount tagCount[NUM_TAGS];              /* Data carried per tag/TPIU channel */
     int numHandlers;                                     /* Number of TPIU channel handlers in use */
@@ -158,7 +158,7 @@ struct RunTime
 #define NWSERVER_HOST "localhost"                        /* Address to connect to NW Server */
 #define NWSERVER_PORT (2332)
 
-#define NUM_OTAG_CHANNELS 0x7F
+#define NUM_OFLOW_CHANNELS 0x7F
 
 #define INTERVAL_100US (100U)
 #define INTERVAL_1MS   (10*INTERVAL_100US)
@@ -361,7 +361,7 @@ void _printHelp( const char *const progName, struct RunTime *r )
     genericsPrintf( "    -f, --input-file:    <filename> Take input from specified file" EOL );
     genericsPrintf( "    -h, --help:          This help" EOL );
     genericsPrintf( "    -H, --hires:         High resolution time (much higher CPU load though!)" EOL );
-    genericsPrintf( "    -l, --listen-port:   <port> Listen port for incoming OTAG connections (defaults to %d)" EOL, r->options->listenPort );
+    genericsPrintf( "    -l, --listen-port:   <port> Listen port for incoming ORBFLOW connections (defaults to %d)" EOL, r->options->listenPort );
     genericsPrintf( "    -m, --monitor:       <interval> Output monitor information about the link at <interval>ms, min 500ms" EOL );
     genericsPrintf( "    -M, --no-colour:     Supress colour in output" EOL );
     genericsPrintf( "    -n, --serial-number: <Serial> any part of serial number to differentiate specific device" EOL );
@@ -664,7 +664,7 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
         genericsReport( V_INFO, "Orbtrace CL    : %s" EOL, r->options->otcl );
     }
 
-    genericsReport( V_INFO, "OTAG Port      : %d" EOL, r->options->listenPort );
+    genericsReport( V_INFO, "OFLOW Port     : %d" EOL, r->options->listenPort );
 
     if ( r->options->file )
     {
@@ -804,12 +804,12 @@ void _checkInterval( void *params )
 // ====================================================================================================
 // Block decoders and handlers for the various line formats
 // ====================================================================================================
-static void _purgeBlock( struct RunTime *r, bool createOTAG )
+static void _purgeBlock( struct RunTime *r, bool createOFLOW )
 
 /* Send any packets to clients who want it, no matter where they originate from */
 
 {
-    struct Frame otagOtg;
+    struct Frame oflowOtg;
     struct handlers *h = r->handler;
     int i = r->numHandlers;
 
@@ -819,18 +819,18 @@ static void _purgeBlock( struct RunTime *r, bool createOTAG )
         {
             nwclientSend( h->n, h->strippedBlock->fillLevel, h->strippedBlock->buffer );
 
-            if ( createOTAG )
+            if ( createOFLOW )
             {
-                /* The OTAG encoded version goes out on the combined OTAG channel, with a specific channel header */
+                /* The OFLOW encoded version goes out on the combined OFLOW channel, with a specific channel header */
                 int j = h->strippedBlock->fillLevel;
                 const uint8_t *b = h->strippedBlock->buffer;
 
                 while ( j )
                 {
-                    OTAGEncode( h->channel, 0, b, ( j < OTAG_MAX_PACKET_LEN ) ? j : OTAG_MAX_PACKET_LEN, &otagOtg );
-                    nwclientSend( _r.otagHandler, otagOtg.len, otagOtg.d );
-                    b += ( j < OTAG_MAX_PACKET_LEN ) ? j : OTAG_MAX_PACKET_LEN;
-                    j -= ( j < OTAG_MAX_PACKET_LEN ) ? j : OTAG_MAX_PACKET_LEN;
+                    OFLOWEncode( h->channel, 0, b, ( j < OFLOW_MAX_PACKET_LEN ) ? j : OFLOW_MAX_PACKET_LEN, &oflowOtg );
+                    nwclientSend( _r.oflowHandler, oflowOtg.len, oflowOtg.d );
+                    b += ( j < OFLOW_MAX_PACKET_LEN ) ? j : OFLOW_MAX_PACKET_LEN;
+                    j -= ( j < OFLOW_MAX_PACKET_LEN ) ? j : OFLOW_MAX_PACKET_LEN;
                 }
             }
 
@@ -911,9 +911,9 @@ static void _TPIUpacketRxed( enum TPIUPumpEvent e, struct TPIUPacket *p, void *p
 }
 // ====================================================================================================
 
-static void _OTAGpacketRxed( struct OTAGFrame *p, void *param )
+static void _OFLOWpacketRxed( struct OFLOWFrame *p, void *param )
 
-/* OTAG packet received, account for it and reflect it to legacy buffers if needed */
+/* OFLOW packet received, account for it and reflect it to legacy buffers if needed */
 
 {
     int chIndex;
@@ -961,12 +961,12 @@ static void _OTAGpacketRxed( struct OTAGFrame *p, void *param )
 
 // ====================================================================================================
 
-static void _processNonOTAGBlock( struct RunTime *r, ssize_t fillLevel, uint8_t *buffer )
+static void _processNonOFLOWBlock( struct RunTime *r, ssize_t fillLevel, uint8_t *buffer )
 
-/* Not an OTAG block, so might be TPIU or clean ITM...deal with both */
+/* Not an OFLOW block, so might be TPIU or clean ITM...deal with both */
 
 {
-    struct Frame otagOtg;
+    struct Frame oflowOtg;
 
     if ( fillLevel )
     {
@@ -986,17 +986,17 @@ static void _processNonOTAGBlock( struct RunTime *r, ssize_t fillLevel, uint8_t 
                 nwclientSend( r->handler->n, fillLevel, buffer );
             }
 
-            /* The OTAG encoded version goes out on the default OTAG channel */
+            /* The OFLOW encoded version goes out on the default OFLOW channel */
             uint8_t *b = buffer;
 
             while ( fillLevel )
             {
-                OTAGEncode( DEFAULT_ITM_STREAM, 0, b,
-                            ( fillLevel < OTAG_MAX_PACKET_LEN ) ? fillLevel : OTAG_MAX_PACKET_LEN,
-                            &otagOtg );
-                nwclientSend( r->otagHandler, otagOtg.len, otagOtg.d );
-                b += ( fillLevel < OTAG_MAX_PACKET_LEN ) ? fillLevel : OTAG_MAX_PACKET_LEN;
-                fillLevel -= ( fillLevel < OTAG_MAX_PACKET_LEN ) ? fillLevel : OTAG_MAX_PACKET_LEN;
+                OFLOWEncode( DEFAULT_ITM_STREAM, 0, b,
+                            ( fillLevel < OFLOW_MAX_PACKET_LEN ) ? fillLevel : OFLOW_MAX_PACKET_LEN,
+                            &oflowOtg );
+                nwclientSend( r->oflowHandler, oflowOtg.len, oflowOtg.d );
+                b += ( fillLevel < OFLOW_MAX_PACKET_LEN ) ? fillLevel : OFLOW_MAX_PACKET_LEN;
+                fillLevel -= ( fillLevel < OFLOW_MAX_PACKET_LEN ) ? fillLevel : OFLOW_MAX_PACKET_LEN;
             }
         }
     }
@@ -1004,7 +1004,7 @@ static void _processNonOTAGBlock( struct RunTime *r, ssize_t fillLevel, uint8_t 
 // ====================================================================================================
 static void _handleBlock( struct RunTime *r, ssize_t fillLevel, uint8_t *buffer )
 
-/* Handle an incoming block from any source in either 'conventional' or OTag format */
+/* Handle an incoming block from any source in either 'conventional' or orbflow format */
 
 {
     genericsReport( V_DEBUG, "RXED Packet of %d bytes%s" EOL, fillLevel, ( r->options->intervalReportTime ) ? EOL : "" );
@@ -1017,26 +1017,26 @@ static void _handleBlock( struct RunTime *r, ssize_t fillLevel, uint8_t *buffer 
         }
     }
 
-    if ( r->usingOTAG )
+    if ( r->usingOFLOW )
     {
         if ( r->options->intervalReportTime )
         {
             /* We need to decode this so we can get the stats out of it .. we don't bother if we don't need stats */
-            OTAGPump( &r->otag, buffer, fillLevel, _OTAGpacketRxed, r );
+            OFLOWPump( &r->oflow, buffer, fillLevel, _OFLOWpacketRxed, r );
         }
 
-        /* ...and reflect this packet to the outgoing OTAG channels */
-        nwclientSend( r->otagHandler, fillLevel, buffer );
+        /* ...and reflect this packet to the outgoing OFLOW channels */
+        nwclientSend( r->oflowHandler, fillLevel, buffer );
     }
     else
     {
-        _processNonOTAGBlock( r, fillLevel, buffer );
+        _processNonOFLOWBlock( r, fillLevel, buffer );
     }
 
     r->intervalRawBytes += fillLevel;
 
-    /* Send the block to clients, but only send OTAG if it wasn't OTAG already */
-    _purgeBlock( r, !r->usingOTAG );
+    /* Send the block to clients, but only send OFLOW if it wasn't OFLOW already */
+    _purgeBlock( r, !r->usingOFLOW );
 }
 
 // ====================================================================================================
@@ -1167,22 +1167,22 @@ static int _usbFeeder( struct RunTime *r )
             break;
         }
 
-        r->usingOTAG = OrbtraceSupportsOTAG( r->o );
+        r->usingOFLOW = OrbtraceSupportsOFLOW( r->o );
 
-        if ( r->usingOTAG )
+        if ( r->usingOFLOW )
         {
-            genericsReport( V_INFO, "Orbtrace supports OTAG protocol" EOL );
+            genericsReport( V_INFO, "Orbtrace supports ORBFLOW protocol" EOL );
 
             if ( r->options->useTPIU )
             {
-                genericsReport( V_WARN, "TPIU decoding specified, but ORBTrace supports OTAG, are you sure?" EOL );
+                genericsReport( V_WARN, "TPIU decoding specified, but ORBTrace supports ORBFLOW, are you sure?" EOL );
             }
 
             if ( firstRunThrough && _r.opFileHandle )
             {
-                if ( write( _r.opFileHandle, OTAG_SIG, OTAG_SIG_LEN ) < 0 )
+                if ( write( _r.opFileHandle, OFLOW_SIG, OFLOW_SIG_LEN ) < 0 )
                 {
-                    genericsExit( -4, "Could not write OTAG signature to file (%s)" EOL, strerror( errno ) );
+                    genericsExit( -4, "Could not write OFLOW signature to file (%s)" EOL, strerror( errno ) );
                 }
             }
 
@@ -1441,7 +1441,7 @@ static int _serialFeeder( struct RunTime *r )
 // ====================================================================================================
 static int _fileFeeder( struct RunTime *r )
 
-/* Setup incoming data stream from a file in either legacy or OTAG format */
+/* Setup incoming data stream from a file in either legacy or OFLOW format */
 
 {
     struct dataBlock *rxBlock = &r->rawBlock[0];
@@ -1454,14 +1454,14 @@ static int _fileFeeder( struct RunTime *r )
 
     r->conn = true;
 
-    /* Start off by checking if this is OTAG formatted */
-    rxBlock->fillLevel = read( r->f, rxBlock->buffer, OTAG_SIG_LEN );
-    r->usingOTAG = ( ( OTAG_SIG_LEN == rxBlock->fillLevel ) && ( !strncmp( OTAG_SIG, ( char * )rxBlock->buffer, OTAG_SIG_LEN ) ) );
-    genericsReport( V_INFO, "File is %sin OTAG format" EOL, ( r->usingOTAG ) ? "" : "not " );
+    /* Start off by checking if this is OFLOW formatted */
+    rxBlock->fillLevel = read( r->f, rxBlock->buffer, OFLOW_SIG_LEN );
+    r->usingOFLOW = ( ( OFLOW_SIG_LEN == rxBlock->fillLevel ) && ( !strncmp( OFLOW_SIG, ( char * )rxBlock->buffer, OFLOW_SIG_LEN ) ) );
+    genericsReport( V_INFO, "File is %sin OFLOW format" EOL, ( r->usingOFLOW ) ? "" : "not " );
 
-    if ( r->usingOTAG )
+    if ( r->usingOFLOW )
     {
-        /* This is OTAG, so we need to read the first data after the header */
+        /* This is OFLOW, so we need to read the first data after the header */
         rxBlock->fillLevel = read( r->f, rxBlock->buffer, USB_TRANSFER_SIZE );
     }
 
@@ -1534,7 +1534,7 @@ int main( int argc, char *argv[] )
         TPIUDecoderInit( &_r.t );
     }
 
-    OTAGInit( &_r.otag );
+    OFLOWInit( &_r.oflow );
 
     genericsScreenHandling( !_r.options->mono );
 
@@ -1583,7 +1583,7 @@ int main( int argc, char *argv[] )
             if ( x )
             {
                 /* This is a good number, so open */
-                if ( ( x < 0 ) || ( x >= NUM_OTAG_CHANNELS ) )
+                if ( ( x < 0 ) || ( x >= NUM_OFLOW_CHANNELS ) )
                 {
                     genericsExit( -1, "Channel number out of range" EOL );
                 }
@@ -1602,9 +1602,9 @@ int main( int argc, char *argv[] )
         }
     }
 
-    /* The OTAG handler doesn't need a channel list ... it works on all channels */
-    _r.otagHandler = nwclientStart( _r.options->listenPort );
-    genericsReport( V_INFO, "Started Network interface for OTAG on port %d" EOL, _r.options->listenPort );
+    /* The OFLOW handler doesn't need a channel list ... it works on all channels */
+    _r.oflowHandler = nwclientStart( _r.options->listenPort );
+    genericsReport( V_INFO, "Started Network interface for OFLOW on port %d" EOL, _r.options->listenPort );
 
     /* Don't do anything with interval times for at least the first interval time */
     clock_gettime( CLOCK_REALTIME, &ts );

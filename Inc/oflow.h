@@ -1,13 +1,13 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 
 /*
- * OTAG Module
- * ===========
+ * ORBFLOW Module
+ * ==============
  *
  */
 
-#ifndef _OTAG_
-#define _OTAG_
+#ifndef _ORBFLOW_
+#define _ORBFLOW_
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -18,7 +18,7 @@
 extern "C" {
 #endif
 
-struct OTAGFrame
+struct OFLOWFrame
 {
     unsigned int len;                       /* Received length (after pre-processing) */
     uint8_t      tag;                       /* Tag (packet type) */
@@ -29,41 +29,41 @@ struct OTAGFrame
     uint8_t *d;                             /* ...pointer to the data itself */
 };
 
-struct OTAG
+struct OFLOW
 {
     bool selfAllocated;                    /* Flag indicating that memory was allocated by the library */
     struct COBS c;
-    struct OTAGFrame f;
+    struct OFLOWFrame f;
 
     /* Materials for callback */
-    void ( *cb )( struct OTAGFrame *p, void *param );
+    void ( *cb )( struct OFLOWFrame *p, void *param );
     void *param;
 };
 
-#define OTAG_MAX_PACKET_LEN     (COBS_MAX_PACKET_LEN-2)
-#define OTAG_MAX_ENC_PACKET_LEN (COBS_MAX_ENC_PACKET_LEN)
-#define OTAG_EOP_LEN            (COBS_EOP_LEN)
-#define OTAG_TS_RESOLUTION      (1000000000L)
+#define OFLOW_MAX_PACKET_LEN     (COBS_MAX_PACKET_LEN-2)
+#define OFLOW_MAX_ENC_PACKET_LEN (COBS_MAX_ENC_PACKET_LEN)
+#define OFLOW_EOP_LEN            (COBS_EOP_LEN)
+#define OFLOW_TS_RESOLUTION      (1000000000L)
 
 // ====================================================================================================
 
-static inline uint64_t OTAGResolution( struct OTAG *t )
+static inline uint64_t OFLOWResolution( struct OFLOW *t )
 {
-    return OTAG_TS_RESOLUTION;
+    return OFLOW_TS_RESOLUTION;
 }
 
-const uint8_t *OTAGgetFrameExtent( const uint8_t *inputEnc, int len );
-bool OTAGisEOFRAME( const uint8_t *inputEnc );
+const uint8_t *OFLOWgetFrameExtent( const uint8_t *inputEnc, int len );
+bool OFLOWisEOFRAME( const uint8_t *inputEnc );
 
-void OTAGEncode( const uint8_t channel, const uint64_t tstamp, const uint8_t *inputMsg, int len, struct Frame *o );
+void OFLOWEncode( const uint8_t channel, const uint64_t tstamp, const uint8_t *inputMsg, int len, struct Frame *o );
 
 /* Context free functions */
-void OTAGPump( struct OTAG *t, const uint8_t *incoming, int len,
-               void ( *packetRxed )( struct OTAGFrame *p, void *param ),
-               void *param );
+void OFLOWPump( struct OFLOW *t, const uint8_t *incoming, int len,
+                void ( *packetRxed )( struct OFLOWFrame *p, void *param ),
+                void *param );
 
-void OTAGDelete( struct OTAG *t );
-struct OTAG *OTAGInit( struct OTAG *t );
+void OFLOWDelete( struct OFLOW *t );
+struct OFLOW *OFLOWInit( struct OFLOW *t );
 // ====================================================================================================
 #ifdef __cplusplus
 }

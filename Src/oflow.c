@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 
 /*
- * OTAG Encoder/Decoder Module
- * ===========================
+ * ORBFLOW Encoder/Decoder Module
+ * ==============================
  *
  *
  */
@@ -12,17 +12,17 @@
 #include <assert.h>
 #include <time.h>
 #include "cobs.h"
-#include "otag.h"
+#include "oflow.h"
 
 // ====================================================================================================
-struct OTAG *OTAGInit( struct OTAG *t )
+struct OFLOW *OFLOWInit( struct OFLOW *t )
 
-/* Reset a OTAG instance */
+/* Reset a OFLOW instance */
 
 {
     if ( !t )
     {
-        t = ( struct OTAG * )calloc( 1, sizeof( struct OTAG ) );
+        t = ( struct OFLOW * )calloc( 1, sizeof( struct OFLOW ) );
         t->selfAllocated = true;
     }
 
@@ -32,9 +32,9 @@ struct OTAG *OTAGInit( struct OTAG *t )
     return t;
 }
 // ====================================================================================================
-void OTAGDelete( struct OTAG *t )
+void OFLOWDelete( struct OFLOW *t )
 
-/* Destroy a OTAG instance, but only if we created it */
+/* Destroy a OFLOW instance, but only if we created it */
 
 {
     /* Need to remove the containing COBS instance */
@@ -49,7 +49,7 @@ void OTAGDelete( struct OTAG *t )
 
 // ====================================================================================================
 
-void OTAGEncode( const uint8_t channel, const uint64_t tstamp, const uint8_t *inputMsg, int len, struct Frame *o )
+void OFLOWEncode( const uint8_t channel, const uint64_t tstamp, const uint8_t *inputMsg, int len, struct Frame *o )
 
 /* Encode frame and write into provided output Frame buffer */
 
@@ -71,7 +71,7 @@ void OTAGEncode( const uint8_t channel, const uint64_t tstamp, const uint8_t *in
 
 // ====================================================================================================
 
-bool OTAGisEOFRAME( const uint8_t *inputEnc )
+bool OFLOWisEOFRAME( const uint8_t *inputEnc )
 
 {
     return ( COBS_SYNC_CHAR == *inputEnc );
@@ -82,11 +82,11 @@ static void _pumpcb( struct Frame *p, void *param )
 
 {
     /* Callback function when a COBS packet is complete */
-    struct OTAG *t = ( struct OTAG * )param;
+    struct OFLOW *t = ( struct OFLOW * )param;
 
-    t->f.len  = p->len - 2;       /* OTAG frames have the first element representing the tag and last element the checksum */
-    t->f.tag  = p->d[0];          /* First byte of an OTAG frame is the tag */
-    t->f.sum  = p->d[p->len - 1]; /* Last byte of an OTAG frame is the sum */
+    t->f.len  = p->len - 2;       /* OFLOW frames have the first element representing the tag and last element the checksum */
+    t->f.tag  = p->d[0];          /* First byte of an OFLOW frame is the tag */
+    t->f.sum  = p->d[p->len - 1]; /* Last byte of an OFLOW frame is the sum */
     t->f.d    = &p->d[1];         /* This is the rest of the data */
 
     /* Calculate received packet sum and insert good status into packet */
@@ -104,8 +104,8 @@ static void _pumpcb( struct Frame *p, void *param )
     ( t->cb )( &t->f, t->param );
 }
 
-void OTAGPump( struct OTAG *t, const uint8_t *incoming, int len,
-               void ( *packetRxed )( struct OTAGFrame *p, void *param ),
+void OFLOWPump( struct OFLOW *t, const uint8_t *incoming, int len,
+               void ( *packetRxed )( struct OFLOWFrame *p, void *param ),
                void *param )
 
 
@@ -115,20 +115,20 @@ void OTAGPump( struct OTAG *t, const uint8_t *incoming, int len,
     struct timespec ts;
     t->cb = packetRxed;
     clock_gettime( CLOCK_REALTIME, &ts );
-    t->f.tstamp = ts.tv_sec * OTAG_TS_RESOLUTION + ts.tv_nsec; /* For now, fake the timestamp */
+    t->f.tstamp = ts.tv_sec * OFLOW_TS_RESOLUTION + ts.tv_nsec; /* For now, fake the timestamp */
     t->param = param;
     COBSPump( &t->c, incoming, len, _pumpcb, t );
 }
 
 // ====================================================================================================
 
-const uint8_t *OTAGgetFrameExtent( const uint8_t *inputEnc, int len )
+const uint8_t *OFLOWgetFrameExtent( const uint8_t *inputEnc, int len )
 
 /* Look through memory until an end of frame marker is found, or memory is exhausted. */
 
 {
     /* Go find the next sync */
-    while ( !OTAGisEOFRAME( inputEnc ) && --len )
+    while ( !OFLOWisEOFRAME( inputEnc ) && --len )
     {
         inputEnc++;
     }

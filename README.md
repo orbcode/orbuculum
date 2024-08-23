@@ -351,21 +351,21 @@ Some debug drivers (e.g. openocd, pyocd) can now create an orbuculum-compatible 
 allows you to connect the rest of the suite to that directly, without needing to use the orbuculum mux itself. 
 
 However, times have moved on. Passing all those data through transparently was wasteful as a fair bit of it
-was 'nothing to see here', so Orbuculum now supports a new protocol, OTAG. OTAG is always carried on TCP/3402 and
+was 'nothing to see here', so Orbuculum now supports a new protocol, orbflow (OFLOW). Orbflow is always carried on TCP/3402 and
 is a bit more intelligent than simply passing through the messages from the probe. It turns the stream of data into
 COBS encoded sequenced messages with defined message boundries and it also removes the redundant data. When used
-in conjunction with an ORBTrace probe the OTAG messages are created in the probe itself, providing a further
+in conjunction with an ORBTrace probe the orbflow messages are created in the probe itself, providing a further
 performance improvement.
 
-Basically, all of this is mostly transparent to the regular end user. OTAG is automatically used for communication
+Basically, all of this is mostly transparent to the regular end user. Orbflow is automatically used for communication
 between orbuculum and its clients if it's available, and Orbuculum still provides the TCP/3443 port it always did,
-which you can connect to in the same way as you used to if you've got custom clients. OTAG will give you a performance
+which you can connect to in the same way as you used to if you've got custom clients. Orbflow will give you a performance
 improvement, but it's otherwise mostly transparent.
 
 There are come slight changes to the command line options though. Historically, when using TPIU decoding,
 you had to specify the channels to be decoded with an option like `-T 1,2`. You now simply need to tell orbuculum
 which tags to process with `-t 1,2` and, if your probe doesn't remove TPIU framing automatically, specify the `-T`
-option on its own....if you try to specify the `-T` option and you've got an ORBTrace that supports OTAG protocol
+option on its own....if you try to specify the `-T` option and you've got an ORBTrace that supports Orbflow protocol
 then you'll get a warning, because TPIU framing removal is done automatically in the probe in that case, so you
 don't generally need it.
 
