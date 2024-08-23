@@ -91,7 +91,7 @@ struct OrbtraceIf
     uint8_t ep;                                  /* Endpoint used for data transfer */
     uint8_t iface;                               /* ...and the interface */
     bool isOrbtrace;                             /* Is this an orbtrace device? */
-    bool supportsOTAG;                           /* ...and does it support OTAG for transfer? */
+    bool supportsOFLOW;                          /* ...and does it support OFLOW for transfer? */
 
     int numDevices;                              /* Number of matching devices found */
     struct OrbtraceIfDevice *devices;            /* List of matching devices found */
@@ -142,9 +142,9 @@ static inline libusb_device_handle *OrbtraceIfGetHandle( struct OrbtraceIf *o )
     return o->handle;
 }
 
-static inline bool OrbtraceSupportsOTAG( struct OrbtraceIf *o )
+static inline bool OrbtraceSupportsOFLOW( struct OrbtraceIf *o )
 {
-    return o->supportsOTAG;
+    return o->supportsOFLOW;
 }
 
 /* Device selection management */
@@ -156,7 +156,7 @@ bool OrbtraceGetIfandEP( struct OrbtraceIf *o );
 void OrbtraceIfCloseDevice( struct OrbtraceIf *o );
 enum Channel OrbtraceIfNameToChannel( char *x );
 bool OrbtraceIsOrbtrace( struct OrbtraceIf *o );
-bool OrbtraceSupportsOTAG( struct OrbtraceIf *o );
+bool OrbtraceSupportsOFLOW( struct OrbtraceIf *o );
 
 /* Device manipulation */
 bool OrbtraceIfSetTraceWidth( struct OrbtraceIf *o, int width );

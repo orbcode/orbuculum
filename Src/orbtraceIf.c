@@ -47,9 +47,9 @@ static const struct OrbtraceInterfaceType _validDevices[DEVICE_NUM_DEVICES] =
 #define MAX_USB_DESC_LEN (256)
 
 /* ORBTrace protocol versions */
-#define PROT_UNKNOWN  (0x00)
-#define PROT_TPIU     (0x01)
-#define PROT_OTAGV1_0 (0x10)
+#define PROT_UNKNOWN    (0x00)
+#define PROT_TPIU       (0x01)
+#define PROT_OFLOWV1_0  (0x10)
 
 /* String on front of version number to remove */
 #define VERSION_FRONTMATTER "Version: "
@@ -552,7 +552,7 @@ bool OrbtraceGetIfandEP( struct OrbtraceIf *o )
                                 i->bInterfaceSubClass != 0x54 ||
                                 ( i->bInterfaceProtocol != PROT_UNKNOWN &&
                                   i->bInterfaceProtocol != PROT_TPIU &&
-                                  i->bInterfaceProtocol != PROT_OTAGV1_0 ) ||
+                                  i->bInterfaceProtocol != PROT_OFLOWV1_0 ) ||
                                 i->bNumEndpoints != 0x01 )
                     {
                         /* Not the interface we're looking for */
@@ -564,7 +564,7 @@ bool OrbtraceGetIfandEP( struct OrbtraceIf *o )
 
                     altsetting = i->bAlternateSetting;
                     num_altsetting = config->interface[if_num].num_altsetting;
-                    o->supportsOTAG = ( i->bInterfaceProtocol == PROT_OTAGV1_0 );
+                    o->supportsOFLOW = ( i->bInterfaceProtocol == PROT_OFLOWV1_0 );
 
                     genericsReport( V_DEBUG, "Found interface %#x with altsetting %#x and ep %#x" EOL, o->iface, altsetting, o->ep );
                     interface_found = true;

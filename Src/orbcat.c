@@ -26,7 +26,7 @@
 #include "msgDecoder.h"
 #include "msgSeq.h"
 #include "stream.h"
-#include "otag.h"
+#include "oflow.h"
 
 #define NUM_CHANNELS  32
 #define HW_CHANNEL    (NUM_CHANNELS)      /* Make the hardware fifo on the end of the software ones */
@@ -51,8 +51,8 @@
 
 enum TSType { TSNone, TSAbsolute, TSRelative, TSDelta, TSStamp, TSStampDelta, TSNumTypes };
 
-enum Prot { PROT_OTAG, PROT_ITM, PROT_TPIU, PROT_UNKNOWN };
-const char *protString[] = {"OTAG", "ITM", "TPIU", NULL};
+enum Prot { PROT_OFLOW, PROT_ITM, PROT_TPIU, PROT_UNKNOWN };
+const char *protString[] = {"OFLOW", "ITM", "TPIU", NULL};
 
 const char *tsTypeString[TSNumTypes] = { "None", "Absolute", "Relative", "Delta", "System Timestamp", "System Timestamp Delta" };
 
@@ -60,7 +60,7 @@ const char *tsTypeString[TSNumTypes] = { "None", "Absolute", "Relative", "Delta"
 struct
 {
     /* Config information */
-    uint32_t tag;                            /* Which TPIU or OTAG stream are we decoding? */
+    uint32_t tag;                            /* Which TPIU or OFLOW stream are we decoding? */
     bool forceITMSync;
     uint64_t cps;                            /* Cycles per second for target CPU */
 
@@ -75,7 +75,7 @@ struct
     /* Source information */
     int port;                                /* What port to connect to on the server (default to orbuculum) */
     char *server;                            /* Which server to connect to (default to localhost) */
-    enum Prot protocol;                      /* What protocol to communicate (default to OTAG (== orbuculum)) */
+    enum Prot protocol;                      /* What protocol to communicate (default to OFLOW (== orbuculum)) */
 
     char *file;                              /* File host connection */
     bool endTerminate;                       /* Terminate when file/socket "ends" */
@@ -96,7 +96,7 @@ struct
     struct MSGSeq    d;
     struct ITMPacket h;
     struct TPIUDecoder t;
-    struct OTAG c;
+    struct OFLOW c;
 
     struct Frame cobsPart;               /* Any part frame that has been received */
     struct TPIUPacket p;                 /* Any TPIU packet that has been recevied */
@@ -614,10 +614,10 @@ static void _printHelp( const char *const progName )
     fprintf( stdout, "    -g, --trigger:      <char> to use to trigger timestamp (default is newline)" EOL );
     fprintf( stdout, "    -h, --help:         This help" EOL );
     fprintf( stdout, "    -n, --itm-sync:     Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
-    fprintf( stdout, "    -p, --protocol:     Protocol to communicate. Defaults to OTAG if -s is not set, otherwise ITM unless" EOL \
+    fprintf( stdout, "    -p, --protocol:     Protocol to communicate. Defaults to OFLOW if -s is not set, otherwise ITM unless" EOL \
              "                        explicitly set to TPIU to decode TPIU frames on channel set by -t" EOL );
     fprintf( stdout, "    -s, --server:       <Server>:<Port> to use" EOL );
-    fprintf( stdout, "    -t, --tag:          <stream>: Which TPIU stream or OTAG tag to use (normally 1)" EOL );
+    fprintf( stdout, "    -t, --tag:          <stream>: Which TPIU stream or OFLOW tag to use (normally 1)" EOL );
     fprintf( stdout, "    -T, --timestamp:    <a|r|d|s|t>: Add absolute, relative (to session start)," EOL
              "                        delta, system timestamp or system timestamp delta to output. Note" EOL
              "                        a,r & d are host dependent and you may need to run orbuculum with -H." EOL );
@@ -887,7 +887,7 @@ bool _processOptions( int argc, char *argv[] )
                 // ------------------------------------
         }
 
-    /* If we set an explicit server and port and didn't set a protocol chances are we want ITM, not OTAG */
+    /* If we set an explicit server and port and didn't set a protocol chances are we want ITM, not OFLOW */
     if ( serverExplicit && !protExplicit )
     {
         options.protocol = PROT_ITM;
@@ -932,8 +932,8 @@ bool _processOptions( int argc, char *argv[] )
 
     switch ( options.protocol )
     {
-        case PROT_OTAG:
-            genericsReport( V_INFO, "Decoding OTAG (Orbuculum) with ITM in stream %d" EOL, options.tag );
+        case PROT_OFLOW:
+            genericsReport( V_INFO, "Decoding OFLOW (Orbuculum) with ITM in stream %d" EOL, options.tag );
             break;
 
         case PROT_ITM:
@@ -976,7 +976,7 @@ static struct Stream *_tryOpenStream( void )
 }
 // ====================================================================================================
 
-static void _OTAGpacketRxed ( struct OTAGFrame *p, void *param )
+static void _OFLOWpacketRxed ( struct OFLOWFrame *p, void *param )
 
 {
     if ( !p->good )
@@ -1025,9 +1025,9 @@ static void _feedStream( struct Stream *stream )
 
         if ( receivedSize )
         {
-            if ( PROT_OTAG == options.protocol )
+            if ( PROT_OFLOW == options.protocol )
             {
-                OTAGPump( &_r.c, cbw, receivedSize, _OTAGpacketRxed, &_r );
+                OFLOWPump( &_r.c, cbw, receivedSize, _OFLOWpacketRxed, &_r );
             }
             else
             {
@@ -1075,7 +1075,7 @@ int main( int argc, char *argv[] )
     /* Reset the TPIU handler before we start */
     TPIUDecoderInit( &_r.t );
     ITMDecoderInit( &_r.i, options.forceITMSync );
-    OTAGInit( &_r.c );
+    OFLOWInit( &_r.c );
     MSGSeqInit( &_r.d, &_r.i, MSG_REORDER_BUFLEN );
 
     /* This ensures the signal handler gets called */
