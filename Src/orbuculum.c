@@ -356,7 +356,7 @@ void _printHelp( const char *const progName, struct RunTime *r )
     genericsPrintf( "    -h, --help:          This help" EOL );
     genericsPrintf( "    -H, --hires:         High resolution time (much higher CPU load though!)" EOL );
     genericsPrintf( "    -l, --listen-port:   <port> Listen port for incoming OTAG connections (defaults to %d)" EOL, r->options->listenPort );
-    genericsPrintf( "    -m, --monitor:       <interval> Output monitor information about the link at <interval>ms" EOL );
+    genericsPrintf( "    -m, --monitor:       <interval> Output monitor information about the link at <interval>ms, min 100ms" EOL );
     genericsPrintf( "    -M, --no-colour:     Supress colour in output" EOL );
     genericsPrintf( "    -n, --serial-number: <Serial> any part of serial number to differentiate specific device" EOL );
     genericsPrintf( "    -o, --output-file:   <filename> to be used for dump file" EOL );
@@ -483,7 +483,7 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
             case 'm':
                 r->options->intervalReportTime = atoi( optarg );
 
-                if ( r->options->intervalReportTime )
+                if ( r->options->intervalReportTime<100 )
                 {
                     genericsReport( V_ERROR, "intervalReportTime is out of range" EOL );
                     return false;
