@@ -624,7 +624,7 @@ bool _processOptions( int argc, char *argv[] )
 
                 chan = atoi( optarg );
 
-                if ( !chan || ( chan >= NUM_CHANNELS ) )
+                if ( chan >= NUM_CHANNELS )
                 {
                     genericsReport( V_ERROR, "Channel index out of range" EOL );
                     return false;
