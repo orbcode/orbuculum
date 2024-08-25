@@ -770,7 +770,7 @@ void _checkInterval( void *params )
 
                         if ( tnow - r->tagCount[i].ts < LAST_TAG_SEEN_TIME_NS )
                         {
-                            if ( !r->tagCount[i].hasHandler )
+                            if ( ( !r->tagCount[i].hasHandler ) && r->options->useTPIU )
                             {
                                 genericsPrintf( C_NOCHAN" [%d:" "%3d%%] " C_RESET,  i, w / 10 );
                             }
@@ -839,8 +839,6 @@ static void _purgeBlock( struct RunTime *r, bool createOFLOW )
 
         h++;
     }
-
-    _checkInterval( r );
 }
 // ====================================================================================================
 static void _TPIUpacketRxed( enum TPIUPumpEvent e, struct TPIUPacket *p, void *param )
@@ -924,6 +922,12 @@ static void _OFLOWpacketRxed( struct OFLOWFrame *p, void *param )
     {
         genericsReport( V_WARN, "Bad packet received" EOL );
     }
+    else if ( ( r->options->useTPIU ) && ( h->channel == DEFAULT_ITM_STREAM ) )
+    {
+        /* Deal with the bizzare combination of OFLOW and TPIU in channel 1 */
+        /* Accounting will be done in TPIUPump2 */
+        TPIUPump2( &r->t, p->d, p->len, _TPIUpacketRxed, r );
+    }
     else
     {
         /* Account for this reception */
@@ -992,8 +996,8 @@ static void _processNonOFLOWBlock( struct RunTime *r, ssize_t fillLevel, uint8_t
             while ( fillLevel )
             {
                 OFLOWEncode( DEFAULT_ITM_STREAM, 0, b,
-                            ( fillLevel < OFLOW_MAX_PACKET_LEN ) ? fillLevel : OFLOW_MAX_PACKET_LEN,
-                            &oflowOtg );
+                             ( fillLevel < OFLOW_MAX_PACKET_LEN ) ? fillLevel : OFLOW_MAX_PACKET_LEN,
+                             &oflowOtg );
                 nwclientSend( r->oflowHandler, oflowOtg.len, oflowOtg.d );
                 b += ( fillLevel < OFLOW_MAX_PACKET_LEN ) ? fillLevel : OFLOW_MAX_PACKET_LEN;
                 fillLevel -= ( fillLevel < OFLOW_MAX_PACKET_LEN ) ? fillLevel : OFLOW_MAX_PACKET_LEN;
@@ -1007,36 +1011,45 @@ static void _handleBlock( struct RunTime *r, ssize_t fillLevel, uint8_t *buffer 
 /* Handle an incoming block from any source in either 'conventional' or orbflow format */
 
 {
-    genericsReport( V_DEBUG, "RXED Packet of %d bytes%s" EOL, fillLevel, ( r->options->intervalReportTime ) ? EOL : "" );
-
-    if ( r->opFileHandle )
+    if ( fillLevel )
     {
-        if ( write( r->opFileHandle, buffer, fillLevel ) <= 0 )
-        {
-            genericsExit( -3, "Writing to file failed" EOL );
-        }
-    }
+        genericsReport( V_DEBUG, "RXED Packet of %d bytes%s" EOL, fillLevel, ( r->options->intervalReportTime ) ? EOL : "" );
 
-    if ( r->usingOFLOW )
-    {
-        if ( r->options->intervalReportTime )
+        if ( r->opFileHandle )
         {
-            /* We need to decode this so we can get the stats out of it .. we don't bother if we don't need stats */
-            OFLOWPump( &r->oflow, buffer, fillLevel, _OFLOWpacketRxed, r );
+            if ( write( r->opFileHandle, buffer, fillLevel ) <= 0 )
+            {
+                genericsExit( -3, "Writing to file failed" EOL );
+            }
         }
 
-        /* ...and reflect this packet to the outgoing OFLOW channels */
-        nwclientSend( r->oflowHandler, fillLevel, buffer );
-    }
-    else
-    {
-        _processNonOFLOWBlock( r, fillLevel, buffer );
+        if ( r->usingOFLOW )
+        {
+            if ( r->options->intervalReportTime )
+            {
+                /* We need to decode this so we can get the stats out of it .. we don't bother if we don't need stats */
+                OFLOWPump( &r->oflow, buffer, fillLevel, _OFLOWpacketRxed, r );
+            }
+
+            /* ...and reflect this packet to the outgoing OFLOW channels, if we don't need to reconstruct them */
+            if ( !r->options->useTPIU )
+            {
+                nwclientSend( r->oflowHandler, fillLevel, buffer );
+            }
+        }
+        else
+        {
+            _processNonOFLOWBlock( r, fillLevel, buffer );
+        }
+
+        r->intervalRawBytes += fillLevel;
+
+        /* Send the block to clients, but only send OFLOW if it wasn't OFLOW already */
+        /* or if we're decoding TPIU in the default tag */
+        _purgeBlock( r, ( !r->usingOFLOW ) || r->options->useTPIU );
     }
 
-    r->intervalRawBytes += fillLevel;
-
-    /* Send the block to clients, but only send OFLOW if it wasn't OFLOW already */
-    _purgeBlock( r, !r->usingOFLOW );
+    _checkInterval( r );
 }
 
 // ====================================================================================================
@@ -1048,10 +1061,7 @@ static void _usb_callback( struct libusb_transfer *t )
 
 {
     /* Whatever the status that comes back, there may be data... */
-    if ( t->actual_length > 0 )
-    {
-        _handleBlock( &_r, t->actual_length, t->buffer );
-    }
+    _handleBlock( &_r, t->actual_length, t->buffer );
 
     if ( ( t->status != LIBUSB_TRANSFER_COMPLETED ) &&
             ( t->status != LIBUSB_TRANSFER_TIMED_OUT ) &&

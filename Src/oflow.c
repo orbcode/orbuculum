@@ -105,8 +105,8 @@ static void _pumpcb( struct Frame *p, void *param )
 }
 
 void OFLOWPump( struct OFLOW *t, const uint8_t *incoming, int len,
-               void ( *packetRxed )( struct OFLOWFrame *p, void *param ),
-               void *param )
+                void ( *packetRxed )( struct OFLOWFrame *p, void *param ),
+                void *param )
 
 
 /* Assemble this packet into a complete frame and call back */
