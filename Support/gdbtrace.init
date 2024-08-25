@@ -384,6 +384,7 @@ end
 # ====================================================================
 
 define stopETM
+  _setAddressesETM4
   if (((*$TRCDEVARCH)&0xfff0ffff)  ==0x47704a13)
     set *($TRCPRGCTLR) &= ~(1<<0)
     while ((*$TRCSTATR)&(1<<0)==0)
