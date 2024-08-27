@@ -274,16 +274,25 @@ Recipe instructions courtesy of FrankTheTank;
 
 * `brew install libusb zmq sdl2`
 
-and finally;
+If you are on an Intel Mac: 
 
 ```
 export LDFLAGS="-L/usr/local/opt/binutils/lib"
 export CPPFLAGS="-I/usr/local/opt/binutils/include"
 ```
 
+If you are on an Apple Silicon Mac, do not export the environment variables.
+
 You can also see notes under [Issue #63](https://github.com/orbcode/orbuculum/issues/63) from Gasman2014 about building on a M1
-mac. You need to watch out for Homebrew binutils...on a M1 Mac you must use the Apple binutils or you will get linker errors. All
-you need to do is move the homebrew binutils out of the way while you do the build....no big deal when you know about it.
+Mac. You need to watch out for Homebrew binutils...on an Apple Silicon Mac you must use the Apple binutils (e.g. avoid the above environment export
+so that x86 homebrew binutils is not used) or you will get linker errors.
+
+And finally,
+
+```
+meson setup build
+ninja -C build
+```
 
 
 Building on FreeBSD
@@ -309,6 +318,7 @@ MinGW-w64 from MSys2 is recommended as environment for building Windows distribu
 Dependencies
 ------------
 * mingw-w64-x86_64-libusb
+* mingw-w64-x86_64-libelf
 * mingw-w64-x86_64-zeromq
 * mingw-w64-x86_64-meson
 * mingw-w64-x86_64-SDL2
