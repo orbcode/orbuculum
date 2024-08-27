@@ -51,7 +51,7 @@ jobs:
       - run: meson install -C ./build --destdir ./install --strip
         working-directory: ./orbuculum
       - run: cp ./libusb/install/bin/libusb-1.0.dll ./orbuculum/build/install/bin
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           name: orbuculum-win64
           path: ./orbuculum/build/install/**/*.*
