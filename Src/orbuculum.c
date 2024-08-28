@@ -65,7 +65,7 @@
 #define NUM_RAW_BLOCKS (32)
 
 /* File header for OFLOW formatted file */
-#define OFLOW_SIG (const char*)"%%OFLOW1.0.0%%"
+#define OFLOW_SIG (const char*)"%%ORBFLOW1.0.0%%"
 #define OFLOW_SIG_LEN (strlen(OFLOW_SIG))
 
 /* Number of potential tags */
