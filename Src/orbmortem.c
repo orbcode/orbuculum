@@ -199,6 +199,8 @@ static void _printHelp( const char *const progName )
     genericsPrintf( "    -V, --version:      Print version and exit" EOL );
     genericsPrintf( EOL "(Will connect one port higher than that set in -s when TPIU is not used)" EOL );
     genericsPrintf(     "(this will automatically select the second output stream from orb TPIU.)" EOL );
+    genericsPrintf( EOL "Environment Variables;" EOL );
+    genericsPrintf( "  OBJDUMP: to use non-standard objdump binary" EOL );
 }
 // ====================================================================================================
 void _printVersion( void )

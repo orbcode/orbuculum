@@ -52,7 +52,6 @@
 struct nwclientsHandle
 
 {
-
     volatile struct nwClient *firstClient;    /* Head of linked list of network clients */
     pthread_mutex_t           clientList;     /* Lock for list of network clients */
 
@@ -213,10 +212,9 @@ static void *_listenTask( void *arg )
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
-void nwclientSend( struct nwclientsHandle *h, uint32_t len, const uint8_t *ipbuffer, bool unlimWait )
+void nwclientSend( struct nwclientsHandle *h, uint32_t len, const uint8_t *ipbuffer )
 
 {
-    ssize_t sent = 0;
     const struct timespec ts = {.tv_sec = 1, .tv_nsec = 0};
 
     if ( h && h->firstClient )
@@ -257,7 +255,6 @@ void nwclientSend( struct nwclientsHandle *h, uint32_t len, const uint8_t *ipbuf
         pthread_mutex_unlock( &h->clientList );
     }
 }
-
 // ====================================================================================================
 struct nwclientsHandle *nwclientStart( int port )
 

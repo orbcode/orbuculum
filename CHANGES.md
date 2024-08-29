@@ -1,5 +1,26 @@
+In Progress (Version 2.2.0)
+
+* Addition of orbflow support (COBS over arbitary bearer with protocol on top)
+* Support for ORBTrace 1.4 series gateware
+* Support in-probe TPIU frame stripping
+* Support TPIU frames in orbflow tag 1
+* Update saved file format to differentiate orbflow files from legacy
+* Simplification of client handling (speedup and less crud)
+* Various incremental improvements
+* FreeBSD support
+* orbtop: fix incremental memory use over time
+* Python support moved to its own project
+* Improved statistics reporting accurary
+* Search for dynamic bmp endpoint
+* Add pacing support for read from file
+* Ensure utilities respect CTRL-C even when orbuculum mux is not available
+* improved support for C++
+* Addition of ETM4 decode (experimental)
 * OSX CI Builder support
 * Orbuculum can now be used as a meson subproject
+* sam5 session setup support
+* NXP IMXRT117x session setup support
+* s32K344 session setup support
 * TM4C session setup support
 
 30th June 2023 (Version 2.1.0)

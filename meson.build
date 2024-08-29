@@ -1,4 +1,4 @@
-project('orbuculum', 'c', version:'2.1.0', meson_version: '>=0.63')
+project('orbuculum', 'c', version:'2.2.0', meson_version: '>=0.63')
 
 uicolours_default = declare_dependency(compile_args: ['-include', 'uicolours_default.h'])
 
@@ -19,8 +19,13 @@ dependencies = [
 ]
 
 incdirs = include_directories(['Inc', 'Inc/external'])
+cc = meson.get_compiler('c')
 
 if host_machine.system() == 'windows'
+    winsock2 = cc.find_library('ws2_32')
+    dependencies += [
+        winsock2
+    ]
 elif host_machine.system() == 'darwin'
     add_project_arguments('-DOSX', language: 'c')
 elif host_machine.system() == 'freebsd'

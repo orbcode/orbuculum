@@ -272,7 +272,6 @@ void OrbtraceIfDestroyContext( struct OrbtraceIf *o )
     }
 }
 // ====================================================================================================
-
 int OrbtraceIfGetDeviceList( struct OrbtraceIf *o, char *sn, uint32_t devmask )
 
 /* Get list of devices that match (partial) serial number & devmask */
@@ -540,6 +539,8 @@ bool OrbtraceGetIfandEP( struct OrbtraceIf *o )
             }
 
             /* Loop through the interfaces looking for ours */
+            bool interface_found = false;
+
             for ( int if_num = 0; if_num < config->bNumInterfaces && !interface_found; if_num++ )
             {
                 for ( int alt_num = 0; alt_num < config->interface[if_num].num_altsetting && !interface_found; alt_num++ )

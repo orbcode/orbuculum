@@ -115,7 +115,6 @@ struct RunTime
 
     /* Subsystem data support */
     struct TRACEDecoder i;
-    struct TPIUDecoder t;
     struct SymbolSet *s;                        /* Symbols read from elf */
     struct OFLOW c;
 
@@ -364,14 +363,6 @@ static void _traceCB( void *d )
     static uint32_t incAddr        = 0;
     static uint32_t disposition    = 0;
 
-    if ( TRACEStateChanged( &r->i, EV_CH_ADDRESS ) )
-    {
-        printf( EOL "Address 0x%08lx" EOL, r->i.cpu.addr );
-    }
-
-    TRACEStateChanged( &r->i, 0xffffffff );
-    return;
-
     /* This routine gets called when valid data are available */
     /* if these are the first data, then reset counters etc.  */
     if ( !r->sampling )
@@ -511,7 +502,6 @@ static struct option _longOptions[] =
     {"trace-proto", required_argument, NULL, 'P'},
     {"protocol", required_argument, NULL, 'p'},
     {"server", required_argument, NULL, 's'},
-    {"tpiu", required_argument, NULL, 't'},
     {"all-truncate", no_argument, NULL, 'T'},
     {"tag", required_argument, NULL, 't'},
     {"verbose", required_argument, NULL, 'v'},
@@ -661,13 +651,6 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
                 break;
 
             // ------------------------------------
-            case 't':
-                r->options->useTPIU = true;
-                r->options->channel = atoi( optarg );
-                break;
-
-            // ------------------------------------
-
             case 'v':
                 if ( !isdigit( *optarg ) )
                 {

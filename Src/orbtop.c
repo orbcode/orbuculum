@@ -362,7 +362,7 @@ void _handleSW( struct ITMDecoder *i, struct ITMPacket *p )
 // Outputter routines
 // ====================================================================================================
 // ====================================================================================================
-uint32_t _consolidateReport( struct reportLine **returnReport, uint32_t *returnReportLines )
+uint32_t _consolodateReport( struct reportLine **returnReport, uint32_t *returnReportLines )
 
 {
     struct nameEntry *n;
@@ -1504,7 +1504,7 @@ int main( int argc, char *argv[] )
             if ( receiveResult == RECEIVE_RESULT_TIMEOUT || remainTime <= 0 )
             {
                 /* Create the report that we will output */
-                total = _consolidateReport( &report, &reportLines );
+                total = _consolodateReport( &report, &reportLines );
 
                 if ( options.json )
                 {

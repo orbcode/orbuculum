@@ -23,7 +23,7 @@ struct nwclientsHandle;
 
 // ====================================================================================================
 
-void nwclientSend( struct nwclientsHandle *h, uint32_t len, const uint8_t *ipbuffer, bool unlimWait );
+void nwclientSend( struct nwclientsHandle *h, uint32_t len, const uint8_t *ipbuffer );
 void nwclientShutdown( struct nwclientsHandle *h );
 struct nwclientsHandle *nwclientStart( int port );
 

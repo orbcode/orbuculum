@@ -59,10 +59,6 @@
 #include "orbtraceIf.h"
 #include "stream.h"
 
-#ifndef O_BINARY
-    #define O_BINARY 0
-#endif
-
 #define MAX_LINE_LEN (1024)
 #define ORBTRACE "orbtrace"
 #define ORBTRACEENVNAME "ORBTRACE"
@@ -489,7 +485,7 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
             case 'm':
                 r->options->intervalReportTime = atoi( optarg );
 
-                if ( r->options->intervalReportTime<500 )
+                if ( r->options->intervalReportTime < 500 )
                 {
                     genericsReport( V_ERROR, "intervalReportTime is out of range" EOL );
                     return false;
@@ -695,12 +691,6 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
     if ( (     r->options->paceDelay ) && ( !r->options->file ) )
     {
         genericsReport( V_ERROR, "Pace Delay only makes sense when input is from a file" EOL );
-        return false;
-    }
-
-    if ( ( r->options->useCOBS ) && ( r->options->useTPIU ) )
-    {
-        genericsReport( V_ERROR, "Cannot specify COBS and TPIU at the same time" EOL );
         return false;
     }
 
@@ -1508,7 +1498,6 @@ static int _fileFeeder( struct RunTime *r )
         genericsReport( V_INFO, "File read error" EOL );
     }
 
-    usleep( INTERVAL_1S );
     close( r->f );
     return true;
 }
@@ -1622,7 +1611,7 @@ int main( int argc, char *argv[] )
 
     if ( _r.options->outfile )
     {
-        _r.opFileHandle = open( _r.options->outfile, O_CREAT | O_TRUNC | O_WRONLY | O_BINARY, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH );
+        _r.opFileHandle = open( _r.options->outfile, O_CREAT | O_TRUNC | O_WRONLY, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH );
 
         if ( _r.opFileHandle < 0 )
         {

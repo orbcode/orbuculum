@@ -38,7 +38,7 @@
 #define ONE_SEC_IN_USEC     (1000000)     /* Used for time conversions...usec in one sec */
 
 /* Formats for timestamping */
-#define REL_FORMAT            "%6" PRIu64 ".%03" PRIu64 "|"
+#define REL_FORMAT            "%6" PRIu64 ".%01" PRIu64 "|"
 #define REL_FORMAT_INIT       "   Initial|"
 #define DEL_FORMAT            "%3" PRIu64 ".%03" PRIu64 "|"
 #define DEL_FORMAT_CTD           "      +|"
@@ -115,7 +115,7 @@ struct
 #define DWT_TO_US (100000L)
 
 // ====================================================================================================
-uint64_t _timestamp( void )
+int64_t _timestamp( void )
 
 {
     struct timeval te;
@@ -827,7 +827,7 @@ bool _processOptions( int argc, char *argv[] )
 
                 chan = atoi( optarg );
 
-                if ( !chan || ( chan >= NUM_CHANNELS ) )
+                if ( chan >= NUM_CHANNELS )
                 {
                     genericsReport( V_ERROR, "Channel index out of range" EOL );
                     return false;

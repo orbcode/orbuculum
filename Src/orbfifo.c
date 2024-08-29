@@ -126,6 +126,7 @@ static bool _processOptions( int argc, char *argv[] )
     bool protExplicit = false;
     bool serverExplicit = false;
     bool portExplicit = false;
+    enum Prot p;
 
     while ( ( c = getopt_long ( argc, argv, "b:c:Ef:hVn:Pp:s:t:v:w:", _longOptions, &optionIndex ) ) != -1 )
         switch ( c )
@@ -175,34 +176,9 @@ static bool _processOptions( int argc, char *argv[] )
                 break;
 
             // ------------------------------------
-            case 's':
-                options.server = optarg;
-
-                // See if we have an optional port number too
-                char *a = optarg;
-
-                while ( ( *a ) && ( *a != ':' ) )
-                {
-                    a++;
-                }
-
-                if ( *a == ':' )
-                {
-                    *a = 0;
-                    options.port = atoi( ++a );
-                }
-
-                if ( !options.port )
-                {
-                    options.port = NWCLIENT_SERVER_PORT;
-                }
-
-                break;
-
-            // ------------------------------------
 
             case 'p':
-                enum Prot p = PROT_UNKNOWN;
+                p = PROT_UNKNOWN;
                 protExplicit = true;
 
                 for ( int i = 0; protString[i]; i++ )
@@ -454,7 +430,6 @@ static void _doExit( void )
 {
     _r.ending = true;
     itmfifoShutdown( _r.f );
-
     /* Give them a bit of time, then we're leaving anyway */
     usleep( 200 );
 }

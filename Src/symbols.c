@@ -474,7 +474,6 @@ static enum symbolErr _getTargetProgramInfo( struct SymbolSet *s )
         snprintf( commandLine, MAX_LINE_LEN, OBJDUMP " -Sl%s --source-comment=" SOURCE_INDICATOR " %s %s",  s->demanglecpp ? " -C" : "", s->elfFile, s->odoptions );
     }
 
-    printf( "\n\n%s\n\n", commandLine );
 #if defined(WIN32)
     PROCESS_INFORMATION processInfo;
     FILE *errorOut;

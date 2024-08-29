@@ -435,7 +435,7 @@ int main( int argc, char *argv[] )
     TPIUDecoderInit( &_r.t );
     ITMDecoderInit( &_r.i, options.forceITMSync );
     OFLOWInit( &_r.c );
-    struct Stream *stream = _tryOpenStream();
+    stream = _tryOpenStream();
 
     /* This ensures the signal handler gets called */
     if ( SIG_ERR == signal( SIGINT, _intHandler ) )
@@ -455,8 +455,6 @@ int main( int argc, char *argv[] )
                 genericsReport( V_INFO, "Connected" EOL );
                 alreadyReported = false;
             }
-
-            break;
         }
 
         if ( !alreadyReported )
@@ -468,8 +466,6 @@ int main( int argc, char *argv[] )
         /* Checking every 100ms for a connection is quite often enough */
         usleep( 10000 );
     }
-
-
 
     /* .... and the file to dump it into */
     opFile = fopen( options.outfile, "wb" );
