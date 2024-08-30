@@ -21,7 +21,6 @@
 #include "nw.h"
 #include "git_version_info.h"
 #include "generics.h"
-#include "tpiuDecoder.h"
 #include "itmDecoder.h"
 #include "msgDecoder.h"
 #include "msgSeq.h"
@@ -51,8 +50,8 @@
 
 enum TSType { TSNone, TSAbsolute, TSRelative, TSDelta, TSStamp, TSStampDelta, TSNumTypes };
 
-enum Prot { PROT_OFLOW, PROT_ITM, PROT_TPIU, PROT_UNKNOWN };
-const char *protString[] = {"OFLOW", "ITM", "TPIU", NULL};
+enum Prot { PROT_OFLOW, PROT_ITM, PROT_UNKNOWN };
+const char *protString[] = {"OFLOW", "ITM", NULL};
 
 const char *tsTypeString[TSNumTypes] = { "None", "Absolute", "Relative", "Delta", "System Timestamp", "System Timestamp Delta" };
 
@@ -60,7 +59,7 @@ const char *tsTypeString[TSNumTypes] = { "None", "Absolute", "Relative", "Delta"
 struct
 {
     /* Config information */
-    uint32_t tag;                            /* Which TPIU or OFLOW stream are we decoding? */
+    uint32_t tag;                            /* Which OFLOW tag are we decoding? */
     bool forceITMSync;
     uint64_t cps;                            /* Cycles per second for target CPU */
 
@@ -95,11 +94,9 @@ struct
     struct ITMDecoder i;
     struct MSGSeq    d;
     struct ITMPacket h;
-    struct TPIUDecoder t;
     struct OFLOW c;
 
     struct Frame cobsPart;               /* Any part frame that has been received */
-    struct TPIUPacket p;                 /* Any TPIU packet that has been recevied */
     enum timeDelay timeStatus;           /* Indicator of if this time is exact */
     uint64_t timeStamp;                  /* Latest received time */
     uint64_t lastTimeStamp;              /* Last received time */
@@ -548,59 +545,6 @@ static void _itmPumpProcess( char c )
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
-static void _protocolPump( uint8_t c )
-
-{
-    if ( options.protocol == PROT_TPIU )
-    {
-        switch ( TPIUPump( &_r.t, c ) )
-        {
-            case TPIU_EV_NEWSYNC:
-            case TPIU_EV_SYNCED:
-                ITMDecoderForceSync( &_r.i, true );
-                break;
-
-            case TPIU_EV_RXING:
-            case TPIU_EV_NONE:
-                break;
-
-            case TPIU_EV_UNSYNCED:
-                ITMDecoderForceSync( &_r.i, false );
-                break;
-
-            case TPIU_EV_RXEDPACKET:
-                if ( !TPIUGetPacket( &_r.t, &_r.p ) )
-                {
-                    genericsReport( V_WARN, "TPIUGetPacket fell over" EOL );
-                }
-
-                for ( uint32_t g = 0; g < _r.p.len; g++ )
-                {
-                    if ( _r.p.packet[g].s == options.tag )
-                    {
-                        _itmPumpProcess( _r.p.packet[g].d );
-                        continue;
-                    }
-
-                    if  ( _r.p.packet[g].s != 0 )
-                    {
-                        genericsReport( V_DEBUG, "Unknown TPIU channel %02x" EOL, _r.p.packet[g].s );
-                    }
-                }
-
-                break;
-
-            case TPIU_EV_ERROR:
-                genericsReport( V_WARN, "****ERROR****" EOL );
-                break;
-        }
-    }
-    else
-    {
-        _itmPumpProcess( c );
-    }
-}
-// ====================================================================================================
 
 static void _printHelp( const char *const progName )
 
@@ -614,10 +558,9 @@ static void _printHelp( const char *const progName )
     fprintf( stdout, "    -g, --trigger:      <char> to use to trigger timestamp (default is newline)" EOL );
     fprintf( stdout, "    -h, --help:         This help" EOL );
     fprintf( stdout, "    -n, --itm-sync:     Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
-    fprintf( stdout, "    -p, --protocol:     Protocol to communicate. Defaults to OFLOW if -s is not set, otherwise ITM unless" EOL \
-             "                        explicitly set to TPIU to decode TPIU frames on channel set by -t" EOL );
+    fprintf( stdout, "    -p, --protocol:     Protocol to communicate. Defaults to OFLOW if -s is not set, otherwise ITM" EOL );
     fprintf( stdout, "    -s, --server:       <Server>:<Port> to use" EOL );
-    fprintf( stdout, "    -t, --tag:          <stream>: Which TPIU stream or OFLOW tag to use (normally 1)" EOL );
+    fprintf( stdout, "    -t, --tag:          <stream>: Which orbflow tag to use (normally 1)" EOL );
     fprintf( stdout, "    -T, --timestamp:    <a|r|d|s|t>: Add absolute, relative (to session start)," EOL
              "                        delta, system timestamp or system timestamp delta to output. Note" EOL
              "                        a,r & d are host dependent and you may need to run orbuculum with -H." EOL );
@@ -643,7 +586,7 @@ static struct option _longOptions[] =
     {"itm-sync", no_argument, NULL, 'n'},
     {"protocol", required_argument, NULL, 'p'},
     {"server", required_argument, NULL, 's'},
-    {"tpiu", required_argument, NULL, 't'},
+    {"tag", required_argument, NULL, 't'},
     {"timestamp", required_argument, NULL, 'T'},
     {"verbose", required_argument, NULL, 'v'},
     {"version", no_argument, NULL, 'V'},
@@ -893,7 +836,7 @@ bool _processOptions( int argc, char *argv[] )
         options.protocol = PROT_ITM;
     }
 
-    if ( ( options.protocol == PROT_TPIU ) && !portExplicit )
+    if ( ( options.protocol == PROT_ITM ) && !portExplicit )
     {
         options.port = NWCLIENT_SERVER_PORT;
     }
@@ -938,10 +881,6 @@ bool _processOptions( int argc, char *argv[] )
 
         case PROT_ITM:
             genericsReport( V_INFO, "Decoding ITM" EOL );
-            break;
-
-        case  PROT_TPIU:
-            genericsReport( V_INFO, "Using TPIU with ITM in stream %d" EOL, options.tag );
             break;
 
         default:
@@ -1031,12 +970,12 @@ static void _feedStream( struct Stream *stream )
             }
             else
             {
-                /* Both ITM and TPIU go directly through the protocol pump */
+                /* ITM goes directly through the protocol pump */
                 unsigned char *c = cbw;
 
                 while ( receivedSize-- )
                 {
-                    _protocolPump( *c++ );
+                    _itmPumpProcess( *c++ );
                 }
             }
 
@@ -1072,8 +1011,7 @@ int main( int argc, char *argv[] )
         exit( -1 );
     }
 
-    /* Reset the TPIU handler before we start */
-    TPIUDecoderInit( &_r.t );
+    /* Reset the handlers before we start */
     ITMDecoderInit( &_r.i, options.forceITMSync );
     OFLOWInit( &_r.c );
     MSGSeqInit( &_r.d, &_r.i, MSG_REORDER_BUFLEN );

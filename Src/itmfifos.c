@@ -19,7 +19,6 @@
 
 #include "git_version_info.h"
 #include "generics.h"
-#include "tpiuDecoder.h"
 #include "itmDecoder.h"
 #include "oflow.h"
 #include "fileWriter.h"
@@ -59,8 +58,6 @@ struct itmfifosHandle
     /* The decoders and the packets from them */
     struct ITMDecoder i;
     struct ITMPacket h;
-    struct TPIUDecoder t;
-    struct TPIUPacket p;
     struct OFLOW ot;
     enum timeDelay timeStatus;                    /* Indicator of if this time is exact */
     uint64_t timeStamp;                           /* Latest received time */
@@ -73,7 +70,7 @@ struct itmfifosHandle
     bool filewriter;                              /* Is the filewriter in use? */
     bool forceITMSync;                            /* Is ITM to be forced into sync? */
     bool permafile;                               /* Use permanent files rather than fifos */
-    int tag;                                      /* Which OFLOW or TPIU stream are we decoding? */
+    int tag;                                      /* Which OFLOW stream are we decoding? */
     bool amEnding;                                /* Flag indicating end is in progress */
 
     enum Prot protocol;                           /* What protocol to communicate (default to OFLOW (== orbuculum)) */
@@ -493,65 +490,6 @@ void _itmPumpProcess( struct itmfifosHandle *f, char c )
     }
 }
 // ====================================================================================================
-static void _tpiuProtocolPump( struct itmfifosHandle *f, uint8_t c )
-
-{
-    switch ( TPIUPump( &f->t, c ) )
-    {
-        // ------------------------------------
-        case TPIU_EV_NEWSYNC:
-            genericsReport( V_INFO, "TPIU In Sync (%d)" EOL, TPIUDecoderGetStats( &f->t )->syncCount );
-
-        // This fall-through is deliberate
-        case TPIU_EV_SYNCED:
-
-            ITMDecoderForceSync( &f->i, true );
-            break;
-
-        // ------------------------------------
-        case TPIU_EV_RXING:
-        case TPIU_EV_NONE:
-            break;
-
-        // ------------------------------------
-        case TPIU_EV_UNSYNCED:
-            genericsReport( V_INFO, "TPIU Lost Sync (%d)" EOL, TPIUDecoderGetStats( &f->t )->lostSync );
-            ITMDecoderForceSync( &f->i, false );
-            break;
-
-        // ------------------------------------
-        case TPIU_EV_RXEDPACKET:
-            if ( !TPIUGetPacket( &f->t, &f->p ) )
-            {
-                genericsReport( V_WARN, "TPIUGetPacket fell over" EOL );
-            }
-
-            for ( uint32_t g = 0; g < f->p.len; g++ )
-            {
-                if ( f->p.packet[g].s == f->tag )
-                {
-                    _itmPumpProcess( f, f->p.packet[g].d );
-                    continue;
-                }
-
-                /* Its perfectly legal for TPIU channels to arrive that we aren't interested in */
-                if ( ( f->p.packet[g].s != 0 ) && ( f->p.packet[g].s != 0x7f ) )
-                {
-                    genericsReport( V_INFO, "Unhandled TPIU channel %02x" EOL, f->p.packet[g].s );
-                }
-            }
-
-            break;
-
-        // ------------------------------------
-        case TPIU_EV_ERROR:
-            genericsReport( V_ERROR, "****ERROR****" EOL );
-            break;
-            // ------------------------------------
-    }
-}
-
-// ====================================================================================================
 
 static void _OFLOWpacketRxed ( struct OFLOWFrame *p, void *param )
 
@@ -685,12 +623,6 @@ int itmfifoGettag( struct itmfifosHandle *f )
     return f->tag;
 }
 // ====================================================================================================
-struct TPIUCommsStats *itmfifoGetCommsStats( struct itmfifosHandle *f )
-
-{
-    return TPIUGetCommsStats( &f->t );
-}
-// ====================================================================================================
 struct ITMDecoderStats *fifoGetITMDecoderStats( struct itmfifosHandle *f )
 
 {
@@ -712,24 +644,16 @@ void itmfifoProtocolPump( struct itmfifosHandle *f, uint8_t *c, int len )
     else
         while ( len-- )
         {
-            if ( PROT_TPIU == f->protocol )
-            {
-                _tpiuProtocolPump( f, *c++ );
-            }
-            else
-            {
-                /* There's no TPIU in use, so this goes straight to the ITM layer */
-                _itmPumpProcess( f, *c++ );
-            }
+            /* There's no TPIU in use, so this goes straight to the ITM layer */
+            _itmPumpProcess( f, *c++ );
         }
 }
 // ====================================================================================================
 void itmfifoForceSync( struct itmfifosHandle *f, bool synced )
 
-/* Reset TPIU state and put ITM into defined state */
+/* Reset and put ITM into defined state */
 
 {
-    TPIUDecoderForceSync( &f->t, 0 );
     ITMDecoderForceSync( &f->i, synced );
 }
 // ====================================================================================================
@@ -743,8 +667,7 @@ bool itmfifoCreate( struct itmfifosHandle *f )
     /* Make sure there's an initial timestamp to work with */
     f->lastHWExceptionTS = genericsTimestampuS();
 
-    /* Reset the TPIU handler before we start */
-    TPIUDecoderInit( &f->t );
+    /* Reset the handler before we start */
     OFLOWInit( &f->ot );
     ITMDecoderInit( &f->i, f->forceITMSync );
 

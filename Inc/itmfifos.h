@@ -9,7 +9,6 @@
 #ifndef _ITMFIFOS_
 #define _ITMFIFOS_
 
-#include "tpiuDecoder.h"
 #include "itmDecoder.h"
 #include "oflow.h"
 
@@ -27,7 +26,7 @@ extern "C" {
 struct Channel;
 struct itmfifosHandle;
 
-enum Prot { PROT_OFLOW,  PROT_ITM, PROT_TPIU, PROT_UNKNOWN };
+enum Prot { PROT_OFLOW,  PROT_ITM, PROT_UNKNOWN };
 
 /* Fifos running */
 void itmfifoForceSync( struct itmfifosHandle *f, bool synced );                  /* Force sync status */

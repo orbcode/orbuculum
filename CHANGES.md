@@ -4,6 +4,7 @@ In Progress (Version 2.2.0)
 * Support for ORBTrace 1.4 series gateware
 * Support in-probe TPIU frame stripping
 * Support TPIU frames in orbflow tag 1
+* Individual clients no longer decode TPIU - use orbuculum mux if you need this
 * Update saved file format to differentiate orbflow files from legacy
 * Simplification of client handling (speedup and less crud)
 * Various incremental improvements
@@ -16,6 +17,8 @@ In Progress (Version 2.2.0)
 * Ensure utilities respect CTRL-C even when orbuculum mux is not available
 * improved support for C++
 * Addition of ETM4 decode (experimental)
+* Timestamping for orbtop, in various formats
+* Exception reporting for orbtop
 * OSX CI Builder support
 * Orbuculum can now be used as a meson subproject
 * sam5 session setup support

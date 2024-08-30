@@ -8,11 +8,11 @@
 
 ![Screenshot](https://raw.githubusercontent.com/orbcode/orbuculum/main/Docs/title.png)
 
-This (main) is the development branch for V2.2.0. Development is generally done in feature branches and folded into main as those features mature.
+This (orbflow) is the development branch for V2.2.0. Development is generally done in feature branches and folded into main as those features mature, but the changes in orbflow are significant and disruptive, with limited user visible benefit, so we want to keep them off main for a little while longer.
 
-Version 2.1.0 has recently been released and includes nice things like Python support, a decent quality Windows port and the ninja/meson build system. It also supports the full functionality of the ORBTrace Mini dongle.
+Version 2.2.0 builds on 2.1.0 and adds several new CPU families, improved client application handling and the start of ETM4 support. Stats and timing are also much improved and the whole communications subsystem has been simplified and streamlined. Most importantly though, we have moved from 'legacy' protocol (basically, the exact same protocol that flows from the chip) for communications to 'orbflow' protocol. Orbflow protocol is an extensible packet oriented protocol which provides a more compact representation of the probe data. By default orbflow is used transparently between orbuculum and client applications. If you have an ORBTrace 1.4.0 or higher version then it is also used for communication from the probe to orbuculum. If you have your own legacy applications, or a version of ORBTrace less that 1.4.0, then the system will fall back to legacy protocol transparently. You can have a hybrid arrangement where some clients use legacy protocol and some use orbflow no problem.  As you might imagine this can quickly become complex so please yell up if any edge cases don't seem to work correctly!
 
-ORBTrace, the FPGA based trace interface dongle, has now been moved into its own separate repository as it's grown considerably and really needs its own identity. History for ORBtrace until the split point is maintained here for provenance purposes, but new work is now done over in the new location.
+For the full benefit of this version you should be using ORBTrace mini Version 1.4.0 or higher.
 
 The CHANGES file now tells you what's been done recently.
 
@@ -87,7 +87,7 @@ typos, it really does run that fast if you've got suitable hardware.
 
 Whatever it's source, orbuculum takes this data flow and makes it accessible to tools on the host
 PC. At its core it takes the data from the source, decodes it and presents it on a network
-interface. The Orbuculum suite tools don't care if the data
+interface...both orbflow and legacy protocol are available. The Orbuculum suite tools don't care if the data
 originates from a RZ or NRZ port, SWO or TRACE, or at what speed....that's all the job
 of the interface.
 
@@ -103,7 +103,7 @@ from the target;
 * The ECPIX-5 ECP5 Breakout Board for parallel trace
 * Anything capable of saving the raw SWO data to a file
 * Anything capable of offering SWO on a TCP port
-* ORBTrace Mini
+* ORBTrace Mini (V1.4.0 or higher for orbflow support)
 
 Note that current support for the ECPIX-5 breakout board is based on the original bob, the designs for which
 are in the orbtrace_hw repository. bob2 support will be added when we get around to it (probably when we decide we
@@ -120,19 +120,21 @@ of the use of the orbuculum suite at [Orbcode](https://orbcode.org).
 
 When using SWO Orbuculum can use, or bypass, the TPIU. The TPIU adds overhead
 to the datastream, but provides better synchronisation if there is corruption
-on the link. To include the TPIU in decode stack, provide the -t
+on the link. To include the TPIU in decode stack, provide the -T
 option on the command line. If you don't provide it, and the ITM decoder sees
 TPIU syncs in the datastream, it will complain and barf out. This is deliberate
-after I spent two days trying to find an obscure bug 'cos I'd left the `-t` option off. You can have multiple
-channels to the `-t` option, which is useful when you've got debug data in one stream and
-trace data in another.
+after I spent two days trying to find an obscure bug 'cos I'd left the `-T` option off. If you don't specify, then
+only TPIU stream 1 is decoded over legacy protocol, use the `-tx` option to add additional streams. If you have an
+end to end orbflow configuration with the probe stripping the TPIU framing then all streams are passed transparently
+throughout the system.
 
-Beware that in parallel trace the TPIU is mandatory, so therefore so is the -t option.
+Beware that in parallel trace the TPIU is mandatory...it must be stripped somewhere in the system; Either by the probe or by `orbuculum`.
 
-TPIU framing can be stripped either
-by individual applications or the `orbuculum` mux. When its stripped by the mux the data are made available on
+TPIU framing can be stripped in the probe or the `orbuculum` mux. For legacy applications orbuculum makes the data available on
 consecutive TCP/IP ports...so `-t 1,2` would put stream 1 data out over TCP port 3443 and stream 2 over 3444, by default. Do
-not leave the first number out if you only want output from the second stream...that won't end well.
+not leave the first number out if you only want output from the second stream...that won't end well.  orbflow (on port 3402 by default)
+supports all streams simultaneously, putting them under separate 'tags'.  Historically, clients could independently strip TPIU too, but
+that functionality has been removed in the name of simplification.
 
 When in NRZ (UART) mode the SWO data rate that comes out of the chip _must_
 match the rate that the debugger expects. On the BMP speeds of
@@ -268,8 +270,6 @@ A udev rules files is included in ```Support/60-orbcode.rules``` The default ins
 Building on OSX
 ===============
 
-Recipe instructions courtesy of FrankTheTank;
-
 * `brew install libusb zmq sdl2`
 
 If you are on an Intel Mac: 
@@ -364,7 +364,7 @@ However, times have moved on. Passing all those data through transparently was w
 was 'nothing to see here', so Orbuculum now supports a new protocol, orbflow (OFLOW). Orbflow is always carried on TCP/3402 and
 is a bit more intelligent than simply passing through the messages from the probe. It turns the stream of data into
 COBS encoded sequenced messages with defined message boundries and it also removes the redundant data. When used
-in conjunction with an ORBTrace probe the orbflow messages are created in the probe itself, providing a further
+in conjunction with an ORBTrace 1.4.0 or higher probe the orbflow messages are created in the probe itself, providing a further
 performance improvement.
 
 Basically, all of this is mostly transparent to the regular end user. Orbflow is automatically used for communication
@@ -374,10 +374,15 @@ improvement, but it's otherwise mostly transparent.
 
 There are come slight changes to the command line options though. Historically, when using TPIU decoding,
 you had to specify the channels to be decoded with an option like `-T 1,2`. You now simply need to tell orbuculum
-which tags to process with `-t 1,2` and, if your probe doesn't remove TPIU framing automatically, specify the `-T`
+which tags to reflect over legacy protocol using `-t 1,2` and, if your probe doesn't remove TPIU framing automatically, specify the `-T`
 option on its own....if you try to specify the `-T` option and you've got an ORBTrace that supports Orbflow protocol
 then you'll get a warning, because TPIU framing removal is done automatically in the probe in that case, so you
-don't generally need it.
+don't generally need it....it's still possible to do it because there are some edge cases where it's useful, but you will
+know why you need it if you need it, and you'll know to ignore the warning. If you're using end-to-end orbflow then you can
+ignore the `-T` and `-tx` options altogether, although you might still need to tell the client which tag to access.
+
+Note that individual clients cannot now strip TPIU. This was an unusual requirement and it can still be met by piping via
+`orbuculum` first. This results in a simplification of the clients.
 
 Why have we made this change? Well, decoding TPIU on the probe saves a huge amount of bandwidth, and moving to the
 tag based approach lets us convey other information from the probe too such as timestamps, voltages and currents.
@@ -397,8 +402,8 @@ to run orbuculum would be;
 
 In this case, because no source options were provided on the command line, input
 will be taken from a Blackmagic probe USB SWO feed, or from an ORBTrace mini if it can find one.
-It will start the daemon with a monitor reporting interval of 100ms.  Orbuculum exposes TCP port 3443 to which
-network clients can connect. This port delivers raw TPIU frames to any
+It will start the daemon with a monitor reporting interval of 100ms.  Orbuculum exposes TCP ports 3402 and 3443 to which
+network clients can connect. 3402 delivers orbflow, 3443+x deliver raw frames. Both will relay to any
 client that is connected (such as orbcat, orbfifo or orbtop).
 The practical limit to the number of clients that can connect is set by the speed of the host machine....but there's
 nothing stopping you using another one on the local network :-)  If you've got an orbtrace mini and you want
@@ -406,7 +411,8 @@ to switch on power to your target and configure it for Manchester SWO, a suitabl
 
 ```$ orbuculum --monitor 1000 --orbtrace '-p vtref,3.3 -e vtref,on'```
 
-...this will re-initialise the probe if it gets disconnected at any time.
+...this will re-initialise the probe if it gets disconnected at any time. Note that the `--orbtrace` bit is providing options through to
+the `orbtrace` application, so you need to look at the command line options for that to make sensible selections.
 
 Information about command line options can be found with the -h
 option.  Orbuculum itself is specifically designed to be 'hardy' to probe and
@@ -438,9 +444,9 @@ For `orbuculum`, the specific command line options of note are;
 
  `-h, --help`: Brief help.
 
- `-H, --hires`: Use high resolution time. This limits probe interface timeouts to 1ms, which makes host-side timing more accurate, but at the expense of _much_ higher load (literally perhaps x100). Use sparingly.
+ `-H, --hires`: Use high resolution time. This limits probe interface timeouts to 1ms, which makes host-side timing more accurate, but at the expense of _much_ higher load (literally perhaps x100). Use sparingly. DEPRECIATED AND PROBABLY UNNEEDED.
 
- `-m, --monitor`: Monitor interval (in ms) for reporting on state of the link. If baudrate is specified (using `-a`) and is greater than 100bps then the percentage link occupancy is also reported.
+ `-m, --monitor`: Monitor interval (in ms) for reporting on state of the link. If baudrate is specified (using `-a`) and is greater than 100bps then the percentage link occupancy is also reported. Minimum of 500ms.
 
  `-n, --serial-number`: Set a specific serial number for the ORBTrace or BMP device to connect to. Any unambigious sequence is sufficient. Ignored for other probe types.
 
@@ -454,9 +460,9 @@ For `orbuculum`, the specific command line options of note are;
 
   `-s, --server [address]:[port]`: Set address for explicit TCP Source connection, (default none:2332).
 
-  `-T, --tpiu`: Remove TPIU formatting from incoming data stream.
+  `-T, --tpiu`: Remove TPIU formatting from incoming data stream. TPIU is removed from tag 1 when source is an ORBTrace mini 1.4.0 or higher.
 
-  `-t, --tag x,y,...`: List of streams to decode (and onward route) from the probe (low stream numbers are TPIU channels). *By default only stream 1 (ITM) is routed.*
+  `-t, --tag x,y,...`: List of streams to decode (and onward route) from the probe (low stream numbers are TPIU channels). *By default only stream 1 (ITM) is routed over legacy protocol.*
 
 
 Orbfifo
@@ -526,9 +532,6 @@ The command line options are;
 
   `-s [address]:[port]`: Set address for Source connection, (default localhost:3443).
 
-  `-t, --tpiu`: Use TPIU decoder.  This will not sync if TPIU is not configured, so you won't see
-     packets in that case.
-
   `-v, --verbose`: Verbose mode 0==Errors only, 1=Warnings (Default) 2=Info, 3=Full Debug.
 
   `-W, --writer-path [path]` : Enable filewriter functionality with output in specified directory (disabled by default).
@@ -582,7 +585,7 @@ Command line options are:
 
  `-s, --server [server]:[port]`:       to connect to
 
- `-t, --tpiu [channel]`:         Use TPIU decoder on specified channel (normally 1)
+ `-t, --tag [numberl]`:         Specify tag to decode (normally 1)
 
  `-v, --verbose [level]`:      Verbose mode 0(errors)..3(debug)
 
@@ -639,7 +642,7 @@ make GRAPHIC_LIBRARY=ORBLCD
 
  `-S, --sbcolour [Colour]`: to be used for single bit renders, ignored for other bit depths.
 
- `-t, --tpiu [channel]`: Use TPIU decoder on specified channel (normally 1).
+ `-t, --tag [number]`: Decode specified tag (normally 1).
 
  `-v, --verbose [level]`: Verbose mode 0(errors)..3(debug).
 
@@ -691,8 +694,7 @@ options for orbcat are;
 
  `-s --server [server]:[port]`: to connect to. Defaults to `localhost:3443` to connect to the orbuculum daemon. Use `localhost:2332` to connect to a Segger J-Link, or whatever other combination applies to your source.
 
- `-t, --tpiu`: Use TPIU decoder.  This will not sync if TPIU is not configured, so you won't see
-     packets in that case.
+ `-t, --tag [number]`: Specify tag to decode.
 
  `-T, --timestamp [a|r|d|s|t]`: Add absolute, relative (to session start), delta, system timestamp or system timestamp delta to output. Note that
     system timestamp and system timestamp delta are only available if your target is generating timestamps, otherwise they will read back
@@ -762,8 +764,7 @@ Command line options for orbtop are;
 
  `-s, --server [server]:[port]`: to connect to. Defaults to localhost:3443
 
- `-t, --tpiu`: Use TPIU decoder.  This will not sync if TPIU is not configured, so you won't see
-     packets in that case.
+ `-t, --tag [number]`: Specify tag to decode. Defaults to 1.
 
  `-v, --verbose [x]`: Verbose mode 0..3.
 
@@ -834,7 +835,7 @@ The command line options of note are;
 
  `-s, --server [Server:Port]`: to use
 
- `-t, --tpiu [channel]`: Use TPIU to strip TPIU on specfied channel (normally best to let `orbuculum` handle this
+ `-t, --tag [number]`: Specify tag to decode, defaults to 2.
 
 
 Once it's running you will receive an indication at the lower right of the screen that it's capturing data. Hitting `H` will hold the capture and it will decode whatever is currently in the buffer. More usefully, if the capture stream is lost (e.g. because of debugger entry) then it will auto-hold and decode the buffer, showing you the last instructions executed. You can use the arrow keys to move around this buffer and dive into individual source files. Hit the `?` key for a quick overview of available commands.
@@ -929,7 +930,7 @@ from channel 4, an orbcat line such as this would do the job;
 
 ...its obvious that the formatting of this buffer is completely
 dependent on the order in which data arrive from the target, so you
-might want to put some 'tags' or differentiators into each channel to
+might want to put some differentiators into each channel to
 keep them distinct - a typical mechanism might be to use commas to
 seperate the flows into different columns in a CSV file.
 

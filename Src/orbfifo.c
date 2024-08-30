@@ -29,7 +29,7 @@
 
 #include "itmfifos.h"
 
-const char *protString[] = {"OFLOW", "ITM", "TPIU", NULL};
+const char *protString[] = {"OFLOW", "ITM", NULL};
 
 //#define DUMP_BLOCK
 
@@ -79,10 +79,9 @@ static void _printHelp( const char *const progName )
     genericsPrintf( "    -h, --help:         This help" EOL );
     genericsPrintf( "    -M, --no-colour:    Supress colour in output" EOL );
     genericsPrintf( "    -P, --permanent:    Create permanent files rather than fifos" EOL );
-    genericsPrintf( "    -p, --protocol:     Protocol to communicate. Defaults to OFLOW if -s is not set, otherwise ITM unless" EOL \
-                    "                        explicitly set to TPIU to decode TPIU frames on stream set by -t" EOL );
+    genericsPrintf( "    -p, --protocol:     Protocol to communicate. Defaults to OFLOW if -s is not set, otherwise ITM" EOL );
     genericsPrintf( "    -s, --server:       <Server>:<Port> to use" EOL );
-    genericsPrintf( "    -t, --tag:          <stream> Which TPIU stream or OFLOW tag to use (normally 1)" EOL );
+    genericsPrintf( "    -t, --tag:          <stream> Which OFLOW tag to use (normally 1)" EOL );
     genericsPrintf( "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
     genericsPrintf( "    -V, --version:      Print version and exit" EOL );
     genericsPrintf( "    -W, --writer-path:  <path> Enable filewriter functionality using specified base path" EOL );
@@ -334,7 +333,7 @@ static bool _processOptions( int argc, char *argv[] )
         itmfifoSetProtocol( _r.f, PROT_ITM );
     }
 
-    if ( ( itmfifoGetProtocol( _r.f ) == PROT_TPIU ) && !portExplicit )
+    if ( ( itmfifoGetProtocol( _r.f ) == PROT_ITM ) && !portExplicit )
     {
         options.port = NWCLIENT_SERVER_PORT;
     }
@@ -367,10 +366,6 @@ static bool _processOptions( int argc, char *argv[] )
 
         case PROT_ITM:
             genericsReport( V_INFO, "Decoding ITM" EOL );
-            break;
-
-        case  PROT_TPIU:
-            genericsReport( V_INFO, "Using TPIU with ITM in stream %d" EOL, itmfifoGettag( _r.f ) );
             break;
 
         default:
@@ -453,7 +448,7 @@ int main( int argc, char *argv[] )
     struct timeval tv;
     uint64_t remainTime;
 
-    /* Setup fifos with forced ITM sync, no TPIU and TPIU on channel 1 if its engaged later */
+    /* Setup fifos with forced ITM sync, tag 1 */
     _r.f = itmfifoInit( true, false, 1 );
     assert( _r.f );
 
