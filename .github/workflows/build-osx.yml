@@ -15,7 +15,7 @@ jobs:
       - run: meson setup ./build
       - run: ninja -C ./build
       - run: meson install -C ./build --destdir ./install
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           name: orbuculum-osx
           path: build/install/**/*
