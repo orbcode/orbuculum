@@ -14,6 +14,8 @@
 #define C_SUPPORT2   C_LCYAN       /* Output data secondary value alternate */
 #define C_CONTEXT    C_CYAN        /* Context (e.g. units) for output data value */
 
+#define C_TSTAMP     C_YELLOW      /* Colour stamp in orbcat output */
+
 #define C_VERB_ERROR C_LRED        /* Verbal level error */
 #define C_VERB_WARN  C_YELLOW      /* Verbal level warning */
 #define C_VERB_INFO  C_LCYAN       /* Verbal level info */

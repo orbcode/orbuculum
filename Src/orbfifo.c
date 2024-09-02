@@ -51,7 +51,7 @@ struct
 
 } options =
 {
-    .port = OTCLIENT_SERVER_PORT,
+    .port = OFCLIENT_SERVER_PORT,
     .server = "localhost"
 };
 

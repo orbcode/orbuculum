@@ -15,7 +15,6 @@
 #include "git_version_info.h"
 #include "nw.h"
 #include "stream.h"
-#include "tpiuDecoder.h"
 #include "itmDecoder.h"
 #include "msgDecoder.h"
 #include "oflow.h"
@@ -26,8 +25,8 @@
 
 #define DEFAULT_ZMQ_BIND_URL "tcp://*:3442"  /* by default bind to all source interfaces */
 
-enum Prot { PROT_OFLOW, PROT_ITM, PROT_TPIU, PROT_UNKNOWN };
-const char *protString[] = {"OFLOW", "ITM", "TPIU", NULL};
+enum Prot { PROT_OFLOW, PROT_ITM, PROT_UNKNOWN };
+const char *protString[] = {"OFLOW", "ITM", NULL};
 
 // Record for options, either defaults or from command line
 
@@ -62,7 +61,7 @@ struct
     .forceITMSync = true,
     .tag = 1,
     .bindUrl = DEFAULT_ZMQ_BIND_URL,
-    .port = OTCLIENT_SERVER_PORT,
+    .port = OFCLIENT_SERVER_PORT,
     .server = "localhost"
 };
 
@@ -71,8 +70,6 @@ struct
     /* The decoders and the packets from them */
     struct ITMDecoder i;
     struct ITMPacket h;
-    struct TPIUDecoder t;
-    struct TPIUPacket p;
     struct OFLOW c;
 
     /* Timestamp info */
@@ -414,58 +411,6 @@ void _itmPumpProcess( char c )
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
-void _protocolPump( uint8_t c )
-{
-    if ( PROT_TPIU == options.protocol )
-    {
-        switch ( TPIUPump( &_r.t, c ) )
-        {
-            case TPIU_EV_NEWSYNC:
-            case TPIU_EV_SYNCED:
-                ITMDecoderForceSync( &_r.i, true );
-                break;
-
-            case TPIU_EV_RXING:
-            case TPIU_EV_NONE:
-                break;
-
-            case TPIU_EV_UNSYNCED:
-                ITMDecoderForceSync( &_r.i, false );
-                break;
-
-            case TPIU_EV_RXEDPACKET:
-                if ( !TPIUGetPacket( &_r.t, &_r.p ) )
-                {
-                    genericsReport( V_WARN, "TPIUGetPacket fell over" EOL );
-                }
-
-                for ( uint32_t g = 0; g < _r.p.len; g++ )
-                {
-                    if ( _r.p.packet[g].s == options.tag )
-                    {
-                        _itmPumpProcess( _r.p.packet[g].d );
-                        continue;
-                    }
-
-                    if  ( _r.p.packet[g].s != 0 )
-                    {
-                        genericsReport( V_DEBUG, "Unknown TPIU channel %02x" EOL, _r.p.packet[g].s );
-                    }
-                }
-
-                break;
-
-            case TPIU_EV_ERROR:
-                genericsReport( V_WARN, "****ERROR****" EOL );
-                break;
-        }
-    }
-    else
-    {
-        _itmPumpProcess( c );
-    }
-}
-// ====================================================================================================
 void _printHelp( const char *const progName )
 
 {
@@ -475,12 +420,11 @@ void _printHelp( const char *const progName )
     genericsPrintf( "    -E, --eof:        Terminate when the file/socket ends/is closed, otherwise wait to reconnect" EOL );
     genericsPrintf( "    -f, --input-file: <filename> Take input from specified file" EOL );
     genericsPrintf( "    -h, --help:       This help" EOL );
-    genericsPrintf( "    -M, --no-colour:    Supress colour in output" EOL );
+    genericsPrintf( "    -M, --no-colour:  Supress colour in output" EOL );
     genericsPrintf( "    -n, --itm-sync:   Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
-    genericsPrintf( "    -p, --protocol:     Protocol to communicate. Defaults to OFLOW if -s is not set, otherwise ITM unless" EOL \
-                    "                        explicitly set to TPIU to decode TPIU frames on channel set by -t" EOL );
+    genericsPrintf( "    -p, --protocol:   Protocol to communicate. Defaults to OFLOW if -s is not set, otherwise ITM" EOL );
     genericsPrintf( "    -s, --server:     <Server>:<Port> to use, default %s:%d" EOL, options.server, options.port );
-    genericsPrintf( "    -t, --tag:          <stream>: Which TPIU stream or OFLOW tag to use (normally 1)" EOL );
+    genericsPrintf( "    -t, --tag:        <stream>: Which Orbflow tag to use (normally 1)" EOL );
     genericsPrintf( "    -v, --verbose:    <level> Verbose mode 0(errors)..3(debug)" EOL );
     genericsPrintf( "    -V, --version:    Print version and exit" EOL );
     genericsPrintf( "    -z, --zbind:      <url>: ZeroMQ bind URL, default %s" EOL, options.bindUrl );
@@ -565,7 +509,7 @@ static struct option _longOptions[] =
     {"no-color", no_argument, NULL, 'M'},
     {"protocol", required_argument, NULL, 'p'},
     {"server", required_argument, NULL, 's'},
-    {"tpiu", required_argument, NULL, 't'},
+    {"tag", required_argument, NULL, 't'},
     {"verbose", required_argument, NULL, 'v'},
     {"version", no_argument, NULL, 'V'},
     {NULL, no_argument, NULL, 0}
@@ -792,7 +736,7 @@ bool _processOptions( int argc, char *argv[] )
         options.protocol = PROT_ITM;
     }
 
-    if ( ( options.protocol == PROT_TPIU ) && !portExplicit )
+    if ( ( options.protocol == PROT_ITM ) && !portExplicit )
     {
         options.port = NWCLIENT_SERVER_PORT;
     }
@@ -855,10 +799,6 @@ bool _processOptions( int argc, char *argv[] )
             genericsReport( V_INFO, "Decoding ITM" EOL );
             break;
 
-        case  PROT_TPIU:
-            genericsReport( V_INFO, "Using TPIU with ITM in stream %d" EOL, options.tag );
-            break;
-
         default:
             genericsReport( V_INFO, "Decoding unknown" EOL );
             break;
@@ -887,7 +827,7 @@ static void _OFLOWpacketRxed ( struct OFLOWFrame *p, void *param )
 {
     if ( !p->good )
     {
-        genericsReport( V_WARN, "Bad packet received" EOL );
+        genericsReport( V_INFO, "Bad packet received" EOL );
     }
     else
     {
@@ -937,7 +877,7 @@ static void _feedStream( struct Stream *stream )
 
             while ( receivedSize-- )
             {
-                _protocolPump( *c++ );
+                _itmPumpProcess( *c++ );
             }
 
             fflush( stdout );
@@ -971,9 +911,7 @@ int main( int argc, char *argv[] )
     _r.zmqSocket = zmq_socket( _r.zmqContext, ZMQ_PUB );
     zmq_bind( _r.zmqSocket, "tcp://*:3442" ); //options.bindUrl );
 
-    /* Reset the TPIU handler before we start */
-    TPIUDecoderInit( &_r.t );
-    ITMDecoderInit( &_r.i, options.forceITMSync );
+    /* Reset the OFLOW handler before we start */
     OFLOWInit( &_r.c );
 
     /* This ensures the signal handler gets called */

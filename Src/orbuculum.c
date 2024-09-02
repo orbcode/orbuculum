@@ -72,7 +72,7 @@
 
 /* Number of potential tags */
 #define NUM_TAGS (256)
-#define LAST_TAG_SEEN_TIME_NS (2L*1000*1000*1000)
+#define LAST_TAG_SEEN_TIME_NS (500L*1000L*1000L)
 
 /* Record of transferred data per tag */
 struct TagDataCount
@@ -163,7 +163,7 @@ struct RunTime
 
 struct Options _options =
 {
-    .listenPort   = OTCLIENT_SERVER_PORT,
+    .listenPort   = OFCLIENT_SERVER_PORT,
     .nwserverHost = NWSERVER_HOST,
     .channelList  = "1",
 };
@@ -910,13 +910,13 @@ static void _OFLOWpacketRxed( struct OFLOWFrame *p, void *param )
 
     if ( !p->good )
     {
-        genericsReport( V_WARN, "Bad packet received" EOL );
+        genericsReport( V_INFO, "Bad packet received" EOL );
     }
     else if ( ( r->options->useTPIU ) && ( h->channel == DEFAULT_ITM_STREAM ) )
     {
         /* Deal with the bizzare combination of OFLOW and TPIU in channel 1 */
-        /* Accounting will be done in TPIUPump2 */
-        TPIUPump2( &r->t, p->d, p->len, _TPIUpacketRxed, r );
+        /* Accounting will be done in TPIUPump */
+        TPIUPump( &r->t, p->d, p->len, _TPIUpacketRxed, r );
     }
     else
     {
@@ -967,7 +967,7 @@ static void _processNonOFLOWBlock( struct RunTime *r, ssize_t fillLevel, uint8_t
         if ( r-> options->useTPIU )
         {
             /* Strip the TPIU framing from this input */
-            TPIUPump2( &r->t, buffer, fillLevel, _TPIUpacketRxed, r );
+            TPIUPump( &r->t, buffer, fillLevel, _TPIUpacketRxed, r );
         }
         else
         {

@@ -94,7 +94,7 @@ void TPIUDecoderForceSync( struct TPIUDecoder *t, uint8_t offset )
     gettimeofday( &t->lastPacket, NULL );
 }
 // ====================================================================================================
-bool TPIUGetPacket( struct TPIUDecoder *t, struct TPIUPacket *p )
+bool _getPacket( struct TPIUDecoder *t, struct TPIUPacket *p )
 
 /* Copy received packet into transfer buffer, and reset receiver */
 
@@ -179,117 +179,9 @@ void _decodeCommsStats( struct TPIUDecoder *t )
     t->commsStats.totalFrames  = ( t->rxedPacket[11] << 24 ) | ( t->rxedPacket[10] << 16 ) | ( t->rxedPacket[9] << 8 ) | ( t->rxedPacket[8] );
 }
 // ====================================================================================================
-enum TPIUPumpEvent TPIUPump( struct TPIUDecoder *t, uint8_t d )
-
-/* LEGACY:: Pump next byte into the protocol decoder */
-
-{
-    struct timeval nowTime, diffTime;
-
-    t->syncMonitor = ( t->syncMonitor << 8 ) | d;
-
-    if ( t->syncMonitor == SYNCPATTERN )
-    {
-
-        enum TPIUPumpEvent r;
-
-        if ( t->state != TPIU_UNSYNCED )
-        {
-            r = TPIU_EV_SYNCED;
-        }
-        else
-        {
-            r = TPIU_EV_NEWSYNC;
-        }
-
-        /* Deal with the special state that these are communication stats from the link */
-        /* ...it is still a reset though!                                               */
-        if ( ( t->byteCount == 14 ) && ( t->rxedPacket[0] == STAT_SYNC_BYTE ) )
-        {
-            _decodeCommsStats( t );
-        }
-
-        t->state = TPIU_RXING;
-        t->stats.syncCount++;
-        t->byteCount = 0;
-        t->got_lowbits = false;
-        genericsReport( V_DEBUG, "!!!! " EOL );
-
-        /* Consider this a valid timestamp */
-        gettimeofday( &t->lastPacket, NULL );
-
-        return r;
-    }
-
-    switch ( t->state )
-    {
-        // -----------------------------------
-        case TPIU_UNSYNCED:
-            return TPIU_EV_NONE;
-
-        // -----------------------------------
-        case TPIU_RXING:
-
-            // We collect in sets of 16 bits, in order to filter halfsyncs (0x7fff)
-            if ( !t->got_lowbits )
-            {
-                t->got_lowbits = true;
-                t->rxedPacket[t->byteCount] = d;
-                return TPIU_EV_NONE;
-            }
-
-            t->got_lowbits = false;
-
-            if ( ( d == HALFSYNC_HIGH ) && ( t->rxedPacket[t->byteCount] == HALFSYNC_LOW ) )
-            {
-                // A halfsync, waste of space, to be ignored
-                t->stats.halfSyncCount++;
-                return TPIU_EV_NONE;
-            }
-
-            // Pre-increment for the low byte we already got, post increment for this one
-            genericsReport( V_DEBUG, "[%02x %02x] ", t->rxedPacket[t->byteCount], d );
-            t->byteCount++;
-            t->rxedPacket[t->byteCount++] = d;
-
-            if ( t->byteCount != TPIU_PACKET_LEN )
-            {
-                return TPIU_EV_RXING;
-            }
-
-            /* Check if this packet arrived a sensible time since the last one */
-            gettimeofday( &nowTime, NULL );
-            timersub( &nowTime, &t->lastPacket, &diffTime );
-            memcpy( &t->lastPacket, &nowTime, sizeof( struct timeval ) );
-            t->byteCount = 0;
-
-            /* If it was less than the timeout period then it's valid */
-            if ( ( diffTime.tv_sec == 0 ) && ( diffTime.tv_usec < TPIU_TIMEOUT_US ) )
-            {
-                t->stats.packets++;
-                genericsReport( V_DEBUG, EOL );
-                return TPIU_EV_RXEDPACKET;
-            }
-            else
-            {
-                genericsReport( V_WARN, ">>>>>>>>> PACKET INTERVAL TOO LONG <<<<<<<<<<<<<<" EOL );
-                t->state = TPIU_UNSYNCED;
-                t->stats.lostSync++;
-                return TPIU_EV_UNSYNCED;
-            }
-
-        // -----------------------------------
-        default:
-            genericsReport( V_WARN, "In illegal state %d" EOL, t->state );
-            t->stats.error++;
-            return TPIU_EV_ERROR;
-            // -----------------------------------
-    }
-}
-// ====================================================================================================
-void TPIUPump2( struct TPIUDecoder *t, uint8_t *frame, int len,
-                void ( *packetRxed )( enum TPIUPumpEvent e, struct TPIUPacket *p, void *param ),
-                void *param )
+void TPIUPump( struct TPIUDecoder *t, uint8_t *frame, int len,
+               void ( *packetRxed )( enum TPIUPumpEvent e, struct TPIUPacket *p, void *param ),
+               void *param )
 
 
 /* Assemble this packet into TPIU frames and call them back */
@@ -387,7 +279,7 @@ void TPIUPump2( struct TPIUDecoder *t, uint8_t *frame, int len,
             t->byteCount = 0;
             genericsReport( V_DEBUG, EOL );
 
-            if ( TPIUGetPacket( t, &_packet ) )
+            if ( _getPacket( t, &_packet ) )
             {
                 packetRxed( TPIU_EV_RXEDPACKET, &_packet, param );
             }

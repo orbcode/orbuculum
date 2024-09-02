@@ -34,19 +34,19 @@
 #define DEFAULT_TS_TRIGGER '\n'           /* Default trigger character for timestamp output */
 
 #define MSG_REORDER_BUFLEN  (10)          /* Maximum number of samples to re-order for timekeeping */
-#define ONE_SEC_IN_USEC     (1000000)     /* Used for time conversions...usec in one sec */
+#define ONE_SEC_IN_USEC     (1000000L)    /* Used for time conversions...usec in one sec */
 
 /* Formats for timestamping */
-#define REL_FORMAT            "%6" PRIu64 ".%01" PRIu64 "|"
-#define REL_FORMAT_INIT       "   Initial|"
-#define DEL_FORMAT            "%3" PRIu64 ".%03" PRIu64 "|"
-#define DEL_FORMAT_CTD           "      +|"
-#define DEL_FORMAT_INIT          "Initial|"
+#define REL_FORMAT            C_TSTAMP "%6" PRIu64 ".%03" PRIu64 "|" C_RESET
+#define REL_FORMAT_INIT       C_TSTAMP " R-Initial|" C_RESET
+#define DEL_FORMAT            C_TSTAMP "%5" PRIu64 ".%03" PRIu64 "|" C_RESET
+#define DEL_FORMAT_CTD        C_TSTAMP "      +|" C_RESET
+#define DEL_FORMAT_INIT       C_TSTAMP "D-Initial|" C_RESET
 #define ABS_FORMAT_TM   "%d/%b/%y %H:%M:%S"
-#define ABS_FORMAT              "%s.%03" PRIu64" |"
-#define STAMP_FORMAT          "%12" PRIu64 "|"
-#define STAMP_FORMAT_MS        "%8" PRIu64 ".%03" PRIu64 "_%03" PRIu64 "|"
-#define STAMP_FORMAT_MS_DELTA  "%5" PRIu64 ".%03" PRIu64 "_%03" PRIu64 "|"
+#define ABS_FORMAT            C_TSTAMP "%s.%03" PRIu64"|" C_RESET
+#define STAMP_FORMAT          C_TSTAMP "%12" PRIu64 "|" C_RESET
+#define STAMP_FORMAT_MS       C_TSTAMP "%8" PRIu64 ".%03" PRIu64 "_%03" PRIu64 "|" C_RESET
+#define STAMP_FORMAT_MS_DELTA C_TSTAMP "%5" PRIu64 ".%03" PRIu64 "_%03" PRIu64 "|" C_RESET
 
 enum TSType { TSNone, TSAbsolute, TSRelative, TSDelta, TSStamp, TSStampDelta, TSNumTypes };
 
@@ -66,7 +66,7 @@ struct
     enum TSType tsType;
     char *tsLineFormat;
     char tsTrigger;
-
+    bool mono;                               /* Supress colour in output */
 
     /* Sink information */
     char *presFormat[NUM_CHANNELS + 1];      /* Format string for each channel */
@@ -83,7 +83,7 @@ struct
 {
     .forceITMSync = true,
     .tag = 1,
-    .port = OTCLIENT_SERVER_PORT,
+    .port = OFCLIENT_SERVER_PORT,
     .server = "localhost",
     .tsTrigger = DEFAULT_TS_TRIGGER
 };
@@ -112,7 +112,7 @@ struct
 #define DWT_TO_US (100000L)
 
 // ====================================================================================================
-int64_t _timestamp( void )
+uint64_t _timestamp( void )
 
 {
     struct timeval te;
@@ -152,7 +152,7 @@ static void _printTimestamp( char *strstore )
             }
             else
             {
-                res = _r.oldte - _timestamp();
+                res = _timestamp() - _r.oldte;
                 sprintf( strstore, REL_FORMAT, res / ONE_SEC_IN_USEC, ( res / ( ONE_SEC_IN_USEC / 1000 ) ) % 1000 );
             }
 
@@ -246,7 +246,7 @@ static void _outputText( char *p )
         if ( !_r.inLine )
         {
             _printTimestamp( opConstruct );
-            fputs( opConstruct, stdout );
+            genericsPrintf( "%s", opConstruct );
             _r.inLine = true;
         }
 
@@ -256,21 +256,21 @@ static void _outputText( char *p )
         if ( q )
         {
             *q = 0;
-            fprintf( stdout, "%s" EOL, p );
+            genericsPrintf( "%s" EOL, p );
             /* Once we've output these data then we're not in a line any more */
             _r.inLine = false;
 
             /* ...and if there were any DWT messages to print we'd better output those */
             if ( _r.dwtText[0] )
             {
-                fprintf( stdout, "%s" EOL, _r.dwtText );
+                genericsPrintf( "%s" EOL, _r.dwtText );
                 _r.dwtText[0] = 0;
             }
         }
         else
         {
             /* Just output the whole of the data we've got, then we're done */
-            fputs( p, stdout );
+            genericsPrintf( "%s", p );
             break;
         }
 
@@ -296,7 +296,7 @@ void _expex( const char *fmt, ... )
     /* See if we exceeded max length...if so then output what we have and start a fresh buffer */
     if ( MAX_STRING_LENGTH - strlen( _r.dwtText ) < 100 )
     {
-        fputs( _r.dwtText, stdout );
+        genericsPrintf( "%s", _r.dwtText );
         _r.dwtText[0] = 0;
     }
 
@@ -310,7 +310,7 @@ void _expex( const char *fmt, ... )
 
     if ( !_r.inLine )
     {
-        fputs( _r.dwtText, stdout );
+        genericsPrintf( "%s", _r.dwtText );
         _r.dwtText[0] = 0;
     }
 }
@@ -549,24 +549,24 @@ static void _itmPumpProcess( char c )
 static void _printHelp( const char *const progName )
 
 {
-    fprintf( stdout, "Usage: %s [options]" EOL, progName );
-    fprintf( stdout, "    -c, --channel:      <Number>,<Format> of channel to add into output stream (repeat per channel)" EOL );
-    fprintf( stdout, "    -C, --cpufreq:      <Frequency in KHz> (Scaled) speed of the CPU" EOL
-             "                        generally /1, /4, /16 or /64 of the real CPU speed," EOL );
-    fprintf( stdout, "    -E, --eof:          Terminate when the file/socket ends/is closed, or wait for more/reconnect" EOL );
-    fprintf( stdout, "    -f, --input-file:   <filename> Take input from specified file" EOL );
-    fprintf( stdout, "    -g, --trigger:      <char> to use to trigger timestamp (default is newline)" EOL );
-    fprintf( stdout, "    -h, --help:         This help" EOL );
-    fprintf( stdout, "    -n, --itm-sync:     Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
-    fprintf( stdout, "    -p, --protocol:     Protocol to communicate. Defaults to OFLOW if -s is not set, otherwise ITM" EOL );
-    fprintf( stdout, "    -s, --server:       <Server>:<Port> to use" EOL );
-    fprintf( stdout, "    -t, --tag:          <stream>: Which orbflow tag to use (normally 1)" EOL );
-    fprintf( stdout, "    -T, --timestamp:    <a|r|d|s|t>: Add absolute, relative (to session start)," EOL
-             "                        delta, system timestamp or system timestamp delta to output. Note" EOL
-             "                        a,r & d are host dependent and you may need to run orbuculum with -H." EOL );
-    fprintf( stdout, "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
-    fprintf( stdout, "    -V, --version:      Print version and exit" EOL );
-    fprintf( stdout, "    -x, --exceptions:   Include exception information in output, in time order" EOL );
+    genericsPrintf( "Usage: %s [options]" EOL, progName );
+    genericsPrintf( "    -c, --channel:      <Number>,<Format> of channel to add into output stream (repeat per channel)" EOL );
+    genericsPrintf( "    -C, --cpufreq:      <Frequency in KHz> (Scaled) speed of the CPU" EOL
+                    "                        generally /1, /4, /16 or /64 of the real CPU speed," EOL );
+    genericsPrintf( "    -E, --eof:          Terminate when the file/socket ends/is closed, or wait for more/reconnect" EOL );
+    genericsPrintf( "    -f, --input-file:   <filename> Take input from specified file" EOL );
+    genericsPrintf( "    -g, --trigger:      <char> to use to trigger timestamp (default is newline)" EOL );
+    genericsPrintf( "    -h, --help:         This help" EOL );
+    genericsPrintf( "    -n, --itm-sync:     Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
+    genericsPrintf( "    -p, --protocol:     Protocol to communicate. Defaults to OFLOW if -s is not set, otherwise ITM" EOL );
+    genericsPrintf( "    -s, --server:       <Server>:<Port> to use" EOL );
+    genericsPrintf( "    -t, --tag:          <stream>: Which orbflow tag to use (normally 1)" EOL );
+    genericsPrintf( "    -T, --timestamp:    <a|r|d|s|t>: Add absolute, relative (to session start)," EOL
+                    "                        delta, system timestamp or system timestamp delta to output. Note" EOL
+                    "                        the accuracy of a,r & d are host dependent." EOL );
+    genericsPrintf( "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
+    genericsPrintf( "    -V, --version:      Print version and exit" EOL );
+    genericsPrintf( "    -x, --exceptions:   Include exception information in output, in time order" EOL );
 }
 // ====================================================================================================
 static void _printVersion( void )
@@ -584,6 +584,8 @@ static struct option _longOptions[] =
     {"help", no_argument, NULL, 'h'},
     {"trigger", required_argument, NULL, 'g' },
     {"itm-sync", no_argument, NULL, 'n'},
+    {"no-colour", no_argument, NULL, 'M'},
+    {"no-color", no_argument, NULL, 'M'},
     {"protocol", required_argument, NULL, 'p'},
     {"server", required_argument, NULL, 's'},
     {"tag", required_argument, NULL, 't'},
@@ -606,7 +608,7 @@ bool _processOptions( int argc, char *argv[] )
 
 #define DELIMITER ','
 
-    while ( ( c = getopt_long ( argc, argv, "c:C:Ef:g:hVnp:s:t:T:v:x", _longOptions, &optionIndex ) ) != -1 )
+    while ( ( c = getopt_long ( argc, argv, "c:C:Ef:g:hVnMp:s:t:T:v:x", _longOptions, &optionIndex ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -649,6 +651,11 @@ bool _processOptions( int argc, char *argv[] )
             // ------------------------------------
             case 'n':
                 options.forceITMSync = false;
+                break;
+
+            // ------------------------------------
+            case 'M':
+                options.mono = true;
                 break;
 
             // ------------------------------------
@@ -920,7 +927,7 @@ static void _OFLOWpacketRxed ( struct OFLOWFrame *p, void *param )
 {
     if ( !p->good )
     {
-        genericsReport( V_WARN, "Bad packet received" EOL );
+        genericsReport( V_INFO, "Bad packet received" EOL );
     }
     else
     {
@@ -982,8 +989,7 @@ static void _feedStream( struct Stream *stream )
             /* Check if an exception report timed out */
             if ( ( _r.inLine ) && _r.dwtText[0] && ( _timestamp() - _r.dwtte > DWT_TO_US ) )
             {
-                fputs( EOL, stdout );
-                fputs( _r.dwtText, stdout );
+                genericsPrintf( EOL "%s", _r.dwtText );
                 _r.dwtText[0] = 0;
                 _r.inLine = false;
             }
@@ -1010,6 +1016,8 @@ int main( int argc, char *argv[] )
     {
         exit( -1 );
     }
+
+    genericsScreenHandling( !options.mono );
 
     /* Reset the handlers before we start */
     ITMDecoderInit( &_r.i, options.forceITMSync );
@@ -1052,7 +1060,7 @@ int main( int argc, char *argv[] )
                 break;
             }
 
-            /* Checking every 100ms for a connection is quite often enough */
+            /* Checking every 10ms for a connection is quite often enough */
             usleep( 10000 );
         }
 

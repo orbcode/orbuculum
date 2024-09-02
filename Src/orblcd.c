@@ -23,7 +23,6 @@
 
 #include "git_version_info.h"
 #include "generics.h"
-#include "tpiuDecoder.h"
 #include "itmDecoder.h"
 #include "msgDecoder.h"
 #include "oflow.h"
@@ -66,8 +65,8 @@ struct TApp
 };
 /************** APPLICATION SPECIFIC ENDS ***************************************************************/
 
-enum Prot { PROT_OFLOW, PROT_ITM, PROT_TPIU, PROT_UNKNOWN };
-const char *protString[] = {"OFLOW", "ITM", "TPIU", NULL};
+enum Prot { PROT_OFLOW, PROT_ITM, PROT_UNKNOWN };
+const char *protString[] = {"OFLOW", "ITM", NULL};
 
 /* Record for options, either defaults or from command line */
 struct Options
@@ -80,18 +79,16 @@ struct Options
     bool fileTerminate;                                  /* Terminate when file read isn't successful */
 
     /* Demux information */
-    uint32_t tag;                                        /* Which TPIU or OFLOW stream are we decoding? */
+    uint32_t tag;                                        /* Which OFLOW stream are we decoding? */
     bool forceITMSync;                                   /* Do we need ITM syncs? */
 
-} _options = {.forceITMSync = true, .tag = 1, .port = OTCLIENT_SERVER_PORT, .server = "localhost"};
+} _options = {.forceITMSync = true, .tag = 1, .port = OFCLIENT_SERVER_PORT, .server = "localhost"};
 
 struct RunTime
 {
     /* The decoders and the packets from them */
     struct ITMDecoder  i;
     struct ITMPacket   h;
-    struct TPIUDecoder t;
-    struct TPIUPacket  p;
     struct OFLOW        c;
 
     bool      ending;                                    /* Flag indicating app is terminating */
@@ -325,41 +322,6 @@ void _itmPumpProcess( char c, struct RunTime *r )
 }
 // ====================================================================================================
 
-static void _TPIUpacketRxed( enum TPIUPumpEvent e, struct TPIUPacket *p, void *param )
-
-/* Callback for when a TPIU frame has been assembled */
-
-{
-    struct RunTime *r = ( struct RunTime * )param;
-
-    switch ( e )
-    {
-        case TPIU_EV_RXEDPACKET:
-            for ( uint32_t g = 0; g < p->len; g++ )
-            {
-                if ( r->options->tag == p->packet[g].s )
-                {
-                    _itmPumpProcess( p->packet[g].d, r );
-                }
-            }
-
-            break;
-
-        case TPIU_EV_ERROR:
-            genericsReport( V_WARN, "****ERROR****" EOL );
-            break;
-
-        case TPIU_EV_NEWSYNC:
-        case TPIU_EV_SYNCED:
-        case TPIU_EV_RXING:
-        case TPIU_EV_NONE:
-        case TPIU_EV_UNSYNCED:
-        default:
-            break;
-    }
-}
-// ====================================================================================================
-
 static struct Stream *_tryOpenStream( struct RunTime *r )
 {
     if ( r->options->file != NULL )
@@ -380,7 +342,7 @@ static void _OFLOWpacketRxed ( struct OFLOWFrame *p, void *param )
 
     if ( !p->good )
     {
-        genericsReport( V_WARN, "Bad packet received" EOL );
+        genericsReport( V_INFO, "Bad packet received" EOL );
     }
     else
     {
@@ -444,16 +406,9 @@ static bool _feedStream( struct Stream *stream, struct RunTime *r )
         {
             unsigned char *c = cbw;
 
-            if ( PROT_TPIU == _r.options->tag )
+            while ( receivedSize-- )
             {
-                TPIUPump2( &r->t, cbw, receivedSize, _TPIUpacketRxed, r );
-            }
-            else
-            {
-                while ( receivedSize-- )
-                {
-                    _itmPumpProcess( *c++, r );
-                }
+                _itmPumpProcess( *c++, r );
             }
         }
     }
@@ -471,12 +426,11 @@ void _printHelp( const char *const progName )
     genericsPrintf( "    -c, --channel:      <Number> of first channel in pair containing display data" EOL );
     genericsPrintf( "    -f, --input-file:   <filename> Take input from specified file" EOL );
     genericsPrintf( "    -h, --help:         This help" EOL );
-    genericsPrintf( "    -n, --itm-sync:     Enforce sync requirement for ITM (i.e. ITM needsd to issue syncs)" EOL );
-    genericsPrintf( "    -p, --protocol:     Protocol to communicate. Defaults to OFLOW if -s is not set, otherwise ITM unless" EOL \
-                    "                        explicitly set to TPIU to decode TPIU frames on channel set by -t" EOL );
+    genericsPrintf( "    -n, --itm-sync:     Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
+    genericsPrintf( "    -p, --protocol:     Protocol to communicate. Defaults to OFLOW if -s is not set, otherwise ITM" EOL );
     genericsPrintf( "    -s, --server:       <Server>:<Port> to use" EOL );
     genericsPrintf( "    -S, --sbcolour:     <Colour> to be used for single bit renders, ignored for other bit depths" EOL );
-    genericsPrintf( "    -t, --tag:          <stream>: Which TPIU stream or OFLOW tag to use (normally 1)" EOL );
+    genericsPrintf( "    -t, --tag:          <stream>: Which OFLOW tag to use (normally 1)" EOL );
     genericsPrintf( "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
     genericsPrintf( "    -V, --version:      Print version and exit" EOL );
     genericsPrintf( "    -w, --window:       <string> Set title for output window" EOL );
@@ -501,7 +455,7 @@ static struct option _longOptions[] =
     {"server", required_argument, NULL, 's'},
     {"sbcolour", required_argument, NULL, 'S'},
     {"sbcolor", required_argument, NULL, 'S'},
-    {"tpiu", required_argument, NULL, 't'},
+    {"tag", required_argument, NULL, 't'},
     {"verbose", required_argument, NULL, 'v'},
     {"version", no_argument, NULL, 'V'},
     {"window", required_argument, NULL, 'w'},
@@ -664,7 +618,7 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
         r->options->protocol = PROT_ITM;
     }
 
-    if ( ( r->options->protocol == PROT_TPIU ) && !portExplicit )
+    if ( ( r->options->protocol == PROT_ITM ) && !portExplicit )
     {
         r->options->port = NWCLIENT_SERVER_PORT;
     }
@@ -709,10 +663,6 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
             genericsReport( V_INFO, "Decoding ITM" EOL );
             break;
 
-        case  PROT_TPIU:
-            genericsReport( V_INFO, "Using TPIU with ITM in stream %d" EOL, r->options->tag );
-            break;
-
         default:
             genericsReport( V_INFO, "Decoding unknown" EOL );
             break;
@@ -745,8 +695,7 @@ int main( int argc, char *argv[] )
         exit( -1 );
     }
 
-    /* Reset the TPIU handler before we start */
-    TPIUDecoderInit( &_r.t );
+    /* Reset the handlers before we start */
     ITMDecoderInit( &_r.i, _r.options->forceITMSync );
     OFLOWInit( &_r.c );
 

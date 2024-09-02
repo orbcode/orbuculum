@@ -31,8 +31,8 @@
 #define DEFAULT_DURATION_MS (1000)       /* Default time to sample, in mS */
 #define HANDLE_MASK         (0xFFFFFF)   /* cachegrind cannot cope with large file handle numbers */
 
-enum Prot { PROT_OFLOW, PROT_ITM, PROT_TPIU, PROT_UNKNOWN };
-const char *protString[] = {"OFLOW", "ITM", "TPIU", NULL};
+enum Prot { PROT_OFLOW, PROT_ETM, PROT_UNKNOWN };
+const char *protString[] = {"OFLOW", "ETM", NULL};
 
 /* How many transfer buffers from the source to allocate */
 #define NUM_RAW_BLOCKS (1000)
@@ -65,8 +65,8 @@ struct Options                           /* Record for options, either defaults 
     int  sampleDuration;                 /* How long we are going to sample for */
     bool mono;                           /* Supress colour in output */
     bool noaltAddr;                      /* Dont use alternate addressing */
-    int  tag;                            /*  Which TPIU or OFLOW stream are we decoding? */
-    enum TRACEprotocol tProtocol;         /* Encoding protocol to use */
+    int  tag;                            /*  Which OFLOW stream are we decoding? */
+    enum TRACEprotocol tProtocol;        /* Encoding protocol to use */
 
     int  port;                           /* Source information for where to connect to */
     char *server;
@@ -77,7 +77,7 @@ struct Options                           /* Record for options, either defaults 
 {
     .demangle       = true,
     .sampleDuration = DEFAULT_DURATION_MS,
-    .port           = OTCLIENT_SERVER_PORT,
+    .port           = OFCLIENT_SERVER_PORT,
     .tProtocol      = TRACE_PROT_ETM35,
     .tag            = 2,
     .server         = "localhost"
@@ -469,15 +469,15 @@ static void _printHelp( const char *const progName )
     genericsPrintf( "    -M, --no-colour:    Supress colour in output" EOL );
     genericsPrintf( "    -O, --objdump-opts: <options> Options to pass directly to objdump" EOL );
     genericsPrintf( "    -P, --trace-proto:  {ETM35|MTB} trace protocol to use, default is ETM35" EOL );
-    genericsPrintf( "    -p, --protocol:     Protocol to communicate. Defaults to OFLOW if -s is not set, otherwise TPIU" EOL );
+    genericsPrintf( "    -p, --protocol:     Protocol to communicate. Defaults to OFLOW if -s is not set, otherwise raw ETM" EOL );
     genericsPrintf( "    -s, --server:       <Server>:<Port> to use" EOL );
-    genericsPrintf( "    -t, --tag:          <stream>: Which TPIU stream or OFLOW tag to use (normally 2)" EOL );
+    genericsPrintf( "    -t, --tag:          <stream>: Which OFLOW tag to use (normally 2)" EOL );
     genericsPrintf( "    -T, --all-truncate: truncate -d material off all references (i.e. make output relative)" EOL );
     genericsPrintf( "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
     genericsPrintf( "    -V, --version:      Print version and exit" EOL );
     genericsPrintf( "    -y, --graph-file:   <Filename> dotty filename for structured callgraph output" EOL );
     genericsPrintf( "    -z, --cache-file:   <Filename> profile filename for kcachegrind output" EOL );
-    genericsPrintf( EOL "(Will connect one port higher than that set in -s when TPIU is not used)" EOL );
+    genericsPrintf( EOL "(Will connect one port higher than that set in -s when Orbflow is not used)" EOL );
 }
 // ====================================================================================================
 void _printVersion( void )
@@ -691,10 +691,10 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
                 // ------------------------------------
         }
 
-    /* If we set an explicit server and port and didn't set a protocol chances are we want TPIU, not OFLOW */
+    /* If we set an explicit server and port and didn't set a protocol chances are we want ETM, not OFLOW */
     if ( serverExplicit && !protExplicit )
     {
-        r->options->protocol = PROT_TPIU;
+        r->options->protocol = PROT_ETM;
     }
 
     if ( !r->options->elffile )
@@ -719,7 +719,7 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
     genericsReport( V_INFO, "Elf File        : %s (%s Names)" EOL, r->options->elffile, r->options->truncateDeleteMaterial ? "Truncate" : "Don't Truncate" );
     genericsReport( V_INFO, "Objdump options : %s" EOL, r->options->odoptions ? r->options->odoptions : "None" );
     genericsReport( V_INFO, "Protocol        : %s" EOL, TRACEDecodeGetProtocolName( r->options->tProtocol ) );
-    genericsReport( V_INFO, "Tag (TPIU/OFLOW) : %d" EOL, r->options->tag );
+    genericsReport( V_INFO, "Orbflow Tag     : %d" EOL, r->options->tag );
     genericsReport( V_INFO, "DOT file        : %s" EOL, r->options->dotfile ? r->options->dotfile : "None" );
     genericsReport( V_INFO, "Sample Duration : %d mS" EOL, r->options->sampleDuration );
 
@@ -729,12 +729,8 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
             genericsReport( V_INFO, "Decoding OFLOW (Orbuculum) with ITM in stream %d" EOL, r->options->tag );
             break;
 
-        case PROT_ITM:
-            genericsReport( V_INFO, "Decoding ITM. Not sensible for this application" EOL );
-            return false;
-
-        case  PROT_TPIU:
-            genericsReport( V_INFO, "Using TPIU with ITM in stream %d" EOL, r->options->tag );
+        case  PROT_ETM:
+            genericsReport( V_INFO, "Using raw ETM" EOL );
             break;
 
         default:
@@ -771,7 +767,7 @@ static void _OFLOWpacketRxed ( struct OFLOWFrame *p, void *param )
 {
     if ( !p->good )
     {
-        genericsReport( V_WARN, "Bad packet received" EOL );
+        genericsReport( V_INFO, "Bad packet received" EOL );
     }
     else
     {

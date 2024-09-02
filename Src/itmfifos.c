@@ -498,7 +498,7 @@ static void _OFLOWpacketRxed ( struct OFLOWFrame *p, void *param )
 
     if ( !p->good )
     {
-        genericsReport( V_WARN, "Bad packet received" EOL );
+        genericsReport( V_INFO, "Bad packet received" EOL );
     }
     else
     {

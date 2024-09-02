@@ -84,24 +84,32 @@ static void _pumpcb( struct Frame *p, void *param )
     /* Callback function when a COBS packet is complete */
     struct OFLOW *t = ( struct OFLOW * )param;
 
-    t->f.len  = p->len - 2;       /* OFLOW frames have the first element representing the tag and last element the checksum */
-    t->f.tag  = p->d[0];          /* First byte of an OFLOW frame is the tag */
-    t->f.sum  = p->d[p->len - 1]; /* Last byte of an OFLOW frame is the sum */
-    t->f.d    = &p->d[1];         /* This is the rest of the data */
-
-    /* Calculate received packet sum and insert good status into packet */
-    uint8_t sum  = t->f.tag;
-
-    for ( int i = 0; i < t->f.len; i++ )
+    if ( p->len < 2 )
     {
-        sum += t->f.d[i];
+        t->perror++;
     }
+    else
+    {
+        t->f.len  = p->len - 2;       /* OFLOW frames have the first element representing the tag and last element the checksum */
+        t->f.tag  = p->d[0];          /* First byte of an OFLOW frame is the tag */
+        t->f.sum  = p->d[p->len - 1]; /* Last byte of an OFLOW frame is the sum */
+        t->f.d    = &p->d[1];         /* This is the rest of the data */
 
-    sum += t->f.sum;
-    t->f.good = ( sum == 0 );
+        /* Calculate received packet sum and insert good status into packet */
+        uint8_t sum  = t->f.tag;
 
-    /* Timestamp was already set for this cluster */
-    ( t->cb )( &t->f, t->param );
+        for ( int i = 0; i < t->f.len; i++ )
+        {
+            sum += t->f.d[i];
+        }
+
+        sum += t->f.sum;
+        t->f.good = ( sum == 0 );
+        t->perror += !( t->f.good );
+
+        /* Timestamp was already set for this cluster */
+        ( t->cb )( &t->f, t->param );
+    }
 }
 
 void OFLOWPump( struct OFLOW *t, const uint8_t *incoming, int len,

@@ -23,7 +23,6 @@
 #include "generics.h"
 #include "nw.h"
 #include "traceDecoder.h"
-#include "tpiuDecoder.h"
 #include "oflow.h"
 #include "loadelf.h"
 #include "sio.h"
@@ -33,8 +32,8 @@
 
 typedef unsigned long int symbolMemaddr;
 
-enum Prot { PROT_OFLOW, PROT_ITM, PROT_TPIU, PROT_UNKNOWN };
-const char *protString[] = {"OFLOW", "ITM", "TPIU", NULL};
+enum Prot { PROT_OFLOW, PROT_ETM, PROT_UNKNOWN };
+const char *protString[] = {"OFLOW", "ETM", NULL};
 
 #define SCRATCH_STRING_LEN  (65535)     /* Max length for a string under construction */
 //#define DUMP_BLOCK
@@ -58,8 +57,7 @@ struct Options
     char *odoptions;                    /* Options to pass directly to objdump */
 
     int buflen;                         /* Length of post-mortem buffer, in bytes */
-    int channel;                        /* When TPIU is in use, which channel to decode? */
-    int tag;                            /* which TPIU or OFLOW stream are we decoding? */
+    int tag;                            /* which OFLOW stream are we decoding? */
     int port;                           /* Source information */
     char *server;
     enum Prot commProt;
@@ -71,7 +69,7 @@ struct Options
     bool withDebugText;                 /* Include debug text (hidden in) output...screws line numbering a bit */
 } _options =
 {
-    .port      = OTCLIENT_SERVER_PORT,
+    .port      = OFCLIENT_SERVER_PORT,
     .server    = REMOTE_SERVER,
     .demangle  = true,
     .traceProt = TRACE_PROT_ETM35,
@@ -101,7 +99,6 @@ struct opConstruct
 struct RunTime
 {
     struct TRACEDecoder i;
-    struct TPIUDecoder t;
     struct OFLOW c;
     const char *progName;               /* Name by which this program was called */
 
@@ -184,7 +181,7 @@ static void _printHelp( const char *const progName )
     genericsPrintf( "    -h, --help:         This help" EOL );
     genericsPrintf( "    -M, --no-colour:    Supress colour in output" EOL );
     genericsPrintf( "    -O, --objdump-opts: <options> Options to pass directly to objdump" EOL );
-    genericsPrintf( "    -p, --protocol:     Protocol to communicate. Defaults to OFLOW if -s is not set, otherwise TPIU" EOL );
+    genericsPrintf( "    -p, --protocol:     Protocol to communicate. Defaults to OFLOW if -s is not set, otherwise ETM" EOL );
     genericsPrintf( "    -P, --trace-proto:  { " );
 
     for ( int i = TRACE_PROT_LIST_START; i < TRACE_PROT_NUM; i++ )
@@ -194,11 +191,11 @@ static void _printHelp( const char *const progName )
 
     genericsPrintf( "} trace protocol to use, default is %s" EOL, TRACEDecodeGetProtocolName( TRACE_PROT_LIST_START ) );
     genericsPrintf( "    -s, --server:       <Server>:<Port> to use" EOL );
-    genericsPrintf( "    -t, --tag:          <stream>: Which TPIU stream or OFLOW tag to use (normally 2)" EOL );
+    genericsPrintf( "    -t, --tag:          <stream>: Which OFLOW tag to use (normally 2)" EOL );
     genericsPrintf( "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
     genericsPrintf( "    -V, --version:      Print version and exit" EOL );
-    genericsPrintf( EOL "(Will connect one port higher than that set in -s when TPIU is not used)" EOL );
-    genericsPrintf(     "(this will automatically select the second output stream from orb TPIU.)" EOL );
+    genericsPrintf( EOL "(Will connect one port higher than that set in -s for legacy protocol)" EOL );
+    genericsPrintf(     "(this will automatically select the second output stream from orbuculum.)" EOL );
     genericsPrintf( EOL "Environment Variables;" EOL );
     genericsPrintf( "  OBJDUMP: to use non-standard objdump binary" EOL );
 }
@@ -226,7 +223,7 @@ static struct option _longOptions[] =
     {"trace-proto", required_argument, NULL, 'P'},
     {"protocol", required_argument, NULL, 'p'},
     {"server", required_argument, NULL, 's'},
-    {"tpiu", required_argument, NULL, 't'},
+    {"tag", required_argument, NULL, 't'},
     {"verbose", required_argument, NULL, 'v'},
     {"version", no_argument, NULL, 'V'},
     {NULL, no_argument, NULL, 0}
@@ -412,11 +409,11 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
                 // ------------------------------------
         }
 
-    /* If we set an explicit server and port and didn't set a protocol chances are we want TPIU, not OFLOW */
-    if ( serverExplicit && !protExplicit && r->options->port != OTCLIENT_SERVER_PORT )
+    /* If we set an explicit server and port and didn't set a protocol chances are we want ETM, not OFLOW */
+    if ( serverExplicit && !protExplicit && r->options->port != OFCLIENT_SERVER_PORT )
     {
-        r->options->commProt = PROT_TPIU;
-        genericsReport( V_INFO, "(Auto-set ETM over TPIU for TCP::%s:%d, override by setting protocol explicitly)" EOL, r->options->server, r->options->port );
+        r->options->commProt = PROT_ETM;
+        genericsReport( V_INFO, "(Auto-set ETM3.5 for TCP::%s:%d, override by setting protocol explicitly)" EOL, r->options->server, r->options->port );
     }
 
     /* ... and dump the config if we're being verbose */
@@ -468,13 +465,9 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
             genericsReport( V_INFO, "Decoding OFLOW with ETM in stream %d" EOL, r->options->tag );
             break;
 
-        case PROT_ITM:
-            genericsReport( V_INFO, "Decoding ITM...not legal for TRACE" EOL );
+        case PROT_ETM:
+            genericsReport( V_INFO, "Decoding ETM directly in legacy flow" EOL );
             return false;
-
-        case  PROT_TPIU:
-            genericsReport( V_INFO, "Using TPIU with ETM in stream %d" EOL, r->options->tag );
-            break;
 
         default:
             genericsReport( V_INFO, "Decoding unknown" EOL );
@@ -513,73 +506,27 @@ static void _processBlock( struct RunTime *r )
         y = r->rawBlock.fillLevel;
 #endif
 
-        if ( PROT_TPIU == r->options->commProt )
+        r->newTotalBytes += y;
+
+        while ( y-- )
         {
-            struct TPIUPacket p;
+            r->pmBuffer[r->wp] = *c++;
+            uint32_t nwp = ( r->wp + 1 ) % r->options->buflen;
 
-            while ( y-- )
+            if ( nwp == r->rp )
             {
-                if ( TPIU_EV_RXEDPACKET == TPIUPump( &r->t, *c++ ) )
+                if ( r->singleShot )
                 {
-                    if ( !TPIUGetPacket( &r->t, &p ) )
-                    {
-                        genericsReport( V_WARN, "TPIUGetPacket fell over" EOL );
-                    }
-                    else
-                    {
-                        /* Iterate through the packet, putting bytes for TRACE into the processing buffer */
-                        for ( uint32_t g = 0; g < p.len; g++ )
-                        {
-                            if ( r->options->channel == p.packet[g].s )
-                            {
-                                r->pmBuffer[r->wp] = p.packet[g].d;
-                                r->newTotalBytes++;
-                                uint32_t nwp = ( r->wp + 1 ) % r->options->buflen;
-
-                                if ( nwp == r->rp )
-                                {
-                                    if ( r->singleShot )
-                                    {
-                                        r->held = true;
-                                        return;
-                                    }
-                                    else
-                                    {
-                                        r->rp = ( r->rp + 1 ) % r->options->buflen;
-                                    }
-                                }
-
-                                r->wp = nwp;
-                            }
-                        }
-                    }
+                    r->held = true;
+                    return;
+                }
+                else
+                {
+                    r->rp = ( r->rp + 1 ) % r->options->buflen;
                 }
             }
-        }
-        else
-        {
-            r->newTotalBytes += y;
 
-            while ( y-- )
-            {
-                r->pmBuffer[r->wp] = *c++;
-                uint32_t nwp = ( r->wp + 1 ) % r->options->buflen;
-
-                if ( nwp == r->rp )
-                {
-                    if ( r->singleShot )
-                    {
-                        r->held = true;
-                        return;
-                    }
-                    else
-                    {
-                        r->rp = ( r->rp + 1 ) % r->options->buflen;
-                    }
-                }
-
-                r->wp = nwp;
-            }
+            r->wp = nwp;
         }
     }
 }
@@ -619,7 +566,7 @@ static void _OFLOWpacketRxed ( struct OFLOWFrame *p, void *param )
 
     if ( !p->good )
     {
-        genericsReport( V_WARN, "Bad packet received" EOL );
+        genericsReport( V_INFO, "Bad packet received" EOL );
     }
     else
     {
@@ -1432,11 +1379,6 @@ int main( int argc, char *argv[] )
 
     TRACEDecoderInit( &_r.i, _r.options->traceProt, !( _r.options->noAltAddr ), _traceReport );
 
-    if ( PROT_TPIU == _r.options->commProt )
-    {
-        TPIUDecoderInit( &_r.t );
-    }
-
     OFLOWInit( &_r.c );
 
     /* Create a screen and interaction handler */
@@ -1452,7 +1394,7 @@ int main( int argc, char *argv[] )
             /* Keep trying to open a network connection at half second intervals */
             while ( 1 )
             {
-                stream = streamCreateSocket( _r.options->server, _r.options->port + ( ( PROT_TPIU == _r.options->commProt ) ? 1 : 0 ) );
+                stream = streamCreateSocket( _r.options->server, _r.options->port + ( ( PROT_OFLOW != _r.options->commProt ) ? 1 : 0 ) );
 
                 if ( stream )
                 {

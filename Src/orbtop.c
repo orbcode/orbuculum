@@ -21,7 +21,6 @@
 #include "generics.h"
 #include "uthash.h"
 #include "git_version_info.h"
-#include "tpiuDecoder.h"
 #include "itmDecoder.h"
 #include "oflow.h"
 #include "symbols.h"
@@ -52,8 +51,8 @@ struct reportLine
     struct nameEntry *n;
 };
 
-enum Prot { PROT_OFLOW, PROT_ITM, PROT_TPIU, PROT_UNKNOWN };
-const char *protString[] = {"OFLOW", "ITM", "TPIU", NULL};
+enum Prot { PROT_OFLOW, PROT_ITM, PROT_UNKNOWN };
+const char *protString[] = {"OFLOW", "ITM", NULL};
 
 struct exceptionRecord                       /* Record of exception activity */
 
@@ -76,7 +75,7 @@ struct exceptionRecord                       /* Record of exception activity */
 /* ---------- CONFIGURATION ----------------- */
 struct                                       /* Record for options, either defaults or from command line */
 {
-    uint32_t tag;                            /* Which TPIU or OFLOW stream are we decoding? */
+    uint32_t tag;                            /* Which OFLOW stream are we decoding? */
     bool reportFilenames;                    /* Report filenames for each routine? */
     bool outputExceptions;                   /* Set to include exceptions in output flow */
     bool forceITMSync;                       /* Must ITM start synced? */
@@ -113,7 +112,7 @@ struct                                       /* Record for options, either defau
     .maxRoutines = 8,
     .demangle = true,
     .displayInterval = TOP_UPDATE_INTERVAL * 1000,
-    .port = OTCLIENT_SERVER_PORT,
+    .port = OFCLIENT_SERVER_PORT,
     .server = "localhost"
 };
 
@@ -123,8 +122,6 @@ struct
     struct ITMDecoder i;                               /* The decoders and the packets from them */
     struct MSGSeq    d;                                   /* Message (re-)sequencer */
     struct ITMPacket h;
-    struct TPIUDecoder t;
-    struct TPIUPacket p;
     struct OFLOW c;
     enum timeDelay timeStatus;                         /* Indicator of if this time is exact */
     uint64_t timeStamp;                                /* Latest received time */
@@ -487,9 +484,6 @@ static void _outputJson( FILE *f, uint32_t total, uint32_t reportLines, struct r
     jsonElement = cJSON_CreateNumber( ITMDecoderGetStats( &_r.i )->syncCount );
     assert( jsonElement );
     cJSON_AddItemToObject( jsonStatsTable, "itmsync", jsonElement );
-    jsonElement = cJSON_CreateNumber( TPIUDecoderGetStats( &_r.t )->syncCount );
-    assert( jsonElement );
-    cJSON_AddItemToObject( jsonStatsTable, "tpiusync", jsonElement );
     jsonElement = cJSON_CreateNumber( ITMDecoderGetStats( &_r.i )->ErrorPkt );
     assert( jsonElement );
     cJSON_AddItemToObject( jsonStatsTable, "error", jsonElement );
@@ -762,10 +756,9 @@ static void _outputTop( uint32_t total, uint32_t reportLines, struct reportLine 
         genericsPrintf( C_RESET "Interval = " C_DATA "%" PRIu64 C_RESET "ms" EOL, ( ( lastTime - _r.lastReportus ) ) / 1000 );
     }
 
-    genericsReport( V_INFO, "         Ovf=%3d  ITMSync=%3d TPIUSync=%3d ITMErrors=%3d" EOL,
+    genericsReport( V_INFO, "         Ovf=%3d  ITMSync=%3d ITMErrors=%3d" EOL,
                     ITMDecoderGetStats( &_r.i )->overflow,
                     ITMDecoderGetStats( &_r.i )->syncCount,
-                    TPIUDecoderGetStats( &_r.t )->syncCount,
                     ITMDecoderGetStats( &_r.i )->ErrorPkt );
 
 }
@@ -885,71 +878,6 @@ void _itmPumpProcess( uint8_t c )
 // Protocol pump for decoding messages
 // ====================================================================================================
 // ====================================================================================================
-void _protocolPump( uint8_t c )
-
-/* Top level protocol pump */
-
-{
-    if ( PROT_TPIU == options.protocol )
-    {
-        switch ( TPIUPump( &_r.t, c ) )
-        {
-            // ------------------------------------
-            case TPIU_EV_NEWSYNC:
-                genericsReport( V_INFO, "TPIU In Sync (%d)" EOL, TPIUDecoderGetStats( &_r.t )->syncCount );
-
-            case TPIU_EV_SYNCED:
-                ITMDecoderForceSync( &_r.i, true );
-                break;
-
-            // ------------------------------------
-            case TPIU_EV_RXING:
-            case TPIU_EV_NONE:
-                break;
-
-            // ------------------------------------
-            case TPIU_EV_UNSYNCED:
-                genericsReport( V_WARN, "TPIU Lost Sync (%d)" EOL, TPIUDecoderGetStats( &_r.t )->lostSync );
-                ITMDecoderForceSync( &_r.i, false );
-                break;
-
-            // ------------------------------------
-            case TPIU_EV_RXEDPACKET:
-                if ( !TPIUGetPacket( &_r.t, &_r.p ) )
-                {
-                    genericsReport( V_WARN, "TPIUGetPacket fell over" EOL );
-                }
-
-                for ( uint32_t g = 0; g < _r.p.len; g++ )
-                {
-                    if ( _r.p.packet[g].s == options.tag )
-                    {
-                        _itmPumpProcess( _r.p.packet[g].d );
-                        continue;
-                    }
-
-                    if ( _r.p.packet[g].s != 0 )
-                    {
-                        genericsReport( V_DEBUG, "Unknown TPIU channel %02x" EOL, _r.p.packet[g].s );
-                    }
-                }
-
-                break;
-
-            // ------------------------------------
-            case TPIU_EV_ERROR:
-                genericsReport( V_WARN, "****ERROR****" EOL );
-                break;
-                // ------------------------------------
-        }
-    }
-    else
-    {
-        /* There's no TPIU in use, so this goes straight to the ITM layer */
-        _itmPumpProcess( c );
-    }
-}
-// ====================================================================================================
 void _printHelp( const char *const progName )
 
 {
@@ -969,12 +897,11 @@ void _printHelp( const char *const progName )
     genericsPrintf( "    -n, --itm-sync:     Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
     genericsPrintf( "    -o, --output-file:  <filename> to be used for output live file" EOL );
     genericsPrintf( "    -O, --objdump-opts: <options> Options to pass directly to objdump" EOL );
-    genericsPrintf( "    -p, --protocol:     Protocol to communicate. Defaults to OFLOW if -s is not set, otherwise ITM unless" EOL \
-                    "                        explicitly set to TPIU to decode TPIU frames on channel set by -t" EOL );
+    genericsPrintf( "    -p, --protocol:     Protocol to communicate. Defaults to OFLOW if -s is not set, otherwise ITM" EOL );
     genericsPrintf( "    -r, --routines:     <routines> to record in live file (default %d routines)" EOL, options.maxRoutines );
     genericsPrintf( "    -R, --report-files: Report filenames as part of function discriminator" EOL );
     genericsPrintf( "    -s, --server:       <Server>:<Port> to use" EOL );
-    genericsPrintf( "    -t, --tag:          <stream> Which TPIU stream or OFLOW tag to use (normally 1)" EOL );
+    genericsPrintf( "    -t, --tag:          <stream> Which OFLOW tag to use (normally 1)" EOL );
     genericsPrintf( "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
     genericsPrintf( "    -V, --version:      Print version and exit" EOL );
     genericsPrintf( EOL "Environment Variables;" EOL );
@@ -1009,7 +936,7 @@ static struct option _longOptions[] =
     {"routines", required_argument, NULL, 'r'},
     {"report-files", no_argument, NULL, 'R'},
     {"server", required_argument, NULL, 's'},
-    {"tpiu", required_argument, NULL, 't'},
+    {"tag", required_argument, NULL, 't'},
     {"verbose", required_argument, NULL, 'v'},
     {"version", no_argument, NULL, 'V'},
     {NULL, no_argument, NULL, 0}
@@ -1244,10 +1171,6 @@ bool _processOptions( int argc, char *argv[] )
             genericsReport( V_INFO, "Decoding ITM" EOL );
             break;
 
-        case  PROT_TPIU:
-            genericsReport( V_INFO, "Using TPIU with ITM in stream %d" EOL, options.tag );
-            break;
-
         default:
             genericsReport( V_INFO, "Decoding unknown" EOL );
             break;
@@ -1262,7 +1185,7 @@ static void _OFLOWpacketRxed ( struct OFLOWFrame *p, void *param )
 {
     if ( !p->good )
     {
-        genericsReport( V_WARN, "Bad packet received" EOL );
+        genericsReport( V_INFO, "Bad packet received" EOL );
     }
     else
     {
@@ -1352,8 +1275,7 @@ int main( int argc, char *argv[] )
 
     genericsReport( V_WARN, "Loaded %s" EOL, options.elffile );
 
-    /* Reset the TPIU handler before we start */
-    TPIUDecoderInit( &_r.t );
+    /* Reset the handlers before we start */
     ITMDecoderInit( &_r.i, options.forceITMSync );
     OFLOWInit( &_r.c );
     MSGSeqInit( &_r.d, &_r.i, MSG_REORDER_BUFLEN );
@@ -1494,7 +1416,7 @@ int main( int argc, char *argv[] )
 
                     while ( receivedSize > 0 )
                     {
-                        _protocolPump( *c++ );
+                        _itmPumpProcess( *c++ );
                         receivedSize--;
                     }
                 }

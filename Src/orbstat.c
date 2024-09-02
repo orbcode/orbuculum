@@ -19,7 +19,6 @@
 #include "uthash.h"
 #include "generics.h"
 #include "itmDecoder.h"
-#include "tpiuDecoder.h"
 #include "msgDecoder.h"
 #include "oflow.h"
 #include "symbols.h"
@@ -38,8 +37,8 @@
 #define IN_EVENT   (0x40000000)
 #define OUT_EVENT  (0x50000000)
 
-enum Prot { PROT_OFLOW, PROT_ITM, PROT_TPIU, PROT_UNKNOWN };
-const char *protString[] = {"OFLOW", "ITM", "TPIU", NULL};
+enum Prot { PROT_OFLOW, PROT_ITM, PROT_UNKNOWN };
+const char *protString[] = {"OFLOW", "ITM", NULL};
 
 /* States for sample reception state machine */
 enum CDState { CD_waitinout, CD_waitsrc, CD_waitdst };
@@ -66,7 +65,7 @@ struct Options                           /* Record for options, either defaults 
     bool forceITMSync;                   /* Do we assume ITM starts synced? */
     bool mono;                           /* Supress colour in output */
 
-    uint32_t tag;                        /* Which TPIU or OFLOW stream are we decoding? */
+    uint32_t tag;                        /* Which OFLOW stream are we decoding? */
 
     int port;                            /* Source information for where to connect to */
     char *server;
@@ -76,7 +75,7 @@ struct Options                           /* Record for options, either defaults 
 {
     .demangle       = true,
     .sampleDuration = DEFAULT_DURATION_MS,
-    .port           = OTCLIENT_SERVER_PORT,
+    .port           = OFCLIENT_SERVER_PORT,
     .traceChannel   = DEFAULT_TRACE_CHANNEL,
     .fileChannel    = DEFAULT_FILE_CHANNEL,
     .forceITMSync   = true,
@@ -96,8 +95,6 @@ struct RunTime
 {
     struct ITMDecoder i;                /* The decoders and the packets from them */
     struct ITMPacket h;
-    struct TPIUDecoder t;
-    struct TPIUPacket p;
     struct OFLOW c;
     struct msg m;                       /* Decoded message out of ITM layer */
 
@@ -404,71 +401,6 @@ void _itmPumpProcess( struct RunTime *r, char c )
     }
 }
 // ====================================================================================================
-void _protocolPump( struct RunTime *r, uint8_t c )
-
-/* Top level protocol pump */
-
-{
-    if ( PROT_TPIU == r->options->protocol )
-    {
-        switch ( TPIUPump( &r->t, c ) )
-        {
-            // ------------------------------------
-            case TPIU_EV_NEWSYNC:
-                genericsReport( V_INFO, "TPIU In Sync (%d)" EOL, TPIUDecoderGetStats( &r->t )->syncCount );
-
-            case TPIU_EV_SYNCED:
-                ITMDecoderForceSync( &r->i, true );
-                break;
-
-            // ------------------------------------
-            case TPIU_EV_RXING:
-            case TPIU_EV_NONE:
-                break;
-
-            // ------------------------------------
-            case TPIU_EV_UNSYNCED:
-                genericsReport( V_INFO, "TPIU Lost Sync (%d)" EOL, TPIUDecoderGetStats( &r->t )->lostSync );
-                ITMDecoderForceSync( &r->i, false );
-                break;
-
-            // ------------------------------------
-            case TPIU_EV_RXEDPACKET:
-                if ( !TPIUGetPacket( &r->t, &r->p ) )
-                {
-                    genericsReport( V_WARN, "TPIUGetPacket fell over" EOL );
-                }
-
-                for ( uint32_t g = 0; g < r->p.len; g++ )
-                {
-                    if ( r->p.packet[g].s == r->options->tag )
-                    {
-                        _itmPumpProcess( r, r->p.packet[g].d );
-                        continue;
-                    }
-
-                    if ( r->p.packet[g].s != 0 )
-                    {
-                        genericsReport( V_DEBUG, "Unknown TPIU channel %02x" EOL, r->p.packet[g].s );
-                    }
-                }
-
-                break;
-
-            // ------------------------------------
-            case TPIU_EV_ERROR:
-                genericsReport( V_WARN, "****ERROR****" EOL );
-                break;
-                // ------------------------------------
-        }
-    }
-    else
-    {
-        /* There's no TPIU in use, so this goes straight to the ITM layer */
-        _itmPumpProcess( r, c );
-    }
-}
-// ====================================================================================================
 static void _printHelp( struct RunTime *r )
 
 {
@@ -484,16 +416,15 @@ static void _printHelp( struct RunTime *r )
     genericsPrintf( "    -n, --itm-sync:     Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
     genericsPrintf( "    -M, --no-colour:    Supress colour in output" EOL );
     genericsPrintf( "    -O, --objdump-opts: <options> Options to pass directly to objdump" EOL );
-    genericsPrintf( "    -p, --protocol:     Protocol to communicate. Defaults to OFLOW if -s is not set, otherwise ITM unless" EOL \
-                    "                        explicitly set to TPIU to decode TPIU frames on channel set by -t" EOL );
+    genericsPrintf( "    -p, --protocol:     Protocol to communicate. Defaults to OFLOW if -s is not set, otherwise ITM" EOL );
     genericsPrintf( "    -s, --server:       <Server>:<Port> to use" EOL );
-    genericsPrintf( "    -t, --tag:          <stream>: Which TPIU stream or OFLOW tag to use (normally 1)" EOL );
+    genericsPrintf( "    -t, --tag:          <stream>: Which OFLOW tag to use (normally 1)" EOL );
     genericsPrintf( "    -T, --all-truncate: truncate -d material off all references (i.e. make output relative)" EOL );
     genericsPrintf( "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
     genericsPrintf( "    -V, --version:      Print version and exit" EOL );
     genericsPrintf( "    -y, --graph-file:   <Filename> dotty filename for structured callgraph output" EOL );
     genericsPrintf( "    -z, --cache-file:   <Filename> profile filename for kcachegrind output" EOL );
-    genericsPrintf( EOL "(Will connect one port higher than that set in -s when TPIU is not used)" EOL );
+    genericsPrintf( EOL "(Will connect one port higher than that set in -s when Orbflow is not used)" EOL );
 
 }
 // ====================================================================================================
@@ -519,7 +450,7 @@ static struct option _longOptions[] =
     {"objdump-opts", required_argument, NULL, 'O'},
     {"protocol", required_argument, NULL, 'p'},
     {"server", required_argument, NULL, 's'},
-    {"tpiu", required_argument, NULL, 't'},
+    {"tag", required_argument, NULL, 't'},
     {"all-truncate", no_argument, NULL, 'T'},
     {"verbose", required_argument, NULL, 'v'},
     {"version", no_argument, NULL, 'V'},
@@ -710,7 +641,7 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
         r->options->protocol = PROT_ITM;
     }
 
-    if ( ( r->options->protocol == PROT_TPIU ) && !portExplicit )
+    if ( ( r->options->protocol == PROT_ITM ) && !portExplicit )
     {
         r->options->port = NWCLIENT_SERVER_PORT;
     }
@@ -746,10 +677,6 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
             genericsReport( V_INFO, "Decoding ITM" EOL );
             break;
 
-        case  PROT_TPIU:
-            genericsReport( V_INFO, "Using TPIU with ITM in stream %d" EOL, r->options->tag );
-            break;
-
         default:
             genericsReport( V_INFO, "Decoding unknown" EOL );
             break;
@@ -774,7 +701,7 @@ static void _OFLOWpacketRxed ( struct OFLOWFrame *p, void *param )
 
     if ( !p->good )
     {
-        genericsReport( V_WARN, "Bad packet received" EOL );
+        genericsReport( V_INFO, "Bad packet received" EOL );
     }
     else
     {
@@ -826,8 +753,7 @@ int main( int argc, char *argv[] )
 
 #endif
 
-    /* Reset the TPIU handler before we start */
-    TPIUDecoderInit( &_r.t );
+    /* Reset the handlers before we start */
     ITMDecoderInit( &_r.i, _r.options->forceITMSync );
     OFLOWInit( &_r.c );
 
@@ -921,7 +847,7 @@ int main( int argc, char *argv[] )
 
                 while ( _r.rawBlock.fillLevel > 0 )
                 {
-                    _protocolPump( &_r, *c++ );
+                    _itmPumpProcess( &_r, *c++ );
                     _r.rawBlock.fillLevel--;
                 }
             }

@@ -34,6 +34,7 @@ struct OFLOW
     bool selfAllocated;                    /* Flag indicating that memory was allocated by the library */
     struct COBS c;
     struct OFLOWFrame f;
+    uint64_t perror;
 
     /* Materials for callback */
     void ( *cb )( struct OFLOWFrame *p, void *param );

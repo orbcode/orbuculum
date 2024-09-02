@@ -16,7 +16,6 @@
 #include "uthash.h"
 #include "git_version_info.h"
 #include "generics.h"
-#include "tpiuDecoder.h"
 #include "oflow.h"
 #include "itmDecoder.h"
 #include "stream.h"
@@ -28,8 +27,8 @@
 #define DEFAULT_OUTFILE "/dev/stdout"
 #define DEFAULT_TIMELEN 10000
 
-enum Prot { PROT_OFLOW, PROT_ITM, PROT_TPIU, PROT_UNKNOWN };
-const char *protString[] = {"OFLOW", "ITM", "TPIU", NULL};
+enum Prot { PROT_OFLOW, PROT_ITM, PROT_UNKNOWN };
+const char *protString[] = {"OFLOW", "ITM", NULL};
 
 /* ---------- CONFIGURATION ----------------- */
 
@@ -60,7 +59,7 @@ struct                                      /* Record for options, either defaul
     .tag = 1,
     .outfile = DEFAULT_OUTFILE,
     .timelen = DEFAULT_TIMELEN,
-    .port = OTCLIENT_SERVER_PORT,
+    .port = OFCLIENT_SERVER_PORT,
     .server = "localhost"
 };
 
@@ -70,8 +69,6 @@ struct
     /* The decoders and the packets from them */
     struct ITMDecoder i;
     struct ITMPacket h;
-    struct TPIUDecoder t;
-    struct TPIUPacket p;
     struct OFLOW c;
     bool   ending;
 } _r;
@@ -98,68 +95,6 @@ uint64_t _timestamp( void )
 // ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
-void _protocolPump( uint8_t c )
-
-/* Top level protocol pump */
-
-{
-    if ( PROT_TPIU == options.protocol )
-    {
-        switch ( TPIUPump( &_r.t, c ) )
-        {
-            // ------------------------------------
-            case TPIU_EV_NEWSYNC:
-            case TPIU_EV_SYNCED:
-                ITMDecoderForceSync( &_r.i, true );
-                break;
-
-            // ------------------------------------
-            case TPIU_EV_RXING:
-            case TPIU_EV_NONE:
-                break;
-
-            // ------------------------------------
-            case TPIU_EV_UNSYNCED:
-                ITMDecoderForceSync( &_r.i, false );
-                break;
-
-            // ------------------------------------
-            case TPIU_EV_RXEDPACKET:
-                if ( !TPIUGetPacket( &_r.t, &_r.p ) )
-                {
-                    genericsReport( V_WARN, "TPIUGetPacket fell over" EOL );
-                }
-
-                for ( uint32_t g = 0; g < _r.p.len; g++ )
-                {
-                    if ( _r.p.packet[g].s == options.tag )
-                    {
-                        ITMPump( &_r.i, _r.p.packet[g].d );
-                        continue;
-                    }
-
-                    if ( _r.p.packet[g].s != 0 )
-                    {
-                        genericsReport( V_DEBUG, "Unknown TPIU channel %02x" EOL, _r.p.packet[g].s );
-                    }
-                }
-
-                break;
-
-            // ------------------------------------
-            case TPIU_EV_ERROR:
-                genericsReport( V_WARN, "****ERROR****" EOL );
-                break;
-                // ------------------------------------
-        }
-    }
-    else
-    {
-        /* There's no TPIU in use, so this goes straight to the ITM layer */
-        ITMPump( &_r.i, c );
-    }
-}
-// ====================================================================================================
 void _printHelp( const char *const progName )
 
 {
@@ -169,10 +104,9 @@ void _printHelp( const char *const progName )
     genericsPrintf( "    -M, --no-colour:    Supress colour in output" EOL );
     genericsPrintf( "    -n, --itm-sync:     Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
     genericsPrintf( "    -o, --output-file:  <filename> to be used for dump file (defaults to %s)" EOL, options.outfile );
-    genericsPrintf( "    -p, --protocol:     Protocol to communicate. Defaults to OFLOW if -s is not set, otherwise ITM unless" EOL \
-                    "                        explicitly set to TPIU to decode TPIU frames on channel set by -t" EOL );
+    genericsPrintf( "    -p, --protocol:     Protocol to communicate. Defaults to OFLOW if -s is not set, otherwise ITM unless" EOL );
     genericsPrintf( "    -s, --server:       <Server>:<Port> to use" EOL );
-    genericsPrintf( "    -t, --tag:          <stream> Which TPIU stream or OFLOW tag to use (normally 1)" EOL );
+    genericsPrintf( "    -t, --tag:          <stream> Which Orbflow tag to use (normally 1)" EOL );
     genericsPrintf( "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
     genericsPrintf( "    -V, --version:      Print version and exit" EOL );
     genericsPrintf( "    -w, --sync-write:   Write synchronously to the output file after every packet" EOL );
@@ -332,7 +266,7 @@ bool _processOptions( int argc, char *argv[] )
         options.protocol = PROT_ITM;
     }
 
-    if ( ( options.protocol == PROT_TPIU ) && !portExplicit )
+    if ( ( options.protocol == PROT_ITM ) && !portExplicit )
     {
         options.port = NWCLIENT_SERVER_PORT;
     }
@@ -363,10 +297,6 @@ bool _processOptions( int argc, char *argv[] )
             genericsReport( V_INFO, "Decoding ITM" EOL );
             break;
 
-        case  PROT_TPIU:
-            genericsReport( V_INFO, "Using TPIU with ITM in stream %d" EOL, options.tag );
-            break;
-
         default:
             genericsReport( V_INFO, "Decoding unknown" EOL );
             break;
@@ -382,7 +312,7 @@ static void _OFLOWpacketRxed ( struct OFLOWFrame *p, void *param )
 {
     if ( !p->good )
     {
-        genericsReport( V_WARN, "Bad packet received" EOL );
+        genericsReport( V_INFO, "Bad packet received" EOL );
     }
     else
     {
@@ -431,9 +361,7 @@ int main( int argc, char *argv[] )
 
     genericsScreenHandling( !options.mono );
 
-    /* Reset the TPIU handler before we start */
-    TPIUDecoderInit( &_r.t );
-    ITMDecoderInit( &_r.i, options.forceITMSync );
+    /* Reset the OFLOW handler before we start */
     OFLOWInit( &_r.c );
     stream = _tryOpenStream();
 
@@ -517,7 +445,7 @@ int main( int argc, char *argv[] )
 
             while ( t-- )
             {
-                _protocolPump( *c++ );
+                ITMPump( &_r.i, *c++ );
             }
         }
 
