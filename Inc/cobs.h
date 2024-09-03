@@ -62,6 +62,10 @@ void COBSPump( struct COBS *t, const uint8_t *incoming, int len,
                void ( *packetRxed )( struct Frame *p, void *param ),
                void *param );
 void COBSDelete( struct COBS *t );
+static inline int COBSGetErrors( struct COBS *t )
+{
+    return t ? t->error : 0;
+}
 struct COBS *COBSInit( struct COBS *t );
 // ====================================================================================================
 #ifdef __cplusplus

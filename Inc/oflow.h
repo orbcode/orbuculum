@@ -62,7 +62,14 @@ void OFLOWEncode( const uint8_t channel, const uint64_t tstamp, const uint8_t *i
 void OFLOWPump( struct OFLOW *t, const uint8_t *incoming, int len,
                 void ( *packetRxed )( struct OFLOWFrame *p, void *param ),
                 void *param );
-
+static inline uint64_t OFLOWGetErrors( struct OFLOW *t )
+{
+    return t ? t->perror : ( uint64_t ) -1;
+}
+static inline uint64_t OFLOWGetCOBSErrors( struct OFLOW *t )
+{
+    return t ? COBSGetErrors( &t->c ) : -1;
+}
 void OFLOWDelete( struct OFLOW *t );
 struct OFLOW *OFLOWInit( struct OFLOW *t );
 // ====================================================================================================

@@ -72,7 +72,7 @@
 
 /* Number of potential tags */
 #define NUM_TAGS (256)
-#define LAST_TAG_SEEN_TIME_NS (500L*1000L*1000L)
+#define LAST_TAG_SEEN_TIME_NS (2*1000L*1000L*1000L)
 
 /* Record of transferred data per tag */
 struct TagDataCount
@@ -784,6 +784,7 @@ void _checkInterval( void *params )
                     genericsPrintf( "(" C_DATA " %3d%% " C_RESET "full)", ( fullPercent > 100 ) ? 100 : fullPercent );
                 }
 
+                genericsReport( V_INFO, "Ce=%d Oe=%d", OFLOWGetCOBSErrors( &_r.oflow ), OFLOWGetErrors( &_r.oflow ) );
                 genericsPrintf( "   " C_RESET C_CLR_LN EOL );
             }
 
