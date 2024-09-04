@@ -11,7 +11,7 @@ jobs:
       - run: brew install zmq sdl2 libelf
       - run: pip3 install meson
       - run: pip3 install ninja
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - run: meson setup ./build
       - run: ninja -C ./build
       - run: meson install -C ./build --destdir ./install
