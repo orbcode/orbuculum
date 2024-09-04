@@ -86,7 +86,7 @@ extern "C" {
 /* Memory sizes */
 typedef uint32_t symbolMemaddr;
 typedef unsigned char *symbolMemptr;
-  
+
 // ====================================================================================================
 enum verbLevel {V_ERROR, V_WARN, V_INFO, V_DEBUG, V_MAX_VERBLEVEL};
 

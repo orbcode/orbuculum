@@ -18,6 +18,7 @@ In Progress (Version 2.2.0)
 * improved support for C++
 * Addition of ETM4 decode (experimental)
 * Timestamping for orbtop, in various formats
+* Colour support in orbcat for metadata (timestamps)
 * Exception reporting for orbtop
 * OSX CI Builder support
 * Orbuculum can now be used as a meson subproject

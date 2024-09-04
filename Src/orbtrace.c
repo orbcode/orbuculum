@@ -142,9 +142,10 @@ static void _printHelp( const char *const progName )
     genericsPrintf( "       -e, --power:         <Ch>,<On> Enable or Disable power. Ch is vtref, vtpwr or all" EOL );
     genericsPrintf( "       -h, --help::         This help" EOL );
     genericsPrintf( "       -l, --list:          Show all OrbTrace devices attached to system" EOL );
-    genericsPrintf( "       -M, --no-colour:    Supress colour in output" EOL );
-    genericsPrintf( "       -T, --trace-format:  <x> Trace format; 1,2 or 4 bit parallel, m for Manchester SWO, u=UART SWO," EOL );
-    genericsPrintf( "                                              M for Manchester SWO with TPIU decode, U=UART SWO with TPIU decode" EOL );
+    genericsPrintf( "       -M, --no-colour:     Supress colour in output" EOL );
+    genericsPrintf( "       -T, --trace-format:  <x> Trace format; 1,2 or 4 bit parallel with TPIU decode," EOL \
+                    "                                              m for Manchester SWO, u=UART SWO," EOL \
+                    "                                              M for Manchester SWO+TPIU, U=UART SWO+TPIU" EOL );
     genericsPrintf( "       -n, --serial-number: <Serial> any part of serial number to differentiate specific OrbTrace device" EOL );
     genericsPrintf( "       -p, --voltage:       <Ch>,<Voltage> Set voltage in V, Ch is vtref or vtpwr" EOL );
     genericsPrintf( "       -v, --verbose:       <level> Verbose mode 0(errors)..3(debug)" EOL );

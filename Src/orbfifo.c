@@ -74,7 +74,7 @@ static void _printHelp( const char *const progName )
     genericsPrintf( "Usage: %s [options]" EOL, progName );
     genericsPrintf( "    -b, --basedir:      <basedir> for channels" EOL );
     genericsPrintf( "    -c, --channel:      <Number>,<Name>,<Format> of channel to populate (repeat per channel)" EOL );
-    genericsPrintf( "    -E, --eof:          When reading from file, terminate at end of file rather than waiting for further input" EOL );
+    genericsPrintf( "    -E, --eof:          When reading from file, terminate at end of file" EOL );
     genericsPrintf( "    -f, --input-file:   <filename> Take input from specified file" EOL );
     genericsPrintf( "    -h, --help:         This help" EOL );
     genericsPrintf( "    -M, --no-colour:    Supress colour in output" EOL );

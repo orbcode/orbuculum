@@ -12,7 +12,7 @@ This (orbflow) is the development branch for V2.2.0. Development is generally do
 
 Version 2.2.0 builds on 2.1.0 and adds several new CPU families, improved client application handling and the start of ETM4 support. Stats and timing are also much improved and the whole communications subsystem has been simplified and streamlined. Most importantly though, we have moved from 'legacy' protocol (basically, the exact same protocol that flows from the chip) for communications to 'orbflow' protocol. Orbflow protocol is an extensible packet oriented protocol which provides a more compact representation of the probe data. By default orbflow is used transparently between orbuculum and client applications. If you have an ORBTrace 1.4.0 or higher version then it is also used for communication from the probe to orbuculum. If you have your own legacy applications, or a version of ORBTrace less that 1.4.0, then the system will fall back to legacy protocol transparently. You can have a hybrid arrangement where some clients use legacy protocol and some use orbflow no problem.  As you might imagine this can quickly become complex so please yell up if any edge cases don't seem to work correctly!
 
-For the full benefit of this version you should be using ORBTrace mini Version 1.4.0 or higher.
+For the full benefit of this version you should be using ORBTrace mini Version 1.4.0 or higher. It will work with earlier versions but you won't get the in probe TPIU stripping or improved probe to host comms protocol support.
 
 The CHANGES file now tells you what's been done recently.
 
@@ -32,109 +32,109 @@ What is it?
 ===========
 
 Orbuculum is a set of tools for decoding and presenting output flows from
-the Debug pins of a CORTEX-M CPU. Originally it only used the SWO pin but it now also
-supports hardware for parallel tracing through ORBtrace. Numerous types of data can be output through these
-pins, from multiple channels of text messages through to Program Counter samples. Processing
-these data gives you a huge amount of insight into what is really going on inside
+the tracing output pins of a CORTEX-M CPU. Originally it only supported the SWO pin in UART format but it now also
+supports hardware for parallel tracing through ORBtrace as well as SWO in UART and Manchester formats.
+Numerous types of data can be output through these various
+pins, from multiple channels of text messages through to Program Counter samples and even full cycle accurate instruction trace.
+Processing these data gives you a huge amount of insight into what is really going on inside
 your CPU. The tools are all mix-and-match according to what you are trying to do. The current set is;
 
-* orbuculum: The main program which interfaces to the trace probe and then issues a network
+* orbuculum: The main mux program which interfaces to the trace probe and then issues a network
 interface to which an arbitary number of clients can connect. This is
-used by a base interface to the target by other programmes in the suite. Generally you configure
-this for the TRACE tool you're using and then you can just leave it running and it'll grab
+used as a base interface to the target by other programs in the suite. Generally you configure
+this for the TRACE tool you're using and then you can just leave it running. It will grab
 data from the target and make it available to clients whenever it can.
 
-* orbfifo: The fifo pump: Turns a trace feed into a set of fifos (or permanent files).
+* orbfifo: The fifo pump: Turns a trace feed into a set of fifos or, optionally, permanent files.
 
 * orbcat: A simple cat utility for ITM channel data.
 
 * orbdump: A utility for dumping raw SWO data to a file for post-processing.
 
-* orbmortem: A post mortem analysis tool (needs parallel trace data).
+* orbmortem: A post mortem analysis tool.
 
 * orbtop: A top utility to see what's actually going on with your target. It can also
-provide dot and gnuplot source data for perty graphics.
+generate input files for dot and gnuplot for perty graphics.
 
-* orbstat: An analysis/statistics utility which can produce KCacheGrind input files. KCacheGrind
-is a very powerful code performance analysis tool.
+* orbstat: An analysis/statistics utility which can produce KCacheGrind input files.
 
 * orbtrace: The fpga configuration controller for use with ORBtrace hardware.
 
 * orbzmq: ZeroMQ server.
 
-* orblcd: LCD emulator on the host computer.
+* orblcd: LCD emulator on the host.
 
 There is also Python support in the [pyorb](https://github.com/orbcode/pyorb) repository.
 
 A few simple use cases are documented in the last section of this
-document, as are example outputs of using orbtop to report on the
+document, as are example outputs from using orbtop to report on the
 activity of BMP while emitting SWO packets.
 
 The data flowing from the SWO pin can be encoded
 either using NRZ (UART) or RZ (Manchester) formats.  The pin is a
 dedicated one that would be used for TDO when the debug interface is
-in JTAG mode. We've demonstrated
+in JTAG mode. We have demonstrated
 ITM feeds of around 4.3MBytes/sec on a STM32F427 via SWO with Manchester
 encoding running at 48Mbps. SWO with UART encoding is good for 62Mbaud. The encoding of UART
 is less efficient than Manchester so those speeds come out largely the same. Users are advised
-to use Manchester encoding if their probe supports it because the don't have to stress about
+to use Manchester encoding if their probe supports it because then they don't have to stress about
 data speeds (it's autobauding), clock changes or start/stop bits.
 
-The data flowing from the TRACE pins is clocked using a separate TRACECLK pin. There can
+The data flowing from the parallel TRACE pins is clocked using a separate TRACECLK pin. There can
 be 1-4 TRACE pins which obviously give you much higher bandwidth than the single SWO. Using ORBTrace
-We've demonstrated ITM feeds of around 12.5MBytes/sec on a STM32F427 via 4 bit parallel trace. These are not
-typos, it really does run that fast if you've got suitable hardware.
+we have demonstrated ITM feeds of around 12.5MBytes/sec on a STM32F427 via 4 bit parallel trace. These are not
+typos, parallel trace really does run that fast if you've got suitable hardware.
 
-Whatever it's source, orbuculum takes this data flow and makes it accessible to tools on the host
-PC. At its core it takes the data from the source, decodes it and presents it on a network
-interface...both orbflow and legacy protocol are available. The Orbuculum suite tools don't care if the data
+Whatever it's source, orbuculum takes these data flow and makes them accessible to tools on the host
+PC. At its core it takes data from the source, decodes it and presents it on a network
+interface...both orbflow and legacy protocols are available. The Orbuculum tools don't care if the data
 originates from a RZ or NRZ port, SWO or TRACE, or at what speed....that's all the job
 of the interface.
 
 At the present time Orbuculum supports ten devices for collecting trace
 from the target;
 
-* the Black Magic Debug Probe (BMP)
-* the SEGGER JLink
+* Black Magic Debug Probe (BMP)
+* SEGGER JLink
 * generic USB TTL Serial Interfaces
 * FTDI High speed serial interfaces
 * OpenOCD (Add a line like `tpiu config internal :3443 uart off 32000000` to your openocd config to use it.)
 * PyOCD (Add options like `enable_swv: True`, `swv_system_clock: 32000000` to your `pyocd.yml` to use it.)
-* The ECPIX-5 ECP5 Breakout Board for parallel trace
+* ECPIX-5 ECP5 Breakout Board for parallel trace
 * Anything capable of saving the raw SWO data to a file
 * Anything capable of offering SWO on a TCP port
 * ORBTrace Mini (V1.4.0 or higher for orbflow support)
 
-Note that current support for the ECPIX-5 breakout board is based on the original bob, the designs for which
-are in the orbtrace_hw repository. bob2 support will be added when we get around to it (probably when we decide we
+Note that current support for the ECPIX-5 breakout board is based on the original BOB, the designs for which
+are in the orbtrace_hw repository. BOB2 support will be added when we get around to it (probably when we decide we
 need USB3 support...unlikely to be yet a while).
 
 For 'normal' users we highly reccomend the ORBTrace mini probe for the best experience using this stuff. That's
 not particularlly to make money (the designs are in the orbtrace_hw directory...feel free to build you own), but
-because that hardware has been tuned for the job to be done.
+because that hardware has been tuned for the job to be done. Getting an ORBTrace allows you to participate in the
+project, it's not a product yet, although it does work remarkably well.
 
 gdb setup files for each device type can be found in the `Support` directory. You'll find
 example get-you-going applications in the [Orbmule](https://github.com/orbcode/orbmule) repository including
-`gdbinit` scripts for OpenOCD, pyOCD and Blackmagic Probe Hosted. There are walkthroughs for lots of examples
-of the use of the orbuculum suite at [Orbcode](https://orbcode.org).
+`gdbinit` scripts for OpenOCD, pyOCD and Black Magic Debug Application (BMDA). There are walkthroughs for lots of examples
+of the use of the suite at [Orbcode](https://orbcode.org).
 
 When using SWO Orbuculum can use, or bypass, the TPIU. The TPIU adds overhead
 to the datastream, but provides better synchronisation if there is corruption
 on the link. To include the TPIU in decode stack, provide the -T
-option on the command line. If you don't provide it, and the ITM decoder sees
-TPIU syncs in the datastream, it will complain and barf out. This is deliberate
+option on the orbuculum command line. If you don't provide it, and the ITM decoder sees
+TPIU syncs in the datastream, it will complain. This is deliberate
 after I spent two days trying to find an obscure bug 'cos I'd left the `-T` option off. If you don't specify, then
-only TPIU stream 1 is decoded over legacy protocol, use the `-tx` option to add additional streams. If you have an
+only TPIU stream 1 is decoded over legacy protocol, so use the `-tx` option to add additional streams. If you have an
 end to end orbflow configuration with the probe stripping the TPIU framing then all streams are passed transparently
-throughout the system.
+throughout the system and you don't need to worry about `-T` or `-tx`.
 
-Beware that in parallel trace the TPIU is mandatory...it must be stripped somewhere in the system; Either by the probe or by `orbuculum`.
+Beware that in parallel trace the TPIU is mandatory...it must be stripped somewhere in the system; Either by the probe or by `orbuculum`. ORBTrace 1.4.0 and above does that automatically. Other probes...not so much.
 
-TPIU framing can be stripped in the probe or the `orbuculum` mux. For legacy applications orbuculum makes the data available on
+For legacy applications orbuculum makes the TPIU data streams available on
 consecutive TCP/IP ports...so `-t 1,2` would put stream 1 data out over TCP port 3443 and stream 2 over 3444, by default. Do
 not leave the first number out if you only want output from the second stream...that won't end well.  orbflow (on port 3402 by default)
-supports all streams simultaneously, putting them under separate 'tags'.  Historically, clients could independently strip TPIU too, but
-that functionality has been removed in the name of simplification.
+supports all streams simultaneously, putting them under separate 'tags'.
 
 When in NRZ (UART) mode the SWO data rate that comes out of the chip _must_
 match the rate that the debugger expects. On the BMP speeds of
@@ -143,10 +143,11 @@ but 921600 baud is normally acheivable. On BMP the baudrate is set via
 the gdb session with the 'monitor traceswo xxxx' command. For a TTL
 Serial device its set by the Orbuculum command line.  Segger devices
 can normally work faster, but no experimentation has been done to
-find their max limits, which are probably it's dependent on the specific JLink
-you are using. ORBTrace Mini can operate with UART encoded SWO at up to 62MBits/sec. It
+find their max limits, it's probably dependent on the specific JLink
+you are using, and the available baudrates appear to be quantised.
+ORBTrace Mini can operate with UART encoded SWO at any speed from 125Kbits/sec up to 62MBits/sec. It
 also supports Manchester encoded SWO at up
-to 48Mbps. The advantage of Manch encoding is that there's no speed matching needed to use it, and it should
+to 48Mbps. The advantage of Manchester encoding is that there's no speed matching needed to use it, and it should
 continue to work correctly even if the target clock speed changes (e.g. when it goes
 into a low power mode). This is a good thing, and is the way we normally use SWO for day-job.
 
@@ -154,8 +155,8 @@ Configuring the Target
 ======================
 
 Generally speaking, you will need to configure the target device to output
-SWD or parallel data. You can either do that through program code, or through magic
-incantations in gdb. The gdb approach is flexible but a bit clunky. @novakov has created
+SWO or parallel data. You can either do that through program code, or through magic
+incantations in gdb. The gdb approach is flexible but a bit clunky. novakov has created
 the libtrace repository which includes all the code needed to configure your target
 directly via progam code if you prefer to set things up that way.
 
@@ -165,8 +166,8 @@ various registers are available from [Arm](https://static.docs.arm.com/ddi0403/e
 you've got various options for the type of output generated, its frequency and it's content.
 
 Using these macros means you do not need to change your program code to be able to use
-facilities like orbtop. Obviously, if you want textual trace output, you've got to create
-that in the program!
+facilities like `orbtop`. Obviously, if you want textual trace output, you need to generate
+that in your program!
 
 Information about the contents of this file can be found by importing it into your
 gdb session with `source gdbtrace.init` and then typing `help orbuculum`. Help on the
@@ -231,9 +232,12 @@ needed for `orbmortem`.
 
 In-code configuration
 ---------------------
-Trace components might also be configured directly from code running on MCU. Such approach is useful for setting up more invasive tracing or logging output.
+Trace components may also be configured directly from code running on the target. Such an
+approach is useful for setting up more invasive tracing or logging output.
 
-CMSIS-compatible headers, provided by many chip vendors include all necessary type definitions and constants. However they are not the most straightforward, so it might be easier to use Orbcode's libtrace library: https://orbcode.github.io/libtrace/
+CMSIS-compatible headers, provided by many chip vendors, include all necessary type definitions and constants.
+However they are not the most straightforward, so it might be easier to use Orbcode's libtrace
+library: https://orbcode.github.io/libtrace/
 
 Building on Linux
 =================
@@ -251,21 +255,22 @@ Build
 -----
 
 In general you'll find recent binaries available for your platform as build artifacts from the Github Actions we run for CI.
-Just go to the 'Actions' menu in github and then grab the artifacts from the latest builds.
+Just go to the 'Actions' menu in github and then grab the artifacts from the latest builds. That's not the preferred method,
+but it's a quick-and-dirty solution.
 
-If you do want to build the system, then the command line to build the Orbuculum tool suite is:
+If you do want to build the system, then the sequence is:
 
 ```
 >meson setup build
 >ninja -C build
 ```
 
-You may need to change the paths to your libusb files, depending on how well your build environment is set up. You might also want to change the install path, which defaults to putting everything under `/usr/local` by passing the appropriate path to meson with a command line such as `meson setup --prefix=/usr build`...we've had some feedback that Arch doesn't find libraries under `/usr/local/lib`, for example. It's also worth noting that Ubuntu comes with a pretty old version of meson so if you get errors you may need to install a more recent one via pip.
+You may need to change the paths to your libusb files, depending on how well your build environment is set up. You might also want to change the install path, which defaults to putting everything under `/usr/local`, by passing the appropriate path to meson with a command line such as `meson setup --prefix=/usr build`...we've had some feedback that Arch doesn't find libraries under `/usr/local/lib`, for example. It's also worth noting that some releases of Ubuntu come with a pretty old version of meson so if you get errors you may need to install a more recent one via pip.
 
 
 Permissions and Access
 ----------------------
-A udev rules files is included in ```Support/60-orbcode.rules``` The default installations will have already installed this to either `/usr/local/lib/udev/rules.d` or `/usr/lib/udev/rules.d`, but you may prefer to install it to ```/etc/udev/rules.d``` by hand, if required.
+A udev rules files is included in ```Support/60-orbcode.rules``` The default installation will have already installed this to either `/usr/local/lib/udev/rules.d` or `/usr/lib/udev/rules.d`, but you may prefer to install it to ```/etc/udev/rules.d``` by hand, if required.
 
 Building on OSX
 ===============
@@ -311,7 +316,7 @@ Note that you will have to alter permissions of the device in `/dev/usb` (run `u
 Building on Windows
 ===================
 
-MinGW-w64 from MSys2 is recommended as environment for building Windows distribution. Easiest way to get proper MSys2/MinGW-w64 environment is to use Chocolatey (https://community.chocolatey.org/packages/msys2).
+MinGW-w64 from MSys2 is recommended as the environment for building the Windows distribution. The easiest way to get proper MSys2/MinGW-w64 environment is to use Chocolatey (https://community.chocolatey.org/packages/msys2).
 
 Dependencies
 ------------
@@ -354,35 +359,36 @@ Communications
 
 Originally orbuculum provided a TCP/3443 port to which an arbitary number of clients could connect
 and each one would receive a clean copy of the data from the probe. Optionally, the TPIU framing could
-be stripped off by orbuculum so that individual clients didn't have to do it and each TPIU port would then
-appear on consecutive ports; Generally, that means that ITM message appeared on TCP/3443 and ETM on TCP/3444.
+be stripped off by orbuculum so that individual clients didn't have to do it and each TPIU stream would then
+appear on consecutive ports; Generally, that means that ITM messages appeared on TCP/3443 and ETM on TCP/3444.
 
 Some debug drivers (e.g. openocd, pyocd) can now create an orbuculum-compatible interface on TCP/3443, which
-allows you to connect the rest of the suite to that directly, without needing to use the orbuculum mux itself. 
+allows you to connect the rest of the suite to that directly, without needing to use the orbuculum mux itself.
+These really only appear to support ITM at the moment.
 
-However, times have moved on. Passing all those data through transparently was wasteful as a fair bit of it
-was 'nothing to see here', so Orbuculum now supports a new protocol, orbflow (OFLOW). Orbflow is always carried on TCP/3402 and
-is a bit more intelligent than simply passing through the messages from the probe. It turns the stream of data into
-COBS encoded sequenced messages with defined message boundries and it also removes the redundant data. When used
+However, times have moved on. Passing all those data through transparently was wasteful as a fair few messages 
+were 'nothing to see here'. Orbuculum now supports a new protocol, orbflow (OFLOW). Orbflow is normally carried on TCP/3402. 
+It is a bit more intelligent than simply passing through the messages from the probe. It turns the stream of data into
+COBS encoded sequenced messages with defined boundries and it also removes the redundant data. When used
 in conjunction with an ORBTrace 1.4.0 or higher probe the orbflow messages are created in the probe itself, providing a further
 performance improvement.
 
 Basically, all of this is mostly transparent to the regular end user. Orbflow is automatically used for communication
 between orbuculum and its clients if it's available, and Orbuculum still provides the TCP/3443 port it always did,
 which you can connect to in the same way as you used to if you've got custom clients. Orbflow will give you a performance
-improvement, but it's otherwise mostly transparent.
+improvement, but it's otherwise transparent to users.
 
 There are come slight changes to the command line options though. Historically, when using TPIU decoding,
 you had to specify the channels to be decoded with an option like `-T 1,2`. You now simply need to tell orbuculum
 which tags to reflect over legacy protocol using `-t 1,2` and, if your probe doesn't remove TPIU framing automatically, specify the `-T`
 option on its own....if you try to specify the `-T` option and you've got an ORBTrace that supports Orbflow protocol
-then you'll get a warning, because TPIU framing removal is done automatically in the probe in that case, so you
+then you'll get a warning because TPIU framing removal is done automatically in the probe in that case, so you
 don't generally need it....it's still possible to do it because there are some edge cases where it's useful, but you will
 know why you need it if you need it, and you'll know to ignore the warning. If you're using end-to-end orbflow then you can
 ignore the `-T` and `-tx` options altogether, although you might still need to tell the client which tag to access.
 
-Note that individual clients cannot now strip TPIU. This was an unusual requirement and it can still be met by piping via
-`orbuculum` first. This results in a simplification of the clients.
+Note that individual clients cannot now strip TPIU. This was a fringe requirement which can still be met by piping via
+`orbuculum` first. Clients are simpler and smaller as a result of removing this.
 
 Why have we made this change? Well, decoding TPIU on the probe saves a huge amount of bandwidth, and moving to the
 tag based approach lets us convey other information from the probe too such as timestamps, voltages and currents.
@@ -395,33 +401,37 @@ The command line options for Orbuculum are available by running
 orbuculum with the -h option.
 
 Simply start orbuculum with the correct options for your trace probe and
-then you can start of stop other utilities as you wish. A typical command
+then you can start or stop other utilities as you wish. A typical command
 to run orbuculum would be;
 
 ```$ orbuculum --monitor 1000```
 
 In this case, because no source options were provided on the command line, input
-will be taken from a Blackmagic probe USB SWO feed, or from an ORBTrace mini if it can find one.
-It will start the daemon with a monitor reporting interval of 100ms.  Orbuculum exposes TCP ports 3402 and 3443 to which
+will be taken from a Blackmagic probe USB SWO feed, or from an ORBTrace mini if it can find one. If multiple
+probes are found you will get the option to choose between them. To avoid this choice, add any unique part of the
+serial number for the probe you want to use on the command line.
+The command above will start the daemon with a monitor reporting interval of 100ms.  Orbuculum exposes TCP ports 3402 and 3443 to which
 network clients can connect. 3402 delivers orbflow, 3443+x deliver raw frames. Both will relay to any
 client that is connected (such as orbcat, orbfifo or orbtop).
 The practical limit to the number of clients that can connect is set by the speed of the host machine....but there's
-nothing stopping you using another one on the local network :-)  If you've got an orbtrace mini and you want
-to switch on power to your target and configure it for Manchester SWO, a suitable command would be;
+nothing stopping you using another one on the local network :-)  Orbuculum can optionally call out to `orbtrace` when a
+probe first connects. this is typically used to set configuration parameters for the problem. For example, if you've got an
+orbtrace mini and you want to switch on power to your target and configure it for Manchester SWO, a suitable command would be;
 
 ```$ orbuculum --monitor 1000 --orbtrace '-p vtref,3.3 -e vtref,on'```
 
-...this will re-initialise the probe if it gets disconnected at any time. Note that the `--orbtrace` bit is providing options through to
+...arranging `orbtrace` to get called from `orbuculum` means the probe will be re-initialised if it gets disconnected at any time.
+Note that the `--orbtrace` bit is providing options through to
 the `orbtrace` application, so you need to look at the command line options for that to make sensible selections.
 
-Information about command line options can be found with the -h
+Information about `orbuculum` command line options can be found with the -h
 option.  Orbuculum itself is specifically designed to be 'hardy' to probe and
 target disconnects and restarts (y'know, like you get in the real
 world). In general the other programs in the suite will stay alive while
-`orbuculum` itself is available.  The intention being to give you useful information whenever it can get
-it.  Orbuculum does _not_ require gdb to be running, but you may need a
+`orbuculum` itself is available.  The intention is to give you useful information whenever it can be
+obtained.  Orbuculum does _not_ require gdb to be running, but you may need a
 gdb session to start the output.  BMP needs traceswo to be turned on
-at the command line before it capture data from the port, for example.
+at the command line before it capture data from the SWO pin, for example.
 
 Its worth a quick word about how the orbuculum mux interacts with clients. Pretty obviously, clients need to keep
 up with the flow of data from a probe. For the case that a client doesn't then it will be disconnected. It's then
@@ -444,25 +454,25 @@ For `orbuculum`, the specific command line options of note are;
 
  `-h, --help`: Brief help.
 
- `-H, --hires`: Use high resolution time. This limits probe interface timeouts to 1ms, which makes host-side timing more accurate, but at the expense of _much_ higher load (literally perhaps x100). Use sparingly. DEPRECIATED AND PROBABLY UNNEEDED.
+ `-l, --listen-port:   <port> for incoming ORBFLOW connections (defaults to 3402). Legacy port always starts +41 away from this (i.e. 3443 by default).
 
  `-m, --monitor`: Monitor interval (in ms) for reporting on state of the link. If baudrate is specified (using `-a`) and is greater than 100bps then the percentage link occupancy is also reported. Minimum of 500ms.
 
  `-n, --serial-number`: Set a specific serial number for the ORBTrace or BMP device to connect to. Any unambigious sequence is sufficient. Ignored for other probe types.
 
-  `-o, --output-file [filename]`: Record trace data locally. This is unfettered data directly from the source device, can be useful for replay purposes or other tool testing.
+  `-o, --output-file [filename]`: Record trace data locally. This is unfettered data directly from the source device (with a 16 byte magic header). This can be useful for replay purposes or other tool testing.
 
   `-O "<options>"`: Run orbtrace on each detected connection of a probe, with the specified options.
 
   `-p, --serial-port [serialPort]`: to use. If not specified then the program defaults to Blackmagic probe.
 
-  `-P, --pace [microseconds>]`: delay in block of data transmission to clients. Used when source is a file.
+  `-P, --pace [microseconds>]`: delay in block of data transmission to clients. Used when source is a file, ignored otherwise.
 
   `-s, --server [address]:[port]`: Set address for explicit TCP Source connection, (default none:2332).
 
-  `-T, --tpiu`: Remove TPIU formatting from incoming data stream. TPIU is removed from tag 1 when source is an ORBTrace mini 1.4.0 or higher.
+  `-T, --tpiu`: Remove TPIU formatting from incoming data stream. TPIU is removed from tag 1 when source is an ORBTrace mini 1.4.0 or higher and a warning is printed.
 
-  `-t, --tag x,y,...`: List of streams to decode (and onward route) from the probe (low stream numbers are TPIU channels). *By default only stream 1 (ITM) is routed over legacy protocol.*
+  `-t, --tag x,y,...`: List of streams to decode (and onward route) from the probe (low stream numbers are TPIU channels). *By default only stream 1 (ITM) is routed over legacy protocol, add additional streams via this command*
 
 
 Orbfifo
@@ -474,7 +484,7 @@ The easiest way to use the output from orbuculum is with one of the utilities
 such as `orbfifo`. This creates a set of fifos or permanent files in a given
 directory containing the decoded streams which apps can exploit directly. It also has
 a few other tricks up it's sleeve like filewriter capability. It used to be integrated into
-`orbuculum` but seperating it out splits the trace interface from the user space utilities, this is another
+`orbuculum` but seperating it out splits the trace interface from the user space utilities, this is a
 Good Thing(tm).
 
 A typical command line would be;
@@ -486,7 +496,7 @@ a file 'text' which delivers the output from swo channel 0 in character
 format.  Multiple -c options can be provided to set up fifos for individual channels
 from the debug device. The format of the -c option is;
 
-```>-c ChannelNum,ChannelName,FormatString```
+```-c ChannelNum,ChannelName,FormatString```
 
 ChannelNum is 0..31 and corresponds to the ITM channel. The name is the one
 that will appear in the directory and the FormatString can present the data
@@ -498,11 +508,10 @@ legal channel specifiers;
     -c 0,volume,"\l%d\b\n"
 
 Be aware that if you start making the formatting or screen handling too complex
-its quite possible your machine might not keep up...and then you will loose data!
+its quite possible your machine might not keep up...and then the client will be dropped and you will loose data!
 
 While you've got `orbfifo` running a further fifo `hwevent` will be found in
-the output directory, which reports on events from the hardware, one event per line as follows (note that
-the order of these has changed);
+the output directory, which reports on events from the hardware, one event per line as follows;
 
 * `0,[Status],[TS]` : Time status and timestamp.
 * `1,[EventType],[ExceptionNumber]` : Hardware exception. Event type is one of [Enter, Exit, Resume].
@@ -518,7 +527,7 @@ The command line options are;
 
  `-b, --basedir [basedir]`: for channels, terminated with a trailing directory seperator,
      so if you put xyz/chan then all ITM software channels will end up in a directory
-     xyz/chan.  If xyz/chan doesn't exist, then the channel creation will fail silently.
+     xyz/chan.  If xyz/chan doesn't exist, then channel creation will fail silently.
 
  `-c, --channel [Number],[Name],[Format]`: of channel to populate (repeat per channel) using printf formatting.
 
@@ -532,13 +541,15 @@ The command line options are;
 
   `-s [address]:[port]`: Set address for Source connection, (default localhost:3443).
 
+  `-t, --tag`: <stream> Which orbflow tag to use (normally 1).
+  
   `-v, --verbose`: Verbose mode 0==Errors only, 1=Warnings (Default) 2=Info, 3=Full Debug.
 
   `-W, --writer-path [path]` : Enable filewriter functionality with output in specified directory (disabled by default).
 
 Orbzmq
 ------
-`orbzmq` is utility that connects to orbuculum over the network and outputs data from various ITM HW and SW channels that it find. This output is sent over [ZeroMQ](https://zeromq.org/) PUBLISH socket bound to specified URL. Each published message is composed of two parts: **topic** and **payload**. Topic can be used by consumers to filter incoming messages, payload contains actual message data - for SW channels formatted or raw data and predefined format for HW channels.
+`orbzmq` is utility that connects to orbuculum over the network and outputs data from various ITM HW and SW channels that it finds. This output is sent over a [ZeroMQ](https://zeromq.org/) PUBLISH socket bound to the specified URL. Each published message is composed of two parts: **topic** and **payload**. Topic can be used by consumers to filter incoming messages, payload contains actual message data - for SW channels formatted or raw data and predefined format for HW channels.
 
 A typical command line would be like:
 
@@ -658,7 +669,7 @@ orbcat is a simple utility that connects to orbuculum over the network and
 outputs data from various ITM HW and SW channels that it finds.  This
 output is sent to stdout so the program is very useful for providing direct
 input for other utilities.  There can be any number of instances of orbcat
-running at the same time, and they will all decode data independently. They all get
+running at the same time, and they will all decode data independently as they all get
 a seperate networked data feed.  A
 typical use case for orbcat would be to act as a stdin for another program...an example
 of doing this to just replicate the data delivered over ITM Channel 0 would be
@@ -766,9 +777,9 @@ Command line options for orbtop are;
 
  `-t, --tag [number]`: Specify tag to decode. Defaults to 1.
 
- `-v, --verbose [x]`: Verbose mode 0..3.
+ `-v, --verbose [x]`: Verbosity level 0..3.
 
-Its worth a few notes about interrupt measurements. orbtop can provide information about the number of
+It is worth a few notes about interrupt measurements. orbtop can provide information about the number of
 times an interrupt is called, what its maximum nesting is, how many 'execution ticks' it's active for
 and what the spread is of those. Here's a typical combination output for a simple system;
 
@@ -792,20 +803,23 @@ and what the spread is of those. Here's a typical combination output for a simpl
  15 |      100 |     1 |      10208  |        102 |       100  |       210
  53 |      210 |     1 |      44752  |        213 |        97  |       479
 
-[V-TH] Interval = 1002ms / 7966664 (~7950 Ticks/ms)
+[--TH] Interval = 1002ms / 7966664 (~7950 Ticks/ms)
 ```
 
 The top half of this display is the typical 'top' output, the bottom half is a table of
 active interrupts that have been monitored in the interval. Note that outputs are
 given in terms of 'ticks', and the number of cpu cycles that correspond to a tick
 is set by `ITMTSPrescale`. You will also need to set `dwtTraceException` and
-`ITMTSEna` to be able to use this output mode.
+`ITMTSEna` to be able to use this output mode. Note that if the debug channel is over-full
+then these are the first data the target will discard and the information presented on this
+panel cannot be trusted. This is indicated by a 'V' in the first column of the flags display.
 
 Orbmortem
 ---------
 
 To use orbmortem you must be using a parallel trace source such as ORBTrace Mini, and it must be
-configured to stream parallel trace info (clue; the `startETM` option).
+configured to stream parallel trace info (clue; the `startETM` option). Orbmortem is not thoroughly
+tested and contributions on solidifying it are welcome.
 
 The command line options of note are;
 
@@ -844,7 +858,7 @@ Once it's running you will receive an indication at the lower right of the scree
 Reliability
 ===========
 
-A whole chunk of work has gone into making sure the dataflow over both the
+A whole chunk of work is constantly being done to make sure the dataflow over both the
 SWO link and parallel Trace is reliable....but it's pretty dependent on the debug
 interface itself.  The TL;DR is that if the interface _is_ reliable
 then Orbuculum will be. There are factors outside of our control
@@ -854,6 +868,9 @@ link is unidirectional (no opportunity for re-transmits). Using ORBTrace We have
 gigabytes of date over SWO and TRACE links with no errors, which is pretty impressive
 when you consider the speeds we are talking about and the fact that there is no
 error detection or correction on the link itself.
+
+ORBTrace is capable of sustained 390Mbits/sec transfer over a clean USB link. Make sure you've got
+no hubs or contending devices on the USB bus that ORBTrace is attached to in order to reach these speeds.
 
 As one example, ORBTrace Mini was configured with a target application sending out repeated strings at maximum speed
 over a 48Mbps SWO/Manch channel for an extended period of time. They were then collated and sorted by uniqueness, as follows;

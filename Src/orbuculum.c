@@ -104,7 +104,7 @@ struct Options
     bool mono;                                           /* Supress colour in output */
     int paceDelay;                                       /* Delay between blocks of data transmission in file readout */
     char *channelList;                                   /* List of channels to be exported over legacy connection */
-    bool hiresTime;                                      /* Use hiresolution time (shorter timeouts...more accurate but higher load */
+    bool hiresTime;                                      /* Use hiresolution time (shorter timeouts...obsolete) */
     char *sn;                                            /* Any part serial number for identifying a specific device */
     int listenPort;                                      /* Listening port for network */
 };
@@ -356,7 +356,6 @@ void _printHelp( const char *const progName, struct RunTime *r )
     genericsPrintf( "    -E, --eof:           When reading from file, terminate at end of file" EOL );
     genericsPrintf( "    -f, --input-file:    <filename> Take input from specified file" EOL );
     genericsPrintf( "    -h, --help:          This help" EOL );
-    genericsPrintf( "    -H, --hires:         High resolution time (much higher CPU load though!)" EOL );
     genericsPrintf( "    -l, --listen-port:   <port> Listen port for incoming ORBFLOW connections (defaults to %d)" EOL, r->options->listenPort );
     genericsPrintf( "    -m, --monitor:       <interval> Output monitor information about the link at <interval>ms, min 500ms" EOL );
     genericsPrintf( "    -M, --no-colour:     Supress colour in output" EOL );
@@ -367,7 +366,7 @@ void _printHelp( const char *const progName, struct RunTime *r )
     genericsPrintf( "    -P, --pace:          <microseconds> delay in block of data transmission to clients" EOL );
     genericsPrintf( "    -s, --server:        <Server>:<Port> to use" EOL );
     genericsPrintf( "    -T, --tpiu:          Strip TPIU framing from input flows (mostly not relevant)" EOL );
-    genericsPrintf( "    -t, --tag:           <stream,stream....> TPIU streams to decode and onward route (Default %s)" EOL, r->options->channelList );
+    genericsPrintf( "    -t, --tag:           <stream,stream....> Legacy TPIU streams to decode and route (Default %s)" EOL, r->options->channelList );
     genericsPrintf( "    -v, --verbose:       <level> Verbose mode 0(errors)..3(debug)" EOL );
     genericsPrintf( "    -V, --version:       Print version, connected usb devices, and exit" EOL );
 }
@@ -400,7 +399,6 @@ static struct option _longOptions[] =
     {"eof", no_argument, NULL, 'E'},
     {"input-file", required_argument, NULL, 'f'},
     {"help", no_argument, NULL, 'h'},
-    {"hires", no_argument, NULL, 'H'},
     {"listen-port", required_argument, NULL, 'l'},
     {"monitor", required_argument, NULL, 'm'},
     {"no-colour", no_argument, NULL, 'M'},
@@ -424,7 +422,7 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
     int c, optionIndex = 0;
 #define DELIMITER ','
 
-    while ( ( c = getopt_long ( argc, argv, "a:Ef:hHVl:m:Mn:o:O:p:P:s:Tt:v:", _longOptions, &optionIndex ) ) != -1 )
+    while ( ( c = getopt_long ( argc, argv, "a:Ef:hVl:m:Mn:o:O:p:P:s:Tt:v:", _longOptions, &optionIndex ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -455,11 +453,6 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
             case 'h':
                 _printHelp( argv[0], r );
                 return false;
-
-            // ------------------------------------
-            case 'H':
-                r->options->hiresTime = true;
-                break;
 
             // ------------------------------------
 

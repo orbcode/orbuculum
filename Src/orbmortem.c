@@ -174,7 +174,7 @@ static void _printHelp( const char *const progName )
     genericsPrintf( "    -D, --no-demangle:  Switch off C++ symbol demangling" EOL );
     genericsPrintf( "    -d, --del-prefix:   <String> Material to delete off the front of filenames" EOL );
     genericsPrintf( "    -e, --elf-file:     <ElfFile> to use for symbols and source" EOL );
-    genericsPrintf( "    -E, --eof:          When reading from file, terminate at end of file rather than waiting for further input" EOL );
+    genericsPrintf( "    -E, --eof:          When reading from file, terminate at end of file" EOL );
     genericsPrintf( "    -f, --input-file:   <filename>: Take input from specified file" EOL );
     genericsPrintf( "    -h, --help:         This help" EOL );
     genericsPrintf( "    -M, --no-colour:    Supress colour in output" EOL );
@@ -192,8 +192,8 @@ static void _printHelp( const char *const progName )
     genericsPrintf( "    -t, --tag:          <stream>: Which OFLOW tag to use (normally 2)" EOL );
     genericsPrintf( "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
     genericsPrintf( "    -V, --version:      Print version and exit" EOL );
-    genericsPrintf( EOL "(Will connect one port higher than that set in -s for legacy protocol)" EOL );
-    genericsPrintf(     "(this will automatically select the second output stream from orbuculum.)" EOL );
+    genericsPrintf( EOL "(Legacy protocol will connect one port higher than that set in -s)" EOL );
+    genericsPrintf(     "(This will automatically select the second output stream from orbuculum.)" EOL );
     genericsPrintf( EOL "Environment Variables;" EOL );
     genericsPrintf( "  OBJDUMP: to use non-standard objdump binary" EOL );
 }

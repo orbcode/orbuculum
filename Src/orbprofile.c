@@ -462,7 +462,7 @@ static void _printHelp( const char *const progName )
     genericsPrintf( "    -D, --no-demangle:  Switch off C++ symbol demangling" EOL );
     genericsPrintf( "    -d, --del-prefix:   <String> Material to delete off front of filenames" EOL );
     genericsPrintf( "    -e, --elf-file:     <ElfFile> to use for symbols" EOL );
-    genericsPrintf( "    -E, --eof:          When reading from file, terminate at end of file rather than waiting for further input" EOL );
+    genericsPrintf( "    -E, --eof:          When reading from file, terminate at EOF" EOL );
     genericsPrintf( "    -f, --input-file:   Take input from specified file" EOL );
     genericsPrintf( "    -h, --help:         This help" EOL );
     genericsPrintf( "    -I, --interval:     <Interval> Time between samples (in ms)" EOL );

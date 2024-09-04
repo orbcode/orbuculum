@@ -408,9 +408,9 @@ static void _printHelp( struct RunTime *r )
     genericsPrintf( "    -D, --no-demangle:  Switch off C++ symbol demangling" EOL );
     genericsPrintf( "    -d, --del-prefix:   <String> Material to delete off front of filenames" EOL );
     genericsPrintf( "    -e, --elf-file:     <ElfFile> to use for symbols" EOL );
-    genericsPrintf( "    -E, --eof:          When reading from file, terminate at end of file rather than waiting for further input" EOL );
+    genericsPrintf( "    -E, --eof:          When reading from file, terminate at end of file" EOL );
     genericsPrintf( "    -f, --input-file:   <filename>: Take input from specified file" EOL );
-    genericsPrintf( "    -g, --trace-chn:    <TraceChannel> for trace output (default %d)" EOL, r->options->traceChannel );
+    genericsPrintf( "    -g, --trace-chn:    <TraceChannel> ITM channel for trace (default %d)" EOL, r->options->traceChannel );
     genericsPrintf( "    -h, --help:         This help" EOL );
     genericsPrintf( "    -I, --interval:     <Interval>: Time to sample (in mS)" EOL );
     genericsPrintf( "    -n, --itm-sync:     Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
@@ -424,8 +424,6 @@ static void _printHelp( struct RunTime *r )
     genericsPrintf( "    -V, --version:      Print version and exit" EOL );
     genericsPrintf( "    -y, --graph-file:   <Filename> dotty filename for structured callgraph output" EOL );
     genericsPrintf( "    -z, --cache-file:   <Filename> profile filename for kcachegrind output" EOL );
-    genericsPrintf( EOL "(Will connect one port higher than that set in -s when Orbflow is not used)" EOL );
-
 }
 // ====================================================================================================
 void _printVersion( void )
