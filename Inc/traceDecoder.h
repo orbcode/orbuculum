@@ -83,7 +83,7 @@ enum TRACEchanges
 
 /* Flag for unknown/illegal cycle count */
 #define COUNT_UNKNOWN 0xffffffffffffffffL
-#define ADDRESS_UNKNOWN 0xffffffffffffffffL
+#define ADDRESS_UNKNOWN ((symbolMemaddr)-1)
 
 // ============================================================================
 // Messages out of the decoder
@@ -105,9 +105,9 @@ struct TRACECPUState
 
     // Gross processor state...
     uint64_t ts;                         /* Latest timestamp */
-    uint64_t addr;                       /* Latest fully computed address */
-    uint64_t toAddr;                     /* Address to run to in linear mode (MTB) */
-    uint64_t nextAddr;                   /* Next address to run from in linear mode (MTB) */
+    symbolMemaddr addr;                  /* Latest fully computed address */
+    symbolMemaddr toAddr;                /* Address to run to in linear mode (MTB) */
+    symbolMemaddr nextAddr;              /* Next address to run from in linear mode (MTB) */
     enum Mode addrMode;                  /* What kind of addressing are we using at the moment? */
     uint32_t contextID;                  /* Currently executing context */
     uint8_t vmid;                        /* Current virtual machine ID */

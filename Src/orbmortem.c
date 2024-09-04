@@ -30,8 +30,6 @@
 
 #define REMOTE_SERVER       "localhost"
 
-typedef unsigned long int symbolMemaddr;
-
 enum Prot { PROT_OFLOW, PROT_ETM, PROT_UNKNOWN };
 const char *protString[] = {"OFLOW", "ETM", NULL};
 

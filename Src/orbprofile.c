@@ -414,7 +414,7 @@ static void _traceCB( void *d )
                 {
                     if ( TRACEStateChanged( &r->i, EV_CH_ADDRESS ) )
                     {
-                        DBG_OUT( "New addr %08lx" EOL, cpu->addr );
+                        DBG_OUT( "New addr %08x" EOL, cpu->addr );
                         r->op.workingAddr = cpu->addr;
                     }
 
@@ -432,7 +432,7 @@ static void _traceCB( void *d )
             }
 
             r->op.workingAddr = cpu->addr;
-            DBG_OUT( "A:%08lx" EOL, cpu->addr );
+            DBG_OUT( "A:%08x" EOL, cpu->addr );
         }
 
         /* ================================================ */

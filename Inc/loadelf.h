@@ -2,14 +2,13 @@
 #ifndef _LOADELF_H_
 
 #include <stdbool.h>
-#include <capstone/capstone.h>
+#include <capstone.h>
+#include <stdint.h>
+#include "generics.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-typedef unsigned long int symbolMemaddr;
-typedef unsigned char *symbolMemptr;
 
 #define MEMADDRF "%08lx"
 #define NO_LINE        (-1)

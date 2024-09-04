@@ -83,6 +83,10 @@ extern "C" {
         genericsExit( ENOMEM,"Out of memory at %s::%d" EOL, __FILE__,__LINE__); \
     }
 
+/* Memory sizes */
+typedef uint32_t symbolMemaddr;
+typedef unsigned char *symbolMemptr;
+  
 // ====================================================================================================
 enum verbLevel {V_ERROR, V_WARN, V_INFO, V_DEBUG, V_MAX_VERBLEVEL};
 
