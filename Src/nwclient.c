@@ -69,7 +69,7 @@ struct nwClient
     volatile struct nwClient *prevClient;
 
     /* Parameters used to run the client */
-    int                       portNo;            /* Port of connection */
+    int                       fdNo;             /* file descriptor of incoming connection */
 };
 
 // ====================================================================================================
@@ -105,7 +105,7 @@ static int _lock_with_timeout( pthread_mutex_t *mutex, const struct timespec *ts
 static void _clientRemoveNoLock( volatile struct nwClient *c )
 
 {
-    close( c->portNo );
+    close( c->fdNo );
 
     if ( c->prevClient )
     {
@@ -154,14 +154,14 @@ static void *_listenTask( void *arg )
         }
 
         inet_ntop( AF_INET, &cli_addr.sin_addr, s, 99 );
-        genericsReport( V_INFO, "New connection from %s" EOL, s );
+        genericsReport( V_INFO, "New connection from %s index %d" EOL, s, newsockfd );
 
         /* We got a new connection - spawn a record to handle it */
         client = ( struct nwClient * )calloc( 1, sizeof( struct nwClient ) );
         MEMCHECK( client, NULL );
 
         client->parent = h;
-        client->portNo = newsockfd;
+        client->fdNo = newsockfd;
 
         /* Make port non-blocking */
 #ifdef WIN32
@@ -235,13 +235,14 @@ void nwclientSend( struct nwclientsHandle *h, uint32_t len, const uint8_t *ipbuf
 
             while ( t && ( sent >= 0 ) )
             {
-                sent = send( n->portNo, p, t, MSG_NOSIGNAL );
+                sent = send( n->fdNo, p, t, MSG_NOSIGNAL );
                 p += sent;
                 t -= sent;
             }
 
             if ( t )
             {
+                genericsReport( V_INFO, "Killed connection index %d" EOL, n->fdNo );
                 volatile struct nwClient *newn = n->nextClient;
                 _clientRemoveNoLock( n );
                 n = newn;
