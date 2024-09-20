@@ -132,6 +132,14 @@ void COBSPump( struct COBS *t, const uint8_t *incoming, int len,
 
                 break;
 
+            case COBS_DRAINING:  // ---------------------------------------------------------------
+                if ( COBS_SYNC_CHAR == *fp )
+                {
+                    t->s = COBS_IDLE;
+                }
+
+                break;
+
             case COBS_RXING: // -------------------------------------------------------------------
                 t->intervalCount--;
 
@@ -160,7 +168,7 @@ void COBSPump( struct COBS *t, const uint8_t *incoming, int len,
                     if ( ( t->f.len > COBS_MAX_PACKET_LEN  ) || ( COBS_SYNC_CHAR == *fp ) )
                     {
                         t->error++;
-                        t->s = COBS_IDLE;
+                        t->s = COBS_DRAINING;
                     }
                     else
                     {

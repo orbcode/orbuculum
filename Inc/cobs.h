@@ -26,7 +26,8 @@ extern "C" {
 enum COBSPumpState
 {
     COBS_IDLE,
-    COBS_RXING
+    COBS_RXING,
+    COBS_DRAINING
 };
 
 struct Frame
