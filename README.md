@@ -8,7 +8,7 @@
 
 ![Screenshot](https://raw.githubusercontent.com/orbcode/orbuculum/main/Docs/title.png)
 
-This is the branch for the development of Orbuculum V2.2.0 which is currently in feature freeze and Beta test. Bugfixes for 2.2.0 will be done in this branch. Development is generally done in feature branches and folded into main as those features mature - that will be post 2.2.0.
+This is Orbuculum V2.2.0. Bugfixes for 2.2.x will be done in this branch. Development is generally done in feature branches and folded into main as those features mature - those are post 2.2.0.
 
 Version 2.2.0 builds on 2.1.0 and adds several new CPU families, improved client application handling and the start of ETM4 support. Stats and timing are also much improved and the whole communications subsystem has been simplified and streamlined. Most importantly though, we have moved from 'legacy' protocol (basically, the exact same protocol that flows from the chip) for communications to 'orbflow' protocol. Orbflow protocol is an extensible packet oriented protocol which provides a more compact representation of the probe data. By default orbflow is used transparently between orbuculum and client applications. If you have an ORBTrace 1.4.0 or higher version then it is also used for communication from the probe to orbuculum. If you have your own legacy applications, or a version of ORBTrace less that 1.4.0, then the system will fall back to legacy protocol transparently. You can have a hybrid arrangement where some clients use legacy protocol and some use orbflow no problem.  As you might imagine this can quickly become complex so please yell up if any edge cases don't seem to work correctly!
 
@@ -98,7 +98,7 @@ from the target;
 * SEGGER JLink
 * generic USB TTL Serial Interfaces
 * FTDI High speed serial interfaces
-* OpenOCD (Add a line like `tpiu config internal :3443 uart off 32000000` to your openocd config to use it.)
+* OpenOCD (Add a line like `tpiu config internal :3443 uart off 32000000` to your openocd config to use it...more detailed configuration info at the bottom of this document)
 * PyOCD (Add options like `enable_swv: True`, `swv_system_clock: 32000000` to your `pyocd.yml` to use it.)
 * ECPIX-5 ECP5 Breakout Board for parallel trace
 * Anything capable of saving the raw SWO data to a file
@@ -1132,3 +1132,43 @@ In order to ease pain of this issue, Orbuculum distribution for Windows built on
 The later approach (file replacement) works fine for PyOCD (replace `libusb-1.0.dll` file in `<venv>/Lib/site-packages/libusb_package`) and fails to work with xPack OpenOCD (due to the way `libftdi.dll` is built).
 
 Please report both success (this will increase chances of merging patch to upstream libusb) and failures (so we will be able to identify and fix issues introduced by patch) with this approach.
+
+Notes on using orbuculum with openocd
+=====================================
+
+Taylorh140 made some good notes about getting openocd working with orbuculum on a STM32F429 target.
+They are repeated here;
+
+Openocd has a directory of scripts it uses for connecting. These are typically located in the
+`..../share/scripts` folder so if you're connecting to a particular board or chip using one of
+these you need to add a line to it to it. A typical file with line to open a tcp server listening to port 3443
+and let the SWV know that the cpu clock rate is 168Mhz would be;
+
+```
+source [find interface/stlink.cfg]
+transport select hla_swd
+set WORKAREASIZE 0x20000
+source [find target/stm32f4x.cfg]
+reset_config srst_only
+
+tpiu config internal :3443 uart off 168000000
+```
+
+You can then start openocd with a command like `openocd -f <config_file>`. You might see a line
+like `Info : DEPRECIATED 'tpiu config'` but that should be ok. You should now be able to connect
+orb clients directly to openocd, something like;
+
+```
+> orbcat -s localhost:3443 -c0,"%c"
+ABCDEFGHIJKLMNOPQRSTUVWXYZ
+ABCDEFGHIJKLMNOPQRSTUVWXYZ
+ABCDEFGHIJKL...etc
+```
+
+Things to try if this doesn't work;
+
+* make sure your device is connected
+* make sure its powered on
+* make sure there is no typo's in the .cfg file.
+* make sure your application is running ('c' in gdb)
+* get help from the openocd or orbuculum discord servers

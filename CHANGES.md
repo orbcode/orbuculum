@@ -1,5 +1,7 @@
-In Progress (Version 2.2.0)
+21st Sept 2024 (Version 2.2.0)
 
+* Add COBS draining state to re-sync as quickly as possible
+* Report when client is disconnected for not keeping up
 * Addition of orbflow support (COBS over arbitary bearer with protocol on top)
 * Support for ORBTrace 1.4 series gateware
 * Support in-probe TPIU frame stripping
