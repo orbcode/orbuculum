@@ -261,6 +261,11 @@ static enum LineType _getLineType( char *sourceLine, char *p1, char *p2, char *p
     /* If it has something with <xxx> in it, it's a proc label (function) */
     if ( 2 == sscanf( sourceLine, "%[0-9a-fA-F] <%[^>]>", p1, p2 ) )
     {
+        /* Demangled C++ names may have multiple ">" characters. Expand until last one. */
+        const char *const beg = strchr(sourceLine, '<') + 1;
+        const char *const end = strrchr(beg, '>');
+        (void)memcpy(p2, beg, end - beg);
+        p2[end - beg] = '\0';
         return LT_PROC_LABEL;
     }
 
