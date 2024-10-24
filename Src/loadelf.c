@@ -369,14 +369,15 @@ static void _processFunctionDie( struct symbol *p, Dwarf_Debug dbg, Dwarf_Die di
         attr_tag = DW_AT_abstract_origin;
         dwarf_attr( die, attr_tag, &attr_data, 0 );
         dwarf_global_formref( attr_data, &abstract_origin_offset, 0 );
-        dwarf_offdie_b( dbg, abstract_origin_offset, IS_INFO, &abstract_origin_die, 0 );
-        isinline = true;
+        if (DW_DLV_OK == dwarf_offdie_b( dbg, abstract_origin_offset, IS_INFO, &abstract_origin_die, 0 ))
+        {
+            isinline = true;
+            name_die = abstract_origin_die;
+        }
     }
-    else
-    {
-        dwarf_highpc_b ( die, &h, 0, &formclass, 0 );
-        dwarf_lowpc ( die, &l, 0 );
-    }
+
+    dwarf_highpc_b ( die, &h, 0, &formclass, 0 );
+    dwarf_lowpc ( die, &l, 0 );
 
     if ( formclass == DW_FORM_CLASS_CONSTANT )
     {
@@ -1001,7 +1002,7 @@ char *symbolDisassembleLine( struct symbol *p, enum instructionClass *ic, symbol
     if ( !p->caphandle )
     {
         /* Disassembler isn't initialised yet */
-        if ( cs_open( CS_ARCH_ARM, CS_MODE_THUMB + CS_MODE_LITTLE_ENDIAN, &p->caphandle ) != CS_ERR_OK )
+        if ( cs_open( CS_ARCH_ARM, CS_MODE_THUMB + CS_MODE_LITTLE_ENDIAN + CS_MODE_MCLASS, &p->caphandle ) != CS_ERR_OK )
         {
             return NULL;
         }
@@ -1044,6 +1045,14 @@ char *symbolDisassembleLine( struct symbol *p, enum instructionClass *ic, symbol
                               && strstr( insn->op_str, "pc" ) )
                 ) ? LE_IC_JUMP : 0;
 
+        // create a copy to check for pc
+        char *copy = strdup(insn->op_str);
+        *ic |=  (
+                            ( ( ( insn->id == ARM_INS_LDR ) )
+                              && strstr(strtok(copy,","), "pc" ) )
+                ) ? LE_IC_JUMP : 0;
+        // free the copy
+        free(copy);
         /* Was it an exception return? */
         *ic |=  ( ( insn->id == ARM_INS_ERET ) ) ? LE_IC_JUMP | LE_IC_IRET : 0;
 
@@ -1072,7 +1081,7 @@ char *symbolDisassembleLine( struct symbol *p, enum instructionClass *ic, symbol
 
                     if ( newaddr )
                     {
-                        *newaddr = detail->arm.operands[0].imm;
+                            *newaddr = detail->arm.operands[n].imm;
                     }
 
                     break;
