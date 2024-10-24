@@ -1045,14 +1045,14 @@ char *symbolDisassembleLine( struct symbol *p, enum instructionClass *ic, symbol
                               && strstr( insn->op_str, "pc" ) )
                 ) ? LE_IC_JUMP : 0;
 
-        // create a copy to check for pc
+        /* create a copy to check if load in pc */
         char *copy = strdup(insn->op_str);
         *ic |=  (
                             ( ( ( insn->id == ARM_INS_LDR ) )
                               && strstr(strtok(copy,","), "pc" ) )
                 ) ? LE_IC_JUMP : 0;
-        // free the copy
         free(copy);
+        
         /* Was it an exception return? */
         *ic |=  ( ( insn->id == ARM_INS_ERET ) ) ? LE_IC_JUMP | LE_IC_IRET : 0;
 
