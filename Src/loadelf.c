@@ -372,7 +372,6 @@ static void _processFunctionDie( struct symbol *p, Dwarf_Debug dbg, Dwarf_Die di
         if (DW_DLV_OK == dwarf_offdie_b( dbg, abstract_origin_offset, IS_INFO, &abstract_origin_die, 0 ))
         {
             isinline = true;
-            name_die = abstract_origin_die;
         }
     }
 
