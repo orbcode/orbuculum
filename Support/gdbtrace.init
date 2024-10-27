@@ -994,8 +994,6 @@ define _doTRACE
   # Must be called with $bits containing number of bits to set trace for
 
   set *($ITMBASE+0xfb0) = 0xc5acce55
-  set *($ETMBASE+0xfb0) = 0xc5acce55
-  set *($TPIUBASE+0xfb0) = 0xc5acce55
 
   # Set port size (TPIU_CSPSR)
   set *($TPIUBASE+4) = (1<<$bits)
