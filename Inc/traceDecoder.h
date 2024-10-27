@@ -143,6 +143,9 @@ struct TRACECPUState
 
     // Convinience, for debug reporting
     genericsReportCB report;
+
+    // Debugging
+    uint64_t overflows;       
 };
 
 // ============================================================================

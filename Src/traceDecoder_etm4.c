@@ -185,6 +185,11 @@ static bool _pumpAction( struct TRACEDecoderEngine *e, struct TRACECPUState *cpu
     }
     else
     {
+        if( c == 0x05 && j->asyncCount == 1)
+        {
+            cpu->overflows++;
+            DEBUG( "Overflow Detected. ReSync Trace Stream:" EOL );
+        }
         j->asyncCount = c ? 0 : j->asyncCount + 1;
 
         switch ( j->p )
@@ -336,7 +341,7 @@ static bool _pumpAction( struct TRACEDecoderEngine *e, struct TRACECPUState *cpu
 
                     case 0b11000000 ... 0b11010100:
                     case 0b11100000 ... 0b11110100: /* Atom format 6, Figure 6-44, Pg 6.307 */
-                        cpu->eatoms = ( c & 0x1f ) + 3;
+                        cpu->eatoms = ( c & 0x1f ) + 4;
                         cpu->instCount = cpu->eatoms;
                         cpu->disposition = ( 1 << ( cpu->eatoms ) ) - 1;
 
@@ -404,6 +409,8 @@ static bool _pumpAction( struct TRACEDecoderEngine *e, struct TRACECPUState *cpu
                         cpu->addr = j->q[match].addr;
                         retVal = TRACE_EV_MSG_RXED;
                         _stateChange( cpu, EV_CH_ADDRESS );
+                        _stackQ( j );
+                        j->q[0].addr = cpu->addr;
                         break;
 
                     case 0b10010101: /* Short address, IS0 short, Figure 6-32, Pg 6-294 */
@@ -685,7 +692,7 @@ static bool _pumpAction( struct TRACEDecoderEngine *e, struct TRACECPUState *cpu
                 }
                 else
                 {
-                    if ( j->idx == 8 )
+                    if ( j->idx == 9 )
                     {
                         /* Second byte of IS1 case - mask MSB */
                         j->q[0].addr = ( j->q[0].addr & ( ~( 0x7F << j->idx ) ) ) | ( ( c & 0x7f ) << ( j->idx ) );
