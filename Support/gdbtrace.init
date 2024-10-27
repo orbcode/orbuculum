@@ -1550,15 +1550,6 @@ define enableSAMD5XTRACE
     set *(unsigned char *)(0x41008000+0x80*2+0x40+24) = (($drive) << 6) | 1
   end
 
-  # Set number of bits in DBGMCU_CR
-  set *0xE0042004 &= ~(3<<6)
-
-  if ($bits<3)
-     set *0xE0042004 |= ((($bits+1)<<6) | (1<<5))
-  else
-     set *0xE0042004 |= ((3<<6) | (1<<5))
-  end
-
   # Enable Trace TRCENA (DCB DEMCR)
   set *($CDBBASE+0xC)=(1<<24)
 
