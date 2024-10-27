@@ -1009,11 +1009,8 @@ static void _handleBlock( struct RunTime *r, ssize_t fillLevel, uint8_t *buffer 
 
         if ( r->usingOFLOW )
         {
-            if ( r->options->intervalReportTime )
-            {
-                /* We need to decode this so we can get the stats out of it .. we don't bother if we don't need stats */
-                OFLOWPump( &r->oflow, buffer, fillLevel, _OFLOWpacketRxed, r );
-            }
+            /* We need to decode this so we can get the stats out of it, and to reflect it out */
+            OFLOWPump( &r->oflow, buffer, fillLevel, _OFLOWpacketRxed, r );
 
             /* ...and reflect this packet to the outgoing OFLOW channels, if we don't need to reconstruct them */
             if ( !r->options->useTPIU )
