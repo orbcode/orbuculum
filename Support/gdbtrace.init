@@ -100,6 +100,13 @@ set $TPIUBASE=0xE0040000
 set $ETMBASE=0xE0041000
 set $CTIBASE=0xE0042000
 
+define setTRCENA
+  set *($CDBBASE+0xC)|=(1<<24)
+end
+document setTRCENA
+setTRCENA Enables trace peripherals (DWT,ITM,ETM) in DEMCR.
+end
+
 define _setAddressesSTM32
   # Locations in the memory map for interesting things on STM32
   if ($CPU == $CPU_STM32M33)
@@ -594,7 +601,7 @@ define prepareSWO
   set *($ITMBASE+0xfb0) = 0xc5acce55
   set *($ETMBASE+0xfb0) = 0xc5acce55
 
-  set *($CDBBASE+0xC)|=(1<<24)
+  setTRCENA
 
   if ($useMan==0)
     # Use Async mode pin protocol (TPIU_SPPR)
@@ -618,7 +625,7 @@ define prepareSWO
   end
 
   # Flush all initial configuration
-  set *($CDBBASE+0xC)|=(1<<24)
+  setTRCENA
   set *($DWTBASE) = 0
   set *($ITMBASE+0xe80) = 0
 
@@ -1103,7 +1110,7 @@ define enableSTM32TRACE
   _setAddressesSTM32
 
   # Enable Trace TRCENA (DCB DEMCR) needed for clocks
-  set *($CDBBASE+0xC)=(1<<24)
+  setTRCENA
 
   # Enable compensation cell
   set *0x40023844 |= (1<<14)
@@ -1134,7 +1141,7 @@ define enableSTM32TRACE
   end
 
   # Enable Trace TRCENA (DCB DEMCR)
-  set *($CDBBASE+0xC)=(1<<24)
+  setTRCENA
 
   # Finally start the trace output
   _doTRACE
@@ -1183,7 +1190,7 @@ define enableNRF52TRACE
 
   # from modules/nrfx/mdk/system_nrf52.c
   # CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
-  set *($CDBBASE+0xC) |= (1<<24)
+  setTRCENA
 
   # NRF_CLOCK->TRACECONFIG |= CLOCK_TRACECONFIG_TRACEMUX_Parallel << CLOCK_TRACECONFIG_TRACEMUX_Pos;
   set *($NRF_CLOCK+0x0000055C) &= ~(3 << 16)
@@ -1291,7 +1298,7 @@ define enableNRF53TRACE
   set *($NRF_TAD_S+0x518) = $cspeed
 
   # Enable Trace TRCENA (DCB DEMCR)
-  set *($CDBBASE+0xC)=(1<<24)
+  setTRCENA
 
   # Finally start the trace output
   _doTRACE
@@ -1383,7 +1390,7 @@ define enableTM4C123TRACE
   end
 
   # Enable Trace TRCENA (DCB DEMCR)
-  set *($CDBBASE+0xC)=(1<<24)
+  setTRCENA
 
   # Finally start the trace output
   _doTRACE
@@ -1505,7 +1512,7 @@ define enableLPC176xTRACE
   set *0x4002C028 = (1 << 3)
 
   # Enable Trace TRCENA (DCB DEMCR)
-  set *($CDBBASE+0xC)=(1<<24)
+  setTRCENA
 
   # Start tracing
   set $bits = $bits-1
@@ -1576,7 +1583,7 @@ define enableSAMD5XTRACE
   end
 
   # Enable Trace TRCENA (DCB DEMCR)
-  set *($CDBBASE+0xC)=(1<<24)
+  setTRCENA
 
   # Finally start the trace output
   _doTRACE
@@ -1595,7 +1602,7 @@ define dwtPOSTCNT
   if ($argc!=1)
     help dwtPOSTCNT
   else
-    set *($CDBBASE+0xC) |= 0x1000000
+    setTRCENA
     if ($arg0==1)
       set *($DWTBASE) |= (1<<22)
     else
@@ -1615,7 +1622,7 @@ define dwtFOLDEVT
   if ($argc!=1)
     help dwtFOLDEVT
   else
-    set *($CDBBASE+0xC) |= 0x1000000
+    setTRCENA
     if ($arg0==1)
       set *($DWTBASE) |= (1<<21)
     else
@@ -1635,7 +1642,7 @@ define dwtLSUEVT
   if ($argc!=1)
     help dwtLSUEVT
   else
-    set *($CDBBASE+0xC) |= 0x1000000
+    setTRCENA
     if ($arg0==1)
       set *($DWTBASE) |= (1<<20)
     else
@@ -1655,7 +1662,7 @@ define dwtSLEEPEVT
   if ($argc!=1)
     help dwtSLEEPEVT
   else
-    set *($CDBBASE+0xC) |= 0x1000000
+    setTRCENA
     if ($arg0==1)
       set *($DWTBASE) |= (1<<19)
     else
@@ -1675,7 +1682,7 @@ define dwtDEVEVT
   if ($argc!=1)
     help dwtDEVEVT
   else
-    set *($CDBBASE+0xC) |= 0x1000000
+    setTRCENA
     if ($arg0==1)
       set *($DWTBASE) |= (1<<18)
     else
@@ -1695,7 +1702,7 @@ define dwtCPIEVT
   if ($argc!=1)
     help dwtCPIEVT
   else
-    set *($CDBBASE+0xC) |= 0x1000000
+    setTRCENA
     if ($arg0==1)
       set *($DWTBASE) |= (1<<17)
     else
@@ -1715,7 +1722,7 @@ define dwtTraceException
   if ($argc!=1)
     help dwtTraceException
   else
-    set *($CDBBASE+0xC) |= 0x1000000
+    setTRCENA
     if ($arg0==1)
       set *($DWTBASE) |= (1<<16)
     else
@@ -1735,7 +1742,7 @@ define dwtSamplePC
   if ($argc!=1)
     help dwtSamplePC
   else
-    set *($CDBBASE+0xC) |= 0x1000000
+    setTRCENA
     if ($arg0==1)
       set *($DWTBASE) |= (1<<12)
     else
@@ -1755,7 +1762,7 @@ define dwtSyncTap
   if (($argc!=1) || ($arg0<0) || ($arg0>3))
     help dwtSyncTap
   else
-    set *($CDBBASE|0xC) |= 0x1000000
+    setTRCENA
     set *($DWTBASE) &= ~(0x03<<10)
     set *($DWTBASE) |= (($arg0&0x03)<<10)
   end
@@ -1772,7 +1779,7 @@ define dwtPostTap
   if (($argc!=1) || ($arg0<0) || ($arg0>1))
     help dwtPostTap
   else
-    set *($CDBBASE|0xC) |= 0x1000000
+    setTRCENA
     if ($arg0==0)
       set *($DWTBASE) &= ~(1<<9)
     else
@@ -1792,7 +1799,7 @@ define dwtPostInit
   if (($argc!=1) || ($arg0<0) || ($arg0>15))
     help dwtPostInit
   else
-    set *($CDBBASE+0xC) |= 0x1000000
+    setTRCENA
     set *($DWTBASE) &= ~(0x0f<<5)
     set *($DWTBASE) |= (($arg0&0x0f)<<5)
   end
@@ -1809,7 +1816,7 @@ define dwtPostReset
   if (($argc!=1) || ($arg0<0) || ($arg0>15))
     help dwtPostReset
   else
-    set *($CDBBASE+0xC) |= 0x1000000
+    setTRCENA
     set *($DWTBASE) &= ~(0x0f<<1)
     set *($DWTBASE) |= (($arg0&0x0f)<<1)
   end
@@ -1828,7 +1835,7 @@ define dwtCycEna
   if ($argc!=1)
     help dwtCycEna
   else
-    set *($CDBBASE+0xC) |= 0x1000000
+    setTRCENA
     if ($arg0==1)
       set *($DWTBASE) |= (1<<0)
     else
