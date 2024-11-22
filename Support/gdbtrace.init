@@ -1689,7 +1689,7 @@ define dwtDEVEVT
   #set language auto
 end
 document dwtDEVEVT
-dwtDEVEVT <0|1> Enable Exception counter overflow event packet generation
+dwtDEVEVT <0|1> Enable Exception overhead counter overflow event packet generation
 end
 # ====================================================================
 define dwtCPIEVT
