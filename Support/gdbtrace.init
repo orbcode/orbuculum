@@ -81,7 +81,7 @@ end
 
 # Definitions for the CPU types we currently support
 set $CPU_IMXRT102X=1
-set $CPU_STM32=2
+set $CPU_STM32F1F4F7=2
 set $CPU_IMXRT106X=1
 set $CPU_NRF=3
 set $CPU_EFR32=4
@@ -91,6 +91,7 @@ set $CPU_IMXRT117X=7
 set $CPU_KINETIS=8
 set $CPU_SAMD5x=9
 set $CPU_STM32M33=10
+set $CPU_STM32H7=11
 
 # ====================================================================
 set $CDBBASE=0xE000EDF0
@@ -113,14 +114,47 @@ end
 
 define _setAddressesSTM32
   # Locations in the memory map for interesting things on STM32
-  if ($CPU == $CPU_STM32M33)
-     set $RCCBASE = 0x46020c00
-     set $GPIOBASE = 0x42020000
-     set $DBGMCUBASE = 0xE0044000
+
+  set $dev = $arg0
+
+  if ! $dev
+    # Device type not specified, detect from DBGMCU ID register.
+    if (*0x5C001000 & 0x7ff) == 0x450
+      set $CPU = $CPU_STM32H7
+    else
+      set $CPU = $CPU_STM32F1F4F7
+    end
   else
-     set $RCCBASE = 0x40023800
-     set $GPIOBASE = 0x40020000
-     set $DBGMCUBASE = 0xE0042000
+    if $dev == 33
+      set $CPU = $CPU_STM32M33
+    end
+    if ($dev == 1) || ($dev == 4) || ($dev == 7)
+      set $CPU = $CPU_STM32F1F4F7
+    end
+  end
+
+  if $CPU == $CPU_STM32M33
+    set $GPIOBASE  = 0x42020000
+    set $RCCGPIO   = 0x46020c8c
+    set $DBGMCU_CR = 0xE0044004
+  end
+
+  if $CPU == $CPU_STM32H7
+    set $GPIOBASE  = 0x58020000
+    set $RCCGPIO   = 0x580244E0
+    set $DBGMCU_CR = 0x5C001004
+    set $SWOBASE   = 0x5C003000
+    set $SWTFBASE  = 0x5C004000
+    set $CSTFBASE  = 0x5C013000
+    set $ETFBASE   = 0x5C014000
+    set $TPIUBASE  = 0x5C015000
+  end
+
+  if $CPU == $CPU_STM32F1F4F7
+    set $GPIOBASE  = 0x40020000
+    set $RCCGPIO   = 0x40023830
+    set $DBGMCU_CR = 0xE0042004
+  end
 end
 
 define _setAddressesIMXRT
@@ -605,27 +639,37 @@ define prepareSWO
   unlockComponent $ITMBASE
   unlockComponent $DWTBASE
 
+  set $_formatterPresent=1
+  set $_protocolBase=$TPIUBASE
+  if $CPU == $CPU_STM32H7
+    set $_formatterPresent=0
+    set $_protocolBase=$SWOBASE
+    unlockComponent $SWOBASE
+  end
+
   setTRCENA
 
   if ($useMan==0)
     # Use Async mode pin protocol (TPIU_SPPR)
-    set *($TPIUBASE+0xF0) = 2
+    set *($_protocolBase+0xF0) = 2
   else
     # Use Manchester mode pin protocol (TPIU_SPPR)
-    set *($TPIUBASE+0xF0) = 1
+    set *($_protocolBase+0xF0) = 1
 
     # There are two edges in a bit, so double the clock
     set $speed = $speed*2
   end
 
   # Output bits at speed dependent on system clock
-  set *($TPIUBASE+0x10) = ((($clockspeed+$speed-1)/$speed)-1)
+  set *($_protocolBase+0x10) = ((($clockspeed+$speed-1)/$speed)-1)
 
-  if ($useTPIU==1)
-    # Use TPIU formatter and flush
-    set *($TPIUBASE+0x304) = 0x102
-  else
-    set *($TPIUBASE+0x304) = 0x100
+  if $_formatterPresent==1
+    if $useTPIU==1
+      # Use TPIU formatter and flush
+      set *($TPIUBASE+0x304) = 0x102
+    else
+      set *($TPIUBASE+0x304) = 0x100
+    end
   end
 
   # Flush all initial configuration
@@ -899,37 +943,47 @@ end
 define enableSTM32SWO
   #set language c
 
-  set $tgt=1
+  set $dev=0
   if $argc >= 1
-    set $tgt = $arg0
+    set $dev = $arg0
   end
+  _setAddressesSTM32 $dev
 
-  if ($tgt==33)
-     set $CPU=$CPU_STM32M33
-  else
-     set $CPU=$CPU_STM32
-  end
-  _setAddressesSTM32
-
-  if (($tgt==4) || ($tgt==7))
-    # STM32F4/7 variant: SWO on PB3.
+  if $CPU == $CPU_STM32H7
+    # Set D1DBGCKEN, D3DBGCKEN
+    set *$DBGMCU_CR |= 7 | (6 << 20)
+    # Unlock SWO trace funnel.
+    unlockComponent $SWTFBASE
+    # Enable port S0 in SWO trace funnel.
+    set *($SWTFBASE + 0x000) = 0x00000301
+    # SWO on PB3
     enableSTM32Pin 1 3 3
-  else
-    # STM32F1 variant.
-    # RCC->APB2ENR |= RCC_APB2ENR_AFIOEN;
-    set *0x40021018 |= 1
-    # AFIO->MAPR |= (2 << 24); // Disable JTAG to release TRACESWO
-    set *0x40010004 |= 0x2000000
   end
-  # Common initialisation.
-  # DBGMCU->CR |= DBGMCU_CR_TRACE_IOEN;
-  set *($DBGMCUBASE+4) |= 0x20
+
+  if $CPU == $CPU_STM32F1F4F7
+    if (($dev==4) || ($dev==7))
+      # STM32F4/7 variant: SWO on PB3.
+      enableSTM32Pin 1 3 3
+    else
+      # STM32F1 variant.
+      # RCC->APB2ENR |= RCC_APB2ENR_AFIOEN;
+      set *0x40021018 |= 1
+      # AFIO->MAPR |= (2 << 24); // Disable JTAG to release TRACESWO
+      set *0x40010004 |= 0x2000000
+    end
+  end
+
+  if $CPU != $CPU_STM32H7
+    # Common initialisation.
+    # DBGMCU->CR |= DBGMCU_CR_TRACE_IOEN;
+    set *$DBGMCU_CR |= 0x20
+  end
 
   #set language auto
 end
 document enableSTM32SWO
 enableSTM32SWO <Type> Configure output pin on STM32 for SWO use.
-  <Type>   : Type of STM32 Device 4=f4, 7=f7, 33=M33
+  <Type>   : Type of STM32 Device 1=f1, 4=f4, 7=f7, 33=M33
 end
 # ====================================================================
 define enableSAMD5XSWD
@@ -1030,15 +1084,11 @@ end
 # ====================================================================
 define enableSTM32Pin
   #set language c
-  _setAddressesSTM32
+
   set $_GPIOPORT = $GPIOBASE + 0x400 * $arg0
 
   # Enable GPIO port in RCC
-  if ($CPU == $CPU_STM32M33)
-     set *($RCCBASE + 0x8c) |= (0x1<<$arg0)
-  else
-     set *($RCCBASE + 0x30) |= (0x1<<$arg0)
-  end
+  set *($RCCGPIO) |= (0x1<<$arg0)
 
   # MODER: Alternate Function
   set *($_GPIOPORT+0x00) &= ~(0x3<<2*$arg1)
@@ -1082,7 +1132,7 @@ define enableSTM32TRACE
 
   set $bits=4
   set $drive=1
-  set $type=1
+  set $dev=0
 
   if $argc >= 1
     set $bits = $arg0
@@ -1096,7 +1146,7 @@ define enableSTM32TRACE
   end
 
   if $argc >= 3
-    set $type = $arg2
+    set $dev = $arg2
   end
 
   if ($drive > 3)
@@ -1105,19 +1155,33 @@ define enableSTM32TRACE
 
   set $bits = $bits-1
 
-  if ($type==33)
-     set $CPU=$CPU_STM32M33
-  else
-     set $CPU=$CPU_STM32
-  end
-  _setAddressesSTM32
+  _setAddressesSTM32 $dev
 
   # Enable Trace TRCENA (DCB DEMCR) needed for clocks
   setTRCENA
 
-  # Enable compensation cell
-  set *0x40023844 |= (1<<14)
-  set *0x40013820 |=1
+  if $CPU == $CPU_STM32H7
+    # Enable TRACECKEN, D1DBGCKEN
+    set *$DBGMCU_CR |= 7 | (3 << 20)
+
+    unlockComponent $ETFBASE
+    unlockComponent $CSTFBASE
+    unlockComponent $TPIUBASE
+
+    # Hardware FIFO mode
+    set *($ETFBASE + 0x028) = 2
+    # Formatter and flush control
+    set *($ETFBASE + 0x304) |= 1
+    # Enable ETF trace capture
+    set *($ETFBASE + 0x020) = 1
+
+    # Enable both ETM and ITM in trace funnel. bit0=ETM, bit1=ITM
+    set *($CSTFBASE + 0x000) |= 3
+  else
+    # Enable compensation cell
+    set *0x40023844 |= (1<<14)
+    set *0x40013820 |=1
+  end
 
   # Setup PE2 & PE3
   enableSTM32Pin 4 2 $drive
@@ -1134,17 +1198,29 @@ define enableSTM32TRACE
      enableSTM32Pin 4 6 $drive
   end
 
-  # Set number of bits in DBGMCU_CR
-  set *($DBGMCUBASE+4) &= ~(3<<6)
+  if $CPU != $CPU_STM32H7
+    # Set number of bits in DBGMCU_CR
+    set *$DBGMCU_CR &= ~(3<<6)
 
-  if ($bits<3)
-     set *($DBGMCUBASE+4) |= ((($bits+1)<<6) | (1<<5))
-  else
-     set *$(DBGMCUBASE+4) |= ((3<<6) | (1<<5))
+    if ($bits<3)
+       set *$DBGMCU_CR |= ((($bits+1)<<6) | (1<<5))
+    else
+       set *$DBGMCU_CR |= ((3<<6) | (1<<5))
+    end
   end
 
   # Finally start the trace output
-  _doTRACE
+
+  # Set port size (TPIU_CURPSIZE)
+  set *($TPIUBASE+4) = (1<<$bits)
+
+  if $CPU != $CPU_STM32H7
+    # Set pin protocol to Sync Trace Port (TPIU_SPPR)
+    set *($TPIUBASE+0xF0)=0
+  end
+
+  # TPIU formatter and flush control register (TPIU_FFCR)
+  set *($TPIUBASE+0x304) = 0x102
 
   #set language auto
 end
