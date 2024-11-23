@@ -625,7 +625,6 @@ define prepareSWO
   end
 
   # Flush all initial configuration
-  setTRCENA
   set *($DWTBASE) = 0
   set *($ITMBASE+0xe80) = 0
 
@@ -1139,9 +1138,6 @@ define enableSTM32TRACE
   else
      set *$(DBGMCUBASE+4) |= ((3<<6) | (1<<5))
   end
-
-  # Enable Trace TRCENA (DCB DEMCR)
-  setTRCENA
 
   # Finally start the trace output
   _doTRACE
