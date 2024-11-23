@@ -107,6 +107,10 @@ document setTRCENA
 setTRCENA Enables trace peripherals (DWT,ITM,ETM) in DEMCR.
 end
 
+define unlockComponent
+  set *($arg0 + 0xfb0) = 0xc5acce55
+end
+
 define _setAddressesSTM32
   # Locations in the memory map for interesting things on STM32
   if ($CPU == $CPU_STM32M33)
@@ -279,12 +283,12 @@ define _setupTraceBusS32K344
   end
 
   # Enable access to the funnels and ETFs.
-  set *($FUNNEL_0_BASE + 0xfb0) = 0xc5acce55
-  set *($FUNNEL_1_BASE + 0xfb0) = 0xc5acce55
-  set *($FUNNEL_2_BASE + 0xfb0) = 0xc5acce55
-  set *($ETF_CM7_CLUSTER_ETMI_BASE + 0xfb0) = 0xc5acce55
-  set *($ETF_CM7_CLUSTER_ETMD_BASE + 0xfb0) = 0xc5acce55
-  set *($ETF_SHARED_SYSTEM_BASE + 0xfb0) = 0xc5acce55
+  unlockComponent $FUNNEL_0_BASE
+  unlockComponent $FUNNEL_1_BASE
+  unlockComponent $FUNNEL_2_BASE
+  unlockComponent $ETF_CM7_CLUSTER_ETMI_BASE
+  unlockComponent $ETF_CM7_CLUSTER_ETMD_BASE
+  unlockComponent $ETF_SHARED_SYSTEM_BASE
 
   # Enable all inputs of all funnels to ensure that all trace sources
   # can pass. Enabling all inputs is probably not optimal, so this
@@ -368,7 +372,7 @@ end
 define _startETMv35
 
   # Allow access to device
-  set *($ETMBASE+0xfb0) = 0xc5acce55
+  unlockComponent $ETMBASE
 
   # Enter configuration mode (write twice to be sure we reached it)
   set *($ETMBASE) = (1<<10)
@@ -598,8 +602,8 @@ define prepareSWO
   end
 
   # Make sure we can get to everything
-  set *($ITMBASE+0xfb0) = 0xc5acce55
-  set *($ETMBASE+0xfb0) = 0xc5acce55
+  unlockComponent $ITMBASE
+  unlockComponent $ETMBASE
 
   setTRCENA
 
@@ -852,10 +856,10 @@ define enableIMXRT117XSWO
   _setAddressesIMXRT117X
 
   # Configure trace funnels/ATB.
-  set *($FUNNEL_CSSYS_BASE + 0xfb0) = 0xc5acce55
+  unlockComponent $FUNNEL_CSSYS_BASE
   set *($FUNNEL_CSSYS_BASE) |= 0xff
 
-  set *($FUNNEL_M7_BASE + 0xfb0) = 0xc5acce55
+  unlockComponent $FUNNEL_M7_BASE
   set *($FUNNEL_M7_BASE) |= 0xff
 
   # TODO: configure trace subsystem clocks.
@@ -865,7 +869,7 @@ define enableIMXRT117XSWO
   set *(0x40c0806c) = 0x2
 
   # Allow access to SWO TPIU registers.
-  set *($TPIU_SWO_BASE + 0xfb0) = 0xc5acce55
+  unlockComponent $TPIU_SWO_BASE
 
   # Set $TPIUBASE for use by other commands in this file.
   set $TPIUBASE = $TPIU_SWO_BASE
@@ -1012,7 +1016,7 @@ end
 define _doTRACE
   # Must be called with $bits containing number of bits to set trace for
 
-  set *($ITMBASE+0xfb0) = 0xc5acce55
+  unlockComponent $ITMBASE
 
   # Set port size (TPIU_CSPSR)
   set *($TPIUBASE+4) = (1<<$bits)
@@ -1852,7 +1856,7 @@ define ITMId
   if (($argc!=1) || ($arg0<0) || ($arg0>127))
     help ITMId
   else
-    set *($ITMBASE+0xfb0) = 0xc5acce55
+    unlockComponent $ITMBASE
     set *($ITMBASE+0xe80) &= ~(0x7F<<16)
     set *($ITMBASE+0xe80) |= (($arg0&0x7f)<<16)
   end
@@ -1869,7 +1873,7 @@ define ITMGTSFreq
   if (($argc!=1) || ($arg0<0) || ($arg0>3))
     help ITMGTSFreq
   else
-    set *($ITMBASE+0xfb0) = 0xc5acce55
+    unlockComponent $ITMBASE
     set *($ITMBASE+0xe80) &= ~(0x3<<10)
     set *($ITMBASE+0xe80) |= (($arg0&3)<<10)
   end
@@ -1888,7 +1892,7 @@ define ITMTSPrescale
   if (($argc!=1) || ($arg0<0) || ($arg0>3))
     help ITMTSPrescale
   else
-    set *($ITMBASE+0xfb0) = 0xc5acce55
+    unlockComponent $ITMBASE
     set *($ITMBASE+0xe80) &= ~(0x3<<8)
     set *($ITMBASE+0xe80) |= (($arg0&3)<<8)
   end
@@ -1905,7 +1909,7 @@ define ITMSWOEna
   if (($argc!=1) || ($arg0<0) || ($arg0>1))
     help ITMSWOEna
   else
-    set *($ITMBASE+0xfb0) = 0xc5acce55
+    unlockComponent $ITMBASE
     if ($arg0==0)
       set *($ITMBASE+0xe80) &= ~(0x1<<4)
     else
@@ -1926,7 +1930,7 @@ define ITMTXEna
   if (($argc!=1) || ($arg0<0) || ($arg0>1))
     help ITMTXEna
   else
-    set *($ITMBASE+0xfb0) = 0xc5acce55
+    unlockComponent $ITMBASE
     if ($arg0==0)
       set *($ITMBASE+0xe80) &= ~(0x1<<3)
     else
@@ -1947,7 +1951,7 @@ define ITMSYNCEna
   if (($argc!=1) || ($arg0<0) || ($arg0>1))
     help ITMSYNCEna
   else
-    set *($ITMBASE+0xfb0) = 0xc5acce55
+    unlockComponent $ITMBASE
     if ($arg0==0)
       set *($ITMBASE+0xe80) &= ~(0x1<<2)
     else
@@ -1968,7 +1972,7 @@ define ITMTSEna
   if (($argc!=1) || ($arg0<0) || ($arg0>1))
     help ITMTSEna
   else
-    set *($ITMBASE+0xfb0) = 0xc5acce55
+    unlockComponent $ITMBASE
     if ($arg0==0)
       set *($ITMBASE+0xe80) &= ~(0x1<<1)
     else
@@ -1988,7 +1992,7 @@ define ITMEna
   if (($argc!=1) || ($arg0<0) || ($arg0>1))
     help ITMEna
   else
-    set *($ITMBASE+0xfb0) = 0xc5acce55
+    unlockComponent $ITMBASE
     if ($arg0==0)
       set *($ITMBASE+0xe80) &= ~(0x1<<0)
     else
@@ -2008,7 +2012,7 @@ define ITMTER
   if (($argc!=2) || ($arg0<0) || ($arg0>7))
     help ITMTER
   else
-    set *($ITMBASE+0xfb0) = 0xc5acce55
+    unlockComponent $ITMBASE
     set *($ITMBASE+0xe00+4*$arg0) = $arg1
   end
 
@@ -2024,7 +2028,7 @@ define ITMTPR
   if ($argc!=1)
     help ITMTPR
   else
-    set *($ITMBASE+0xfb0) = 0xc5acce55
+    unlockComponent $ITMBASE
     set *($ITMBASE+0xe40) = $arg0
   end
 
@@ -2040,7 +2044,7 @@ define tracetest
   if ($argc!=1)
     help tracetest
   else
-    set *($TPIUBASE+0xfb0) = 0xc5acce55
+    unlockComponent $TPIUBASE
     if ($arg0 == 0)
       set *($TPIUBASE+0x204) = 0
     else
