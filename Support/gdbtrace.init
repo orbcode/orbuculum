@@ -603,7 +603,7 @@ define prepareSWO
 
   # Make sure we can get to everything
   unlockComponent $ITMBASE
-  unlockComponent $ETMBASE
+  unlockComponent $DWTBASE
 
   setTRCENA
 
