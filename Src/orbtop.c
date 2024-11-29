@@ -422,13 +422,19 @@ uint32_t _consolodateReport( struct reportLine **returnReport, uint32_t *returnR
     }
     else
     {
-        n = ( struct nameEntry * )malloc( sizeof( struct nameEntry ) );
-    }
+        a = ( struct visitedAddr * )calloc( 1, sizeof( struct visitedAddr ) );
+        MEMCHECKV( a );
+        a->visits = _r.sleeps;
 
-    n->fileindex = NO_FILE;
-    n->functionindex = FN_SLEEPING;
-    n->addr = 0;
-    n->line = 0;
+        n = ( struct nameEntry * )malloc( sizeof( struct nameEntry ) );
+        n->fileindex = NO_FILE;
+        n->functionindex = FN_SLEEPING;
+        n->addr = FN_SLEEPING;
+        n->line = 0;
+
+        a->n = n;
+        HASH_ADD_INT( _r.addresses, n->addr, a );
+    }
 
     report[reportLines].n = n;
     report[reportLines].count = _r.sleeps;
@@ -808,16 +814,18 @@ void _handlePCSample( struct pcSampleMsg *m, struct ITMDecoder *i )
 void _flushHash( void )
 
 {
-    struct visitedAddr *a;
-    UT_hash_handle hh;
+    struct visitedAddr *a, *tmp;
 
-    for ( a = _r.addresses; a != NULL; a = hh.next )
+    HASH_ITER( hh, _r.addresses, a, tmp )
     {
-        hh = a->hh;
+        if ( a->n )
+        {
+            free( a->n );
+        }
+
+        HASH_DEL( _r.addresses, a );
         free( a );
     }
-
-    _r.addresses = NULL;
 }
 // ====================================================================================================
 // Pump characters into the itm decoder
