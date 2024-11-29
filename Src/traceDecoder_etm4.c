@@ -185,11 +185,12 @@ static bool _pumpAction( struct TRACEDecoderEngine *e, struct TRACECPUState *cpu
     }
     else
     {
-        if( c == 0x05 && j->asyncCount == 1)
+        if ( c == 0x05 && j->asyncCount == 1 )
         {
             cpu->overflows++;
             DEBUG( "Overflow Detected. ReSync Trace Stream:" EOL );
         }
+
         j->asyncCount = c ? 0 : j->asyncCount + 1;
 
         switch ( j->p )

@@ -369,7 +369,8 @@ static void _processFunctionDie( struct symbol *p, Dwarf_Debug dbg, Dwarf_Die di
         attr_tag = DW_AT_abstract_origin;
         dwarf_attr( die, attr_tag, &attr_data, 0 );
         dwarf_global_formref( attr_data, &abstract_origin_offset, 0 );
-        if (DW_DLV_OK == dwarf_offdie_b( dbg, abstract_origin_offset, IS_INFO, &abstract_origin_die, 0 ))
+
+        if ( DW_DLV_OK == dwarf_offdie_b( dbg, abstract_origin_offset, IS_INFO, &abstract_origin_die, 0 ) )
         {
             isinline = true;
         }
@@ -1045,13 +1046,13 @@ char *symbolDisassembleLine( struct symbol *p, enum instructionClass *ic, symbol
                 ) ? LE_IC_JUMP : 0;
 
         /* create a copy to check if load in pc */
-        char *copy = strdup(insn->op_str);
+        char *copy = strdup( insn->op_str );
         *ic |=  (
                             ( ( ( insn->id == ARM_INS_LDR ) )
-                              && strstr(strtok(copy,","), "pc" ) )
+                              && strstr( strtok( copy, "," ), "pc" ) )
                 ) ? LE_IC_JUMP : 0;
-        free(copy);
-        
+        free( copy );
+
         /* Was it an exception return? */
         *ic |=  ( ( insn->id == ARM_INS_ERET ) ) ? LE_IC_JUMP | LE_IC_IRET : 0;
 
@@ -1080,7 +1081,7 @@ char *symbolDisassembleLine( struct symbol *p, enum instructionClass *ic, symbol
 
                     if ( newaddr )
                     {
-                            *newaddr = detail->arm.operands[n].imm;
+                        *newaddr = detail->arm.operands[n].imm;
                     }
 
                     break;

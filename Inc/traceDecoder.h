@@ -145,7 +145,7 @@ struct TRACECPUState
     genericsReportCB report;
 
     // Debugging
-    uint64_t overflows;       
+    uint64_t overflows;
 };
 
 // ============================================================================
