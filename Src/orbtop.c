@@ -1283,6 +1283,12 @@ int main( int argc, char *argv[] )
 
     genericsReport( V_WARN, "Loaded %s" EOL, options.elffile );
 
+    if ( _r.s )
+    {
+        genericsReport( V_INFO, "Files:      %d" EOL "Functions: %d" EOL "Source:    %d" EOL, _r.s->fileCount, _r.s->functionCount, _r.s->sourceCount );
+    }
+
+
     /* Reset the handlers before we start */
     ITMDecoderInit( &_r.i, options.forceITMSync );
     OFLOWInit( &_r.c );
@@ -1407,6 +1413,11 @@ int main( int argc, char *argv[] )
                 }
 
                 genericsReport( V_WARN, "Loaded %s" EOL, options.elffile );
+
+                if ( _r.s )
+                {
+                    genericsReport( V_INFO, "Files:      %d" EOL "Functions: %d" EOL "Source:    %d" EOL, _r.s->fileCount, _r.s->functionCount, _r.s->sourceCount );
+                }
             }
 
 
