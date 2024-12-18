@@ -30,7 +30,7 @@
 #define NO_FILE_TXT      "No Source"
 
 //#define GPTI_DEBUG 1                 /* Define this for objdump data collection state machine trace */
-
+//#define _DUMP_SYMBOLS                /* Define this to dump all symbols at start of run */
 #ifdef GPTI_DEBUG
     #define GTPIP(...) { fprintf(stderr, __VA_ARGS__); }
 #else
@@ -854,6 +854,26 @@ static enum symbolErr _getTargetProgramInfo( struct SymbolSet *s )
 #endif
 
     _sortLines( s );
+
+#ifdef _DUMP_SYMBOLS
+    uint32_t sline = 0;
+    uint32_t functionindex = s->sources[0].functionIdx;
+    uint32_t firstaddr = s->sources[0].startAddr;
+
+    while ( sline < s->sourceCount - 1 )
+    {
+        if ( s->sources[sline + 1].functionIdx != functionindex )
+        {
+            printf( "%08x-%08x %s" EOL, firstaddr, s->sources[sline].endAddr, s->functions[functionindex].name );
+            functionindex = s->sources[sline + 1].functionIdx;
+            firstaddr = s->sources[sline + 1].startAddr;
+        }
+
+        sline++;
+    }
+
+#endif
+
     return SYMBOL_OK;
 }
 // ====================================================================================================
@@ -931,6 +951,7 @@ bool SymbolLookup( struct SymbolSet *s, uint32_t addr, struct nameEntry *n )
     }
 
 
+    printf("%08x ",addr);
     n->fileindex = n->functionindex = n->line = 0;
     n->source   = "";
     n->assy     = NULL;
