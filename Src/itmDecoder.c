@@ -14,6 +14,9 @@
 #include "itmDecoder.h"
 #include "msgDecoder.h"
 
+// Define this to get transitions printed out
+#define DEBUG
+
 #ifdef DEBUG
     #include <stdio.h>
     #include "generics.h"
@@ -28,7 +31,6 @@
 #define MAX_PACKET            (5)
 #define DEFAULT_PAGE_REGISTER (0x07)
 
-// Define this to get transitions printed out
 // ====================================================================================================
 struct ITMDecoder *ITMDecoderCreate( void )
 

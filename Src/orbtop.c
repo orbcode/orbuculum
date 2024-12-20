@@ -92,6 +92,7 @@ struct                                       /* Record for options, either defau
     char *outfile;                           /* File to output current information */
     char *logfile;                           /* File to output historic information */
     bool mono;                               /* Supress colour in output */
+    int paceDelay;                           /* Delay between blocks of data transmission in file readout */
     uint32_t cutscreen;                      /* Cut screen output after specified number of lines */
     uint32_t maxRoutines;                    /* Historic information to emit */
     bool lineDisaggregation;                 /* Aggregate per line or per function? */
@@ -906,6 +907,7 @@ void _printHelp( const char *const progName )
     genericsPrintf( "    -o, --output-file:  <filename> to be used for output live file" EOL );
     genericsPrintf( "    -O, --objdump-opts: <options> Options to pass directly to objdump" EOL );
     genericsPrintf( "    -p, --protocol:     Protocol to communicate. Defaults to OFLOW if -s is not set, otherwise ITM" EOL );
+    genericsPrintf( "    -P, --pace:         <microseconds> delay in block of data transmission to clients" EOL );
     genericsPrintf( "    -r, --routines:     <routines> to record in live file (default %d routines)" EOL, options.maxRoutines );
     genericsPrintf( "    -R, --report-files: Report filenames as part of function discriminator" EOL );
     genericsPrintf( "    -s, --server:       <Server>:<Port> to use" EOL );
@@ -941,6 +943,7 @@ static struct option _longOptions[] =
     {"output-file", required_argument, NULL, 'o'},
     {"objdump-opts", required_argument, NULL, 'O'},
     {"protocol", required_argument, NULL, 'p'},
+    {"pace", required_argument, NULL, 'P'},
     {"routines", required_argument, NULL, 'r'},
     {"report-files", no_argument, NULL, 'R'},
     {"server", required_argument, NULL, 's'},
@@ -957,7 +960,7 @@ bool _processOptions( int argc, char *argv[] )
     bool protExplicit = false;
     bool serverExplicit = false;
 
-    while ( ( c = getopt_long ( argc, argv, "c:d:DEe:f:g:hVI:j:lMnO:o:p:r:Rs:t:v:", _longOptions, &optionIndex ) ) != -1 )
+    while ( ( c = getopt_long ( argc, argv, "c:d:DEe:f:g:hVI:j:lMnO:o:p:P:r:Rs:t:v:", _longOptions, &optionIndex ) ) != -1 )
         switch ( c )
         {
             // ------------------------------------
@@ -1050,6 +1053,19 @@ bool _processOptions( int argc, char *argv[] )
                 if ( options.protocol == PROT_UNKNOWN )
                 {
                     genericsReport( V_ERROR, "Unrecognised protocol type" EOL );
+                    return false;
+                }
+
+                break;
+
+            // ------------------------------------
+
+            case 'P':
+                options.paceDelay = atoi( optarg );
+
+                if ( options.paceDelay <= 0 )
+                {
+                    genericsReport( V_ERROR, "paceDelay is out of range" EOL );
                     return false;
                 }
 
@@ -1154,6 +1170,7 @@ bool _processOptions( int argc, char *argv[] )
 
     if ( options.file )
     {
+        genericsReport( V_INFO, "Pace Delay       : %dus" EOL, options.paceDelay );
         genericsReport( V_INFO, "Input File       : %s", options.file );
     }
     else
@@ -1181,7 +1198,13 @@ bool _processOptions( int argc, char *argv[] )
 
         default:
             genericsReport( V_INFO, "Decoding unknown" EOL );
-            break;
+            return false;
+    }
+
+    if ( ( options.paceDelay ) && ( !options.file ) )
+    {
+        genericsReport( V_ERROR, "Pace Delay only makes sense when input is from a file" EOL );
+        return false;
     }
 
     return OK;
@@ -1489,6 +1512,11 @@ int main( int argc, char *argv[] )
                     genericsReport( V_WARN, "Got a TPIU sync while decoding ITM...did you miss a -t option?" EOL );
                     ITMDecoderGetStats( &_r.i )->tpiuSyncCount = 0;
                 }
+            }
+
+            if ( options.paceDelay )
+            {
+                usleep( options.paceDelay );
             }
         }
 
