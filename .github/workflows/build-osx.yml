@@ -6,8 +6,9 @@ on:
 
 jobs:
   osx:
-    runs-on: macos-12
+    runs-on: macos-14
     steps:
+      - run: python3 -m pip config set global.break-system-packages true
       - run: brew install zmq sdl2 libelf
       - run: pip3 install meson
       - run: pip3 install ninja

@@ -950,8 +950,6 @@ bool SymbolLookup( struct SymbolSet *s, uint32_t addr, struct nameEntry *n )
         return true;
     }
 
-
-    printf("%08x ",addr);
     n->fileindex = n->functionindex = n->line = 0;
     n->source   = "";
     n->assy     = NULL;
