@@ -737,7 +737,8 @@ line for orbtop would be;
 
 One useful command line option for orbtop (and indeed, for the majority of the rest of the
 suite) is `-s localhost:2332`, which will connect directly to any source you might have exporting
-SWO data on its TCP its port, with no requirement for the orbuculum multiplexer in the way.
+SWO data on its TCP its port, with no requirement for the orbuculum multiplexer in the way. If
+you set the source explicitly, you also need to set the protocol explicitly using `-p`.
 
 Command line options for orbtop are;
 
@@ -768,6 +769,10 @@ Command line options for orbtop are;
  `-o, --output-file [filename]`: Set file to be used for output history
 
  `-O, --objdump-opts [opts]`: Set options to pass directly to objdump
+
+ `-p, --protocol [OFLOW|ITM]`: Protocol to communicate. Must be set explicitly if -s is set
+
+ `-P, --pace <microseconds>`: Delay in block of data transmission to clients
 
  `-r, --routines <routines>`: Number of lines to record in history file
 

@@ -20,6 +20,7 @@ extern "C" {
 #endif
 
 /* Error return codes .. may already be defined by ncurses */
+typedef int errcode;
 #ifndef OK
 #define OK         0
 #endif

@@ -953,7 +953,7 @@ static struct option _longOptions[] =
     {NULL, no_argument, NULL, 0}
 };
 // ====================================================================================================
-bool _processOptions( int argc, char *argv[] )
+errcode _processOptions( int argc, char *argv[] )
 
 {
     int c, optionIndex = 0;
@@ -1053,7 +1053,7 @@ bool _processOptions( int argc, char *argv[] )
                 if ( options.protocol == PROT_UNKNOWN )
                 {
                     genericsReport( V_ERROR, "Unrecognised protocol type" EOL );
-                    return false;
+                    return ERR;
                 }
 
                 break;
@@ -1066,7 +1066,7 @@ bool _processOptions( int argc, char *argv[] )
                 if ( options.paceDelay <= 0 )
                 {
                     genericsReport( V_ERROR, "paceDelay is out of range" EOL );
-                    return false;
+                    return ERR;
                 }
 
                 break;
@@ -1082,7 +1082,7 @@ bool _processOptions( int argc, char *argv[] )
                 if ( !isdigit( *optarg ) )
                 {
                     genericsReport( V_ERROR, "-v requires a numeric argument." EOL );
-                    return false;
+                    return ERR;		    
                 }
 
                 genericsSetReportLevel( atoi( optarg ) );
@@ -1132,7 +1132,7 @@ bool _processOptions( int argc, char *argv[] )
             // ------------------------------------
             case 'V':
                 _printVersion();
-                return -EINVAL;
+                return ERR;
 
             // ------------------------------------
             case '?':
@@ -1145,25 +1145,26 @@ bool _processOptions( int argc, char *argv[] )
                     genericsReport( V_ERROR, "Unknown option character `\\x%x'." EOL, optopt );
                 }
 
-                return -EINVAL;
+                return ERR;
 
             // ------------------------------------
             default:
                 genericsReport( V_ERROR, "Unknown option %c" EOL, optopt );
-                return -EINVAL;
+                return ERR;
                 // ------------------------------------
         }
 
     /* If we set an explicit server and port and didn't set a protocol chances are we want ITM, not OFLOW */
     if ( serverExplicit && !protExplicit )
     {
-        options.protocol = PROT_ITM;
+        genericsReport( V_ERROR, "Protocol must be explicit when server is explicit" EOL );
+        return ERR;
     }
 
     if ( !options.elffile )
     {
         genericsReport( V_ERROR, "Elf File not specified" EOL );
-        exit( -EBADF );
+        return ERR;
     }
 
     genericsReport( V_INFO, "orbtop version " GIT_DESCRIBE EOL );
@@ -1197,14 +1198,14 @@ bool _processOptions( int argc, char *argv[] )
             break;
 
         default:
-            genericsReport( V_INFO, "Decoding unknown" EOL );
-            return false;
+            genericsReport( V_ERROR, "Decoding unknown" EOL );
+            return ERR;
     }
 
     if ( ( options.paceDelay ) && ( !options.file ) )
     {
         genericsReport( V_ERROR, "Pace Delay only makes sense when input is from a file" EOL );
-        return false;
+        return ERR;
     }
 
     return OK;
