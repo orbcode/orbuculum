@@ -36,7 +36,7 @@ static bool _handleDWTEvent( struct ITMPacket *packet, struct dwtMsg *decoded )
 
 {
     decoded->msgtype = MSG_DWT_EVENT;
-    decoded->event = packet->d[1] & 0x2F;
+    decoded->event = packet->d[0] & 0x2F;
     return true;
 }
 // ====================================================================================================

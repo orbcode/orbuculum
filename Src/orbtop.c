@@ -37,7 +37,7 @@
 #define MSG_REORDER_BUFLEN  (10)             /* Maximum number of samples to re-order for timekeeping */
 
 #define DWT_NUM_EVENTS 6
-const char *evName[DWT_NUM_EVENTS] = {"CPI", "Exc", "Sleep", "LSU", "Fold", "Cyc"};
+const char *evName[DWT_NUM_EVENTS] = {"CPI", "Exc", "Slp", "LSU", "Fld", "Cyc"};
 
 struct visitedAddr                           /* Structure for Hashmap of visited/observed addresses */
 {
@@ -148,7 +148,7 @@ struct
     uint32_t TSPkt;                                    /* Number of TS Packets received */
     uint32_t HWPkt;                                    /* Number of HW Packets received */
     uint32_t dwt_event_acc[DWT_NUM_EVENTS];            /* Accumulator for DWT events */
-  
+
     FILE *jsonfile;                                    /* File where json output is being dumped */
     uint32_t interrupts;
     uint32_t sleeps;
@@ -356,7 +356,7 @@ void _handleDWTEvent( struct dwtMsg *m, struct ITMPacket *p )
     {
         if ( m->event & ( 1 << i ) )
         {
-	  _r.dwt_event_acc[i]++;
+            _r.dwt_event_acc[i]++;
         }
     }
 }
@@ -725,19 +725,21 @@ static void _outputTop( uint32_t total, uint32_t reportLines, struct reportLine 
     }
 
     bool havePrinted = false;
+
     /* DWT Event counters */
     for ( uint32_t i = 0; i < DWT_NUM_EVENTS; i++ )
     {
-      if ( _r.dwt_event_acc[i] )
-	{
-	  havePrinted = true;
-	  genericsPrintf( "%4s:%8d  ",evName[i],_r.dwt_event_acc[i] );
+        if ( _r.dwt_event_acc[i] )
+        {
+            havePrinted = true;
+            genericsPrintf( "%4s:" C_DATA "%7d " C_RESET, evName[i], _r.dwt_event_acc[i] );
         }
     }
+
     if ( havePrinted )
-      {
-	genericsPrintf( EOL );
-      }
+    {
+        genericsPrintf( EOL );
+    }
 
     if ( options.outputExceptions )
     {
@@ -1108,7 +1110,7 @@ errcode _processOptions( int argc, char *argv[] )
                 if ( !isdigit( *optarg ) )
                 {
                     genericsReport( V_ERROR, "-v requires a numeric argument." EOL );
-                    return ERR;		    
+                    return ERR;
                 }
 
                 genericsSetReportLevel( atoi( optarg ) );
@@ -1518,12 +1520,12 @@ int main( int argc, char *argv[] )
                     _r.er[e].visits = _r.er[e].maxDepth = _r.er[e].totalTime = _r.er[e].minTime = _r.er[e].maxTime = _r.er[e].maxWallTime = 0;
                 }
 
-		/* ... and the event counters */
-    for ( uint32_t i = 0; i < DWT_NUM_EVENTS; i++ )
-    {
-	  _r.dwt_event_acc[i]=0;
-    }
-		
+                /* ... and the event counters */
+                for ( uint32_t i = 0; i < DWT_NUM_EVENTS; i++ )
+                {
+                    _r.dwt_event_acc[i] = 0;
+                }
+
 
                 /* It's safe to update these here because the ticks won't be updated until more
                  * records arrive. */
