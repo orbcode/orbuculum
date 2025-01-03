@@ -36,6 +36,9 @@
 
 #define MSG_REORDER_BUFLEN  (10)             /* Maximum number of samples to re-order for timekeeping */
 
+#define DWT_NUM_EVENTS 6
+const char *evName[DWT_NUM_EVENTS] = {"CPI", "Exc", "Sleep", "LSU", "Fold", "Cyc"};
+
 struct visitedAddr                           /* Structure for Hashmap of visited/observed addresses */
 {
     uint64_t visits;
@@ -144,7 +147,8 @@ struct
     uint32_t SWPkt;                                    /* Number of SW Packets received */
     uint32_t TSPkt;                                    /* Number of TS Packets received */
     uint32_t HWPkt;                                    /* Number of HW Packets received */
-
+    uint32_t dwt_event_acc[DWT_NUM_EVENTS];            /* Accumulator for DWT events */
+  
     FILE *jsonfile;                                    /* File where json output is being dumped */
     uint32_t interrupts;
     uint32_t sleeps;
@@ -344,10 +348,17 @@ void _handleException( struct excMsg *m, struct ITMDecoder *i )
     };
 }
 // ====================================================================================================
-void _handleDWTEvent( struct ITMDecoder *i, struct ITMPacket *p )
+// ====================================================================================================
+void _handleDWTEvent( struct dwtMsg *m, struct ITMPacket *p )
 
 {
-
+    for ( uint32_t i = 0; i < DWT_NUM_EVENTS; i++ )
+    {
+        if ( m->event & ( 1 << i ) )
+        {
+	  _r.dwt_event_acc[i]++;
+        }
+    }
 }
 // ====================================================================================================
 void _handleSW( struct ITMDecoder *i, struct ITMPacket *p )
@@ -448,6 +459,7 @@ uint32_t _consolodateReport( struct reportLine **returnReport, uint32_t *returnR
 
     *returnReport = report;
     *returnReportLines = reportLines;
+
 
     return total;
 }
@@ -712,6 +724,20 @@ static void _outputTop( uint32_t total, uint32_t reportLines, struct reportLine 
         fclose( q );
     }
 
+    bool havePrinted = false;
+    /* DWT Event counters */
+    for ( uint32_t i = 0; i < DWT_NUM_EVENTS; i++ )
+    {
+      if ( _r.dwt_event_acc[i] )
+	{
+	  havePrinted = true;
+	  genericsPrintf( "%4s:%8d  ",evName[i],_r.dwt_event_acc[i] );
+        }
+    }
+    if ( havePrinted )
+      {
+	genericsPrintf( EOL );
+      }
 
     if ( options.outputExceptions )
     {
@@ -849,7 +875,7 @@ void _itmPumpProcess( uint8_t c )
         /* MSG_DATA_ACCESS_WP */  NULL,
         /* MSG_DATA_RWWP */       NULL,
         /* MSG_PC_SAMPLE */       ( handlers )_handlePCSample,
-        /* MSG_DWT_EVENT */       NULL,
+        /* MSG_DWT_EVENT */       ( handlers )_handleDWTEvent,
         /* MSG_EXCEPTION */       ( handlers )_handleException,
         /* MSG_TS */              ( handlers )_handleTS
     };
@@ -1491,6 +1517,13 @@ int main( int argc, char *argv[] )
                 {
                     _r.er[e].visits = _r.er[e].maxDepth = _r.er[e].totalTime = _r.er[e].minTime = _r.er[e].maxTime = _r.er[e].maxWallTime = 0;
                 }
+
+		/* ... and the event counters */
+    for ( uint32_t i = 0; i < DWT_NUM_EVENTS; i++ )
+    {
+	  _r.dwt_event_acc[i]=0;
+    }
+		
 
                 /* It's safe to update these here because the ticks won't be updated until more
                  * records arrive. */
