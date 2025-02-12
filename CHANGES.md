@@ -1,3 +1,7 @@
+Version 2.3.0 In progress
+* Add support for ITM rollover counters in orbtop (if they deliver information, they will be displayed)
+* Add STM32 CORTEX-M33 support (Tested on STM32U5A5)
+
 21st Sept 2024 (Version 2.2.0)
 
 * Add COBS draining state to re-sync as quickly as possible

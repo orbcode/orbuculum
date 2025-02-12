@@ -9,7 +9,7 @@ GDB SWO Trace Configuration Helpers
 Setup Device
 ------------
 STM32;
-  enableSTM32SWO  : Enable SWO on STM32 pins (for F4 or F7 if 4/7 is passed as first argument)
+  enableSTM32SWO  : Enable SWO on STM32 pins
   enableSTM32TRACE: Start TRACE on STM32 pins
 
 IMXRT;
@@ -90,6 +90,7 @@ set $CPU_S32K344=6
 set $CPU_IMXRT117X=7
 set $CPU_KINETIS=8
 set $CPU_SAMD5x=9
+set $CPU_STM32M33=10
 
 # ====================================================================
 set $CDBBASE=0xE000EDF0
@@ -97,11 +98,18 @@ set $DWTBASE=0xE0001000
 set $ITMBASE=0xE0000000
 set $TPIUBASE=0xE0040000
 set $ETMBASE=0xE0041000
+set $CTIBASE=0xE0042000
 
 define _setAddressesSTM32
   # Locations in the memory map for interesting things on STM32
-  set $RCCBASE = 0x40023800
-  set $GPIOBASE = 0x40020000
+  if ($CPU == $CPU_STM32M33)
+     set $RCCBASE = 0x46020c00
+     set $GPIOBASE = 0x42020000
+     set $DBGMCUBASE = 0xE0044000
+  else
+     set $RCCBASE = 0x40023800
+     set $GPIOBASE = 0x40020000
+     set $DBGMCUBASE = 0xE0042000
 end
 
 define _setAddressesIMXRT
@@ -886,7 +894,11 @@ define enableSTM32SWO
     set $tgt = $arg0
   end
 
-  set $CPU=$CPU_STM32
+  if ($tgt==33)
+     set $CPU=$CPU_STM32M33
+  else
+     set $CPU=$CPU_STM32
+  end
   _setAddressesSTM32
 
   if (($tgt==4) || ($tgt==7))
@@ -901,12 +913,13 @@ define enableSTM32SWO
   end
   # Common initialisation.
   # DBGMCU->CR |= DBGMCU_CR_TRACE_IOEN;
-  set *0xE0042004 |= 0x20
+  set *($DBGMCUBASE+4) |= 0x20
 
   #set language auto
 end
 document enableSTM32SWO
-enableSTM32SWO Configure output pin on STM32 for SWO use.
+enableSTM32SWO <Type> Configure output pin on STM32 for SWO use.
+  <Type>   : Type of STM32 Device 4=f4, 7=f7, 33=M33
 end
 # ====================================================================
 define enableSAMD5XSWD
@@ -1011,7 +1024,11 @@ define enableSTM32Pin
   set $_GPIOPORT = $GPIOBASE + 0x400 * $arg0
 
   # Enable GPIO port in RCC
-  set *($RCCBASE + 0x30) |= (0x1<<$arg0)
+  if ($CPU == $CPU_STM32M33)
+     set *($RCCBASE + 0x8c) |= (0x1<<$arg0)
+  else
+     set *($RCCBASE + 0x30) |= (0x1<<$arg0)
+  end
 
   # MODER: Alternate Function
   set *($_GPIOPORT+0x00) &= ~(0x3<<2*$arg1)
@@ -1055,6 +1072,7 @@ define enableSTM32TRACE
 
   set $bits=4
   set $drive=1
+  set $type=1
 
   if $argc >= 1
     set $bits = $arg0
@@ -1067,13 +1085,21 @@ define enableSTM32TRACE
     set $drive = $arg1
   end
 
+  if $type >= 3
+    set $drive = $arg2
+  end
+
   if ($drive > 3)
     help enableSTM32TRACE
   end
 
   set $bits = $bits-1
-  set $CPU=$CPU_STM32
 
+  if ($type==33)
+     set $CPU=$CPU_STM32M33
+  else
+     set $CPU=$CPU_STM32
+  end
   _setAddressesSTM32
 
   # Enable Trace TRCENA (DCB DEMCR) needed for clocks
@@ -1099,12 +1125,12 @@ define enableSTM32TRACE
   end
 
   # Set number of bits in DBGMCU_CR
-  set *0xE0042004 &= ~(3<<6)
+  set *($DBGMCUBASE+4) &= ~(3<<6)
 
   if ($bits<3)
-     set *0xE0042004 |= ((($bits+1)<<6) | (1<<5))
+     set *($DBGMCUBASE+4) |= ((($bits+1)<<6) | (1<<5))
   else
-     set *0xE0042004 |= ((3<<6) | (1<<5))
+     set *$(DBGMCUBASE+4) |= ((3<<6) | (1<<5))
   end
 
   # Enable Trace TRCENA (DCB DEMCR)
@@ -1117,8 +1143,9 @@ define enableSTM32TRACE
 end
 document enableSTM32TRACE
 enableSTM32TRACE <Width> <Drive>: Enable TRACE on STM32 pins
-  <Width>   : Number of bits wide (1,2 or 4 only)
-  <Drive>   : Drive strength (0=lowest, 3=highest)
+  <Width>   : Number of bits wide (1,2 or 4 only, default=4)
+  <Drive>   : Drive strength (0=lowest, 3=highest, default=1)
+  <Type>    : Device type, 33=special for CORTEX-M33, otherwise default
 end
 # ====================================================================
 define enableNRF52TRACE
