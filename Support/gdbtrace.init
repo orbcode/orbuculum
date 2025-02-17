@@ -1095,8 +1095,8 @@ define enableSTM32TRACE
     set $drive = $arg1
   end
 
-  if $type >= 3
-    set $drive = $arg2
+  if $argc >= 3
+    set $type = $arg2
   end
 
   if ($drive > 3)
