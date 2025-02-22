@@ -81,7 +81,7 @@ end
 
 # Definitions for the CPU types we currently support
 set $CPU_IMXRT102X=1
-set $CPU_STM32=2
+set $CPU_STM32F1F4F7=2
 set $CPU_IMXRT106X=1
 set $CPU_NRF=3
 set $CPU_EFR32=4
@@ -91,6 +91,7 @@ set $CPU_IMXRT117X=7
 set $CPU_KINETIS=8
 set $CPU_SAMD5x=9
 set $CPU_STM32M33=10
+set $CPU_STM32H7=11
 
 # ====================================================================
 set $CDBBASE=0xE000EDF0
@@ -100,16 +101,60 @@ set $TPIUBASE=0xE0040000
 set $ETMBASE=0xE0041000
 set $CTIBASE=0xE0042000
 
+define setTRCENA
+  set *($CDBBASE+0xC)|=(1<<24)
+end
+document setTRCENA
+setTRCENA Enables trace peripherals (DWT,ITM,ETM) in DEMCR.
+end
+
+define unlockComponent
+  set *($arg0 + 0xfb0) = 0xc5acce55
+end
+
 define _setAddressesSTM32
   # Locations in the memory map for interesting things on STM32
-  if ($CPU == $CPU_STM32M33)
-     set $RCCBASE = 0x46020c00
-     set $GPIOBASE = 0x42020000
-     set $DBGMCUBASE = 0xE0044000
+
+  set $dev = $arg0
+
+  if ! $dev
+    # Device type not specified, detect from DBGMCU ID register.
+    if (*0x5C001000 & 0x7ff) == 0x450
+      set $CPU = $CPU_STM32H7
+    else
+      set $CPU = $CPU_STM32F1F4F7
+    end
   else
-     set $RCCBASE = 0x40023800
-     set $GPIOBASE = 0x40020000
-     set $DBGMCUBASE = 0xE0042000
+    if $dev == 33
+      set $CPU = $CPU_STM32M33
+    end
+    if ($dev == 1) || ($dev == 4) || ($dev == 7)
+      set $CPU = $CPU_STM32F1F4F7
+    end
+  end
+
+  if $CPU == $CPU_STM32M33
+    set $GPIOBASE  = 0x42020000
+    set $RCCGPIO   = 0x46020c8c
+    set $DBGMCU_CR = 0xE0044004
+  end
+
+  if $CPU == $CPU_STM32H7
+    set $GPIOBASE  = 0x58020000
+    set $RCCGPIO   = 0x580244E0
+    set $DBGMCU_CR = 0x5C001004
+    set $SWOBASE   = 0x5C003000
+    set $SWTFBASE  = 0x5C004000
+    set $CSTFBASE  = 0x5C013000
+    set $ETFBASE   = 0x5C014000
+    set $TPIUBASE  = 0x5C015000
+  end
+
+  if $CPU == $CPU_STM32F1F4F7
+    set $GPIOBASE  = 0x40020000
+    set $RCCGPIO   = 0x40023830
+    set $DBGMCU_CR = 0xE0042004
+  end
 end
 
 define _setAddressesIMXRT
@@ -272,12 +317,12 @@ define _setupTraceBusS32K344
   end
 
   # Enable access to the funnels and ETFs.
-  set *($FUNNEL_0_BASE + 0xfb0) = 0xc5acce55
-  set *($FUNNEL_1_BASE + 0xfb0) = 0xc5acce55
-  set *($FUNNEL_2_BASE + 0xfb0) = 0xc5acce55
-  set *($ETF_CM7_CLUSTER_ETMI_BASE + 0xfb0) = 0xc5acce55
-  set *($ETF_CM7_CLUSTER_ETMD_BASE + 0xfb0) = 0xc5acce55
-  set *($ETF_SHARED_SYSTEM_BASE + 0xfb0) = 0xc5acce55
+  unlockComponent $FUNNEL_0_BASE
+  unlockComponent $FUNNEL_1_BASE
+  unlockComponent $FUNNEL_2_BASE
+  unlockComponent $ETF_CM7_CLUSTER_ETMI_BASE
+  unlockComponent $ETF_CM7_CLUSTER_ETMD_BASE
+  unlockComponent $ETF_SHARED_SYSTEM_BASE
 
   # Enable all inputs of all funnels to ensure that all trace sources
   # can pass. Enabling all inputs is probably not optimal, so this
@@ -361,7 +406,7 @@ end
 define _startETMv35
 
   # Allow access to device
-  set *($ETMBASE+0xfb0) = 0xc5acce55
+  unlockComponent $ETMBASE
 
   # Enter configuration mode (write twice to be sure we reached it)
   set *($ETMBASE) = (1<<10)
@@ -591,34 +636,43 @@ define prepareSWO
   end
 
   # Make sure we can get to everything
-  set *($ITMBASE+0xfb0) = 0xc5acce55
-  set *($ETMBASE+0xfb0) = 0xc5acce55
+  unlockComponent $ITMBASE
+  unlockComponent $DWTBASE
 
-  set *($CDBBASE+0xC)|=(1<<24)
+  set $_formatterPresent=1
+  set $_protocolBase=$TPIUBASE
+  if $CPU == $CPU_STM32H7
+    set $_formatterPresent=0
+    set $_protocolBase=$SWOBASE
+    unlockComponent $SWOBASE
+  end
+
+  setTRCENA
 
   if ($useMan==0)
     # Use Async mode pin protocol (TPIU_SPPR)
-    set *($TPIUBASE+0xF0) = 2
+    set *($_protocolBase+0xF0) = 2
   else
     # Use Manchester mode pin protocol (TPIU_SPPR)
-    set *($TPIUBASE+0xF0) = 1
+    set *($_protocolBase+0xF0) = 1
 
     # There are two edges in a bit, so double the clock
     set $speed = $speed*2
   end
 
   # Output bits at speed dependent on system clock
-  set *($TPIUBASE+0x10) = ((($clockspeed+$speed-1)/$speed)-1)
+  set *($_protocolBase+0x10) = ((($clockspeed+$speed-1)/$speed)-1)
 
-  if ($useTPIU==1)
-    # Use TPIU formatter and flush
-    set *($TPIUBASE+0x304) = 0x102
-  else
-    set *($TPIUBASE+0x304) = 0x100
+  if $_formatterPresent==1
+    if $useTPIU==1
+      # Use TPIU formatter and flush
+      set *($TPIUBASE+0x304) = 0x102
+    else
+      set *($TPIUBASE+0x304) = 0x100
+    end
   end
 
   # Flush all initial configuration
-  set *($CDBBASE+0xC)|=(1<<24)
   set *($DWTBASE) = 0
   set *($ITMBASE+0xe80) = 0
 
@@ -846,10 +900,10 @@ define enableIMXRT117XSWO
   _setAddressesIMXRT117X
 
   # Configure trace funnels/ATB.
-  set *($FUNNEL_CSSYS_BASE + 0xfb0) = 0xc5acce55
+  unlockComponent $FUNNEL_CSSYS_BASE
   set *($FUNNEL_CSSYS_BASE) |= 0xff
 
-  set *($FUNNEL_M7_BASE + 0xfb0) = 0xc5acce55
+  unlockComponent $FUNNEL_M7_BASE
   set *($FUNNEL_M7_BASE) |= 0xff
 
   # TODO: configure trace subsystem clocks.
@@ -859,7 +913,7 @@ define enableIMXRT117XSWO
   set *(0x40c0806c) = 0x2
 
   # Allow access to SWO TPIU registers.
-  set *($TPIU_SWO_BASE + 0xfb0) = 0xc5acce55
+  unlockComponent $TPIU_SWO_BASE
 
   # Set $TPIUBASE for use by other commands in this file.
   set $TPIUBASE = $TPIU_SWO_BASE
@@ -889,37 +943,47 @@ end
 define enableSTM32SWO
   #set language c
 
-  set $tgt=1
+  set $dev=0
   if $argc >= 1
-    set $tgt = $arg0
+    set $dev = $arg0
   end
+  _setAddressesSTM32 $dev
 
-  if ($tgt==33)
-     set $CPU=$CPU_STM32M33
-  else
-     set $CPU=$CPU_STM32
-  end
-  _setAddressesSTM32
-
-  if (($tgt==4) || ($tgt==7))
-    # STM32F4/7 variant: SWO on PB3.
+  if $CPU == $CPU_STM32H7
+    # Set D1DBGCKEN, D3DBGCKEN
+    set *$DBGMCU_CR |= 7 | (6 << 20)
+    # Unlock SWO trace funnel.
+    unlockComponent $SWTFBASE
+    # Enable port S0 in SWO trace funnel.
+    set *($SWTFBASE + 0x000) = 0x00000301
+    # SWO on PB3
     enableSTM32Pin 1 3 3
-  else
-    # STM32F1 variant.
-    # RCC->APB2ENR |= RCC_APB2ENR_AFIOEN;
-    set *0x40021018 |= 1
-    # AFIO->MAPR |= (2 << 24); // Disable JTAG to release TRACESWO
-    set *0x40010004 |= 0x2000000
   end
-  # Common initialisation.
-  # DBGMCU->CR |= DBGMCU_CR_TRACE_IOEN;
-  set *($DBGMCUBASE+4) |= 0x20
+
+  if $CPU == $CPU_STM32F1F4F7
+    if (($dev==4) || ($dev==7))
+      # STM32F4/7 variant: SWO on PB3.
+      enableSTM32Pin 1 3 3
+    else
+      # STM32F1 variant.
+      # RCC->APB2ENR |= RCC_APB2ENR_AFIOEN;
+      set *0x40021018 |= 1
+      # AFIO->MAPR |= (2 << 24); // Disable JTAG to release TRACESWO
+      set *0x40010004 |= 0x2000000
+    end
+  end
+
+  if $CPU != $CPU_STM32H7
+    # Common initialisation.
+    # DBGMCU->CR |= DBGMCU_CR_TRACE_IOEN;
+    set *$DBGMCU_CR |= 0x20
+  end
 
   #set language auto
 end
 document enableSTM32SWO
 enableSTM32SWO <Type> Configure output pin on STM32 for SWO use.
-  <Type>   : Type of STM32 Device 4=f4, 7=f7, 33=M33
+  <Type>   : Type of STM32 Device 1=f1, 4=f4, 7=f7, 33=M33
 end
 # ====================================================================
 define enableSAMD5XSWD
@@ -1006,7 +1070,7 @@ end
 define _doTRACE
   # Must be called with $bits containing number of bits to set trace for
 
-  set *($ITMBASE+0xfb0) = 0xc5acce55
+  unlockComponent $ITMBASE
 
   # Set port size (TPIU_CSPSR)
   set *($TPIUBASE+4) = (1<<$bits)
@@ -1020,15 +1084,11 @@ end
 # ====================================================================
 define enableSTM32Pin
   #set language c
-  _setAddressesSTM32
+
   set $_GPIOPORT = $GPIOBASE + 0x400 * $arg0
 
   # Enable GPIO port in RCC
-  if ($CPU == $CPU_STM32M33)
-     set *($RCCBASE + 0x8c) |= (0x1<<$arg0)
-  else
-     set *($RCCBASE + 0x30) |= (0x1<<$arg0)
-  end
+  set *($RCCGPIO) |= (0x1<<$arg0)
 
   # MODER: Alternate Function
   set *($_GPIOPORT+0x00) &= ~(0x3<<2*$arg1)
@@ -1072,7 +1132,7 @@ define enableSTM32TRACE
 
   set $bits=4
   set $drive=1
-  set $type=1
+  set $dev=0
 
   if $argc >= 1
     set $bits = $arg0
@@ -1085,8 +1145,8 @@ define enableSTM32TRACE
     set $drive = $arg1
   end
 
-  if $type >= 3
-    set $drive = $arg2
+  if $argc >= 3
+    set $dev = $arg2
   end
 
   if ($drive > 3)
@@ -1095,19 +1155,33 @@ define enableSTM32TRACE
 
   set $bits = $bits-1
 
-  if ($type==33)
-     set $CPU=$CPU_STM32M33
-  else
-     set $CPU=$CPU_STM32
-  end
-  _setAddressesSTM32
+  _setAddressesSTM32 $dev
 
   # Enable Trace TRCENA (DCB DEMCR) needed for clocks
-  set *($CDBBASE+0xC)=(1<<24)
+  setTRCENA
 
-  # Enable compensation cell
-  set *0x40023844 |= (1<<14)
-  set *0x40013820 |=1
+  if $CPU == $CPU_STM32H7
+    # Enable TRACECKEN, D1DBGCKEN
+    set *$DBGMCU_CR |= 7 | (3 << 20)
+
+    unlockComponent $ETFBASE
+    unlockComponent $CSTFBASE
+    unlockComponent $TPIUBASE
+
+    # Hardware FIFO mode
+    set *($ETFBASE + 0x028) = 2
+    # Formatter and flush control
+    set *($ETFBASE + 0x304) |= 1
+    # Enable ETF trace capture
+    set *($ETFBASE + 0x020) = 1
+
+    # Enable both ETM and ITM in trace funnel. bit0=ETM, bit1=ITM
+    set *($CSTFBASE + 0x000) |= 3
+  else
+    # Enable compensation cell
+    set *0x40023844 |= (1<<14)
+    set *0x40013820 |=1
+  end
 
   # Setup PE2 & PE3
   enableSTM32Pin 4 2 $drive
@@ -1124,20 +1198,29 @@ define enableSTM32TRACE
      enableSTM32Pin 4 6 $drive
   end
 
-  # Set number of bits in DBGMCU_CR
-  set *($DBGMCUBASE+4) &= ~(3<<6)
+  if $CPU != $CPU_STM32H7
+    # Set number of bits in DBGMCU_CR
+    set *$DBGMCU_CR &= ~(3<<6)
 
-  if ($bits<3)
-     set *($DBGMCUBASE+4) |= ((($bits+1)<<6) | (1<<5))
-  else
-     set *$(DBGMCUBASE+4) |= ((3<<6) | (1<<5))
+    if ($bits<3)
+       set *$DBGMCU_CR |= ((($bits+1)<<6) | (1<<5))
+    else
+       set *$DBGMCU_CR |= ((3<<6) | (1<<5))
+    end
   end
 
-  # Enable Trace TRCENA (DCB DEMCR)
-  set *($CDBBASE+0xC)=(1<<24)
-
   # Finally start the trace output
-  _doTRACE
+
+  # Set port size (TPIU_CURPSIZE)
+  set *($TPIUBASE+4) = (1<<$bits)
+
+  if $CPU != $CPU_STM32H7
+    # Set pin protocol to Sync Trace Port (TPIU_SPPR)
+    set *($TPIUBASE+0xF0)=0
+  end
+
+  # TPIU formatter and flush control register (TPIU_FFCR)
+  set *($TPIUBASE+0x304) = 0x102
 
   #set language auto
 end
@@ -1183,7 +1266,7 @@ define enableNRF52TRACE
 
   # from modules/nrfx/mdk/system_nrf52.c
   # CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
-  set *($CDBBASE+0xC) |= (1<<24)
+  setTRCENA
 
   # NRF_CLOCK->TRACECONFIG |= CLOCK_TRACECONFIG_TRACEMUX_Parallel << CLOCK_TRACECONFIG_TRACEMUX_Pos;
   set *($NRF_CLOCK+0x0000055C) &= ~(3 << 16)
@@ -1291,7 +1374,7 @@ define enableNRF53TRACE
   set *($NRF_TAD_S+0x518) = $cspeed
 
   # Enable Trace TRCENA (DCB DEMCR)
-  set *($CDBBASE+0xC)=(1<<24)
+  setTRCENA
 
   # Finally start the trace output
   _doTRACE
@@ -1383,7 +1466,7 @@ define enableTM4C123TRACE
   end
 
   # Enable Trace TRCENA (DCB DEMCR)
-  set *($CDBBASE+0xC)=(1<<24)
+  setTRCENA
 
   # Finally start the trace output
   _doTRACE
@@ -1505,7 +1588,7 @@ define enableLPC176xTRACE
   set *0x4002C028 = (1 << 3)
 
   # Enable Trace TRCENA (DCB DEMCR)
-  set *($CDBBASE+0xC)=(1<<24)
+  setTRCENA
 
   # Start tracing
   set $bits = $bits-1
@@ -1576,7 +1659,7 @@ define enableSAMD5XTRACE
   end
 
   # Enable Trace TRCENA (DCB DEMCR)
-  set *($CDBBASE+0xC)=(1<<24)
+  setTRCENA
 
   # Finally start the trace output
   _doTRACE
@@ -1595,7 +1678,7 @@ define dwtPOSTCNT
   if ($argc!=1)
     help dwtPOSTCNT
   else
-    set *($CDBBASE+0xC) |= 0x1000000
+    setTRCENA
     if ($arg0==1)
       set *($DWTBASE) |= (1<<22)
     else
@@ -1615,7 +1698,7 @@ define dwtFOLDEVT
   if ($argc!=1)
     help dwtFOLDEVT
   else
-    set *($CDBBASE+0xC) |= 0x1000000
+    setTRCENA
     if ($arg0==1)
       set *($DWTBASE) |= (1<<21)
     else
@@ -1635,7 +1718,7 @@ define dwtLSUEVT
   if ($argc!=1)
     help dwtLSUEVT
   else
-    set *($CDBBASE+0xC) |= 0x1000000
+    setTRCENA
     if ($arg0==1)
       set *($DWTBASE) |= (1<<20)
     else
@@ -1655,7 +1738,7 @@ define dwtSLEEPEVT
   if ($argc!=1)
     help dwtSLEEPEVT
   else
-    set *($CDBBASE+0xC) |= 0x1000000
+    setTRCENA
     if ($arg0==1)
       set *($DWTBASE) |= (1<<19)
     else
@@ -1675,7 +1758,7 @@ define dwtDEVEVT
   if ($argc!=1)
     help dwtDEVEVT
   else
-    set *($CDBBASE+0xC) |= 0x1000000
+    setTRCENA
     if ($arg0==1)
       set *($DWTBASE) |= (1<<18)
     else
@@ -1686,7 +1769,7 @@ define dwtDEVEVT
   #set language auto
 end
 document dwtDEVEVT
-dwtDEVEVT <0|1> Enable Exception counter overflow event packet generation
+dwtDEVEVT <0|1> Enable Exception overhead counter overflow event packet generation
 end
 # ====================================================================
 define dwtCPIEVT
@@ -1695,7 +1778,7 @@ define dwtCPIEVT
   if ($argc!=1)
     help dwtCPIEVT
   else
-    set *($CDBBASE+0xC) |= 0x1000000
+    setTRCENA
     if ($arg0==1)
       set *($DWTBASE) |= (1<<17)
     else
@@ -1715,7 +1798,7 @@ define dwtTraceException
   if ($argc!=1)
     help dwtTraceException
   else
-    set *($CDBBASE+0xC) |= 0x1000000
+    setTRCENA
     if ($arg0==1)
       set *($DWTBASE) |= (1<<16)
     else
@@ -1735,7 +1818,7 @@ define dwtSamplePC
   if ($argc!=1)
     help dwtSamplePC
   else
-    set *($CDBBASE+0xC) |= 0x1000000
+    setTRCENA
     if ($arg0==1)
       set *($DWTBASE) |= (1<<12)
     else
@@ -1755,7 +1838,7 @@ define dwtSyncTap
   if (($argc!=1) || ($arg0<0) || ($arg0>3))
     help dwtSyncTap
   else
-    set *($CDBBASE|0xC) |= 0x1000000
+    setTRCENA
     set *($DWTBASE) &= ~(0x03<<10)
     set *($DWTBASE) |= (($arg0&0x03)<<10)
   end
@@ -1772,7 +1855,7 @@ define dwtPostTap
   if (($argc!=1) || ($arg0<0) || ($arg0>1))
     help dwtPostTap
   else
-    set *($CDBBASE|0xC) |= 0x1000000
+    setTRCENA
     if ($arg0==0)
       set *($DWTBASE) &= ~(1<<9)
     else
@@ -1792,7 +1875,7 @@ define dwtPostInit
   if (($argc!=1) || ($arg0<0) || ($arg0>15))
     help dwtPostInit
   else
-    set *($CDBBASE+0xC) |= 0x1000000
+    setTRCENA
     set *($DWTBASE) &= ~(0x0f<<5)
     set *($DWTBASE) |= (($arg0&0x0f)<<5)
   end
@@ -1809,7 +1892,7 @@ define dwtPostReset
   if (($argc!=1) || ($arg0<0) || ($arg0>15))
     help dwtPostReset
   else
-    set *($CDBBASE+0xC) |= 0x1000000
+    setTRCENA
     set *($DWTBASE) &= ~(0x0f<<1)
     set *($DWTBASE) |= (($arg0&0x0f)<<1)
   end
@@ -1828,7 +1911,7 @@ define dwtCycEna
   if ($argc!=1)
     help dwtCycEna
   else
-    set *($CDBBASE+0xC) |= 0x1000000
+    setTRCENA
     if ($arg0==1)
       set *($DWTBASE) |= (1<<0)
     else
@@ -1849,7 +1932,7 @@ define ITMId
   if (($argc!=1) || ($arg0<0) || ($arg0>127))
     help ITMId
   else
-    set *($ITMBASE+0xfb0) = 0xc5acce55
+    unlockComponent $ITMBASE
     set *($ITMBASE+0xe80) &= ~(0x7F<<16)
     set *($ITMBASE+0xe80) |= (($arg0&0x7f)<<16)
   end
@@ -1866,7 +1949,7 @@ define ITMGTSFreq
   if (($argc!=1) || ($arg0<0) || ($arg0>3))
     help ITMGTSFreq
   else
-    set *($ITMBASE+0xfb0) = 0xc5acce55
+    unlockComponent $ITMBASE
     set *($ITMBASE+0xe80) &= ~(0x3<<10)
     set *($ITMBASE+0xe80) |= (($arg0&3)<<10)
   end
@@ -1885,7 +1968,7 @@ define ITMTSPrescale
   if (($argc!=1) || ($arg0<0) || ($arg0>3))
     help ITMTSPrescale
   else
-    set *($ITMBASE+0xfb0) = 0xc5acce55
+    unlockComponent $ITMBASE
     set *($ITMBASE+0xe80) &= ~(0x3<<8)
     set *($ITMBASE+0xe80) |= (($arg0&3)<<8)
   end
@@ -1902,7 +1985,7 @@ define ITMSWOEna
   if (($argc!=1) || ($arg0<0) || ($arg0>1))
     help ITMSWOEna
   else
-    set *($ITMBASE+0xfb0) = 0xc5acce55
+    unlockComponent $ITMBASE
     if ($arg0==0)
       set *($ITMBASE+0xe80) &= ~(0x1<<4)
     else
@@ -1923,7 +2006,7 @@ define ITMTXEna
   if (($argc!=1) || ($arg0<0) || ($arg0>1))
     help ITMTXEna
   else
-    set *($ITMBASE+0xfb0) = 0xc5acce55
+    unlockComponent $ITMBASE
     if ($arg0==0)
       set *($ITMBASE+0xe80) &= ~(0x1<<3)
     else
@@ -1944,7 +2027,7 @@ define ITMSYNCEna
   if (($argc!=1) || ($arg0<0) || ($arg0>1))
     help ITMSYNCEna
   else
-    set *($ITMBASE+0xfb0) = 0xc5acce55
+    unlockComponent $ITMBASE
     if ($arg0==0)
       set *($ITMBASE+0xe80) &= ~(0x1<<2)
     else
@@ -1965,7 +2048,7 @@ define ITMTSEna
   if (($argc!=1) || ($arg0<0) || ($arg0>1))
     help ITMTSEna
   else
-    set *($ITMBASE+0xfb0) = 0xc5acce55
+    unlockComponent $ITMBASE
     if ($arg0==0)
       set *($ITMBASE+0xe80) &= ~(0x1<<1)
     else
@@ -1985,7 +2068,7 @@ define ITMEna
   if (($argc!=1) || ($arg0<0) || ($arg0>1))
     help ITMEna
   else
-    set *($ITMBASE+0xfb0) = 0xc5acce55
+    unlockComponent $ITMBASE
     if ($arg0==0)
       set *($ITMBASE+0xe80) &= ~(0x1<<0)
     else
@@ -2005,7 +2088,7 @@ define ITMTER
   if (($argc!=2) || ($arg0<0) || ($arg0>7))
     help ITMTER
   else
-    set *($ITMBASE+0xfb0) = 0xc5acce55
+    unlockComponent $ITMBASE
     set *($ITMBASE+0xe00+4*$arg0) = $arg1
   end
 
@@ -2021,7 +2104,7 @@ define ITMTPR
   if ($argc!=1)
     help ITMTPR
   else
-    set *($ITMBASE+0xfb0) = 0xc5acce55
+    unlockComponent $ITMBASE
     set *($ITMBASE+0xe40) = $arg0
   end
 
@@ -2037,7 +2120,7 @@ define tracetest
   if ($argc!=1)
     help tracetest
   else
-    set *($TPIUBASE+0xfb0) = 0xc5acce55
+    unlockComponent $TPIUBASE
     if ($arg0 == 0)
       set *($TPIUBASE+0x204) = 0
     else
