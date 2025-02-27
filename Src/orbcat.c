@@ -46,7 +46,8 @@
 #define ABS_FORMAT            C_TSTAMP "%s.%03" PRIu64"|" C_RESET
 #define STAMP_FORMAT          C_TSTAMP "%12" PRIu64 "|" C_RESET
 #define STAMP_FORMAT_MS       C_TSTAMP "%8" PRIu64 ".%03" PRIu64 "_%03" PRIu64 "|" C_RESET
-#define STAMP_FORMAT_MS_DELTA C_TSTAMP "%5" PRIu64 ".%03" PRIu64 "_%03" PRIu64 "|" C_RESET
+//#define STAMP_FORMAT_MS_DELTA C_TSTAMP "%5" PRIu64 ".%03" PRIu64 "_%03" PRIu64 "|" C_RESET
+#define STAMP_FORMAT_MS_DELTA C_TSTAMP "%5" PRIu64 ".%03" PRIu64 "_%03" PRIu64 "_%01" PRIu64 "|" C_RESET
 
 enum TSType { TSNone, TSAbsolute, TSRelative, TSDelta, TSStamp, TSStampDelta, TSNumTypes };
 
@@ -217,8 +218,9 @@ static void _printTimestamp( char *strstore )
 
             if ( options.cps )
             {
-                uint64_t tms = ( delta * 1000000 ) / options.cps;
-                sprintf( strstore, STAMP_FORMAT_MS_DELTA, tms / 1000000, ( tms / 1000 ) % 1000, tms % 1000 );
+                /* Provide some rounding .. we're at the limits of what's sensible here */
+                uint64_t tms = ( delta * 10000000 + options.cps / 2 ) / options.cps;
+                sprintf( strstore, STAMP_FORMAT_MS_DELTA, tms / 10000000, ( tms / 10000 ) % 10000, ( tms / 10 ) % 1000, tms % 10 );
             }
             else
             {
