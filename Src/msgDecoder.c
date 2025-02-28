@@ -207,17 +207,15 @@ static bool _handleTS( struct ITMPacket *packet, struct TSMsg *decoded )
 
         if ( packet->len > 2 )
         {
-            stamp |= ( packet->d[2] ) << 7;
-
-            if ( packet->len > 3 )
-            {
-                stamp |= ( packet->d[3] & 0x7F ) << 14;
-
-                if ( packet->len > 4 )
-                {
-                    stamp |= ( packet->d[4] & 0x7f ) << 21;
-                }
-            }
+            stamp |= ( packet->d[2] & 0x7F ) << 7;
+        }
+        if ( packet->len > 3 )
+        {
+            stamp |= ( packet->d[3] & 0x7F ) << 14;
+        }
+        if ( packet->len > 4 )
+        {
+            stamp |= ( packet->d[4] & 0x7f ) << 21;
         }
     }
 
