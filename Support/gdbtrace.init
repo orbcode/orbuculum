@@ -81,8 +81,8 @@ end
 
 # Definitions for the CPU types we currently support
 set $CPU_IMXRT102X=1
-set $CPU_STM32F1F4F7=2
 set $CPU_IMXRT106X=1
+set $CPU_STM32F1F4F7=2
 set $CPU_NRF=3
 set $CPU_EFR32=4
 set $CPU_TM4C=5
@@ -921,8 +921,6 @@ define enableIMXRT117XSWO
   #set language auto
 end
 
-# ====================================================================
-
 define enableKinetisSWO
   _setAddressesKinetis
   set language c
@@ -939,6 +937,8 @@ define enableKinetisSWO
 
   set language auto
 end
+
+# ====================================================================
 
 define enableSTM32SWO
   #set language c
@@ -960,7 +960,7 @@ define enableSTM32SWO
     enableSTM32Pin 1 3 3
   end
 
-  if $CPU == $CPU_STM32F1F4F7
+  if ($CPU == $CPU_STM32F1F4F7)
     if (($dev==4) || ($dev==7))
       # STM32F4/7 variant: SWO on PB3.
       enableSTM32Pin 1 3 3
@@ -1160,7 +1160,7 @@ define enableSTM32TRACE
   # Enable Trace TRCENA (DCB DEMCR) needed for clocks
   setTRCENA
 
-  if $CPU == $CPU_STM32H7
+  if ($CPU == $CPU_STM32H7)
     # Enable TRACECKEN, D1DBGCKEN
     set *$DBGMCU_CR |= 7 | (3 << 20)
 
@@ -1178,9 +1178,11 @@ define enableSTM32TRACE
     # Enable both ETM and ITM in trace funnel. bit0=ETM, bit1=ITM
     set *($CSTFBASE + 0x000) |= 3
   else
-    # Enable compensation cell
-    set *0x40023844 |= (1<<14)
-    set *0x40013820 |=1
+    if $CPU != $CPU_STM32M33
+        # Enable compensation cell
+	set *($RRCGPIO+0x14) |= (1<<14)
+	set *0x40013820 |=1
+    end
   end
 
   # Setup PE2 & PE3
