@@ -98,24 +98,24 @@ uint64_t _timestamp( void )
 void _printHelp( const char *const progName )
 
 {
-    genericsPrintf( "Usage: %s [options]" EOL, progName );
-    genericsPrintf( "    -h, --help:         This help" EOL );
-    genericsPrintf( "    -l, --length:       <timelen> Length of time in ms to record from point of acheiving sync (defaults to %dmS)" EOL, options.timelen );
-    genericsPrintf( "    -M, --no-colour:    Supress colour in output" EOL );
-    genericsPrintf( "    -n, --itm-sync:     Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
-    genericsPrintf( "    -o, --output-file:  <filename> to be used for dump file (defaults to %s)" EOL, options.outfile );
-    genericsPrintf( "    -p, --protocol:     Protocol to communicate. Defaults to OFLOW if -s is not set, otherwise ITM" EOL );
-    genericsPrintf( "    -s, --server:       <Server>:<Port> to use" EOL );
-    genericsPrintf( "    -t, --tag:          <stream> Which Orbflow tag to use (normally 1)" EOL );
-    genericsPrintf( "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
-    genericsPrintf( "    -V, --version:      Print version and exit" EOL );
-    genericsPrintf( "    -w, --sync-write:   Write synchronously to the output file after every packet" EOL );
+    genericsFPrintf( stderr, "Usage: %s [options]" EOL, progName );
+    genericsFPrintf( stderr, "    -h, --help:         This help" EOL );
+    genericsFPrintf( stderr, "    -l, --length:       <timelen> Length of time in ms to record from point of acheiving sync (defaults to %dmS)" EOL, options.timelen );
+    genericsFPrintf( stderr, "    -M, --no-colour:    Supress colour in output" EOL );
+    genericsFPrintf( stderr, "    -n, --itm-sync:     Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
+    genericsFPrintf( stderr, "    -o, --output-file:  <filename> to be used for dump file (defaults to %s)" EOL, options.outfile );
+    genericsFPrintf( stderr, "    -p, --protocol:     Protocol to communicate. Defaults to OFLOW if -s is not set, otherwise ITM" EOL );
+    genericsFPrintf( stderr, "    -s, --server:       <Server>:<Port> to use" EOL );
+    genericsFPrintf( stderr, "    -t, --tag:          <stream> Which Orbflow tag to use (normally 1)" EOL );
+    genericsFPrintf( stderr, "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
+    genericsFPrintf( stderr, "    -V, --version:      Print version and exit" EOL );
+    genericsFPrintf( stderr, "    -w, --sync-write:   Write synchronously to the output file after every packet" EOL );
 }
 // ====================================================================================================
 void _printVersion( void )
 
 {
-    genericsPrintf( "orbdump version " GIT_DESCRIBE EOL );
+    genericsFPrintf( stderr, "orbdump version " GIT_DESCRIBE EOL );
 }
 // ====================================================================================================
 static struct option _longOptions[] =

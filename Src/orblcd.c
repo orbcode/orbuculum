@@ -422,26 +422,26 @@ static bool _feedStream( struct Stream *stream, struct RunTime *r )
 void _printHelp( const char *const progName )
 
 {
-    genericsPrintf( "Usage: %s [options]" EOL, progName );
-    genericsPrintf( "    -c, --channel:      <Number> of first channel in pair containing display data" EOL );
-    genericsPrintf( "    -f, --input-file:   <filename> Take input from specified file" EOL );
-    genericsPrintf( "    -h, --help:         This help" EOL );
-    genericsPrintf( "    -n, --itm-sync:     Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
-    genericsPrintf( "    -p, --protocol:     Protocol to communicate. Defaults to OFLOW if -s is not set, otherwise ITM" EOL );
-    genericsPrintf( "    -s, --server:       <Server>:<Port> to use" EOL );
-    genericsPrintf( "    -S, --sbcolour:     <Colour> to be used for single bit renders, ignored for other bit depths" EOL );
-    genericsPrintf( "    -t, --tag:          <stream> Which OFLOW tag to use (normally 1)" EOL );
-    genericsPrintf( "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
-    genericsPrintf( "    -V, --version:      Print version and exit" EOL );
-    genericsPrintf( "    -w, --window:       <string> Set title for output window" EOL );
-    genericsPrintf( "    -z, --size:         <Scale(float)> Set relative size of output window (normally 1.0)" EOL );
+    genericsFPrintf( stderr, "Usage: %s [options]" EOL, progName );
+    genericsFPrintf( stderr, "    -c, --channel:      <Number> of first channel in pair containing display data" EOL );
+    genericsFPrintf( stderr, "    -f, --input-file:   <filename> Take input from specified file" EOL );
+    genericsFPrintf( stderr, "    -h, --help:         This help" EOL );
+    genericsFPrintf( stderr, "    -n, --itm-sync:     Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
+    genericsFPrintf( stderr, "    -p, --protocol:     Protocol to communicate. Defaults to OFLOW if -s is not set, otherwise ITM" EOL );
+    genericsFPrintf( stderr, "    -s, --server:       <Server>:<Port> to use" EOL );
+    genericsFPrintf( stderr, "    -S, --sbcolour:     <Colour> to be used for single bit renders, ignored for other bit depths" EOL );
+    genericsFPrintf( stderr, "    -t, --tag:          <stream> Which OFLOW tag to use (normally 1)" EOL );
+    genericsFPrintf( stderr, "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
+    genericsFPrintf( stderr, "    -V, --version:      Print version and exit" EOL );
+    genericsFPrintf( stderr, "    -w, --window:       <string> Set title for output window" EOL );
+    genericsFPrintf( stderr, "    -z, --size:         <Scale(float)> Set relative size of output window (normally 1.0)" EOL );
 }
 
 // ====================================================================================================
 void _printVersion( void )
 
 {
-    genericsPrintf( "orblcd version " GIT_DESCRIBE EOL );
+    genericsFPrintf( stderr, "orblcd version " GIT_DESCRIBE EOL );
 }
 // ====================================================================================================
 static struct option _longOptions[] =

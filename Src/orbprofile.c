@@ -457,33 +457,33 @@ static void _traceCB( void *d )
 static void _printHelp( const char *const progName )
 
 {
-    genericsPrintf( "Usage: %s [options]" EOL, progName );
-    genericsPrintf( "    -A, --alt-addr-enc: Switch off alternate address decoding (on by default)" EOL );
-    genericsPrintf( "    -D, --no-demangle:  Switch off C++ symbol demangling" EOL );
-    genericsPrintf( "    -d, --del-prefix:   <String> Material to delete off front of filenames" EOL );
-    genericsPrintf( "    -e, --elf-file:     <ElfFile> to use for symbols" EOL );
-    genericsPrintf( "    -E, --eof:          When reading from file, terminate at EOF" EOL );
-    genericsPrintf( "    -f, --input-file:   Take input from specified file" EOL );
-    genericsPrintf( "    -h, --help:         This help" EOL );
-    genericsPrintf( "    -I, --interval:     <Interval> Time between samples (in ms)" EOL );
-    genericsPrintf( "    -M, --no-colour:    Supress colour in output" EOL );
-    genericsPrintf( "    -O, --objdump-opts: <options> Options to pass directly to objdump" EOL );
-    genericsPrintf( "    -P, --trace-proto:  {ETM35|MTB} trace protocol to use, default is ETM35" EOL );
-    genericsPrintf( "    -p, --protocol:     Protocol to communicate. Defaults to OFLOW if -s is not set, otherwise raw ETM" EOL );
-    genericsPrintf( "    -s, --server:       <Server>:<Port> to use" EOL );
-    genericsPrintf( "    -t, --tag:          <stream>: Which OFLOW tag to use (normally 2)" EOL );
-    genericsPrintf( "    -T, --all-truncate: truncate -d material off all references (i.e. make output relative)" EOL );
-    genericsPrintf( "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
-    genericsPrintf( "    -V, --version:      Print version and exit" EOL );
-    genericsPrintf( "    -y, --graph-file:   <Filename> dotty filename for structured callgraph output" EOL );
-    genericsPrintf( "    -z, --cache-file:   <Filename> profile filename for kcachegrind output" EOL );
-    genericsPrintf( EOL "(Will connect one port higher than that set in -s when Orbflow is not used)" EOL );
+    genericsFPrintf( stderr, "Usage: %s [options]" EOL, progName );
+    genericsFPrintf( stderr, "    -A, --alt-addr-enc: Switch off alternate address decoding (on by default)" EOL );
+    genericsFPrintf( stderr, "    -D, --no-demangle:  Switch off C++ symbol demangling" EOL );
+    genericsFPrintf( stderr, "    -d, --del-prefix:   <String> Material to delete off front of filenames" EOL );
+    genericsFPrintf( stderr, "    -e, --elf-file:     <ElfFile> to use for symbols" EOL );
+    genericsFPrintf( stderr, "    -E, --eof:          When reading from file, terminate at EOF" EOL );
+    genericsFPrintf( stderr, "    -f, --input-file:   Take input from specified file" EOL );
+    genericsFPrintf( stderr, "    -h, --help:         This help" EOL );
+    genericsFPrintf( stderr, "    -I, --interval:     <Interval> Time between samples (in ms)" EOL );
+    genericsFPrintf( stderr, "    -M, --no-colour:    Supress colour in output" EOL );
+    genericsFPrintf( stderr, "    -O, --objdump-opts: <options> Options to pass directly to objdump" EOL );
+    genericsFPrintf( stderr, "    -P, --trace-proto:  {ETM35|MTB} trace protocol to use, default is ETM35" EOL );
+    genericsFPrintf( stderr, "    -p, --protocol:     Protocol to communicate. Defaults to OFLOW if -s is not set, otherwise raw ETM" EOL );
+    genericsFPrintf( stderr, "    -s, --server:       <Server>:<Port> to use" EOL );
+    genericsFPrintf( stderr, "    -t, --tag:          <stream>: Which OFLOW tag to use (normally 2)" EOL );
+    genericsFPrintf( stderr, "    -T, --all-truncate: truncate -d material off all references (i.e. make output relative)" EOL );
+    genericsFPrintf( stderr, "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
+    genericsFPrintf( stderr, "    -V, --version:      Print version and exit" EOL );
+    genericsFPrintf( stderr, "    -y, --graph-file:   <Filename> dotty filename for structured callgraph output" EOL );
+    genericsFPrintf( stderr, "    -z, --cache-file:   <Filename> profile filename for kcachegrind output" EOL );
+    genericsFPrintf( stderr, EOL "(Will connect one port higher than that set in -s when Orbflow is not used)" EOL );
 }
 // ====================================================================================================
 void _printVersion( void )
 
 {
-    genericsPrintf( "orbprofile version " GIT_DESCRIBE );
+    genericsFPrintf( stderr, "orbprofile version " GIT_DESCRIBE );
 }
 // ====================================================================================================
 static struct option _longOptions[] =

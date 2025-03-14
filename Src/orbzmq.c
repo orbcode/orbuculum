@@ -414,32 +414,32 @@ void _itmPumpProcess( char c )
 void _printHelp( const char *const progName )
 
 {
-    genericsPrintf( "Usage: %s [options]" EOL, progName );
-    genericsPrintf( "    -c, --channel:    <Number>,<Name>,<Format> of channel to populate (repeat per channel)" EOL );
-    genericsPrintf( "    -e, --hwevent:    Comma-separated list of published hwevents" EOL );
-    genericsPrintf( "    -E, --eof:        Terminate when the file/socket ends/is closed, otherwise wait to reconnect" EOL );
-    genericsPrintf( "    -f, --input-file: <filename> Take input from specified file" EOL );
-    genericsPrintf( "    -h, --help:       This help" EOL );
-    genericsPrintf( "    -M, --no-colour:  Supress colour in output" EOL );
-    genericsPrintf( "    -n, --itm-sync:   Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
-    genericsPrintf( "    -p, --protocol:   Protocol to communicate. Defaults to OFLOW if -s is not set, otherwise ITM" EOL );
-    genericsPrintf( "    -s, --server:     <Server>:<Port> to use, default %s:%d" EOL, options.server, options.port );
-    genericsPrintf( "    -t, --tag:        <stream>: Which Orbflow tag to use (normally 1)" EOL );
-    genericsPrintf( "    -v, --verbose:    <level> Verbose mode 0(errors)..3(debug)" EOL );
-    genericsPrintf( "    -V, --version:    Print version and exit" EOL );
-    genericsPrintf( "    -z, --zbind:      <url>: ZeroMQ bind URL, default %s" EOL, options.bindUrl );
-    genericsPrintf( EOL );
-    genericsPrintf( "Available HW events: " EOL );
-    genericsPrintf( "      all  - All hwevents          TS   - Timestamp" EOL );
-    genericsPrintf( "      EXCP - Exception entry/exit  PC   - PC sampling" EOL );
-    genericsPrintf( "      DWT  - DWT event             RWWT - Read/write watchpoint" EOL );
-    genericsPrintf( "      AWP  - Access watchpoint     OFS  - Data offset" EOL );
+    genericsFPrintf( stderr, "Usage: %s [options]" EOL, progName );
+    genericsFPrintf( stderr, "    -c, --channel:    <Number>,<Name>,<Format> of channel to populate (repeat per channel)" EOL );
+    genericsFPrintf( stderr, "    -e, --hwevent:    Comma-separated list of published hwevents" EOL );
+    genericsFPrintf( stderr, "    -E, --eof:        Terminate when the file/socket ends/is closed, otherwise wait to reconnect" EOL );
+    genericsFPrintf( stderr, "    -f, --input-file: <filename> Take input from specified file" EOL );
+    genericsFPrintf( stderr, "    -h, --help:       This help" EOL );
+    genericsFPrintf( stderr, "    -M, --no-colour:  Supress colour in output" EOL );
+    genericsFPrintf( stderr, "    -n, --itm-sync:   Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
+    genericsFPrintf( stderr, "    -p, --protocol:   Protocol to communicate. Defaults to OFLOW if -s is not set, otherwise ITM" EOL );
+    genericsFPrintf( stderr, "    -s, --server:     <Server>:<Port> to use, default %s:%d" EOL, options.server, options.port );
+    genericsFPrintf( stderr, "    -t, --tag:        <stream>: Which Orbflow tag to use (normally 1)" EOL );
+    genericsFPrintf( stderr, "    -v, --verbose:    <level> Verbose mode 0(errors)..3(debug)" EOL );
+    genericsFPrintf( stderr, "    -V, --version:    Print version and exit" EOL );
+    genericsFPrintf( stderr, "    -z, --zbind:      <url>: ZeroMQ bind URL, default %s" EOL, options.bindUrl );
+    genericsFPrintf( stderr, EOL );
+    genericsFPrintf( stderr, "Available HW events: " EOL );
+    genericsFPrintf( stderr, "      all  - All hwevents          TS   - Timestamp" EOL );
+    genericsFPrintf( stderr, "      EXCP - Exception entry/exit  PC   - PC sampling" EOL );
+    genericsFPrintf( stderr, "      DWT  - DWT event             RWWT - Read/write watchpoint" EOL );
+    genericsFPrintf( stderr, "      AWP  - Access watchpoint     OFS  - Data offset" EOL );
 }
 // ====================================================================================================
 void _printVersion( void )
 
 {
-    genericsPrintf( "orbcat version " GIT_DESCRIBE EOL );
+    genericsFPrintf( stderr, "orbcat version " GIT_DESCRIBE EOL );
 }
 
 static int32_t _parseHWEventsArg( char *s )

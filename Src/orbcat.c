@@ -248,7 +248,7 @@ static void _outputText( char *p )
         if ( !_r.inLine )
         {
             _printTimestamp( opConstruct );
-            genericsPrintf( "%s", opConstruct );
+            genericsFPrintf( stdout, "%s", opConstruct );
             _r.inLine = true;
         }
 
@@ -258,21 +258,21 @@ static void _outputText( char *p )
         if ( q )
         {
             *q = 0;
-            genericsPrintf( "%s" EOL, p );
+            genericsFPrintf( stdout, "%s" EOL, p );
             /* Once we've output these data then we're not in a line any more */
             _r.inLine = false;
 
             /* ...and if there were any DWT messages to print we'd better output those */
             if ( _r.dwtText[0] )
             {
-                genericsPrintf( "%s" EOL, _r.dwtText );
+                genericsFPrintf( stdout, "%s" EOL, _r.dwtText );
                 _r.dwtText[0] = 0;
             }
         }
         else
         {
             /* Just output the whole of the data we've got, then we're done */
-            genericsPrintf( "%s", p );
+            genericsFPrintf( stdout, "%s", p );
             break;
         }
 
@@ -298,7 +298,7 @@ void _expex( const char *fmt, ... )
     /* See if we exceeded max length...if so then output what we have and start a fresh buffer */
     if ( MAX_STRING_LENGTH - strlen( _r.dwtText ) < 100 )
     {
-        genericsPrintf( "%s", _r.dwtText );
+        genericsFPrintf( stdout, "%s", _r.dwtText );
         _r.dwtText[0] = 0;
     }
 
@@ -312,7 +312,7 @@ void _expex( const char *fmt, ... )
 
     if ( !_r.inLine )
     {
-        genericsPrintf( "%s", _r.dwtText );
+        genericsFPrintf( stdout, "%s", _r.dwtText );
         _r.dwtText[0] = 0;
     }
 }
@@ -551,30 +551,30 @@ static void _itmPumpProcess( char c )
 static void _printHelp( const char *const progName )
 
 {
-    genericsPrintf( "Usage: %s [options]" EOL, progName );
-    genericsPrintf( "    -c, --channel:      <Number>,<Format> of channel to add into output stream (repeat per channel)" EOL );
-    genericsPrintf( "    -C, --cpufreq:      <Frequency in KHz> (Scaled) speed of the CPU" EOL
-                    "                        generally /1, /4, /16 or /64 of the real CPU speed," EOL );
-    genericsPrintf( "    -E, --eof:          Terminate when the file/socket ends/is closed, or wait for more/reconnect" EOL );
-    genericsPrintf( "    -f, --input-file:   <filename> Take input from specified file" EOL );
-    genericsPrintf( "    -g, --trigger:      <char> to use to trigger timestamp (default is newline)" EOL );
-    genericsPrintf( "    -h, --help:         This help" EOL );
-    genericsPrintf( "    -n, --itm-sync:     Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
-    genericsPrintf( "    -p, --protocol:     Protocol to communicate. Defaults to OFLOW if -s is not set, otherwise ITM" EOL );
-    genericsPrintf( "    -s, --server:       <Server>:<Port> to use" EOL );
-    genericsPrintf( "    -t, --tag:          <stream>: Which orbflow tag to use (normally 1)" EOL );
-    genericsPrintf( "    -T, --timestamp:    <a|r|d|s|t>: Add absolute, relative (to session start)," EOL
-                    "                        delta, system timestamp or system timestamp delta to output. Note" EOL
-                    "                        the accuracy of a,r & d are host dependent." EOL );
-    genericsPrintf( "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
-    genericsPrintf( "    -V, --version:      Print version and exit" EOL );
-    genericsPrintf( "    -x, --exceptions:   Include exception information in output, in time order" EOL );
+    genericsFPrintf( stderr, "Usage: %s [options]" EOL, progName );
+    genericsFPrintf( stderr, "    -c, --channel:      <Number>,<Format> of channel to add into output stream (repeat per channel)" EOL );
+    genericsFPrintf( stderr, "    -C, --cpufreq:      <Frequency in KHz> (Scaled) speed of the CPU" EOL
+                     "                        generally /1, /4, /16 or /64 of the real CPU speed," EOL );
+    genericsFPrintf( stderr, "    -E, --eof:          Terminate when the file/socket ends/is closed, or wait for more/reconnect" EOL );
+    genericsFPrintf( stderr, "    -f, --input-file:   <filename> Take input from specified file" EOL );
+    genericsFPrintf( stderr, "    -g, --trigger:      <char> to use to trigger timestamp (default is newline)" EOL );
+    genericsFPrintf( stderr, "    -h, --help:         This help" EOL );
+    genericsFPrintf( stderr, "    -n, --itm-sync:     Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
+    genericsFPrintf( stderr, "    -p, --protocol:     Protocol to communicate. Defaults to OFLOW if -s is not set, otherwise ITM" EOL );
+    genericsFPrintf( stderr, "    -s, --server:       <Server>:<Port> to use" EOL );
+    genericsFPrintf( stderr, "    -t, --tag:          <stream>: Which orbflow tag to use (normally 1)" EOL );
+    genericsFPrintf( stderr, "    -T, --timestamp:    <a|r|d|s|t>: Add absolute, relative (to session start)," EOL
+                     "                        delta, system timestamp or system timestamp delta to output. Note" EOL
+                     "                        the accuracy of a,r & d are host dependent." EOL );
+    genericsFPrintf( stderr, "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
+    genericsFPrintf( stderr, "    -V, --version:      Print version and exit" EOL );
+    genericsFPrintf( stderr, "    -x, --exceptions:   Include exception information in output, in time order" EOL );
 }
 // ====================================================================================================
 static void _printVersion( void )
 
 {
-    genericsPrintf( "orbcat version " GIT_DESCRIBE EOL );
+    genericsFPrintf( stderr, "orbcat version " GIT_DESCRIBE EOL );
 }
 // ====================================================================================================
 static struct option _longOptions[] =
@@ -991,7 +991,7 @@ static void _feedStream( struct Stream *stream )
             /* Check if an exception report timed out */
             if ( ( _r.inLine ) && _r.dwtText[0] && ( _timestamp() - _r.dwtte > DWT_TO_US ) )
             {
-                genericsPrintf( EOL "%s", _r.dwtText );
+                genericsFPrintf( stderr, EOL "%s", _r.dwtText );
                 _r.dwtText[0] = 0;
                 _r.inLine = false;
             }

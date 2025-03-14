@@ -137,36 +137,36 @@ static void _intHandler( int sig )
 static void _printHelp( const char *const progName )
 
 {
-    genericsPrintf( "Usage: %s [options]" EOL, progName );
-    genericsPrintf( "       -a, --serial-speed:  <serialSpeed> to use (when SWO UART is selected)" EOL );
-    genericsPrintf( "       -e, --power:         <Ch>,<On> Enable or Disable power. Ch is vtref, vtpwr or all" EOL );
-    genericsPrintf( "       -h, --help::         This help" EOL );
-    genericsPrintf( "       -l, --list:          Show all OrbTrace devices attached to system" EOL );
-    genericsPrintf( "       -M, --no-colour:     Supress colour in output" EOL );
-    genericsPrintf( "       -T, --trace-format:  <x> Trace format; 1,2 or 4 bit parallel with TPIU decode," EOL \
-                    "                                              m for Manchester SWO, u=UART SWO," EOL \
-                    "                                              M for Manchester SWO+TPIU, U=UART SWO+TPIU" EOL );
-    genericsPrintf( "       -n, --serial-number: <Serial> any part of serial number to differentiate specific OrbTrace device" EOL );
-    genericsPrintf( "       -p, --voltage:       <Ch>,<Voltage> Set voltage in V, Ch is vtref or vtpwr" EOL );
-    genericsPrintf( "       -v, --verbose:       <level> Verbose mode 0(errors)..3(debug)" EOL );
-    genericsPrintf( "       -V, --version:       Print version and exit" EOL );
+    genericsFPrintf( stderr, "Usage: %s [options]" EOL, progName );
+    genericsFPrintf( stderr, "       -a, --serial-speed:  <serialSpeed> to use (when SWO UART is selected)" EOL );
+    genericsFPrintf( stderr, "       -e, --power:         <Ch>,<On> Enable or Disable power. Ch is vtref, vtpwr or all" EOL );
+    genericsFPrintf( stderr, "       -h, --help::         This help" EOL );
+    genericsFPrintf( stderr, "       -l, --list:          Show all OrbTrace devices attached to system" EOL );
+    genericsFPrintf( stderr, "       -M, --no-colour:     Supress colour in output" EOL );
+    genericsFPrintf( stderr, "       -T, --trace-format:  <x> Trace format; 1,2 or 4 bit parallel with TPIU decode," EOL \
+                     "                                              m for Manchester SWO, u=UART SWO," EOL \
+                     "                                              M for Manchester SWO+TPIU, U=UART SWO+TPIU" EOL );
+    genericsFPrintf( stderr, "       -n, --serial-number: <Serial> any part of serial number to differentiate specific OrbTrace device" EOL );
+    genericsFPrintf( stderr, "       -p, --voltage:       <Ch>,<Voltage> Set voltage in V, Ch is vtref or vtpwr" EOL );
+    genericsFPrintf( stderr, "       -v, --verbose:       <level> Verbose mode 0(errors)..3(debug)" EOL );
+    genericsFPrintf( stderr, "       -V, --version:       Print version and exit" EOL );
 
-    //    genericsPrintf( "      *-b: <Brightness> Set default brightness of output leds" EOL );
-    //    genericsPrintf( "      *-F: Force voltage setting" EOL );
-    //    genericsPrintf( "      *-j: Format output in JSON" EOL );
-    //    genericsPrintf( "      *-L: Lock device (prevent further changes)" EOL );
-    //    genericsPrintf( "      *-N: <Nick> Specify nickname for adaptor (8 chars max)" EOL );
-    //    genericsPrintf( "      *-q: Query all data from connected device" EOL );
-    //    genericsPrintf( "      *-Q: Query specified data from connected device (pPrR VPwr/IPwr/VRef/IRef)" EOL );
-    //    genericsPrintf( "      *-U: Unlock device (allow changes, default state)" EOL );
-    //    genericsPrintf( "      *-w: Write parameters specified on command line to NVRAM" EOL );
-    //    genericsPrintf( "      *-W: Reset all NVRAM parameters to default values" EOL );
+    //    genericsFPrintf( stderr, "      *-b: <Brightness> Set default brightness of output leds" EOL );
+    //    genericsFPrintf( stderr, "      *-F: Force voltage setting" EOL );
+    //    genericsFPrintf( stderr, "      *-j: Format output in JSON" EOL );
+    //    genericsFPrintf( stderr, "      *-L: Lock device (prevent further changes)" EOL );
+    //    genericsFPrintf( stderr, "      *-N: <Nick> Specify nickname for adaptor (8 chars max)" EOL );
+    //    genericsFPrintf( stderr, "      *-q: Query all data from connected device" EOL );
+    //    genericsFPrintf( stderr, "      *-Q: Query specified data from connected device (pPrR VPwr/IPwr/VRef/IRef)" EOL );
+    //    genericsFPrintf( stderr, "      *-U: Unlock device (allow changes, default state)" EOL );
+    //    genericsFPrintf( stderr, "      *-w: Write parameters specified on command line to NVRAM" EOL );
+    //    genericsFPrintf( stderr, "      *-W: Reset all NVRAM parameters to default values" EOL );
 }
 // ====================================================================================================
 void _printVersion( void )
 
 {
-    genericsPrintf( "Orbtrace version " GIT_DESCRIBE );
+    genericsFPrintf( stderr, "Orbtrace version " GIT_DESCRIBE );
 }
 // ====================================================================================================
 static struct option _longOptions[] =
@@ -416,7 +416,7 @@ static int _processOptions( struct RunTime *r, int argc, char *argv[]  )
             case 'V':
                 /* Print the version of this utility, and schedule to get the version of the probes */
                 _printVersion();
-                genericsPrintf( EOL "Attached Probe(s);" EOL );
+                genericsFPrintf( stderr, EOL "Attached Probe(s);" EOL );
                 _set_action( r, ACTION_LIST_DEVICES );
                 break;
 

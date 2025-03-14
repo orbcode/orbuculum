@@ -167,41 +167,41 @@ static void _intHandler( int sig )
 static void _printHelp( const char *const progName )
 
 {
-    genericsPrintf( "Usage: %s [options]" EOL, progName );
-    genericsPrintf( "    -A, --alt-addr-enc: Do not use alternate address encoding" EOL );
-    genericsPrintf( "    -b, --buffer-len:   <Length> Length of post-mortem buffer, in KBytes (Default %d KBytes)" EOL, DEFAULT_PM_BUFLEN_K );
-    genericsPrintf( "    -C, --editor-cmd:   <command> Command line for external editor (%%f = filename, %%l = line)" EOL );
-    genericsPrintf( "    -D, --no-demangle:  Switch off C++ symbol demangling" EOL );
-    genericsPrintf( "    -d, --del-prefix:   <String> Material to delete off the front of filenames" EOL );
-    genericsPrintf( "    -e, --elf-file:     <ElfFile> to use for symbols and source" EOL );
-    genericsPrintf( "    -E, --eof:          When reading from file, terminate at end of file" EOL );
-    genericsPrintf( "    -f, --input-file:   <filename>: Take input from specified file" EOL );
-    genericsPrintf( "    -h, --help:         This help" EOL );
-    genericsPrintf( "    -M, --no-colour:    Supress colour in output" EOL );
-    genericsPrintf( "    -O, --objdump-opts: <options> Options to pass directly to objdump" EOL );
-    genericsPrintf( "    -p, --protocol:     Protocol to communicate. Defaults to OFLOW if -s is not set, otherwise ETM" EOL );
-    genericsPrintf( "    -P, --trace-proto:  { " );
+    genericsFPrintf( stderr, "Usage: %s [options]" EOL, progName );
+    genericsFPrintf( stderr, "    -A, --alt-addr-enc: Do not use alternate address encoding" EOL );
+    genericsFPrintf( stderr, "    -b, --buffer-len:   <Length> Length of post-mortem buffer, in KBytes (Default %d KBytes)" EOL, DEFAULT_PM_BUFLEN_K );
+    genericsFPrintf( stderr, "    -C, --editor-cmd:   <command> Command line for external editor (%%f = filename, %%l = line)" EOL );
+    genericsFPrintf( stderr, "    -D, --no-demangle:  Switch off C++ symbol demangling" EOL );
+    genericsFPrintf( stderr, "    -d, --del-prefix:   <String> Material to delete off the front of filenames" EOL );
+    genericsFPrintf( stderr, "    -e, --elf-file:     <ElfFile> to use for symbols and source" EOL );
+    genericsFPrintf( stderr, "    -E, --eof:          When reading from file, terminate at end of file" EOL );
+    genericsFPrintf( stderr, "    -f, --input-file:   <filename>: Take input from specified file" EOL );
+    genericsFPrintf( stderr, "    -h, --help:         This help" EOL );
+    genericsFPrintf( stderr, "    -M, --no-colour:    Supress colour in output" EOL );
+    genericsFPrintf( stderr, "    -O, --objdump-opts: <options> Options to pass directly to objdump" EOL );
+    genericsFPrintf( stderr, "    -p, --protocol:     Protocol to communicate. Defaults to OFLOW if -s is not set, otherwise ETM" EOL );
+    genericsFPrintf( stderr, "    -P, --trace-proto:  { " );
 
     for ( int i = TRACE_PROT_LIST_START; i < TRACE_PROT_NUM; i++ )
     {
-        genericsPrintf( "%s ", TRACEDecodeGetProtocolName( i ) );
+        genericsFPrintf( stderr, "%s ", TRACEDecodeGetProtocolName( i ) );
     }
 
-    genericsPrintf( "} trace protocol to use, default is %s" EOL, TRACEDecodeGetProtocolName( TRACE_PROT_LIST_START ) );
-    genericsPrintf( "    -s, --server:       <Server>:<Port> to use" EOL );
-    genericsPrintf( "    -t, --tag:          <stream>: Which OFLOW tag to use (normally 2)" EOL );
-    genericsPrintf( "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
-    genericsPrintf( "    -V, --version:      Print version and exit" EOL );
-    genericsPrintf( EOL "(Legacy protocol will connect one port higher than that set in -s)" EOL );
-    genericsPrintf(     "(This will automatically select the second output stream from orbuculum.)" EOL );
-    genericsPrintf( EOL "Environment Variables;" EOL );
-    genericsPrintf( "  OBJDUMP: to use non-standard objdump binary" EOL );
+    genericsFPrintf( stderr, "} trace protocol to use, default is %s" EOL, TRACEDecodeGetProtocolName( TRACE_PROT_LIST_START ) );
+    genericsFPrintf( stderr, "    -s, --server:       <Server>:<Port> to use" EOL );
+    genericsFPrintf( stderr, "    -t, --tag:          <stream>: Which OFLOW tag to use (normally 2)" EOL );
+    genericsFPrintf( stderr, "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
+    genericsFPrintf( stderr, "    -V, --version:      Print version and exit" EOL );
+    genericsFPrintf( stderr, EOL "(Legacy protocol will connect one port higher than that set in -s)" EOL );
+    genericsFPrintf( stderr,     "(This will automatically select the second output stream from orbuculum.)" EOL );
+    genericsFPrintf( stderr, EOL "Environment Variables;" EOL );
+    genericsFPrintf( stderr, "  OBJDUMP: to use non-standard objdump binary" EOL );
 }
 // ====================================================================================================
 void _printVersion( void )
 
 {
-    genericsPrintf( "orbmortem version " GIT_DESCRIBE );
+    genericsFPrintf( stderr, "orbmortem version " GIT_DESCRIBE );
 }
 // ====================================================================================================
 static struct option _longOptions[] =

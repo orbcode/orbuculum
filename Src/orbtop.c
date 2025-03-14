@@ -637,7 +637,7 @@ static void _outputTop( uint32_t total, uint32_t reportLines, struct reportLine 
         q = fopen( options.logfile, "a" );
     }
 
-    genericsPrintf( CLEAR_SCREEN );
+    genericsFPrintf( stdout, CLEAR_SCREEN );
 
     if ( total )
     {
@@ -655,21 +655,21 @@ static void _outputTop( uint32_t total, uint32_t reportLines, struct reportLine 
                     dispSamples += report[n].count;
                     totPercent += percentage;
 
-                    genericsPrintf( C_DATA "%3d.%02d%% " C_SUPPORT " %7" PRIu64 " ", percentage / 100, percentage % 100, report[n].count );
+                    genericsFPrintf( stdout, C_DATA "%3d.%02d%% " C_SUPPORT " %7" PRIu64 " ", percentage / 100, percentage % 100, report[n].count );
 
 
                     if ( ( options.reportFilenames ) && ( report[n].n->fileindex != NO_FILE ) )
                     {
-                        genericsPrintf( C_CONTEXT "%s" C_RESET "::", SymbolFilename( _r.s, report[n].n->fileindex ) );
+                        genericsFPrintf( stdout, C_CONTEXT "%s" C_RESET "::", SymbolFilename( _r.s, report[n].n->fileindex ) );
                     }
 
                     if ( ( options.lineDisaggregation ) && ( report[n].n->line ) )
                     {
-                        genericsPrintf( C_SUPPORT2 "%s" C_RESET "::" C_CONTEXT "%d" EOL, d ? d : SymbolFunction( _r.s, report[n].n->functionindex ), report[n].n->line );
+                        genericsFPrintf( stdout, C_SUPPORT2 "%s" C_RESET "::" C_CONTEXT "%d" EOL, d ? d : SymbolFunction( _r.s, report[n].n->functionindex ), report[n].n->line );
                     }
                     else
                     {
-                        genericsPrintf( C_SUPPORT2 "%s" C_RESET EOL, d ? d : SymbolFunction( _r.s, report[n].n->functionindex ) );
+                        genericsFPrintf( stdout, C_SUPPORT2 "%s" C_RESET EOL, d ? d : SymbolFunction( _r.s, report[n].n->functionindex ) );
                     }
 
                     printed++;
@@ -709,9 +709,9 @@ static void _outputTop( uint32_t total, uint32_t reportLines, struct reportLine 
         }
     }
 
-    genericsPrintf( C_RESET "-----------------" EOL );
+    genericsFPrintf( stdout, C_RESET "-----------------" EOL );
 
-    genericsPrintf( C_DATA "%3d.%02d%% " C_SUPPORT " %7" PRIu64 " " C_RESET "of "C_DATA" %" PRIu64 " "C_RESET" Samples" EOL, totPercent / 100, totPercent % 100, dispSamples, samples );
+    genericsFPrintf( stdout, C_DATA "%3d.%02d%% " C_SUPPORT " %7" PRIu64 " " C_RESET "of "C_DATA" %" PRIu64 " "C_RESET" Samples" EOL, totPercent / 100, totPercent % 100, dispSamples, samples );
 
     if ( p )
     {
@@ -732,13 +732,13 @@ static void _outputTop( uint32_t total, uint32_t reportLines, struct reportLine 
         if ( _r.dwt_event_acc[i] )
         {
             havePrinted = true;
-            genericsPrintf( "%4s:" C_DATA "%7d " C_RESET, evName[i], _r.dwt_event_acc[i] );
+            genericsFPrintf( stdout, "%4s:" C_DATA "%7d " C_RESET, evName[i], _r.dwt_event_acc[i] );
         }
     }
 
     if ( havePrinted )
     {
-        genericsPrintf( EOL );
+        genericsFPrintf( stdout, EOL );
     }
 
     if ( options.outputExceptions )
@@ -746,11 +746,11 @@ static void _outputTop( uint32_t total, uint32_t reportLines, struct reportLine 
         /* Tidy up screen output */
         while ( printed++ <= options.cutscreen )
         {
-            genericsPrintf( EOL );
+            genericsFPrintf( stdout, EOL );
         }
 
-        genericsPrintf( EOL " Exception         |   Count  |  MaxD | TotalTicks  |   %%   |  AveTicks  |  minTicks  |  maxTicks  |  maxWall " EOL );
-        genericsPrintf( /**/"-------------------+----------+-------+-------------+-------+------------+------------+------------+----------" EOL );
+        genericsFPrintf( stdout, EOL " Exception         |   Count  |  MaxD | TotalTicks  |   %%   |  AveTicks  |  minTicks  |  maxTicks  |  maxWall " EOL );
+        genericsFPrintf( stdout, /**/"-------------------+----------+-------+-------------+-------+------------+------------+------------+----------" EOL );
 
         for ( uint32_t e = 0; e < MAX_EXCEPTIONS; e++ )
         {
@@ -769,26 +769,26 @@ static void _outputTop( uint32_t total, uint32_t reportLines, struct reportLine 
                 }
 
                 const float util_percent = ( float )_r.er[e].totalTime / ( _r.timeStamp - _r.lastReportTicks ) * 100.0f;
-                genericsPrintf( C_DATA "%3" PRId32 " %-14s" C_RESET " | " C_DATA "%8" PRIu64 C_RESET " |" C_DATA " %5"
-                                PRIu32 C_RESET " | "C_DATA " %9" PRIu64 C_RESET "  |" C_DATA "%6.1f" C_RESET " |  " C_DATA "%9" PRIu64 C_RESET " | " C_DATA "%9" PRIu64 C_RESET "  | " C_DATA" %9" PRIu64 C_RESET " | " C_DATA "%9"
-                                PRIu64 C_RESET EOL,
-                                e, exceptionName, _r.er[e].visits, _r.er[e].maxDepth, _r.er[e].totalTime, util_percent, _r.er[e].totalTime / _r.er[e].visits, _r.er[e].minTime, _r.er[e].maxTime, _r.er[e].maxWallTime );
+                genericsFPrintf( stdout, C_DATA "%3" PRId32 " %-14s" C_RESET " | " C_DATA "%8" PRIu64 C_RESET " |" C_DATA " %5"
+                                 PRIu32 C_RESET " | "C_DATA " %9" PRIu64 C_RESET "  |" C_DATA "%6.1f" C_RESET " |  " C_DATA "%9" PRIu64 C_RESET " | " C_DATA "%9" PRIu64 C_RESET "  | " C_DATA" %9" PRIu64 C_RESET " | " C_DATA "%9"
+                                 PRIu64 C_RESET EOL,
+                                 e, exceptionName, _r.er[e].visits, _r.er[e].maxDepth, _r.er[e].totalTime, util_percent, _r.er[e].totalTime / _r.er[e].visits, _r.er[e].minTime, _r.er[e].maxTime, _r.er[e].maxWallTime );
             }
         }
     }
 
-    genericsPrintf( EOL C_RESET "[%s%s%s%s" C_RESET "] ",
-                    ( _r.ITMoverflows != ITMDecoderGetStats( &_r.i )->overflow ) ? C_OVF_IND "V" : C_RESET "-",
-                    ( _r.SWPkt != ITMDecoderGetStats( &_r.i )->SWPkt ) ? C_SOFT_IND "S" : C_RESET "-",
-                    ( _r.TSPkt != ITMDecoderGetStats( &_r.i )->TSPkt ) ? C_TSTAMP_IND "T" : C_RESET "-",
-                    ( _r.HWPkt != ITMDecoderGetStats( &_r.i )->HWPkt ) ? C_HW_IND "H" : C_RESET "-" );
+    genericsFPrintf( stdout, EOL C_RESET "[%s%s%s%s" C_RESET "] ",
+                     ( _r.ITMoverflows != ITMDecoderGetStats( &_r.i )->overflow ) ? C_OVF_IND "V" : C_RESET "-",
+                     ( _r.SWPkt != ITMDecoderGetStats( &_r.i )->SWPkt ) ? C_SOFT_IND "S" : C_RESET "-",
+                     ( _r.TSPkt != ITMDecoderGetStats( &_r.i )->TSPkt ) ? C_TSTAMP_IND "T" : C_RESET "-",
+                     ( _r.HWPkt != ITMDecoderGetStats( &_r.i )->HWPkt ) ? C_HW_IND "H" : C_RESET "-" );
 
     if ( ( _r.lastReportTicks ) && ( lastTime != _r.lastReportus ) )
-        genericsPrintf( "Interval = " C_DATA "%" PRIu64 "ms " C_RESET "/ "C_DATA "%" PRIu64 C_RESET " (~" C_DATA "%" PRIu64 C_RESET " Ticks/ms)" EOL,
-                        ( ( lastTime - _r.lastReportus ) ) / 1000, _r.timeStamp - _r.lastReportTicks, ( ( _r.timeStamp - _r.lastReportTicks ) * 1000 ) / ( lastTime - _r.lastReportus ) );
+        genericsFPrintf( stdout, "Interval = " C_DATA "%" PRIu64 "ms " C_RESET "/ "C_DATA "%" PRIu64 C_RESET " (~" C_DATA "%" PRIu64 C_RESET " Ticks/ms)" EOL,
+                         ( ( lastTime - _r.lastReportus ) ) / 1000, _r.timeStamp - _r.lastReportTicks, ( ( _r.timeStamp - _r.lastReportTicks ) * 1000 ) / ( lastTime - _r.lastReportus ) );
     else
     {
-        genericsPrintf( C_RESET "Interval = " C_DATA "%" PRIu64 C_RESET "ms" EOL, ( ( lastTime - _r.lastReportus ) ) / 1000 );
+        genericsFPrintf( stdout, C_RESET "Interval = " C_DATA "%" PRIu64 C_RESET "ms" EOL, ( ( lastTime - _r.lastReportus ) ) / 1000 );
     }
 
     genericsReport( V_INFO, "         Ovf=%3d  ITMSync=%3d ITMErrors=%3d" EOL,
@@ -918,38 +918,38 @@ void _itmPumpProcess( uint8_t c )
 void _printHelp( const char *const progName )
 
 {
-    genericsPrintf( "Usage: %s [options]" EOL, progName );
-    genericsPrintf( "    -c, --cut-after:    <num> Cut screen output after number of lines" EOL );
-    genericsPrintf( "    -D, --no-demangle:  Switch off C++ symbol demangling" EOL );
-    genericsPrintf( "    -d, --del-prefix:   <DeleteMaterial> to take off front of filenames" EOL );
-    genericsPrintf( "    -e, --elf-file:     <ElfFile> to use for symbols" EOL );
-    genericsPrintf( "    -E, --exceptions:   Include exceptions in output report" EOL );
-    genericsPrintf( "    -f, --input-file:   <filename> Take input from specified file" EOL );
-    genericsPrintf( "    -g, --record-file:  <LogFile> append historic records to specified file" EOL );
-    genericsPrintf( "    -h, --help:         This help" EOL );
-    genericsPrintf( "    -I, --interval:     <interval> Display interval in milliseconds (defaults to %dms)" EOL, TOP_UPDATE_INTERVAL );
-    genericsPrintf( "    -j, --json-file:    <filename> Output to file in JSON format (or screen if <filename> is '-')" EOL );
-    genericsPrintf( "    -l, --agg-lines:    Aggregate per line rather than per function" EOL );
-    genericsPrintf( "    -M, --no-colour:    Supress colour in output" EOL );
-    genericsPrintf( "    -n, --itm-sync:     Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
-    genericsPrintf( "    -o, --output-file:  <filename> to be used for output live file" EOL );
-    genericsPrintf( "    -O, --objdump-opts: <options> Options to pass directly to objdump" EOL );
-    genericsPrintf( "    -p, --protocol:     Protocol to communicate. Defaults to OFLOW if -s is not set, otherwise ITM" EOL );
-    genericsPrintf( "    -P, --pace:         <microseconds> delay in block of data transmission to clients" EOL );
-    genericsPrintf( "    -r, --routines:     <routines> to record in live file (default %d routines)" EOL, options.maxRoutines );
-    genericsPrintf( "    -R, --report-files: Report filenames as part of function discriminator" EOL );
-    genericsPrintf( "    -s, --server:       <Server>:<Port> to use" EOL );
-    genericsPrintf( "    -t, --tag:          <stream> Which OFLOW tag to use (normally 1)" EOL );
-    genericsPrintf( "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
-    genericsPrintf( "    -V, --version:      Print version and exit" EOL );
-    genericsPrintf( EOL "Environment Variables;" EOL );
-    genericsPrintf( "  OBJDUMP: to use non-standard obbdump binary" EOL );
+    genericsFPrintf( stderr, "Usage: %s [options]" EOL, progName );
+    genericsFPrintf( stderr, "    -c, --cut-after:    <num> Cut screen output after number of lines" EOL );
+    genericsFPrintf( stderr, "    -D, --no-demangle:  Switch off C++ symbol demangling" EOL );
+    genericsFPrintf( stderr, "    -d, --del-prefix:   <DeleteMaterial> to take off front of filenames" EOL );
+    genericsFPrintf( stderr, "    -e, --elf-file:     <ElfFile> to use for symbols" EOL );
+    genericsFPrintf( stderr, "    -E, --exceptions:   Include exceptions in output report" EOL );
+    genericsFPrintf( stderr, "    -f, --input-file:   <filename> Take input from specified file" EOL );
+    genericsFPrintf( stderr, "    -g, --record-file:  <LogFile> append historic records to specified file" EOL );
+    genericsFPrintf( stderr, "    -h, --help:         This help" EOL );
+    genericsFPrintf( stderr, "    -I, --interval:     <interval> Display interval in milliseconds (defaults to %dms)" EOL, TOP_UPDATE_INTERVAL );
+    genericsFPrintf( stderr, "    -j, --json-file:    <filename> Output to file in JSON format (or screen if <filename> is '-')" EOL );
+    genericsFPrintf( stderr, "    -l, --agg-lines:    Aggregate per line rather than per function" EOL );
+    genericsFPrintf( stderr, "    -M, --no-colour:    Supress colour in output" EOL );
+    genericsFPrintf( stderr, "    -n, --itm-sync:     Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
+    genericsFPrintf( stderr, "    -o, --output-file:  <filename> to be used for output live file" EOL );
+    genericsFPrintf( stderr, "    -O, --objdump-opts: <options> Options to pass directly to objdump" EOL );
+    genericsFPrintf( stderr, "    -p, --protocol:     Protocol to communicate. Defaults to OFLOW if -s is not set, otherwise ITM" EOL );
+    genericsFPrintf( stderr, "    -P, --pace:         <microseconds> delay in block of data transmission to clients" EOL );
+    genericsFPrintf( stderr, "    -r, --routines:     <routines> to record in live file (default %d routines)" EOL, options.maxRoutines );
+    genericsFPrintf( stderr, "    -R, --report-files: Report filenames as part of function discriminator" EOL );
+    genericsFPrintf( stderr, "    -s, --server:       <Server>:<Port> to use" EOL );
+    genericsFPrintf( stderr, "    -t, --tag:          <stream> Which OFLOW tag to use (normally 1)" EOL );
+    genericsFPrintf( stderr, "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
+    genericsFPrintf( stderr, "    -V, --version:      Print version and exit" EOL );
+    genericsFPrintf( stderr, EOL "Environment Variables;" EOL );
+    genericsFPrintf( stderr, "  OBJDUMP: to use non-standard obbdump binary" EOL );
 }
 // ====================================================================================================
 void _printVersion( void )
 
 {
-    genericsPrintf( "orbtop version " GIT_DESCRIBE EOL );
+    genericsFPrintf( stderr, "orbtop version " GIT_DESCRIBE EOL );
 }
 // ====================================================================================================
 static struct option _longOptions[] =
@@ -1395,7 +1395,7 @@ int main( int argc, char *argv[] )
 
         if ( ( !options.json ) || ( options.json[0] != '-' ) )
         {
-            genericsPrintf( CLEAR_SCREEN "Connected..." EOL );
+            genericsFPrintf( stderr, CLEAR_SCREEN "Connected..." EOL );
         }
 
         /* ...just in case we have any readings from a previous incantation */

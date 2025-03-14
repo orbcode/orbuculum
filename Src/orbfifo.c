@@ -71,26 +71,26 @@ struct
 static void _printHelp( const char *const progName )
 
 {
-    genericsPrintf( "Usage: %s [options]" EOL, progName );
-    genericsPrintf( "    -b, --basedir:      <basedir> for channels" EOL );
-    genericsPrintf( "    -c, --channel:      <Number>,<Name>,<Format> of channel to populate (repeat per channel)" EOL );
-    genericsPrintf( "    -E, --eof:          When reading from file, terminate at end of file" EOL );
-    genericsPrintf( "    -f, --input-file:   <filename> Take input from specified file" EOL );
-    genericsPrintf( "    -h, --help:         This help" EOL );
-    genericsPrintf( "    -M, --no-colour:    Supress colour in output" EOL );
-    genericsPrintf( "    -P, --permanent:    Create permanent files rather than fifos" EOL );
-    genericsPrintf( "    -p, --protocol:     Protocol to communicate. Defaults to OFLOW if -s is not set, otherwise ITM" EOL );
-    genericsPrintf( "    -s, --server:       <Server>:<Port> to use" EOL );
-    genericsPrintf( "    -t, --tag:          <stream> Which OFLOW tag to use (normally 1)" EOL );
-    genericsPrintf( "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
-    genericsPrintf( "    -V, --version:      Print version and exit" EOL );
-    genericsPrintf( "    -W, --writer-path:  <path> Enable filewriter functionality using specified base path" EOL );
+    genericsFPrintf( stderr, "Usage: %s [options]" EOL, progName );
+    genericsFPrintf( stderr, "    -b, --basedir:      <basedir> for channels" EOL );
+    genericsFPrintf( stderr, "    -c, --channel:      <Number>,<Name>,<Format> of channel to populate (repeat per channel)" EOL );
+    genericsFPrintf( stderr, "    -E, --eof:          When reading from file, terminate at end of file" EOL );
+    genericsFPrintf( stderr, "    -f, --input-file:   <filename> Take input from specified file" EOL );
+    genericsFPrintf( stderr, "    -h, --help:         This help" EOL );
+    genericsFPrintf( stderr, "    -M, --no-colour:    Supress colour in output" EOL );
+    genericsFPrintf( stderr, "    -P, --permanent:    Create permanent files rather than fifos" EOL );
+    genericsFPrintf( stderr, "    -p, --protocol:     Protocol to communicate. Defaults to OFLOW if -s is not set, otherwise ITM" EOL );
+    genericsFPrintf( stderr, "    -s, --server:       <Server>:<Port> to use" EOL );
+    genericsFPrintf( stderr, "    -t, --tag:          <stream> Which OFLOW tag to use (normally 1)" EOL );
+    genericsFPrintf( stderr, "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
+    genericsFPrintf( stderr, "    -V, --version:      Print version and exit" EOL );
+    genericsFPrintf( stderr, "    -W, --writer-path:  <path> Enable filewriter functionality using specified base path" EOL );
 }
 // ====================================================================================================
 void _printVersion( void )
 
 {
-    genericsPrintf( "orbfifo version " GIT_DESCRIBE );
+    genericsFPrintf( stderr, "orbfifo version " GIT_DESCRIBE );
 }
 // ====================================================================================================
 struct option _longOptions[] =

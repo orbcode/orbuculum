@@ -402,14 +402,14 @@ void OrbtraceIfListDevices( struct OrbtraceIf *o )
     char printConstruct[SCRATCH_STRINGLEN];
 
     /* Get longest line */
-    genericsPrintf( C_RESET " Id |                    Description                    |      Serial      |           Version" EOL );
-    genericsPrintf( " ---+---------------------------------------------------+------------------+----------------------------" EOL );
+    genericsFPrintf( stderr, C_RESET " Id |                    Description                    |      Serial      |           Version" EOL );
+    genericsFPrintf( stderr, " ---+---------------------------------------------------+------------------+----------------------------" EOL );
 
     for ( int i = 0; i < o->numDevices; i++ )
     {
         snprintf( printConstruct, MAX_DESC_FIELDLEN, "%s %s", OrbtraceIfGetManufacturer( o, i ), OrbtraceIfGetProduct( o, i ) ) ;
-        genericsPrintf( C_SEL " %2d " C_RESET "|"C_ELEMENT" %-49s "C_RESET"|"C_ELEMENT" %16s "C_RESET"|"C_ELEMENT" %s" C_RESET EOL,
-                        i + 1, printConstruct, OrbtraceIfGetSN( o, i ), OrbtraceIfGetVersion( o, i ) );
+        genericsFPrintf( stderr, C_SEL " %2d " C_RESET "|"C_ELEMENT" %-49s "C_RESET"|"C_ELEMENT" %16s "C_RESET"|"C_ELEMENT" %s" C_RESET EOL,
+                         i + 1, printConstruct, OrbtraceIfGetSN( o, i ), OrbtraceIfGetVersion( o, i ) );
     }
 }
 
@@ -427,7 +427,7 @@ int OrbtraceIfSelectDevice( struct OrbtraceIf *o )
 
         while ( ( selection < 1 ) || ( selection > o->numDevices ) )
         {
-            genericsPrintf( EOL C_SEL "Selection>" C_RESET );
+            genericsFPrintf( stderr, EOL C_SEL "Selection>" C_RESET );
             scanf( "%d", &selection );
         }
     }
