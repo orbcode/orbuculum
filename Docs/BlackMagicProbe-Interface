@@ -4,10 +4,7 @@ Using the Black Magic Debug Probe
 When connecting to a Black Magic Debug probe the command line for
 Orbuculum will be something like;
 
->./orbuculum -b swo/ -c 0,text,c
-
-...which will create the fifo 'text' in a subdirectory swo of the current
-directory, delivering SWO channel 0. The directory must exist already.
+>./orbuculum -m 500
 
 By default on BMP the SWO baudrate is 2.25MBps but that can be changed
 as an optional parameter to the monitor traceswo command at the gdb

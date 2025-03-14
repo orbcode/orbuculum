@@ -275,7 +275,7 @@ A udev rules files is included in ```Support/60-orbcode.rules``` The default ins
 Building on OSX
 ===============
 
-* `brew install libusb zmq sdl2`
+* `brew install libusb zmq sdl2 libelf`
 
 If you are on an Intel Mac: 
 
