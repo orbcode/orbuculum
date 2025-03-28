@@ -154,6 +154,7 @@ define _setAddressesSTM32
     set $GPIOBASE  = 0x40020000
     set $RCCGPIO   = 0x40023830
     set $DBGMCU_CR = 0xE0042004
+    set $RRCGPIO   = 0x40023830
   end
 end
 
@@ -1132,7 +1133,7 @@ define enableSTM32TRACE
 
   set $bits=4
   set $drive=1
-  set $dev=0
+  set $dev=1
 
   if $argc >= 1
     set $bits = $arg0
@@ -1159,6 +1160,7 @@ define enableSTM32TRACE
 
   # Enable Trace TRCENA (DCB DEMCR) needed for clocks
   setTRCENA
+
 
   if ($CPU == $CPU_STM32H7)
     # Enable TRACECKEN, D1DBGCKEN
