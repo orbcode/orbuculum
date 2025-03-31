@@ -127,7 +127,14 @@ static void _paintPixels( struct swMsg *m, struct RunTime *r )
         switch ( ORBLCD_DECODE_D( r->app->modeDescriptor ) )
         {
             case ORBLCD_DEPTH_1:
-                y = ( d & ( 1 << ( b % 8 ) ) ) ? r->app->sbcolour : 0;
+                if ( ORBLCD_DECODE_L( r->app->modeDescriptor ) )
+                {
+                    y = ( d & ( 128 >> ( b % 8 ) ) ) ? r->app->sbcolour : 0;
+                }
+                else
+                {
+                    y = ( d & ( 1 << ( b % 8 ) ) ) ? r->app->sbcolour : 0;
+                }
 
                 if ( !( b % 8 ) )
                 {
