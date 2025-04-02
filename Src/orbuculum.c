@@ -544,6 +544,7 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
 
                 if ( *a == ':' )
                 {
+                    *a = 0;
                     r->options->nwserverPort = atoi( ++a );
                 }
 
