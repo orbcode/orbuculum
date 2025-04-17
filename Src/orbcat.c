@@ -30,7 +30,7 @@
 #define NUM_CHANNELS  32
 #define HW_CHANNEL    (NUM_CHANNELS)      /* Make the hardware fifo on the end of the software ones */
 
-#define MAX_STRING_LENGTH (4096)          /* Maximum length that will be output */
+#define MAX_STRING_LENGTH (4096*4)        /* Maximum length that will be output */
 #define DEFAULT_TS_TRIGGER '\n'           /* Default trigger character for timestamp output */
 
 #define MSG_REORDER_BUFLEN  (10)          /* Maximum number of samples to re-order for timekeeping */
