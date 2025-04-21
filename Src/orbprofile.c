@@ -866,7 +866,7 @@ int main( int argc, char *argv[] )
 
     genericsScreenHandling( !_r.options->mono );
 
-    /* Make sure the fifos get removed at the end */
+    /* Make sure any cleanup happens at the end */
     atexit( _doExit );
 
     /* This ensures the atexit gets called */

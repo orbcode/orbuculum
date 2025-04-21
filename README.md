@@ -45,8 +45,6 @@ used as a base interface to the target by other programs in the suite. Generally
 this for the TRACE tool you're using and then you can just leave it running. It will grab
 data from the target and make it available to clients whenever it can.
 
-* orbfifo: The fifo pump: Turns a trace feed into a set of fifos or, optionally, permanent files.
-
 * orbcat: A simple cat utility for ITM channel data.
 
 * orbdump: A utility for dumping raw SWO data to a file for post-processing.
@@ -412,7 +410,7 @@ probes are found you will get the option to choose between them. To avoid this c
 serial number for the probe you want to use on the command line.
 The command above will start the daemon with a monitor reporting interval of 100ms.  Orbuculum exposes TCP ports 3402 and 3443 to which
 network clients can connect. 3402 delivers orbflow, 3443+x deliver raw frames. Both will relay to any
-client that is connected (such as orbcat, orbfifo or orbtop).
+client that is connected (such as orbcat or orbtop).
 The practical limit to the number of clients that can connect is set by the speed of the host machine....but there's
 nothing stopping you using another one on the local network :-)  Orbuculum can optionally call out to `orbtrace` when a
 probe first connects. this is typically used to set configuration parameters for the problem. For example, if you've got an
@@ -473,79 +471,6 @@ For `orbuculum`, the specific command line options of note are;
   `-T, --tpiu`: Remove TPIU formatting from incoming data stream. TPIU is removed from tag 1 when source is an ORBTrace mini 1.4.0 or higher and a warning is printed.
 
   `-t, --tag x,y,...`: List of streams to decode (and onward route) from the probe (low stream numbers are TPIU channels). *By default only stream 1 (ITM) is routed over legacy protocol, add additional streams via this command*
-
-
-Orbfifo
--------
-
-**Note:** `orbfifo` is not supported on Windows. Use `orbzmq` instead.
-
-The easiest way to use the output from orbuculum is with one of the utilities
-such as `orbfifo`. This creates a set of fifos or permanent files in a given
-directory containing the decoded streams which apps can exploit directly. It also has
-a few other tricks up it's sleeve like filewriter capability. It used to be integrated into
-`orbuculum` but seperating it out splits the trace interface from the user space utilities, this is a
-Good Thing(tm).
-
-A typical command line would be;
-
-```>orbfifo -b swo/ -c 0,text,"%c" -v 1```
-
-The directory 'swo/' is expected to already exist, into which will be placed
-a file 'text' which delivers the output from swo channel 0 in character
-format.  Multiple -c options can be provided to set up fifos for individual channels
-from the debug device. The format of the -c option is;
-
-```-c ChannelNum,ChannelName,FormatString```
-
-ChannelNum is 0..31 and corresponds to the ITM channel. The name is the one
-that will appear in the directory and the FormatString can present the data
-using any printf-compatable formatting you prefer, so, the following are all
-legal channel specifiers;
-
-    -c 7,temperature,"%d \260C\n"
-    -c 2,hexAddress,"%08x,"
-    -c 0,volume,"\l%d\b\n"
-
-Be aware that if you start making the formatting or screen handling too complex
-its quite possible your machine might not keep up...and then the client will be dropped and you will loose data!
-
-While you've got `orbfifo` running a further fifo `hwevent` will be found in
-the output directory, which reports on events from the hardware, one event per line as follows;
-
-* `0,[Status],[TS]` : Time status and timestamp.
-* `1,[EventType],[ExceptionNumber]` : Hardware exception. Event type is one of [Enter, Exit, Resume].
-* `2,[PCAddr]` : Report Program Counter Sample.
-* `3,[DWTEvent]` : Report on DWT event from the set [CPI,Exc,Sleep,LSU,Fold and Cyc].
-* `4,[Comp],[RW],[Data]` : Report Read/Write event.
-* `5,[Comp],[Addr]` : Report data access watchpoint event.
-* `6,[Comp],[Ofs]` : Report data offset event.
-* `7` : Currently unused.
-* `8,[Status],[Address]` : ISYNC event.
-
-The command line options are;
-
- `-b, --basedir [basedir]`: for channels, terminated with a trailing directory seperator,
-     so if you put xyz/chan then all ITM software channels will end up in a directory
-     xyz/chan.  If xyz/chan doesn't exist, then channel creation will fail silently.
-
- `-c, --channel [Number],[Name],[Format]`: of channel to populate (repeat per channel) using printf formatting.
-
- `-E`: When reading from file, terminate when file exhausts, rather than waiting for more data to arrive.
-
- `-f, --input-file [filename]`: Take input from specified file (CTRL-C to abort from this).
-
- `-h, --help`: Brief help.
-
-  `-P, --permanent`: Create permanent files rather than fifos - useful when you want to use the processed data later.
-
-  `-s [address]:[port]`: Set address for Source connection, (default localhost:3443).
-
-  `-t, --tag`: <stream> Which orbflow tag to use (normally 1).
-  
-  `-v, --verbose`: Verbose mode 0==Errors only, 1=Warnings (Default) 2=Info, 3=Full Debug.
-
-  `-W, --writer-path [path]` : Enable filewriter functionality with output in specified directory (disabled by default).
 
 Orbzmq
 ------

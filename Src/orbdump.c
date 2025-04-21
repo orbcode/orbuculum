@@ -22,7 +22,7 @@
 
 #include "nw.h"
 
-#define MAX_STRING_LENGTH (256)              /* Maximum length that will be output from a fifo for a single event */
+#define MAX_STRING_LENGTH (256)              /* Maximum length that will be output for a single event */
 
 #define DEFAULT_OUTFILE "/dev/stdout"
 #define DEFAULT_TIMELEN 10000

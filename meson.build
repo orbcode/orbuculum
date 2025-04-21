@@ -115,21 +115,6 @@ executable('orbuculum',
     install: true,
 )
 
-if host_machine.system() != 'windows'
-    executable('orbfifo',
-        sources: [
-            'Src/orbfifo.c',
-            'Src/filewriter.c',
-            'Src/itmfifos.c',
-            git_version_info_h,
-        ],
-        include_directories: incdirs,
-        dependencies: dependencies,
-        link_with: liborb,
-        install: true,
-    )
-endif
-
 executable('orbcat',
     sources: [
         'Src/orbcat.c',
