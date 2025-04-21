@@ -716,7 +716,8 @@ options for orbcat are;
 
  `-w, --window [string]`: Title for on-screen window.
 
-
+ `-x, --exceptions`: Include exception information in output, in time order
+ 
 Orbtop
 ------
 
