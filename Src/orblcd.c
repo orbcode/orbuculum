@@ -687,6 +687,15 @@ static void _intHandler( int sig )
     _r.ending = true;
 }
 // ====================================================================================================
+unsigned int extend(unsigned int value, unsigned int smallSize, unsigned int bigSize)
+{
+  /* From https://bits.stephan-brumme.com/bitExtension.html */
+  /* e.g. to extend from 5 to 8 bits, use extend(x,5,8)     */
+  unsigned int leftShift  = bigSize - smallSize;
+  unsigned int rightShift = bigSize - leftShift;
+  return (value << leftShift) | (value >> rightShift);
+}
+// ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
 // Externally available routines
@@ -718,10 +727,13 @@ int main( int argc, char *argv[] )
         genericsExit( -1, "Failed to establish Int handler" EOL );
     }
 
-    /* Load up default colour index map R3G3B2 */
+    /* Load up default colour index map R3G2B3 */
     for ( int i = 0; i < 256; i++ )
     {
-        _r.app->map8to24bit[i] = ( ( i & 0xE0 ) << 21 ) | ( ( i & 0x1c ) << 13 ) | ( i << 6 );
+      int blue = extend(i&0b00000011,2,8);
+      int green = extend((i&0b00011100)>>2,3,8);
+      int red = extend((i&0b11100000)>>5,3,8);
+      _r.app->map8to24bit[i] = (red<<16)|(green<<8)|(blue);
     }
 
     while ( !_r.ending )

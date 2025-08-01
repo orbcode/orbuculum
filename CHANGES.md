@@ -1,4 +1,5 @@
 Version 2.3.0 In progress
+* Improve 8 to 24 bit colour mapping in orblcd
 * Modify orblcd to receive shorter messages than word-length (if appropriate)
 * Extend from-target timestamping to 1/10th microsecond resolution with rounding
 * Add support for ITM rollover counters in orbtop (if they deliver information, they will be displayed)
