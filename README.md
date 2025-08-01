@@ -243,12 +243,21 @@ Building on Linux
 Dependencies
 ------------
 * libusb-1.0
-* libczmq-dev
-* ncurses
-* libsdl
+* cmake
+* pkg-config
+* libczmq5-dev
+* ncurses-dev
+* libsdl2-dev
+* libzstd-dev
 * libelf-dev
 * libcapstone-dev
 
+On Debian 12, at least, the following command should get you everything you need;
+
+```
+sudo apt-get install libusb-1.0-0-dev cmake pkg-config libczmq5-dev ncurses-dev libelf-dev libsdl2-dev libzstd-dev libcapstone-dev
+```
+ 
 Build
 -----
 

@@ -1,4 +1,5 @@
 Version 2.3.0 In progress
+* Modify orblcd to receive shorter messages than word-length (if appropriate)
 * Extend from-target timestamping to 1/10th microsecond resolution with rounding
 * Add support for ITM rollover counters in orbtop (if they deliver information, they will be displayed)
 * Add STM32 CORTEX-M33 support (Tested on STM32U5A5)

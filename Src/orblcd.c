@@ -122,7 +122,8 @@ static void _paintPixels( struct swMsg *m, struct RunTime *r )
         return;
     }
 
-    for ( int b = ORBLCD_PIXELS_PER_WORD( r->app->modeDescriptor ) - 1; b >= 0; b-- )
+    for ( int b = m->len*8/ORBLCD_GET_DEPTH( r->app->modeDescriptor ) - 1; b >= 0; b-- )
+      //for ( int b = ORBLCD_PIXELS_PER_WORD( r->app->modeDescriptor ) - 1; b >= 0; b-- )
     {
         switch ( ORBLCD_DECODE_D( r->app->modeDescriptor ) )
         {
