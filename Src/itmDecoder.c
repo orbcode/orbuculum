@@ -11,6 +11,7 @@
 
 #include <string.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include "itmDecoder.h"
 #include "msgDecoder.h"
 
@@ -425,6 +426,7 @@ enum ITMPumpEvent ITMPump( struct ITMDecoder *i, uint8_t c )
                 }
 
                 break;
+                
                 // -----------------------------------------------------
         }
     }

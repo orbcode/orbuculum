@@ -66,7 +66,7 @@ typedef int errcode;
 #define C_CLR_LN     CMD_ALERT "U"
 
 /* The actual control codes that do the work */
-#define CC_CLEAR_SCREEN  "\033[2J\033[;H"
+#define CC_CLEAR_SCREEN  "\033[H\033[2J\033[3J"
 #define CC_PREV_LN       "\033[1F"
 #define CC_CLR_LN        "\033[K"
 #define CC_COLOUR        "\033[%d;3%dm"
@@ -99,6 +99,7 @@ char *genericsUnescape( char *str );
 uint64_t genericsTimestampuS( void );
 uint32_t genericsTimestampmS( void );
 bool genericsSetReportLevel( enum verbLevel lset );
+enum verbLevel genericsGetReportLevel( void );
 void genericsFPrintf( FILE *stream, const char *fmt, ... );
 char *genericsGetBaseDirectory( void );
 const char *genericsBasename( const char *n );
