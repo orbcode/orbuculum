@@ -54,6 +54,10 @@ data from the target and make it available to clients whenever it can.
 * orbtop: A top utility to see what's actually going on with your target. It can also
 generate input files for dot and gnuplot for perty graphics.
 
+* orbtop-rtos: An enhanced version of orbtop with RTOS-aware thread profiling support. Currently
+supports  RTOS ( cmsis rtx, etc) and provides per-thread CPU usage statistics, thread state monitoring, and
+context switch analysis. Requires connection to OpenOCD for RTOS data extraction.
+
 * orbstat: An analysis/statistics utility which can produce KCacheGrind input files.
 
 * orbtrace: The fpga configuration controller for use with ORBtrace hardware.
@@ -1059,6 +1063,85 @@ and then;
 However, that's probably over-complicated now...just use the orbuculum -s option to hook to any source that
 is pumping out clean SWO data. This information is just left here to show the flexibilities you have got available.
 
+orbtop-rtos: RTOS-aware Performance Profiling
+==============================================
+
+`orbtop-rtos` extends the functionality of `orbtop` by adding RTOS-aware thread profiling capabilities. 
+It provides detailed per-thread CPU usage statistics and context switch analysis for RTX5-based systems.
+
+Key features:
+* Real-time thread CPU usage monitoring with percentage utilization
+* Context switch counting and timing analysis  
+* Exception/interrupt profiling with entry/exit tracking
+* Uses DWT exception trace for accurate interrupt timing
+* ITM timestamps for precise time measurements
+* Multiple output formats: console, JSON, and ftrace-compatible
+
+Prerequisites:
+* Target must be running RTX5 RTOS
+* OpenOCD must be running with telnet enabled (default port 4444)
+* DWT exception trace and ITM timestamps must be enabled on target
+
+Typical usage:
+
+```
+# In another terminal, run orbtop-rtos with RTOS support
+> orbtop-rtos -s localhost:46000 -p ITM -e firmware.elf -T rtxv5 -W 4444 -F 480000000
+
+```
+
+The `-T rtx5` option enables RTOS thread profiling, and `-E` includes exception/interrupt analysis.
+The tool will automatically connect to OpenOCD to extract RTOS thread information and combine it
+with the ITM trace data to provide a comprehensive view of system behavior.
+
+Output formats:
+
+**JSON output** (`-j <file>` or `-j udp:<port>`):
+Generates structured JSON data with thread statistics, CPU usage, context switches, and timing information.
+Can output to a file or send via UDP for real-time monitoring. The JSON includes:
+* Per-thread CPU usage percentages and accumulated runtime
+* Context switch counts and timing
+* Exception/interrupt statistics
+* Function-level profiling data
+* Thread state and priority information
+
+**Ftrace output** (`-K <file>`):
+Generates Linux ftrace-compatible output that can be analyzed with standard Linux tracing tools like
+`trace-cmd` or visualized with tools like Perfetto UI (ui.perfetto.dev). Use `-` for stdout or 
+`/tmp/trace.pipe` for live tracing. This format captures:
+* Thread context switches with precise timestamps
+* Function entry/exit events
+* CPU usage over time
+* Compatible with kernel tracing analysis workflows
+
+Example with multiple outputs:
+```
+# Generate both JSON metrics and ftrace timeline
+> ./orbtop-rtos -e firmware.elf -T rtx5 -E -j metrics.json -K trace.ftrace
+
+# Stream JSON via UDP and ftrace to pipe for live analysis
+> ./orbtop-rtos -e firmware.elf -T rtx5 -j udp:5000 -K /tmp/trace.pipe
+```
+
+Runtime interaction (RTOS mode):
+When running in console mode, you can use keyboard shortcuts to change the sort order:
+* `t`: Sort by TCB address
+* `c`: Sort by current CPU usage
+* `m`: Sort by maximum CPU usage  
+* `n`: Sort by thread name
+* `f`: Sort by function name
+* `p`: Sort by priority
+* `s`: Sort by context switches
+* `r`: Reset maximum CPU values
+
+Command line options specific to orbtop-rtos:
+* `-T, --rtos <type>`: RTOS type for thread profiling (currently only 'rtx5' supported)
+* `-j, --json-output <file|udp:port>`: JSON output to file or UDP port (REQUIRED argument when specified)
+* `-K, --ftrace <file>`: Generate ftrace output (use `-` for stdout, `/tmp/trace.pipe` for live)
+* `-S, --rtos-sort <method>`: Initial sort method: cpu|maxcpu|tcb|name|func|priority|switches
+* `-F, --cpu-freq <Hz>`: CPU frequency for accurate time calculations
+* `-W, --telnet-port <port>`: OpenOCD telnet port (default 4444)
+* All standard orbtop options are also available
 
 Windows: concurrent debug and Orbuculum usage with Orbtrace
 ===========================================================
