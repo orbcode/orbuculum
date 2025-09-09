@@ -139,6 +139,28 @@ executable('orbtop',
     install: true,
 )
 
+executable('orbtop-rtos',
+    sources: [
+        'Src/rtos/orbtop_rtos.c',
+        'Src/rtos/exceptions.c',
+        'Src/rtos/options.c',
+        'Src/rtos/telnet_client.c',
+        'Src/rtos/rtos_api.c',
+        'Src/rtos/rtx5/rtx5.c',
+        'Src/rtos/output/output_handler.c',
+        'Src/rtos/output/output_console.c',
+        'Src/rtos/output/output_json.c',
+        'Src/rtos/output/output_ftrace.c',
+        'Src/symbols.c',
+        'Src/external/cJSON.c',
+        git_version_info_h,
+    ],
+    include_directories: [include_directories('Inc/rtos', 'Inc', 'Inc/external', 'Src/rtos', 'Src/rtos/output')],
+    dependencies: dependencies,
+    link_with: liborb,
+    install: true,
+)
+
 executable('orbdump',
     sources: [
         'Src/orbdump.c',
