@@ -26,11 +26,11 @@ extern "C" {
 #define NO_FUNCTION       0xffffffff        /* No function defined */
 #define NO_DESTADDRESS    0xffffffe0        /* No address defined */
 
-#define SPECIALS_MASK     0xfffffff0
-#define FN_SLEEPING       (SPECIALS_MASK|0xb)         /* Marker for sleeping case */
+#define SPECIALS_MASK     0xffffff80
+#define FN_SLEEPING       (SPECIALS_MASK|0xfb)        /* Marker for sleeping case */
 #define FN_SLEEPING_STR   "** Sleeping **"            /* String for sleeping case */
 
-#define INTERRUPT         (SPECIALS_MASK|0xd)
+#define INTERRUPT         (SPECIALS_MASK|0xfd)
 #define FN_INTERRUPT_STR  "INTERRUPT"
 
 enum symbolErr { SYMBOL_OK, SYMBOL_NOELF, SYMBOL_NOOBJDUMP, SYMBOL_UNSPECIFIED };
