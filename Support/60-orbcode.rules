@@ -4,9 +4,9 @@
 ACTION!="add|change|bind", GOTO="orb_rules_end"
 SUBSYSTEM!="usb|tty|hidraw", GOTO="orb_rules_end"
 
-# Orbrace mini in bootloader mode
+# Orbtrace mini in bootloader mode
 ATTRS{idVendor}=="1209", ATTRS{idProduct}=="3442", GROUP="plugdev", TAG+="uaccess"
-# Orbrace mini
+# Orbtrace mini
 ATTRS{idVendor}=="1209", ATTRS{idProduct}=="3443", GROUP="plugdev", TAG+="uaccess"
 
 LABEL="orb_rules_end"
