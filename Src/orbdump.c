@@ -361,7 +361,8 @@ int main( int argc, char *argv[] )
 
     genericsScreenHandling( !options.mono );
 
-    /* Reset the OFLOW handler before we start */
+    /* Reset the handlers before we start */
+    ITMDecoderInit( &_r.i, options.forceITMSync );
     OFLOWInit( &_r.c );
     stream = _tryOpenStream();
 
