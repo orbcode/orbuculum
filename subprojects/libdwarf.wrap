@@ -1,8 +1,8 @@
 [wrap-file]
-directory = libdwarf-0.7.0
+directory = libdwarf-2.3.2
 
-source_url = https://www.prevanders.net/libdwarf-0.7.0.tar.xz
-source_filename = libdwarf-0.7.0.tar.xz
-source_hash = 23b71829de875fa5842e49f232c8ee1a5043805749738bc61424d9abc1189f38
+source_url = https://github.com/davea42/libdwarf-code/releases/download/v2.3.2/libdwarf-2.3.2.tar.xz
+source_filename = libdwarf-2.3.2.tar.xz
+source_hash = 7992e7b9019ebfabdda5773e86243517c48cf89fafed3209e853692bc9573efd
 
-diff_files = ./libdwarf/0001-fix-Use-project_source_root-for-subproject-compatibi.patch, ./libdwarf/0002-fix-compilation-clang.patch, ./libdwarf/0003-Fixed-calloc-arguments-order.patch
+diff_files = ./libdwarf/0002-fix-compilation-clang.patch, ./libdwarf/0004-fix-remaining-Wall-warnings.patch

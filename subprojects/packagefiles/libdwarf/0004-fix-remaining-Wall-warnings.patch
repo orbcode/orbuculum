@@ -1,0 +1,26 @@
+diff --git a/src/bin/dwarfdump/dd_getopt.c b/src/bin/dwarfdump/dd_getopt.c
+--- a/src/bin/dwarfdump/dd_getopt.c
++++ b/src/bin/dwarfdump/dd_getopt.c
+@@ -286,7 +286,7 @@
+ int
+ dwgetopt(int nargc, char * const nargv[], const char *ostr)
+ {
+-    char *oli;                      /* option letter list index */
++    const char *oli;                /* option letter list index */
+ 
+     if (dwoptreset || *place == 0) { /* update scanning pointer */
+         dwoptreset = 0;
+diff --git a/src/lib/libdwarf/dwarf_debuglink.c b/src/lib/libdwarf/dwarf_debuglink.c
+--- a/src/lib/libdwarf/dwarf_debuglink.c
++++ b/src/lib/libdwarf/dwarf_debuglink.c
+@@ -287,9 +287,8 @@
+ {
+     char *cp = 0;
+     char *lastjoinchar = 0;
+-    size_t count =0;
+ 
+-    for (cp = s ; *cp ; ++cp,++count)  {
++    for (cp = s ; *cp ; ++cp)  {
+         if (*cp == joinchar) {
+             lastjoinchar = cp;
+         }
