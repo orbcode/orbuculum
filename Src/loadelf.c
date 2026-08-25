@@ -724,8 +724,9 @@ static bool _loadSource( struct symbol *p )
 
             if ( l )
             {
-                *r++ = 0;
-                l--;
+                /* Back up to newline and replace it with \0 */
+                r--;
+                *r++ = '\0';
             }
         }
     }
