@@ -465,7 +465,7 @@ static bool _processOptions( int argc, char *argv[], struct RunTime *r )
 
         case PROT_ETM:
             genericsReport( V_INFO, "Decoding ETM directly in legacy flow" EOL );
-            return false;
+            break;
 
         default:
             genericsReport( V_INFO, "Decoding unknown" EOL );
