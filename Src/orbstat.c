@@ -404,32 +404,32 @@ void _itmPumpProcess( struct RunTime *r, char c )
 static void _printHelp( struct RunTime *r )
 
 {
-    genericsPrintf( "Usage: %s [options]" EOL, r->progName );
-    genericsPrintf( "    -D, --no-demangle:  Switch off C++ symbol demangling" EOL );
-    genericsPrintf( "    -d, --del-prefix:   <String> Material to delete off front of filenames" EOL );
-    genericsPrintf( "    -e, --elf-file:     <ElfFile> to use for symbols" EOL );
-    genericsPrintf( "    -E, --eof:          When reading from file, terminate at end of file" EOL );
-    genericsPrintf( "    -f, --input-file:   <filename>: Take input from specified file" EOL );
-    genericsPrintf( "    -g, --trace-chn:    <TraceChannel> ITM channel for trace (default %d)" EOL, r->options->traceChannel );
-    genericsPrintf( "    -h, --help:         This help" EOL );
-    genericsPrintf( "    -I, --interval:     <Interval>: Time to sample (in mS)" EOL );
-    genericsPrintf( "    -n, --itm-sync:     Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
-    genericsPrintf( "    -M, --no-colour:    Supress colour in output" EOL );
-    genericsPrintf( "    -O, --objdump-opts: <options> Options to pass directly to objdump" EOL );
-    genericsPrintf( "    -p, --protocol:     Protocol to communicate. Defaults to OFLOW if -s is not set, otherwise ITM" EOL );
-    genericsPrintf( "    -s, --server:       <Server>:<Port> to use" EOL );
-    genericsPrintf( "    -t, --tag:          <stream>: Which OFLOW tag to use (normally 1)" EOL );
-    genericsPrintf( "    -T, --all-truncate: truncate -d material off all references (i.e. make output relative)" EOL );
-    genericsPrintf( "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
-    genericsPrintf( "    -V, --version:      Print version and exit" EOL );
-    genericsPrintf( "    -y, --graph-file:   <Filename> dotty filename for structured callgraph output" EOL );
-    genericsPrintf( "    -z, --cache-file:   <Filename> profile filename for kcachegrind output" EOL );
+    genericsFPrintf( stderr, "Usage: %s [options]" EOL, r->progName );
+    genericsFPrintf( stderr, "    -D, --no-demangle:  Switch off C++ symbol demangling" EOL );
+    genericsFPrintf( stderr, "    -d, --del-prefix:   <String> Material to delete off front of filenames" EOL );
+    genericsFPrintf( stderr, "    -e, --elf-file:     <ElfFile> to use for symbols" EOL );
+    genericsFPrintf( stderr, "    -E, --eof:          When reading from file, terminate at end of file" EOL );
+    genericsFPrintf( stderr, "    -f, --input-file:   <filename>: Take input from specified file" EOL );
+    genericsFPrintf( stderr, "    -g, --trace-chn:    <TraceChannel> ITM channel for trace (default %d)" EOL, r->options->traceChannel );
+    genericsFPrintf( stderr, "    -h, --help:         This help" EOL );
+    genericsFPrintf( stderr, "    -I, --interval:     <Interval>: Time to sample (in mS)" EOL );
+    genericsFPrintf( stderr, "    -n, --itm-sync:     Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
+    genericsFPrintf( stderr, "    -M, --no-colour:    Supress colour in output" EOL );
+    genericsFPrintf( stderr, "    -O, --objdump-opts: <options> Options to pass directly to objdump" EOL );
+    genericsFPrintf( stderr, "    -p, --protocol:     Protocol to communicate. Defaults to OFLOW if -s is not set, otherwise ITM" EOL );
+    genericsFPrintf( stderr, "    -s, --server:       <Server>:<Port> to use" EOL );
+    genericsFPrintf( stderr, "    -t, --tag:          <stream>: Which OFLOW tag to use (normally 1)" EOL );
+    genericsFPrintf( stderr, "    -T, --all-truncate: truncate -d material off all references (i.e. make output relative)" EOL );
+    genericsFPrintf( stderr, "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
+    genericsFPrintf( stderr, "    -V, --version:      Print version and exit" EOL );
+    genericsFPrintf( stderr, "    -y, --graph-file:   <Filename> dotty filename for structured callgraph output" EOL );
+    genericsFPrintf( stderr, "    -z, --cache-file:   <Filename> profile filename for kcachegrind output" EOL );
 }
 // ====================================================================================================
 void _printVersion( void )
 
 {
-    genericsPrintf( "orbstat version " GIT_DESCRIBE );
+    genericsFPrintf( stderr, "orbstat version " GIT_DESCRIBE );
 }
 // ====================================================================================================
 static struct option _longOptions[] =

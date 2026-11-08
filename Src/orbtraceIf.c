@@ -19,6 +19,7 @@ static const struct OrbtraceInterfaceType _validDevices[DEVICE_NUM_DEVICES] =
 {
     { 0x1209, 0x3443, DEVICE_ORBTRACE_MINI },
     { 0x1d50, 0x6018, DEVICE_BMP},
+    { 0x1209, 0x3445, DEVICE_ORBTRACE_MAX },
     { 0,      0      }
 };
 
@@ -347,6 +348,7 @@ int OrbtraceIfGetDeviceList( struct OrbtraceIf *o, char *sn, uint32_t devmask )
 
                     switch ( d->devtype )
                     {
+                        case DEVICE_ORBTRACE_MAX:
                         case DEVICE_ORBTRACE_MINI:
                             d->powerIf = _getInterface( o, 'P', NULL );
                             d->traceIf = _getInterface( o, 'T', NULL );
@@ -402,14 +404,14 @@ void OrbtraceIfListDevices( struct OrbtraceIf *o )
     char printConstruct[SCRATCH_STRINGLEN];
 
     /* Get longest line */
-    genericsPrintf( C_RESET " Id |                    Description                    |      Serial      |           Version" EOL );
-    genericsPrintf( " ---+---------------------------------------------------+------------------+----------------------------" EOL );
+    genericsFPrintf( stderr, C_RESET " Id |                    Description                    |      Serial      |           Version" EOL );
+    genericsFPrintf( stderr, " ---+---------------------------------------------------+------------------+----------------------------" EOL );
 
     for ( int i = 0; i < o->numDevices; i++ )
     {
         snprintf( printConstruct, MAX_DESC_FIELDLEN, "%s %s", OrbtraceIfGetManufacturer( o, i ), OrbtraceIfGetProduct( o, i ) ) ;
-        genericsPrintf( C_SEL " %2d " C_RESET "|"C_ELEMENT" %-49s "C_RESET"|"C_ELEMENT" %16s "C_RESET"|"C_ELEMENT" %s" C_RESET EOL,
-                        i + 1, printConstruct, OrbtraceIfGetSN( o, i ), OrbtraceIfGetVersion( o, i ) );
+        genericsFPrintf( stderr, C_SEL " %2d " C_RESET "|"C_ELEMENT" %-49s "C_RESET"|"C_ELEMENT" %16s "C_RESET"|"C_ELEMENT" %s" C_RESET EOL,
+                         i + 1, printConstruct, OrbtraceIfGetSN( o, i ), OrbtraceIfGetVersion( o, i ) );
     }
 }
 
@@ -427,7 +429,7 @@ int OrbtraceIfSelectDevice( struct OrbtraceIf *o )
 
         while ( ( selection < 1 ) || ( selection > o->numDevices ) )
         {
-            genericsPrintf( EOL C_SEL "Selection>" C_RESET );
+            genericsFPrintf( stderr, EOL C_SEL "Selection>" C_RESET );
             scanf( "%d", &selection );
         }
     }
@@ -528,6 +530,7 @@ bool OrbtraceGetIfandEP( struct OrbtraceIf *o )
 
             break;
 
+        case DEVICE_ORBTRACE_MAX:
         case DEVICE_ORBTRACE_MINI: // -------------------------------------------------------------------
             genericsReport( V_DEBUG, "Searching for trace interface" EOL );
             struct libusb_config_descriptor *config;

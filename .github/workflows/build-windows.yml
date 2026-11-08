@@ -3,6 +3,7 @@ name: Build Windows binaries
 on:
   - push
   - pull_request
+  - workflow_call
 
 jobs:
   win64:
@@ -50,6 +51,15 @@ jobs:
       - run: meson install -C ./build --destdir ./install --strip
         working-directory: ./orbuculum
       - run: cp ./libusb/install/bin/libusb-1.0.dll ./orbuculum/build/install/bin
+      - name: Bundle MinGW runtime DLLs
+        working-directory: ./orbuculum/build/install/bin
+        run: |
+          # Copy every DLL the binaries pull from the MSYS2 MinGW tree so they run standalone
+          for f in *.exe *.dll; do
+            ldd "$f" | awk '{print $3}' | grep -i '^/mingw64/' || true
+          done | sort -u | while read -r dll; do
+            cp -v "$dll" .
+          done
       - uses: actions/upload-artifact@v4
         with:
           name: orbuculum-win64

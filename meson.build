@@ -45,7 +45,7 @@ add_project_arguments('-DSCREEN_HANDLING', language: 'c')
 add_project_arguments('-Wno-error=deprecated-declarations', language: 'c')
 add_project_arguments(['-include', 'uicolours_default.h'], language: 'c')
 
-libdwarf = subproject('libdwarf').get_variable('libdwarf')
+libdwarf = subproject('libdwarf', default_options: ['werror=true']).get_variable('libdwarf')
 dependencies += libdwarf
 
 libcapstone = dependency('capstone', version: '>=4', required: false)
@@ -114,21 +114,6 @@ executable('orbuculum',
     link_with: liborb,
     install: true,
 )
-
-if host_machine.system() != 'windows'
-    executable('orbfifo',
-        sources: [
-            'Src/orbfifo.c',
-            'Src/filewriter.c',
-            'Src/itmfifos.c',
-            git_version_info_h,
-        ],
-        include_directories: incdirs,
-        dependencies: dependencies,
-        link_with: liborb,
-        install: true,
-    )
-endif
 
 executable('orbcat',
     sources: [

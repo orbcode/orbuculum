@@ -1,3 +1,17 @@
+Version 2.3.0 In progress
+* Improve 8 to 24 bit colour mapping in orblcd
+* Modify orblcd to receive shorter messages than word-length (if appropriate)
+* Extend from-target timestamping to 1/10th microsecond resolution with rounding
+* Add support for ITM rollover counters in orbtop (if they deliver information, they will be displayed)
+* Add STM32 CORTEX-M33 support (Tested on STM32U5A5)
+* Add communications pacing to orbtop for direct file reads
+* Remove memory leak from orbtop
+* Remove reference ro TPIU and ETM LAR's...they don't exist (per #156)
+* Remove redundant access to DBGMCU on SAMD5 per #$157
+* Fix legacy port reflection when monitoring is not switched on it orbuculum
+* Fixup bug in _processFunctionDie & other loadelf fixes
+* Improve demangling of C++ names
+
 21st Sept 2024 (Version 2.2.0)
 
 * Add COBS draining state to re-sync as quickly as possible

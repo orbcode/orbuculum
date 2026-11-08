@@ -12,6 +12,7 @@
 #include <stdbool.h>
 #include <limits.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <errno.h>
 
 #define EOL "\n"
@@ -98,7 +99,7 @@ char *genericsUnescape( char *str );
 uint64_t genericsTimestampuS( void );
 uint32_t genericsTimestampmS( void );
 bool genericsSetReportLevel( enum verbLevel lset );
-void genericsPrintf( const char *fmt, ... );
+void genericsFPrintf( FILE *stream, const char *fmt, ... );
 char *genericsGetBaseDirectory( void );
 const char *genericsBasename( const char *n );
 const char *genericsBasenameN( const char *n, int c );

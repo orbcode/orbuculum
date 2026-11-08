@@ -121,13 +121,19 @@ static void _paintPixels( struct swMsg *m, struct RunTime *r )
         /* For whatever reason we aren't initialised yet */
         return;
     }
-
-    for ( int b = ORBLCD_PIXELS_PER_WORD( r->app->modeDescriptor ) - 1; b >= 0; b-- )
+    for ( int b = (m->len*8)/ORBLCD_GET_DEPTH( r->app->modeDescriptor ) - 1; b >= 0; b-- )
     {
         switch ( ORBLCD_DECODE_D( r->app->modeDescriptor ) )
         {
             case ORBLCD_DEPTH_1:
-                y = ( d & ( 1 << ( b % 8 ) ) ) ? r->app->sbcolour : 0;
+                if ( ORBLCD_DECODE_L( r->app->modeDescriptor ) )
+                {
+                    y = ( d & ( 128 >> ( b % 8 ) ) ) ? r->app->sbcolour : 0;
+                }
+                else
+                {
+                    y = ( d & ( 1 << ( b % 8 ) ) ) ? r->app->sbcolour : 0;
+                }
 
                 if ( !( b % 8 ) )
                 {
@@ -422,26 +428,26 @@ static bool _feedStream( struct Stream *stream, struct RunTime *r )
 void _printHelp( const char *const progName )
 
 {
-    genericsPrintf( "Usage: %s [options]" EOL, progName );
-    genericsPrintf( "    -c, --channel:      <Number> of first channel in pair containing display data" EOL );
-    genericsPrintf( "    -f, --input-file:   <filename> Take input from specified file" EOL );
-    genericsPrintf( "    -h, --help:         This help" EOL );
-    genericsPrintf( "    -n, --itm-sync:     Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
-    genericsPrintf( "    -p, --protocol:     Protocol to communicate. Defaults to OFLOW if -s is not set, otherwise ITM" EOL );
-    genericsPrintf( "    -s, --server:       <Server>:<Port> to use" EOL );
-    genericsPrintf( "    -S, --sbcolour:     <Colour> to be used for single bit renders, ignored for other bit depths" EOL );
-    genericsPrintf( "    -t, --tag:          <stream> Which OFLOW tag to use (normally 1)" EOL );
-    genericsPrintf( "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
-    genericsPrintf( "    -V, --version:      Print version and exit" EOL );
-    genericsPrintf( "    -w, --window:       <string> Set title for output window" EOL );
-    genericsPrintf( "    -z, --size:         <Scale(float)> Set relative size of output window (normally 1.0)" EOL );
+    genericsFPrintf( stderr, "Usage: %s [options]" EOL, progName );
+    genericsFPrintf( stderr, "    -c, --channel:      <Number> of first channel in pair containing display data" EOL );
+    genericsFPrintf( stderr, "    -f, --input-file:   <filename> Take input from specified file" EOL );
+    genericsFPrintf( stderr, "    -h, --help:         This help" EOL );
+    genericsFPrintf( stderr, "    -n, --itm-sync:     Enforce sync requirement for ITM (i.e. ITM needs to issue syncs)" EOL );
+    genericsFPrintf( stderr, "    -p, --protocol:     Protocol to communicate. Defaults to OFLOW if -s is not set, otherwise ITM" EOL );
+    genericsFPrintf( stderr, "    -s, --server:       <Server>:<Port> to use" EOL );
+    genericsFPrintf( stderr, "    -S, --sbcolour:     <Colour> to be used for single bit renders, ignored for other bit depths" EOL );
+    genericsFPrintf( stderr, "    -t, --tag:          <stream> Which OFLOW tag to use (normally 1)" EOL );
+    genericsFPrintf( stderr, "    -v, --verbose:      <level> Verbose mode 0(errors)..3(debug)" EOL );
+    genericsFPrintf( stderr, "    -V, --version:      Print version and exit" EOL );
+    genericsFPrintf( stderr, "    -w, --window:       <string> Set title for output window" EOL );
+    genericsFPrintf( stderr, "    -z, --size:         <Scale(float)> Set relative size of output window (normally 1.0)" EOL );
 }
 
 // ====================================================================================================
 void _printVersion( void )
 
 {
-    genericsPrintf( "orblcd version " GIT_DESCRIBE EOL );
+    genericsFPrintf( stderr, "orblcd version " GIT_DESCRIBE EOL );
 }
 // ====================================================================================================
 static struct option _longOptions[] =
@@ -679,6 +685,15 @@ static void _intHandler( int sig )
     _r.ending = true;
 }
 // ====================================================================================================
+unsigned int extend(unsigned int value, unsigned int smallSize, unsigned int bigSize)
+{
+  /* From https://bits.stephan-brumme.com/bitExtension.html */
+  /* e.g. to extend from 5 to 8 bits, use extend(x,5,8)     */
+  unsigned int leftShift  = bigSize - smallSize;
+  unsigned int rightShift = bigSize - leftShift;
+  return (value << leftShift) | (value >> rightShift);
+}
+// ====================================================================================================
 // ====================================================================================================
 // ====================================================================================================
 // Externally available routines
@@ -710,10 +725,13 @@ int main( int argc, char *argv[] )
         genericsExit( -1, "Failed to establish Int handler" EOL );
     }
 
-    /* Load up default colour index map R3G3B2 */
+    /* Load up default colour index map R3G2B3 */
     for ( int i = 0; i < 256; i++ )
     {
-        _r.app->map8to24bit[i] = ( ( i & 0xE0 ) << 21 ) | ( ( i & 0x1c ) << 13 ) | ( i << 6 );
+      int blue = extend(i&0b00000011,2,8);
+      int green = extend((i&0b00011100)>>2,3,8);
+      int red = extend((i&0b11100000)>>5,3,8);
+      _r.app->map8to24bit[i] = (red<<16)|(green<<8)|(blue);
     }
 
     while ( !_r.ending )

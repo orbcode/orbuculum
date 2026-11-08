@@ -338,7 +338,7 @@ char *genericsGetBaseDirectory( void )
 #endif
 }
 // ====================================================================================================
-void genericsPrintf( const char *fmt, ... )
+void genericsFPrintf( FILE *stream, const char *fmt, ... )
 
 /* Print to output stream */
 
@@ -355,7 +355,7 @@ void genericsPrintf( const char *fmt, ... )
     {
         if ( *p != CMD_ALERT[0] )
         {
-            putc( *p++, stderr );
+            putc( *p++, stream );
         }
         else
         {
@@ -367,7 +367,7 @@ void genericsPrintf( const char *fmt, ... )
                 case 'a'...'f':
                     if ( _screenHandling )
                     {
-                        fprintf( stderr, CC_COLOUR, _htoi( *p ) > 7, _htoi( *p ) & 7 );
+                        fprintf( stream, CC_COLOUR, _htoi( *p ) > 7, _htoi( *p ) & 7 );
                     }
 
                     p++;
@@ -376,7 +376,7 @@ void genericsPrintf( const char *fmt, ... )
                 case 'u':
                     if ( _screenHandling )
                     {
-                        fprintf( stderr, CC_PREV_LN );
+                        fprintf( stream, CC_PREV_LN );
                     }
 
                     p++;
@@ -385,7 +385,7 @@ void genericsPrintf( const char *fmt, ... )
                 case 'U':
                     if ( _screenHandling )
                     {
-                        fprintf( stderr, CC_CLR_LN );
+                        fprintf( stream, CC_CLR_LN );
                     }
 
                     p++;
@@ -394,7 +394,7 @@ void genericsPrintf( const char *fmt, ... )
                 case 'r':
                     if ( _screenHandling )
                     {
-                        fprintf( stderr, CC_RES );
+                        fprintf( stream, CC_RES );
                     }
 
                     p++;
@@ -402,7 +402,7 @@ void genericsPrintf( const char *fmt, ... )
 
                 case 'z':
                     /* We'll take a flyer on it being vt100 compatible */
-                    fprintf( stderr, CC_CLEAR_SCREEN );
+                    fprintf( stream, CC_CLEAR_SCREEN );
                     p++;
                     break;
 
@@ -412,7 +412,7 @@ void genericsPrintf( const char *fmt, ... )
         }
     }
 
-    fflush( stdout );
+    fflush( stream );
 }
 // ====================================================================================================
 void genericsReport( enum verbLevel l, const char *fmt, ... )
@@ -426,13 +426,13 @@ void genericsReport( enum verbLevel l, const char *fmt, ... )
     if ( l <= lstore )
     {
         fflush( stdout );
-        genericsPrintf( colours[l] );
+        genericsFPrintf( stderr, colours[l] );
         va_list va;
         va_start( va, fmt );
         vsnprintf( op, MAX_STRLEN, fmt, va );
         va_end( va );
-        genericsPrintf( "%s", op );
-        genericsPrintf( C_RESET );
+        genericsFPrintf( stderr, "%s", op );
+        genericsFPrintf( stderr, C_RESET );
         fflush( stderr );
     }
 }
@@ -447,9 +447,9 @@ void genericsExit( int status, const char *fmt, ... )
     va_start( va, fmt );
     vsnprintf( op, MAX_STRLEN, fmt, va );
     va_end( va );
-    genericsPrintf( C_VERB_ERROR );
-    genericsPrintf( op );
-    genericsPrintf( C_RESET );
+    genericsFPrintf( stderr, C_VERB_ERROR );
+    genericsFPrintf( stderr, op );
+    genericsFPrintf( stderr, C_RESET );
     fflush( stderr );
 
     exit( status );

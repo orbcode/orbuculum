@@ -3,11 +3,13 @@ name: Build OSX binaries
 on:
   - push
   - pull_request
+  - workflow_call
 
 jobs:
   osx:
-    runs-on: macos-12
+    runs-on: macos-15
     steps:
+      - run: python3 -m pip config set global.break-system-packages true
       - run: brew install zmq sdl2 libelf
       - run: pip3 install meson
       - run: pip3 install ninja

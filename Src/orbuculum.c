@@ -351,41 +351,41 @@ static void _intHandler( int sig )
 void _printHelp( const char *const progName, struct RunTime *r )
 
 {
-    genericsPrintf( "Usage: %s [options]" EOL, progName );
-    genericsPrintf( "    -a, --serial-speed:  <serialSpeed> to use" EOL );
-    genericsPrintf( "    -E, --eof:           When reading from file, terminate at end of file" EOL );
-    genericsPrintf( "    -f, --input-file:    <filename> Take input from specified file" EOL );
-    genericsPrintf( "    -h, --help:          This help" EOL );
-    genericsPrintf( "    -l, --listen-port:   <port> Listen port for incoming ORBFLOW connections (defaults to %d)" EOL, r->options->listenPort );
-    genericsPrintf( "    -m, --monitor:       <interval> Output monitor information about the link at <interval>ms, min 500ms" EOL );
-    genericsPrintf( "    -M, --no-colour:     Supress colour in output" EOL );
-    genericsPrintf( "    -n, --serial-number: <Serial> any part of serial number to differentiate specific device" EOL );
-    genericsPrintf( "    -o, --output-file:   <filename> to be used for dump file" EOL );
-    genericsPrintf( "    -O, --orbtrace:      \"<options>\" run orbtrace with specified options on device connect" EOL );
-    genericsPrintf( "    -p, --serial-port:   <serialPort> to use" EOL );
-    genericsPrintf( "    -P, --pace:          <microseconds> delay in block of data transmission to clients" EOL );
-    genericsPrintf( "    -s, --server:        <Server>:<Port> to use" EOL );
-    genericsPrintf( "    -T, --tpiu:          Strip TPIU framing from input flows (mostly not relevant)" EOL );
-    genericsPrintf( "    -t, --tag:           <stream,stream....> Legacy TPIU streams to decode and route (Default %s)" EOL, r->options->channelList );
-    genericsPrintf( "    -v, --verbose:       <level> Verbose mode 0(errors)..3(debug)" EOL );
-    genericsPrintf( "    -V, --version:       Print version, connected usb devices, and exit" EOL );
+    genericsFPrintf( stderr, "Usage: %s [options]" EOL, progName );
+    genericsFPrintf( stderr, "    -a, --serial-speed:  <serialSpeed> to use" EOL );
+    genericsFPrintf( stderr, "    -E, --eof:           When reading from file, terminate at end of file" EOL );
+    genericsFPrintf( stderr, "    -f, --input-file:    <filename> Take input from specified file" EOL );
+    genericsFPrintf( stderr, "    -h, --help:          This help" EOL );
+    genericsFPrintf( stderr, "    -l, --listen-port:   <port> Listen port for incoming ORBFLOW connections (defaults to %d)" EOL, r->options->listenPort );
+    genericsFPrintf( stderr, "    -m, --monitor:       <interval> Output monitor information about the link at <interval>ms, min 500ms" EOL );
+    genericsFPrintf( stderr, "    -M, --no-colour:     Supress colour in output" EOL );
+    genericsFPrintf( stderr, "    -n, --serial-number: <Serial> any part of serial number to differentiate specific device" EOL );
+    genericsFPrintf( stderr, "    -o, --output-file:   <filename> to be used for dump file" EOL );
+    genericsFPrintf( stderr, "    -O, --orbtrace:      \"<options>\" run orbtrace with specified options on device connect" EOL );
+    genericsFPrintf( stderr, "    -p, --serial-port:   <serialPort> to use" EOL );
+    genericsFPrintf( stderr, "    -P, --pace:          <microseconds> delay in block of data transmission to clients" EOL );
+    genericsFPrintf( stderr, "    -s, --server:        <Server>:<Port> to use" EOL );
+    genericsFPrintf( stderr, "    -T, --tpiu:          Strip TPIU framing from input flows (mostly not relevant)" EOL );
+    genericsFPrintf( stderr, "    -t, --tag:           <stream,stream....> Legacy TPIU streams to decode and route (Default %s)" EOL, r->options->channelList );
+    genericsFPrintf( stderr, "    -v, --verbose:       <level> Verbose mode 0(errors)..3(debug)" EOL );
+    genericsFPrintf( stderr, "    -V, --version:       Print version, connected usb devices, and exit" EOL );
 }
 
 // ====================================================================================================
 void _printVersion( struct RunTime *r )
 
 {
-    genericsPrintf( "orbuculum version " GIT_DESCRIBE EOL );
+    genericsFPrintf( stderr, "orbuculum version " GIT_DESCRIBE EOL );
     r->o = OrbtraceIfCreateContext();
-    int ndevices = OrbtraceIfGetDeviceList( r->o, NULL, DEVTYPE( DEVICE_ORBTRACE_MINI ) | DEVTYPE( DEVICE_BMP ) );
+    int ndevices = OrbtraceIfGetDeviceList( r->o, NULL, DEVTYPE( DEVICE_ORBTRACE_MAX ) | DEVTYPE( DEVICE_ORBTRACE_MINI ) | DEVTYPE( DEVICE_BMP ) );
 
     if ( !ndevices )
     {
-        genericsPrintf( "No devices found" EOL );
+        genericsFPrintf( stderr, "No devices found" EOL );
     }
     else
     {
-        genericsPrintf( "Device%s Found;" EOL, ( ndevices > 1 ) ? "s" : "" );
+        genericsFPrintf( stderr, "Device%s Found;" EOL, ( ndevices > 1 ) ? "s" : "" );
         OrbtraceIfListDevices( r->o );
     }
 
@@ -544,6 +544,7 @@ bool _processOptions( int argc, char *argv[], struct RunTime *r )
 
                 if ( *a == ':' )
                 {
+                    *a = 0;
                     r->options->nwserverPort = atoi( ++a );
                 }
 
@@ -721,19 +722,19 @@ void _checkInterval( void *params )
 
             if ( r->conn )
             {
-                genericsPrintf( C_PREV_LN C_DATA );
+                genericsFPrintf( stdout, C_PREV_LN C_DATA );
 
                 if ( snapInterval / 1000000 )
                 {
-                    genericsPrintf( "%4d.%d " C_RESET "MBits/sec ", snapInterval / 1000000, ( snapInterval * 1 / 100000 ) % 10 );
+                    genericsFPrintf( stdout, "%4d.%d " C_RESET "MBits/sec ", snapInterval / 1000000, ( snapInterval * 1 / 100000 ) % 10 );
                 }
                 else if ( snapInterval / 1000 )
                 {
-                    genericsPrintf( "%4d.%d " C_RESET "KBits/sec ", snapInterval / 1000, ( snapInterval / 100 ) % 10 );
+                    genericsFPrintf( stdout, "%4d.%d " C_RESET "KBits/sec ", snapInterval / 1000, ( snapInterval / 100 ) % 10 );
                 }
                 else
                 {
-                    genericsPrintf( "  %4d " C_RESET " Bits/sec ", snapInterval );
+                    genericsFPrintf( stdout, "  %4d " C_RESET " Bits/sec ", snapInterval );
                 }
 
                 uint64_t totalPct = 0;
@@ -755,11 +756,11 @@ void _checkInterval( void *params )
                         {
                             if ( ( !r->tagCount[i].hasHandler ) && r->options->useTPIU )
                             {
-                                genericsPrintf( C_NOCHAN" [%d:" "%3d%%] " C_RESET,  i, w / 10 );
+                                genericsFPrintf( stdout, C_NOCHAN" [%d:" "%3d%%] " C_RESET,  i, w / 10 );
                             }
                             else
                             {
-                                genericsPrintf( " %d:" C_DATA"%3d%% " C_RESET,  i, w / 10 );
+                                genericsFPrintf( stdout, " %d:" C_DATA"%3d%% " C_RESET,  i, w / 10 );
                             }
                         }
 
@@ -767,18 +768,18 @@ void _checkInterval( void *params )
                     }
 
                     w = ( totalPct < 1000 ) ? 1000 - totalPct : 0;
-                    genericsPrintf( " Waste:" C_DATA "%2d.%01d%% " C_RESET,  w / 10, w % 10 );
+                    genericsFPrintf( stdout, " Waste:" C_DATA "%2d.%01d%% " C_RESET,  w / 10, w % 10 );
                 }
 
                 if ( r->options->dataSpeed > 100 )
                 {
                     /* Conversion to percentage done as a division to avoid overflow */
                     uint32_t fullPercent = ( snapInterval * 100 ) / r->options->dataSpeed;
-                    genericsPrintf( "(" C_DATA " %3d%% " C_RESET "full)", ( fullPercent > 100 ) ? 100 : fullPercent );
+                    genericsFPrintf( stdout, "(" C_DATA " %3d%% " C_RESET "full)", ( fullPercent > 100 ) ? 100 : fullPercent );
                 }
 
                 genericsReport( V_INFO, "Ce=%d Oe=%d", OFLOWGetCOBSErrors( &_r.oflow ), OFLOWGetErrors( &_r.oflow ) );
-                genericsPrintf( "   " C_RESET C_CLR_LN EOL );
+                genericsFPrintf( stdout, "   " C_RESET C_CLR_LN EOL );
             }
 
             r->intervalRawBytes = 0;
@@ -1079,7 +1080,7 @@ void _actionOrbtraceCommand( struct RunTime *r, char *sn, enum ORBTraceDevice d 
     {
         if ( getenv( ORBTRACEENVNAME ) )
         {
-            snprintf( commandLine, MAX_LINE_LEN, "%s %s %s %s", getenv( ORBTRACEENVNAME ), r->options->otcl, sn ? ( ( d == DEVICE_ORBTRACE_MINI ) ? "-n " : "-s " ) : "", sn ? sn : "" );
+            snprintf( commandLine, MAX_LINE_LEN, "%s %s %s %s", getenv( ORBTRACEENVNAME ), r->options->otcl, sn ? ( ( d == DEVICE_ORBTRACE_MINI || d == DEVICE_ORBTRACE_MAX ) ? "-n " : "-s " ) : "", sn ? sn : "" );
         }
         else
         {
@@ -1090,7 +1091,7 @@ void _actionOrbtraceCommand( struct RunTime *r, char *sn, enum ORBTraceDevice d 
                 genericsExit( -1, "Failed to establish base directory" EOL );
             }
 
-            snprintf( commandLine, MAX_LINE_LEN, "%s" ORBTRACE " %s %s %s", baseDirectory, r->options->otcl, sn ? ( ( d == DEVICE_ORBTRACE_MINI ) ? "-n " : "-s " ) : "", sn ? sn : "" );
+            snprintf( commandLine, MAX_LINE_LEN, "%s" ORBTRACE " %s %s %s", baseDirectory, r->options->otcl, sn ? ( ( d == DEVICE_ORBTRACE_MINI || d == DEVICE_ORBTRACE_MAX ) ? "-n " : "-s " ) : "", sn ? sn : "" );
             free( baseDirectory );
         }
 
@@ -1612,7 +1613,7 @@ int main( int argc, char *argv[] )
     }
 
     /* Blank line for tidyness' sake */
-    genericsPrintf( EOL );
+    genericsFPrintf( stdout, EOL );
 
     if ( ( _r.options->nwserverPort ) || ( _r.options->port ) || ( _r.options->file ) )
     {
