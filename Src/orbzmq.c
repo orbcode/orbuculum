@@ -911,7 +911,8 @@ int main( int argc, char *argv[] )
     _r.zmqSocket = zmq_socket( _r.zmqContext, ZMQ_PUB );
     zmq_bind( _r.zmqSocket, "tcp://*:3442" ); //options.bindUrl );
 
-    /* Reset the OFLOW handler before we start */
+    /* Reset the handlers before we start */
+    ITMDecoderInit( &_r.i, options.forceITMSync );
     OFLOWInit( &_r.c );
 
     /* This ensures the signal handler gets called */
