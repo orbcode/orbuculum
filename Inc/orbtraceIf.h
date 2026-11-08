@@ -35,7 +35,7 @@ extern "C" {
 #define NO_INTERFACE ((uint8_t)(-1))
 #define NO_DEVICE    (-1)
 
-enum ORBTraceDevice { DEVICE_NULL, DEVICE_ORBTRACE_MINI, DEVICE_BMP, DEVICE_NUM_DEVICES };
+enum ORBTraceDevice { DEVICE_NULL, DEVICE_ORBTRACE_MINI, DEVICE_BMP, DEVICE_ORBTRACE_MAX, DEVICE_NUM_DEVICES };
 
 #define DEVTYPE_ALL 0xffffffff
 #define DEVTYPE(x) (1<<x)

@@ -377,7 +377,7 @@ void _printVersion( struct RunTime *r )
 {
     genericsFPrintf( stderr, "orbuculum version " GIT_DESCRIBE EOL );
     r->o = OrbtraceIfCreateContext();
-    int ndevices = OrbtraceIfGetDeviceList( r->o, NULL, DEVTYPE( DEVICE_ORBTRACE_MINI ) | DEVTYPE( DEVICE_BMP ) );
+    int ndevices = OrbtraceIfGetDeviceList( r->o, NULL, DEVTYPE( DEVICE_ORBTRACE_MAX ) | DEVTYPE( DEVICE_ORBTRACE_MINI ) | DEVTYPE( DEVICE_BMP ) );
 
     if ( !ndevices )
     {
@@ -1080,7 +1080,7 @@ void _actionOrbtraceCommand( struct RunTime *r, char *sn, enum ORBTraceDevice d 
     {
         if ( getenv( ORBTRACEENVNAME ) )
         {
-            snprintf( commandLine, MAX_LINE_LEN, "%s %s %s %s", getenv( ORBTRACEENVNAME ), r->options->otcl, sn ? ( ( d == DEVICE_ORBTRACE_MINI ) ? "-n " : "-s " ) : "", sn ? sn : "" );
+            snprintf( commandLine, MAX_LINE_LEN, "%s %s %s %s", getenv( ORBTRACEENVNAME ), r->options->otcl, sn ? ( ( d == DEVICE_ORBTRACE_MINI || d == DEVICE_ORBTRACE_MAX ) ? "-n " : "-s " ) : "", sn ? sn : "" );
         }
         else
         {
@@ -1091,7 +1091,7 @@ void _actionOrbtraceCommand( struct RunTime *r, char *sn, enum ORBTraceDevice d 
                 genericsExit( -1, "Failed to establish base directory" EOL );
             }
 
-            snprintf( commandLine, MAX_LINE_LEN, "%s" ORBTRACE " %s %s %s", baseDirectory, r->options->otcl, sn ? ( ( d == DEVICE_ORBTRACE_MINI ) ? "-n " : "-s " ) : "", sn ? sn : "" );
+            snprintf( commandLine, MAX_LINE_LEN, "%s" ORBTRACE " %s %s %s", baseDirectory, r->options->otcl, sn ? ( ( d == DEVICE_ORBTRACE_MINI || d == DEVICE_ORBTRACE_MAX ) ? "-n " : "-s " ) : "", sn ? sn : "" );
             free( baseDirectory );
         }
 
