@@ -1,0 +1,94 @@
+name: Release binaries
+
+# Builds Linux, OSX and Windows binaries and publishes them to a rolling
+# 'latest' release on every push to main. Pushing a v* tag additionally
+# creates a versioned release.
+#
+# Download links:
+#   https://github.com/orbcode/orbuculum/releases/download/latest/orbuculum-linux.tar.gz
+#   https://github.com/orbcode/orbuculum/releases/download/latest/orbuculum-osx.tar.gz
+#   https://github.com/orbcode/orbuculum/releases/download/latest/orbuculum-win64.zip
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    uses: ./.github/workflows/build-linux.yml
+  osx:
+    uses: ./.github/workflows/build-osx.yml
+  windows:
+    uses: ./.github/workflows/build-windows.yml
+
+  release:
+    needs: [linux, osx, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Package
+        working-directory: dist
+        run: |
+          # Artifacts lose the executable bit; restore it on binaries
+          for p in orbuculum-linux orbuculum-osx; do
+            find "$p" -path '*/bin/*' -type f -exec chmod +x {} +
+            tar -czf "$p.tar.gz" -C "$p" .
+          done
+          (cd orbuculum-win64 && zip -r ../orbuculum-win64.zip .)
+          ls -l *.tar.gz *.zip
+
+      - name: Write release notes
+        run: |
+          cat > notes.md <<'NOTES'
+          ## Runtime dependencies
+
+          **Windows (`orbuculum-win64.zip`)** - self-contained; all required DLLs are in `bin/`.
+
+          **Linux (`orbuculum-linux.tar.gz`)** - built on Ubuntu (latest LTS). Install:
+          ```
+          sudo apt install libusb-1.0-0 libzmq5 libsdl2-2.0-0 libdw1 libelf1 libcapstone5
+          ```
+
+          **macOS (`orbuculum-osx.tar.gz`)** - built on macOS 15 (Apple Silicon). Install:
+          ```
+          brew install libusb zmq sdl2 libelf
+          ```
+          NOTES
+          sed -i 's/^          //' notes.md
+
+      - name: Update 'latest' release
+        if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          git_sha=${{ github.sha }}
+          gh release delete latest --yes --cleanup-tag || true
+          gh release create latest dist/*.tar.gz dist/*.zip \
+            --target "$git_sha" \
+            --prerelease \
+            --title "Latest build (${git_sha:0:7})" \
+            --notes "$(printf 'Automated build of %s from %s.\n\n' "$git_sha" "$GITHUB_REF_NAME"; cat notes.md)"
+
+      - name: Create versioned release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/*.tar.gz dist/*.zip \
+            --title "$GITHUB_REF_NAME" --notes-file notes.md --generate-notes

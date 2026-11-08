@@ -3,6 +3,7 @@ name: Build OSX binaries
 on:
   - push
   - pull_request
+  - workflow_call
 
 jobs:
   osx:
