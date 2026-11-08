@@ -6,7 +6,7 @@ on:
 
 jobs:
   osx:
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - run: python3 -m pip config set global.break-system-packages true
       - run: brew install zmq sdl2 libelf

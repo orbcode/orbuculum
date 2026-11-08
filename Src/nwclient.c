@@ -48,6 +48,8 @@
     #endif
 #endif
 
+#define MAX_WAIT_T   100
+
 /* Master structure for the set of nwclients */
 struct nwclientsHandle
 
@@ -168,15 +170,14 @@ static void *_listenTask( void *arg )
         unsigned long mode = 0;
         ioctlsocket( newsockfd, FIONBIO, &mode );
 #else
-        int flags = fcntl( newsockfd, F_GETFL, 0 );
+	struct timeval timeout;
+	timeout.tv_sec = 0;
+	timeout.tv_usec = MAX_WAIT_T*1000;
 
-        if ( flags == -1 )
-        {
-            return false;
-        }
-
-        flags |= O_NONBLOCK;
-        fcntl( newsockfd, F_SETFL, flags );
+	if (setsockopt(newsockfd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout)) < 0) {
+	  genericsExit( -1, "Failed to set socket write timeout" EOL );
+	  return false;
+	}
 #endif
 
         /* Hook into linked list */
@@ -233,6 +234,7 @@ void nwclientSend( struct nwclientsHandle *h, uint32_t len, const uint8_t *ipbuf
             ssize_t sent = 0;
             void *p = ( void * )ipbuffer;
 
+	    errno = 0;
             while ( t && ( sent >= 0 ) )
             {
                 sent = send( n->fdNo, p, t, MSG_NOSIGNAL );
@@ -242,11 +244,19 @@ void nwclientSend( struct nwclientsHandle *h, uint32_t len, const uint8_t *ipbuf
 
             if ( t )
             {
-                genericsReport( V_INFO, "Killed connection index %d" EOL, n->fdNo );
-                volatile struct nwClient *newn = n->nextClient;
-                _clientRemoveNoLock( n );
-                n = newn;
-            }
+	      if (errno == EAGAIN)
+		{
+		  genericsReport( V_WARN, "Index %d not keeping up" EOL, n->fdNo );
+		}
+	      else
+		{
+		  genericsReport( V_INFO, "Killed connection index %d" EOL, n->fdNo );
+		}
+
+	      volatile struct nwClient *oldn = n;
+	      n = n->nextClient;
+	      _clientRemoveNoLock( oldn );
+	    }
             else
             {
                 n = n->nextClient;

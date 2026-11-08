@@ -19,6 +19,7 @@ static const struct OrbtraceInterfaceType _validDevices[DEVICE_NUM_DEVICES] =
 {
     { 0x1209, 0x3443, DEVICE_ORBTRACE_MINI },
     { 0x1d50, 0x6018, DEVICE_BMP},
+    { 0x1209, 0x3445, DEVICE_ORBTRACE_MAX },
     { 0,      0      }
 };
 
@@ -347,6 +348,7 @@ int OrbtraceIfGetDeviceList( struct OrbtraceIf *o, char *sn, uint32_t devmask )
 
                     switch ( d->devtype )
                     {
+                        case DEVICE_ORBTRACE_MAX:
                         case DEVICE_ORBTRACE_MINI:
                             d->powerIf = _getInterface( o, 'P', NULL );
                             d->traceIf = _getInterface( o, 'T', NULL );
@@ -528,6 +530,7 @@ bool OrbtraceGetIfandEP( struct OrbtraceIf *o )
 
             break;
 
+        case DEVICE_ORBTRACE_MAX:
         case DEVICE_ORBTRACE_MINI: // -------------------------------------------------------------------
             genericsReport( V_DEBUG, "Searching for trace interface" EOL );
             struct libusb_config_descriptor *config;

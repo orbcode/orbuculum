@@ -714,7 +714,7 @@ int main( int argc, char *argv[] )
 
     assert( _r.dev );
 
-    _r.ndevices = OrbtraceIfGetDeviceList( _r.dev, _r.options->sn, DEVTYPE( DEVICE_ORBTRACE_MINI ) );
+    _r.ndevices = OrbtraceIfGetDeviceList( _r.dev, _r.options->sn, DEVTYPE( DEVICE_ORBTRACE_MINI ) | DEVTYPE( DEVICE_ORBTRACE_MAX ) );
 
     if ( !_r.ndevices )
     {
