@@ -1,7 +1,7 @@
 #ifndef _STREAM_WIN32_H_
 #define _STREAM_WIN32_H_
 
-#include <Windows.h>
+#include <windows.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include "stream.h"
