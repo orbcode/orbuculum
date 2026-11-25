@@ -13,7 +13,7 @@
 #include <sys/time.h>
 
 #ifdef WIN32
-    #include <Windows.h>
+    #include <windows.h>
 #else
     #include <libgen.h>
     #include <unistd.h>

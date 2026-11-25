@@ -8,14 +8,9 @@ sockets = declare_dependency(
     dependencies: host_machine.system() == 'windows' ? [cc.find_library('ws2_32')] : []
 )
 
+# Include general dependencies
 dependencies = [
-    dependency('threads'),
-    dependency('libusb-1.0'),
-    dependency('libzmq'),
-    dependency('ncurses', 'ncursesw'),
-    dependency('libelf'),
     uicolours_default,
-    sockets,
 ]
 
 incdirs = include_directories(['Inc', 'Inc/external'])
@@ -46,7 +41,6 @@ add_project_arguments('-Wno-error=deprecated-declarations', language: 'c')
 add_project_arguments(['-include', 'uicolours_default.h'], language: 'c')
 
 libdwarf = subproject('libdwarf', default_options: ['werror=true']).get_variable('libdwarf')
-dependencies += libdwarf
 
 libcapstone = dependency('capstone', version: '>=4', required: false)
 if not libcapstone.found()
@@ -57,6 +51,57 @@ libSDL2 = dependency('SDL2', required: false)
 if not libSDL2.found()
     libSDL2 = disabler()
 endif
+
+libusb_dep = [dependency('libusb-1.0')]
+orbuculum_deps = [
+	dependencies,
+	libusb_dep,
+	dependency('threads'),
+]
+
+orbcat_deps = [
+	dependencies,
+]
+
+orbtop_deps = [
+	dependencies,
+]
+
+orbdump_deps = [
+	dependencies,
+]
+
+orbstat_deps = [
+	dependencies,
+]
+
+orbmortem_deps = [
+	dependencies,
+	libdwarf,
+	dependency('libelf'),
+	dependency('ncurses', 'ncursesw'),
+	libcapstone,
+]
+
+orbprofile_deps = [
+	dependencies,
+	dependency('threads'),
+]
+
+orbtrace_deps = [
+	dependencies,
+	libusb_dep,
+]
+
+orbzmq_deps = [
+	dependencies,
+	dependency('libzmq'),
+]
+
+orblcd_deps = [
+	dependencies,
+	libSDL2,
+]
 
 if host_machine.system() == 'windows'
     stream_src = [
@@ -110,7 +155,7 @@ executable('orbuculum',
         git_version_info_h,
     ],
     include_directories: incdirs,
-    dependencies: dependencies,
+    dependencies: orbuculum_deps,
     link_with: liborb,
     install: true,
 )
@@ -121,7 +166,7 @@ executable('orbcat',
         git_version_info_h,
     ],
     include_directories: incdirs,
-    dependencies: dependencies,
+    dependencies: orbcat_deps, 
     link_with: liborb,
     install: true,
 )
@@ -134,7 +179,7 @@ executable('orbtop',
         git_version_info_h,
     ],
     include_directories: incdirs,
-    dependencies: dependencies,
+    dependencies: orbtop_deps,
     link_with: liborb,
     install: true,
 )
@@ -145,7 +190,7 @@ executable('orbdump',
         git_version_info_h,
     ],
     include_directories: incdirs,
-    dependencies: dependencies,
+    dependencies: orbdump_deps,
     link_with: liborb,
     install: true,
 )
@@ -158,7 +203,7 @@ executable('orbstat',
         git_version_info_h,
     ],
     include_directories: incdirs,
-    dependencies: dependencies,
+    dependencies: orbstat_deps,
     link_with: liborb,
     install: true,
 )
@@ -171,9 +216,7 @@ executable('orbmortem',
         git_version_info_h,
     ],
     include_directories: incdirs,
-    dependencies: dependencies + [
-        libcapstone,
-    ],
+    dependencies: orbmortem_deps,
     link_with: liborb,
     install: true,
 )
@@ -186,7 +229,7 @@ executable('orbprofile',
         git_version_info_h,
     ],
     include_directories: incdirs,
-    dependencies: dependencies,
+    dependencies: orbprofile_deps,
     link_with: liborb,
     install: true,
 )
@@ -199,7 +242,7 @@ executable('orbtrace',
         git_version_info_h,
     ],
     include_directories: incdirs,
-    dependencies: dependencies,
+    dependencies: orbtrace_deps,
     link_with: liborb,
     install: true,
 )
@@ -210,7 +253,7 @@ executable('orbzmq',
         git_version_info_h,
     ],
     include_directories: incdirs,
-    dependencies: dependencies,
+    dependencies: orbzmq_deps,
     link_with: liborb,
     install: true,
 )
@@ -221,9 +264,7 @@ executable('orblcd',
         git_version_info_h,
     ],
     include_directories: incdirs,
-    dependencies: dependencies + [
-        libSDL2,
-    ],
+    dependencies: orblcd_deps,
     link_with: liborb,
     install: true,
 )

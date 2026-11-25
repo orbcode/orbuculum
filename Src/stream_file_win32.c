@@ -1,7 +1,7 @@
 #include "stream_win32.h"
 #include <stdlib.h>
 #include <stdio.h>
-#include <Windows.h>
+#include <windows.h>
 
 #include "generics.h"
 

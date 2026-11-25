@@ -12,7 +12,7 @@
 #include "generics.h"
 #include "symbols.h"
 #if defined(WIN32)
-    #include <Windows.h>
+    #include <windows.h>
     #include <io.h>
     #include <fcntl.h>
 #endif

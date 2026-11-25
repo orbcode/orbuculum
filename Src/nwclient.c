@@ -31,6 +31,7 @@
 #include <assert.h>
 #include <strings.h>
 #include <stdio.h>
+#include <sys/time.h>
 #include "generics.h"
 #include "nwclient.h"
 

@@ -439,7 +439,7 @@ void _printHelp( const char *const progName )
 void _printVersion( void )
 
 {
-    genericsFPrintf( stderr, "orbcat version " GIT_DESCRIBE EOL );
+    genericsFPrintf( stderr, "orbzmq version " GIT_DESCRIBE EOL );
 }
 
 static int32_t _parseHWEventsArg( char *s )
